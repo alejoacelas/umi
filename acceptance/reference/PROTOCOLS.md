@@ -233,7 +233,7 @@ On a later resume the turn is persisted as `status:"interrupted"`, and its comma
 8. **Claude: `user_message_uuid(s)` is only on the first assistant frame and on the result.** Lifecycle `completed` for an injected message arrives before the result, while the original's arrives after it.
 9. **Claude: permission requests never time out.** An unanswered one waits indefinitely, and stdin close auto-fails it.
 10. **Codex: the interrupt or a dropped approval leaves items without `item/completed`.** `serverRequest/resolved` for a dropped approval arrives after `turn/completed`.
-11. **Codex: a thread can only be live in one app-server process at a time**, and unsubscribe doesn't free it. The hub must own one app-server per thread set, or proxy through it.
+11. **Codex: a thread can only be live in one app-server process at a time**, and unsubscribe doesn't free it: a second process that resumes the same thread is refused ("already has an active writer") until the first process exits.
 12. **Codex: a steered turn can have several `final_answer` messages**, but `turn/completed.items` keeps only the last one.
 13. **Codex: a failed turn leaves the thread status at `systemError`**, not `idle`, so use `turn/completed` as the end-of-turn signal. An experimental server-side queue exists and auto-drains.
 
