@@ -1,0 +1,11 @@
+  0.04 meta {"cmd": ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages", "...+6"]}
+  0.05 in  {"type": "control_request", "request_id": "init1", "request": {"subtype": "initialize", "hooks": null}}
+  0.89 err "No conversation found with session ID: 415139b8-574a-4f56-8609-d2349ea5be29"
+  0.89 out {"type": "result", "subtype": "error_during_execution", "duration_ms": 0, "duration_api_ms": 0, "is_error": true, "num_turns": 0, "stop_reason": null, "session_id": "415139b8-574a-4f56-8609-d2349ea5be29", "total_cost_usd": 0, "usage": {"output_tokens_details": {"thinking_tokens": 0}, "input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 0, "server_tool_use": {"web_search_requests": 0, "web_fetch_requests": 0}, "service_tier": "standard", "cache_creation": {"ephemeral_1h_input_tokens": 0, "ephemeral_5m_input_tokens": 0}, "inference_geo": "", "iterations": [], "speed": "standard", "fallback_credit": null}, "modelUsage": {}, "permission_denials": [], "uuid": "73b89435-5c8b-4e6f-8f2c-f9b11b027f6f", "errors": ["No conversation found with session ID: 415139b8-574a-4f56-8609-d2349ea5be29"], "result_index": 0}
+  1.62 eof "stdout closed"
+ 10.05 in  {"type": "user", "message": {"role": "user", "content": "hi"}, "parent_tool_use_id": null, "session_id": "default", "uuid": "e1cccbd6-8284-428e-a2c4-915453c586b2"}
+ 10.05 meta "write failed: BrokenPipeError(32, 'Broken pipe')"
+ 11.06 meta "close stdin"
+ 11.06 meta "close err BrokenPipeError(32, 'Broken pipe')"
+ 11.26 meta {"exit_code": 1}
+EXIT CODE 1

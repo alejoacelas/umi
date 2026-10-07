@@ -1,0 +1,10 @@
+  0.01 meta {"cmd": ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages", "...+8"]}
+  0.01 in  {"type": "control_request", "request_id": "init1", "request": {"subtype": "initialize", "hooks": null}}
+  0.27 err "Error: --session-id can only be used with --continue or --resume if --fork-session is also specified."
+  0.28 eof "stdout closed"
+ 10.02 in  {"type": "user", "message": {"role": "user", "content": "What was the codeword? Reply with one word."}, "parent_tool_use_id": null, "session_id": "default", "uuid": "9b888469-af39-4891-b6c9-05a10792ddf0"}
+ 10.02 meta "write failed: BrokenPipeError(32, 'Broken pipe')"
+ 51.04 meta "close stdin"
+ 51.05 meta "close err BrokenPipeError(32, 'Broken pipe')"
+ 51.25 meta {"exit_code": 1}
+EXIT CODE 1

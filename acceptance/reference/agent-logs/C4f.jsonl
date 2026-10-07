@@ -1,0 +1,10 @@
+{"t": 0.0, "k": "meta", "m": {"cmd": ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages", "--permission-prompt-tool", "stdio", "--model", "haiku", "--resume", "not-a-real-session"]}}
+{"t": 0.0, "k": "in", "m": {"type": "control_request", "request_id": "init1", "request": {"subtype": "initialize", "hooks": null}}}
+{"t": 0.9, "k": "err", "m": "Error: --resume requires a valid session ID or session title when used with --print. Usage: claude -p --resume <session-id|title>. Provided value \"not-a-real-session\" is not a UUID and does not match any session title."}
+{"t": 0.9, "k": "out", "m": {"type": "result", "subtype": "error_during_execution", "duration_ms": 0, "duration_api_ms": 0, "is_error": true, "num_turns": 0, "stop_reason": null, "session_id": "331c461f-9473-4463-bae0-a801b4a3a0ea", "total_cost_usd": 0, "usage": {"output_tokens_details": {"thinking_tokens": 0}, "input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 0, "server_tool_use": {"web_search_requests": 0, "web_fetch_requests": 0}, "service_tier": "standard", "cache_creation": {"ephemeral_1h_input_tokens": 0, "ephemeral_5m_input_tokens": 0}, "inference_geo": "", "iterations": [], "speed": "standard", "fallback_credit": null}, "modelUsage": {}, "permission_denials": [], "uuid": "abfb83a2-4aee-40b8-8749-289086bba67f", "errors": ["Error: --resume requires a valid session ID or session title when used with --print. Usage: claude -p --resume <session-id|title>. Provided value \"not-a-real-session\" is not a UUID and does not match any session title."], "result_index": 0}}
+{"t": 1.57, "k": "eof", "m": "stdout closed"}
+{"t": 10.0, "k": "in", "m": {"type": "user", "message": {"role": "user", "content": "hi"}, "parent_tool_use_id": null, "session_id": "default", "uuid": "f404772b-ed18-4403-8490-c6ec41074a0b"}}
+{"t": 10.0, "k": "meta", "m": "write failed: BrokenPipeError(32, 'Broken pipe')"}
+{"t": 11.02, "k": "meta", "m": "close stdin"}
+{"t": 11.02, "k": "meta", "m": "close err BrokenPipeError(32, 'Broken pipe')"}
+{"t": 11.23, "k": "meta", "m": {"exit_code": 1}}

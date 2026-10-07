@@ -1,0 +1,30 @@
+[project]
+name = "agent-terminal-acceptance"
+version = "1.0.0"
+description = "Outcome-only acceptance (conformance) suite for the agent terminal"
+requires-python = ">=3.11"
+dependencies = [
+    "pytest>=8",
+    "hypothesis>=6.100",
+    "pyobjc-framework-ApplicationServices>=10",
+    "pyobjc-framework-Cocoa>=10",
+    "pyobjc-framework-Quartz>=10",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "req(*ids): requirement ids from SPEC.md this test covers",
+    "layout: windows, tabs, panes, moving live sessions, terminal I/O (L, M, T)",
+    "editor: editor and Markdown (E)",
+    "interactive: interactive agents (IA)",
+    "managed: managed agents through the CLI (MA)",
+    "chaos: property-based tests with fault-injecting harnesses (MA-4, MA-22, R)",
+    "panes: managed agents in the app (AP)",
+    "ui: drives the app through accessibility (needs Accessibility permission)",
+    "robustness: restarts, crashes, isolation, environments (R, P-3)",
+    "install: packaging and installer (I)",
+    "real: real Claude Code / Codex on cheap models (set ACCEPTANCE_REAL=1)",
+    "slow: takes more than ~30 s",
+]

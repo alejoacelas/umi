@@ -1,0 +1,15 @@
+  0.00 meta {"cmd": ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages", "...+6"]}
+  0.00 in  {"type": "control_request", "request_id": "init1", "request": {"subtype": "initialize", "hooks": null}}
+  0.62 out {"type": "control_response", "response": {"subtype": "success", "request_id": "init1", "response": {"commands": [{"name": "deep-research", "description": "Deep research harness \u2014 fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report. (dynamic workflow)", "argumentHint": "", "builtin": true}, {"name": "design", "description": "Grant or revoke Claude agent access to your Design projects", "argumentHint": "consent | revoke", "builtin": true}, {"name": "design-sync", "description": "Push a React design system to claude.ai/design. This runs a converter that bundles the real component code (from Storybook or a bare package) and uploads it. Us...(243)", "argumentHint": "[<project hint, e.g. \"Acme DS\">]", "builtin": true}, {"name": "dataviz", "description": "Use this skill whenever you are about to create ANY chart, graph, plot, dashboard, or data vis
+  0.63 in  "this is not json"
+  0.64 err "Error parsing streaming input line (type=unknown, 16 chars): SyntaxError"
+  0.67 eof "stdout closed"
+  2.63 in  "{\"type\":\"bogus_type\",\"foo\":1}"
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-alejo-m1-dev-terminal-2/f34d6a78-5430-44f1-b0cc-216490fe8752/scratchpad/agent-research/probes/probe_c.py", line 197, in <module>
+    globals()[which]()
+  File "/private/tmp/claude-501/-Users-alejo-m1-dev-terminal-2/f34d6a78-5430-44f1-b0cc-216490fe8752/scratchpad/agent-research/probes/probe_c.py", line 182, in C8
+    c.write_raw('{"type":"bogus_type","foo":1}')
+  File "/private/tmp/claude-501/-Users-alejo-m1-dev-terminal-2/f34d6a78-5430-44f1-b0cc-216490fe8752/scratchpad/agent-research/probes/probelib.py", line 92, in write_raw
+    self.p.stdin.write((s if isinstance(s, str) else json.dumps(s)) + "\n")
+BrokenPipeError: [Errno 32] Broken pipe

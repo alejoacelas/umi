@@ -1,0 +1,22 @@
+{
+  "name": "YourProduct",
+  "app": "/path/to/YourProduct.app",
+  "executable": "Contents/MacOS/<executable>",
+  "cli": "Contents/MacOS/<cli name>",
+  "launch_args": ["--window-save-state=never"],
+  "restore_launch_args": [],
+  "env": {
+    "state_dir": "<STATE_DIR_ENV_VAR>",
+    "claude_bin": "<CLAUDE_BIN_ENV_VAR>",
+    "codex_bin": "<CODEX_BIN_ENV_VAR>"
+  },
+  "installer": {
+    "command": ["bash", "/path/to/install.sh", "--from", "{app}"],
+    "env": {"dest": "<DEST_ENV_VAR>", "bin": "<BIN_DIR_ENV_VAR>",
+            "no_default": "<NO_DEFAULT_ENV_VAR>", "no_launch": "<NO_LAUNCH_ENV_VAR>"}
+  },
+  "build_cli": {"source": "/path/to/cli/source", "command": ["bash", "{src}/build.sh", "--out", "{out}"]},
+  "restoration_safe": false,
+  "other_products": ["com.mitchellh.ghostty", "dev.wraith.terminal", "dev.shade.terminal"],
+  "other_names": ["Ghostty", "Wraith", "Shade"]
+}

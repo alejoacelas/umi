@@ -1,0 +1,15 @@
+{"t": 0.0, "k": "meta", "m": {"cmd": ["codex", "app-server", "--listen", "stdio://"]}}
+{"t": 0.0, "k": "in", "m": {"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "probe", "title": null, "version": "0"}, "capabilities": {"experimentalApi": true, "requestAttestation": false}}}}
+{"t": 0.03, "k": "out", "m": {"id": 1, "result": {"userAgent": "probe/0.160.0 (Mac OS 26.3.1; arm64) Apple_Terminal/466 (probe; 0)", "codexHome": "/Users/alejo-m1/.codex", "platformFamily": "unix", "platformOs": "macos"}}}
+{"t": 0.03, "k": "in", "m": {"method": "initialized"}}
+{"t": 0.03, "k": "out", "m": {"method": "remoteControl/status/changed", "params": {"status": "disabled", "serverName": "Alejos-MacBook-Air-2.local", "installationId": "d5878efc-96d2-47a7-8113-2448e0929d81", "environmentId": null}, "emittedAtMs": 1791239011989}}
+{"t": 0.03, "k": "in", "m": {"id": 2, "method": "thread/resume", "params": {"threadId": "01a10e2a-2a24-7792-893c-bee02d437054", "excludeTurns": true}}}
+{"t": 0.05, "k": "err", "m": "\u001b[2m2026-10-05T22:23:32.011612Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_core::session::session\u001b[0m\u001b[2m:\u001b[0m failed to initialize thread persistence: thread-store conflict: thread 01a10e2a-2a24-7792-893c-bee02d437054 already has an active writer"}
+{"t": 0.05, "k": "err", "m": "\u001b[2m2026-10-05T22:23:32.011919Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_core::session\u001b[0m\u001b[2m:\u001b[0m Failed to create session: thread-store conflict: thread 01a10e2a-2a24-7792-893c-bee02d437054 already has an active writer"}
+{"t": 0.05, "k": "out", "m": {"error": {"code": -32600, "message": "thread 01a10e2a-2a24-7792-893c-bee02d437054 already has an active writer"}, "id": 2}}
+{"t": 0.29, "k": "out", "m": {"method": "account/updated", "params": {"authMode": "chatgpt", "planType": "pro"}, "emittedAtMs": 1791239012251}}
+{"t": 2.06, "k": "in", "m": {"id": 3, "method": "turn/start", "params": {"threadId": "01a10e2a-2a24-7792-893c-bee02d437054", "clientUserMessageId": "973a05d0-38e2-4441-a66f-fceb8a2d5552", "input": [{"type": "text", "text": "Also say kiwi.", "text_elements": []}]}}}
+{"t": 2.06, "k": "out", "m": {"error": {"code": -32600, "message": "thread not found: 01a10e2a-2a24-7792-893c-bee02d437054"}, "id": 3}}
+{"t": 27.3, "k": "meta", "m": "close stdin"}
+{"t": 27.31, "k": "eof", "m": "stdout closed"}
+{"t": 27.53, "k": "meta", "m": {"exit_code": 0}}

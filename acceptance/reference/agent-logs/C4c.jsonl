@@ -1,0 +1,9 @@
+{"t": 0.01, "k": "meta", "m": {"cmd": ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages", "--permission-prompt-tool", "stdio", "--model", "haiku", "--resume", "f4bf0e51-b815-4651-af1a-c11fb871f76f", "--session-id", "dd12db61-f384-4c34-ba73-160029dc3c5e"]}}
+{"t": 0.01, "k": "in", "m": {"type": "control_request", "request_id": "init1", "request": {"subtype": "initialize", "hooks": null}}}
+{"t": 0.27, "k": "err", "m": "Error: --session-id can only be used with --continue or --resume if --fork-session is also specified."}
+{"t": 0.28, "k": "eof", "m": "stdout closed"}
+{"t": 10.02, "k": "in", "m": {"type": "user", "message": {"role": "user", "content": "What was the codeword? Reply with one word."}, "parent_tool_use_id": null, "session_id": "default", "uuid": "9b888469-af39-4891-b6c9-05a10792ddf0"}}
+{"t": 10.02, "k": "meta", "m": "write failed: BrokenPipeError(32, 'Broken pipe')"}
+{"t": 51.04, "k": "meta", "m": "close stdin"}
+{"t": 51.05, "k": "meta", "m": "close err BrokenPipeError(32, 'Broken pipe')"}
+{"t": 51.25, "k": "meta", "m": {"exit_code": 1}}
