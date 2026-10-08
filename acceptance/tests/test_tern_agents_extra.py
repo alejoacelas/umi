@@ -275,3 +275,54 @@ def test_a_partial_log_line_left_by_a_crash_loses_nothing_after_it(fresh):
     other.quit_app()
     other.start_app()
     assert other.read_reply(sid, message) == f"ECHO after the cut {n}"
+
+
+# ---- review round 2 regressions ------------------------------------------------------------------
+
+@pytest.mark.req("MA-25", "MA-10")
+@pytest.mark.parametrize("kind", ["claude", "codex"])
+def test_a_redirect_survives_its_harness_dying(inst, started, kind):
+    """A redirect waits for the turn it interrupted; if the harness dies instead, the redirect is
+    delivered after the resume, not held until a deadline that no longer applies."""
+    sid = started(kind, "ECHO warm-up")
+    inst.wait(sid)
+    h = nonce()
+    inst.send(sid, f"HANG {h}")
+    pid = wait_until(lambda: next((r["pid"] for r in receipts_with(inst, h)), None), 15, message="the hung turn")
+    r = nonce()
+    message = inst.json("agent", "send", sid, "--interrupt", f"ECHO redirected {r}")["message"]["id"]
+    time.sleep(1)
+    os.kill(pid, 9)
+    t0 = time.time()
+    code, out = inst.wait(sid, "--message", message, timeout=60)
+    assert out["status"] == "DONE" and r in out["reply"], out
+    assert time.time() - t0 < 20, "the redirect waited for a deadline of a turn that was already gone"
+    delivered_once(inst, r)
+
+
+@pytest.mark.req("MA-24", "R-10")
+@pytest.mark.slow
+def test_a_cut_off_turn_whose_folder_is_gone_fails_at_once(fresh, tmp_path):
+    other = fresh(prefix="acc-x-nofolder-")
+    folder = str(tmp_path / "project")
+    os.makedirs(folder)
+    sid = other.start_agent("claude", "ECHO warm-up", cwd=folder)
+    other.wait(sid)
+    n = nonce()
+    message = other.send(sid, f"SLEEP 30 {n}")
+    delivered_once(other, n, timeout=15)
+    other.kill_everything()
+    import shutil
+    shutil.rmtree(folder)
+    other.start_app()
+    code, out = other.wait(sid, "--message", message, timeout=30)
+    assert code == 3 and out["status"] == "ERROR" and "folder" in (out.get("error") or ""), out
+
+
+@pytest.mark.req("AP-3", "L-4")
+def test_a_placement_that_names_nothing_fails_and_starts_nothing(inst):
+    name = "bad-place-" + nonce()
+    proc = inst.cli("agent", "start", "claude", "--split", "--pane", "no-such-pane-" + nonce(), "--name", name,
+                    "--env", "FAKE_AGENT_DIR=" + inst.fake_dir, "ECHO hi", check=False)
+    assert proc.returncode == 1 and proc.stderr.strip(), proc.stdout + proc.stderr
+    assert not [s for s in inst.agents() if s["name"] == name], "a session started anyway"
