@@ -326,3 +326,37 @@ def test_a_placement_that_names_nothing_fails_and_starts_nothing(inst):
                     "--env", "FAKE_AGENT_DIR=" + inst.fake_dir, "ECHO hi", check=False)
     assert proc.returncode == 1 and proc.stderr.strip(), proc.stdout + proc.stderr
     assert not [s for s in inst.agents() if s["name"] == name], "a session started anyway"
+
+
+# ---- review round 3 regressions ------------------------------------------------------------------
+
+@pytest.mark.req("R-1")
+@pytest.mark.slow
+def test_quitting_right_after_a_harness_crash_leaves_nothing(fresh):
+    """The harness crashes and the app quits while its detached child is still being cleaned up:
+    the child must not survive the quit."""
+    other = fresh(prefix="acc-x-crashquit-")
+    sid = other.start_agent("claude", "ECHO warm-up")
+    other.wait(sid)
+    other.send(sid, "SPAWN_STUBBORN")
+    other.wait(sid)
+    path = os.path.join(other.fake_dir, "stubborn.pid")
+    child = int(wait_until(lambda: os.path.exists(path) and open(path).read().strip(), 15, message="the child"))
+    other.send(sid, "CRASH")
+    other.wait(sid)
+    other.quit_gracefully(timeout=60)
+    wait_until(lambda: not alive(child), 10, message="the detached child is gone after the quit")
+
+
+@pytest.mark.req("R-7", "L-4")
+def test_an_explicit_target_overrides_a_stale_caller(inst, win):
+    """A CLI carrying the identity of a pane that's gone still creates a tab where --pane or
+    --window says."""
+    gone = inst.json("tab", "new", "--window", win["window"])["pane"]
+    pane_env = {"TERN_PANE_ID": gone, "TERN_INSTANCE": json.loads(inst.cli("--json", "ping").stdout)["instance"]}
+    inst.cli("pane", "close", gone)
+    time.sleep(0.5)
+    created = inst.json("tab", "new", "--pane", win["pane"], "--no-focus", env=pane_env)
+    assert created["window"] == win["window"]
+    created = inst.json("tab", "new", "--window", win["window"], "--no-focus", env=pane_env)
+    assert created["window"] == win["window"]
