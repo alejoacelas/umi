@@ -35,3 +35,4 @@ vgcore.*
 
 # Tern release output
 /dist/out/
+macos/TernTests/__pycache__/
