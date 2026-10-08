@@ -57,6 +57,12 @@ No existing test was changed or weakened in phase 2. Additions:
   `turn/completed`, its `item/completed` n seconds later); trigger and receipt semantics are
   unchanged, and `WAKE` on Codex still replies `wake: not supported by codex`, now verified. All
   fake self-tests pass (43).
+- **Fake Codex: answers are matched to server requests by id and type** (`fakes/fake_codex.py`,
+  self-test `t_codex_answer_id_type`). A Tern bug answered request `0` with id `false`; the real
+  codex-cli 0.160.0 ignored that answer and left the approval pending (seen in a protocol trace of
+  the real CLI, with `TERN_AGENT_TRACE`), while the fake accepted it because Python treats
+  `False == 0`. The fake now ignores an answer whose id is a boolean, as the real server did. Trigger
+  and receipt semantics are unchanged; all 44 self-tests pass.
 - **`tests/test_tern_agents_extra.py`**: tests for risks of this build's managed-agent design:
   Codex background tasks counted and never taken for a turn; a message the product died while
   handing over is delivered exactly once after the restart; a session that never received a message
@@ -64,7 +70,11 @@ No existing test was changed or weakened in phase 2. Additions:
   off by a crash continues; stopping a session while its harness is still starting; a harness that
   isn't installed fails clearly; `tern` inside an agent is this build's CLI; a redirect during a
   self-started turn; watching a turn that already finished notifies at once; `update --now` asks
-  before cutting turns off (R-10).
+  before cutting turns off (R-10); and a regression test for each review finding that could be
+  scripted (a wait outliving its session, a cut-off turn whose conversation or folder is gone, a
+  partial log line, a redirect whose harness dies, an invalid placement, quitting right after a
+  harness crash, an explicit target beating a stale caller, a wait keeping its message, a stopped
+  background command, timeout answers, owner-only session files). 25 tests, all pass.
 - **`app/macos/TernTests/verify_agent_panes.py`** (outside the suite, like phase 1's
   `verify_ui_paths.py`): the agent-pane behaviors the suite checks through the accessibility tree,
   driven through internal `debug.agent.*` methods while the screen is locked. It doesn't count as a

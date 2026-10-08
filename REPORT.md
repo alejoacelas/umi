@@ -1,3 +1,397 @@
+# Tern: phase 2 report (managed agents)
+
+Phase 1's report follows this part, unchanged.
+
+## What was built
+
+Managed Claude Code and Codex sessions, controlled from `tern agent …` and shown in panes.
+
+- **The real harnesses, headless.** Claude runs as `claude -p --input-format stream-json
+  --output-format stream-json --verbose --replay-user-messages --permission-prompt-tool stdio`
+  (the CLI itself, so it loads CLAUDE.md, settings, skills, MCP servers, plugins, hooks and
+  subagents as in your terminal); Codex as a private `codex app-server --listen stdio://` per
+  session (never your shared Codex daemon). Model, effort, access, extra arguments and `--env` are
+  kept for every resume.
+- **Exactly-once delivery, truthful status.** Tern keeps its own queue and hands a harness one
+  message at a time; a message's id is the one the harness echoes back, and delivery is what the
+  harness confirms. Redirects (`send --interrupt [--drop-queued]`) go first and interrupt only the
+  turn that was running; a turn that doesn't stop within 30 s gets its harness restarted.
+- **Send and it runs.** A message to a stopped, crashed or restarted session resumes the same
+  conversation; a turn cut off by a quit, crash or update continues by itself at the next launch
+  with a short note. A conversation the harness no longer has, or a folder that's gone, fails the
+  message at once with the reason.
+- **Nothing left running.** Every process a session starts is found by an environment tag (even
+  detached ones), and stopped with SIGTERM then SIGKILL; leftovers of a killed app are stopped at
+  the next launch.
+- **Composition.** `self`, parents, `agent watch --notify` (a supervisor gets a follow-up when a
+  worker's turn ends, needs input or exits), worker reports (`agent report`, `agent wait
+  --report`), what each worker loaded (`startup`, with a warning line when an MCP server failed or
+  needs auth), approvals and questions (allow once / always for the session / deny; one answer per
+  question), MCP elicitation (Codex).
+- **Workers know their situation.** A few appended system-prompt lines (Claude) or developer
+  instructions (Codex): a managed session nobody may be watching, its name, id, parent and
+  folder, and how to report and reach other sessions.
+- **Sessions in panes.** A session is drawn over an ordinary terminal pane (its shell, in the
+  session's folder, is a toggle away), so it splits, moves, swaps, zooms, closes and undoes, drags
+  and comes back after a restart like any pane. The view shows both sides (Markdown replies, code
+  set apart), tool calls that expand to their output, cards for approvals and questions, queued
+  messages, and a composer (Enter sends, Shift+Enter adds a line, Esc interrupts; drafts are kept).
+  `agent start` opens a new tab by default without taking focus; `--focus`, `--split`,
+  `--new-window`, `--background`. The sidebar's second line shows a session's status and activity;
+  ⌃⌘J jumps to the session that needs you; the command palette lists every session. Desktop
+  notifications when a session needs you or finishes out of sight.
+- **Phase 1's open item** fixed: every editor tab, the active one included, stays readable in a
+  narrow panel (the Preview/Source control moves to a row of its own when it doesn't fit).
+
+Where things are:
+
+| Path | What |
+|---|---|
+| `app/macos/Sources/Features/Tern/Agents/` | the engine (`TernAgentSession`, `TernAgents`), drivers (`TernClaudeDriver`, `TernCodexDriver`), processes (`TernHarnessProcess`, `TernProcessTree`), environment (`TernAgentEnvironment`), storage (`TernAgentStore`), RPC (`TernAgentRPC`), panes (`TernAgentUI`, `TernAgentPane`, `TernAgentTranscriptRenderer`) |
+| `app/macos/TernCLI/agent.swift` | `tern agent …` |
+| `<state dir>/sessions/<id>/` | a session's `session.json` and `log.jsonl` |
+| `acceptance/tests/test_tern_agents_extra.py` | tests added for this design's risks |
+| `app/macos/TernTests/verify_agent_panes.py` | agent-pane UI paths checked without the accessibility tree |
+| `acceptance/reference/agent-probes/probe_phase2b.py`, `agent-logs/X15wake*.jsonl` | the Codex self-started-turn probe |
+
+## How your orchestrator uses the CLI
+
+Inside a Tern pane or a managed session, `tern` is on PATH and reaches the right instance. Session
+names make good slugs.
+
+```sh
+# Start (prints the session id). Full access, its own worktree, a model and effort; the pointer is
+# the first message. Shown in a new tab without taking focus; --background shows nothing.
+tern agent start claude --name fix-login --worktree fix-login --full-access --model opus --effort high \
+  "Do the task in .supervise/fix-login/task.md"
+tern agent start codex --name review-api --full-access --model gpt-6-luna --effort low \
+  -- -c model_verbosity=low        # anything after -- goes to the harness
+
+# Wait for the turn to end: DONE 0, NEEDS_INPUT 2, INTERRUPTED/FAILED/EXITED/ERROR/CANCELLED 3,
+# TIMEOUT 124. Prints the status, then the reply (or the pending questions). It keeps waiting
+# across a Tern restart.
+tern agent wait fix-login --timeout 1200
+# Or wait for the worker's own verdict: done 0, blocked 2, failed 3, timeout 124 (+ harness state).
+tern agent wait fix-login --report --timeout 3600
+
+# Read: the last reply, a given message's reply, or the transcript.
+tern agent read fix-login
+tern agent read fix-login --transcript --last 30
+
+# Follow up (queued if it's busy; a stopped session resumes). Prints the message id.
+m=$(tern agent send fix-login "The test still fails on CI; check the timezone handling.")
+tern agent wait fix-login --message "$m"
+
+# Redirect: interrupt what it's doing and make this next (--drop-queued drops older follow-ups).
+tern agent send fix-login --interrupt "Stop: don't touch the schema. Revert that and continue."
+
+# Answer what it asks (when not in full access): approvals and questions.
+tern agent info fix-login                    # shows pending requests with their ids
+tern agent approve fix-login [r3] [--always] # deny: tern agent deny fix-login --message "why"
+tern agent answer fix-login --answer 1=blue --answer 2=L
+
+# Get woken instead of polling: a follow-up message arrives in SUPERVISOR's session.
+tern agent watch fix-login --notify self     # from inside a managed session
+# Claude Code orchestrator in a pane: run `tern agent wait …` with run_in_background.
+
+# Status, stop, list, resume after a restart.
+tern agent ls                                 # every session, status, latest report
+tern agent interrupt fix-login                # stop the turn, keep the session
+tern agent stop fix-login                     # end its work and everything it started; resumable
+tern agent rm fix-login --force               # forget it
+```
+
+Workers report with `tern agent report done|blocked|failed "summary"` (they're told how). An idle
+harness only means nothing is running now, not that the task is done, and a Claude worker can start
+working again by itself when a background command it started finishes; `agent wait --report` and
+`agent info` show the worker's verdict next to what the harness says.
+
+For the `supervise-workers` skill, the Tern track is: write the task file, `tern agent start … "Do
+the task in .supervise/<slug>/task.md"`, `tern agent wait <slug>` (or `--report`), read the report,
+check the evidence, `tern agent send <slug> …` to follow up, `tern agent stop <slug>` when accepted,
+`tern agent ls` to rebuild state after a restart. A managed orchestrator can replace the watcher
+scripts with `tern agent watch <slug> --notify self`.
+
+
+## Status
+
+From the definitive run on a build of the released commit (`ACCEPTANCE_REAL=1 uv run pytest --target targets/tern.json`,
+fakes and real agents together): **216 passed, 15 skipped, 0 failed** (`logs/p2-suite-final.log`).
+The 15 skipped are all accessibility-tree UI tests: the Mac's screen was locked for the whole run,
+and macOS hides the tree then (TEST_CHANGES.md §1). Their behaviors were checked another way, and
+a skip is never counted as a pass below.
+
+- **Real agents** (`ACCEPTANCE_REAL=1 … -m real`, Claude haiku and Codex gpt-6-luna at low effort):
+  16/16 pass, in the definitive run and on their own (3.5 min).
+- **Extra tests** for this design's risks (`tests/test_tern_agents_extra.py`): 25, all pass (in the run above).
+- **Fake harness self-tests** (`fakes/test_fakes.py`): 44/44.
+- **UI paths without the accessibility tree:** `app/macos/TernTests/verify_agent_panes.py` 36/36 (typing a follow-up and Enter, Esc, the composer's focus, questions and approvals answered from the cards, the shell toggle, drafts across toggles and moves, Undo of a closed agent pane, the transcript after reopening and after a restart, ⌃⌘J); phase 1's `verify_ui_paths.py` 43/43.
+- Every fixed- and core-tier requirement passes its automated tests, except where the only tests are
+  the skipped UI tests (L-9, M-3, E-4, E-5, AP-1, AP-5, AP-9); those behaviors pass in the scripts above
+  (AP-9: no "new agent" control exists; the S-1/S-2 screenshots show none).
+- Negotiable requirements: all their automated tests pass (MA-14, MA-16, IA-2, AP-11); the written
+  ones (AP-6, AP-7, AP-8, AP-10) are judged below. COMPROMISES.md lists what was traded, not test failures.
+
+Full table (`acceptance/results/traceability.md` lists the test names):
+
+| Requirement | Tier | Kind | Tests | UI tests skipped (locked screen) | Written check |
+|---|---|---|---|---|---|
+| P-1 | Fixed | A | pass |  |  |
+| P-2 | Fixed | A | pass |  | pass; part by hand not judged |
+| P-3 | Fixed | A | pass |  |  |
+| P-4 | Fixed | A | pass |  |  |
+| I-1 | Fixed | A | pass |  |  |
+| I-2 | Fixed | A | pass |  |  |
+| I-3 | Fixed | W | written check |  | pass |
+| I-4 | Fixed | A | pass |  |  |
+| I-5 | Fixed | W | pass |  | pass; part by hand not judged |
+| L-1 | Fixed | A | pass |  |  |
+| L-2 | Fixed | A | pass |  |  |
+| L-3 | Fixed | A | pass |  |  |
+| L-4 | Fixed | A | pass |  |  |
+| L-5 | Fixed | A | pass |  |  |
+| L-6 | Fixed | A | pass |  |  |
+| L-7 | Fixed | A | pass |  |  |
+| L-8 | Fixed | A | pass |  |  |
+| L-9 | Fixed | W | skipped (locked screen) | test_shortcuts_are_menu_items, test_agent_shortcuts_are_menu_items; the same paths pass in verify_ui_paths.py, verify_agent_panes.py | pass; part by hand not judged |
+| M-1 | Fixed | A | pass |  |  |
+| M-2 | Fixed | A | pass |  |  |
+| M-3 | Fixed | A | skipped (locked screen) | test_undo_redo_of_moves; the same paths pass in verify_ui_paths.py |  |
+| M-4 | Fixed | W | written check |  | not judged (by hand) |
+| M-5 | Fixed | A | pass |  |  |
+| M-6 | Fixed | A | pass |  |  |
+| T-1 | Fixed | A | pass |  |  |
+| T-2 | Fixed | A | pass |  |  |
+| T-3 | Fixed | A | pass |  |  |
+| T-4 | Fixed | A | pass |  |  |
+| T-5 | Fixed | A | pass |  |  |
+| T-6 | Fixed | A | pass |  |  |
+| T-7 | Fixed | A | pass |  |  |
+| S-1 | Fixed | W | written check |  | pass |
+| S-2 | Fixed | A+W | pass | test_no_new_agent_form_and_no_agents_section | pass |
+| S-3 | Fixed | W | written check |  | pass; part by hand not judged |
+| S-4 | Fixed | W | written check |  | not judged (by hand) |
+| S-5 | Fixed | W | written check |  | pass |
+| S-6 | Fixed | W | written check |  | pass |
+| E-1 | Fixed | A+W | pass |  | pass |
+| E-2 | Fixed | A+W | pass | test_toggle_shows_the_source; the same paths pass in verify_ui_paths.py | pass |
+| E-3 | Fixed | A+W | pass | test_dirty_documents_are_not_closed_silently_and_save_works; the same paths pass in verify_ui_paths.py | pass; part by hand not judged |
+| E-4 | Fixed | A+W | skipped (locked screen) | test_follows_changes_on_disk; the same paths pass in verify_ui_paths.py | pass |
+| E-5 | Fixed | A+W | skipped (locked screen) | test_non_utf8_files_keep_their_encoding; the same paths pass in verify_ui_paths.py | pass |
+| E-6 | Fixed | A | pass |  |  |
+| E-7 | Fixed | W | written check |  | pass; part by hand not judged |
+| E-8 | Fixed | W | written check |  | not judged (by hand) |
+| E-9 | Fixed | A | pass |  |  |
+| IA-1 | Core | A+W | pass |  | pass |
+| IA-2 | Negotiable | A | pass |  |  |
+| IA-3 | Core | A | pass |  |  |
+| IA-4 | Core | A | pass |  |  |
+| MA-1 | Core | A | pass |  |  |
+| MA-2 | Core | A | pass |  |  |
+| MA-3 | Core | A | pass | test_follow_up_typed_into_the_pane (both); the same paths pass in verify_agent_panes.py |  |
+| MA-4 | Core | A | pass |  |  |
+| MA-5 | Core | A | pass |  |  |
+| MA-6 | Core | A | pass |  |  |
+| MA-7 | Core | A | pass |  |  |
+| MA-8 | Core | A | pass | test_escape_in_the_pane_interrupts; the same paths pass in verify_agent_panes.py |  |
+| MA-9 | Core | A | pass |  |  |
+| MA-10 | Core | A | pass |  |  |
+| MA-11 | Core | A | pass |  |  |
+| MA-12 | Core | A | pass |  |  |
+| MA-13 | Core | A | pass |  |  |
+| MA-14 | Negotiable | A | pass |  |  |
+| MA-15 | Core | A | pass |  |  |
+| MA-16 | Negotiable | A | pass |  |  |
+| MA-17 | Core | A | pass |  |  |
+| MA-18 | Core | A | pass |  |  |
+| MA-19 | Core | A | pass |  |  |
+| MA-20 | Core | A | pass |  |  |
+| MA-21 | Core | A | pass |  |  |
+| MA-22 | Core | A | pass |  |  |
+| MA-23 | Core | A | pass |  |  |
+| MA-24 | Core | A | pass |  |  |
+| MA-25 | Core | A | pass |  |  |
+| MA-26 | Core | A | pass |  |  |
+| MA-27 | Core | A | pass |  |  |
+| MA-28 | Core | A | pass |  |  |
+| MA-29 | Core | A | pass |  |  |
+| AP-1 | Core | A+W | skipped (locked screen) | test_follow_up_typed_into_the_pane (both), test_escape_in_the_pane_interrupts, test_pane_shows_status_and_pending_requests; the same paths pass in verify_agent_panes.py | pass; part by hand not judged |
+| AP-2 | Fixed | A | pass | test_undo_close_brings_the_agent_pane_back; the same paths pass in verify_agent_panes.py |  |
+| AP-3 | Fixed | A | pass |  |  |
+| AP-4 | Core | A | pass |  |  |
+| AP-5 | Core | A+W | skipped (locked screen) | test_reopened_pane_shows_everything_in_order, test_pane_after_app_restart_shows_the_earlier_conversation; the same paths pass in verify_agent_panes.py | pass |
+| AP-6 | Negotiable | W | written check |  | not judged (by hand) |
+| AP-7 | Negotiable | W | written check |  | not judged (by hand) |
+| AP-8 | Negotiable | W | written check |  | not judged (by hand) |
+| AP-9 | Fixed | A | skipped (locked screen) | test_no_new_agent_form_and_no_agents_section |  |
+| AP-10 | Negotiable | W | written check |  | pass; part by hand not judged |
+| AP-11 | Negotiable | A | pass |  |  |
+| R-1 | Core | A | pass |  |  |
+| R-2 | Core | A | pass |  |  |
+| R-3 | Core | A | pass | test_pane_after_app_restart_shows_the_earlier_conversation; the same paths pass in verify_agent_panes.py |  |
+| R-4 | Core | A | pass |  |  |
+| R-5 | Core | A | pass |  |  |
+| R-6 | Core | A | pass |  |  |
+| R-7 | Core | A | pass |  |  |
+| R-8 | Core | A | pass |  |  |
+| R-9 | Core | A | pass |  |  |
+| R-10 | Core | A | pass |  |  |
+
+**UI tests to run with the screen unlocked** (Questions, 1): `test_follow_up_typed_into_the_pane[claude]`,
+`[codex]`, `test_escape_in_the_pane_interrupts`, `test_pane_shows_status_and_pending_requests`,
+`test_undo_close_brings_the_agent_pane_back`, `test_reopened_pane_shows_everything_in_order`,
+`test_pane_after_app_restart_shows_the_earlier_conversation`, `test_no_new_agent_form_and_no_agents_section`
+(phase 2), and phase 1's `test_shortcuts_are_menu_items`, `test_agent_shortcuts_are_menu_items`,
+`test_undo_redo_of_moves`, `test_toggle_shows_the_source`, `test_dirty_documents_are_not_closed_silently_and_save_works`,
+`test_follows_changes_on_disk`, `test_non_utf8_files_keep_their_encoding`.
+
+## Decisions
+
+Details, candidates, costs and evidence: DECISIONS.md §9–§17.
+
+| # | Decision | Pick | Evidence |
+|---|---|---|---|
+| 9 | Controlling a harness | The real CLIs headless: `claude -p` stream-json (the CLI, not the SDK, so it loads the terminal's configuration) and a private `codex app-server` per session over stdio. Not Claude's background agents (no programmatic follow-up API, the user's shared daemon) and not the TUI (screen control). | The real-agent tests (project CLAUDE.md/AGENTS.md, a project skill, a project MCP server + hook + subagent in a never-opened folder and after a resume, approvals, interrupts, orchestration, cut-off turns); flags checked against Claude Code 2.1.292 and codex-cli 0.160.0 |
+| 10 | Message and turn tracking | The product's own queue, one message in the harness at a time; ids the harness echoes; delivery = the harness's confirmation; redirects go first and interrupt only the running turn (30 s → restart); after a product crash Codex is asked which messages its thread has | `test_chaos.py` (Hypothesis + bursts under 8 chaos seeds per harness), the MA-4/MA-25 tests, extra tests for the crash and handover windows; the Codex probe (no self-started turns) |
+| 11 | Where sessions live | The app owns the harnesses; sessions stop at quit; everything on disk; send-and-it-runs; cut-off turns continue with a note | The MA-24, R-2, R-3, R-8, R-10 tests (fakes and real) |
+| 12 | Stopping everything | Session-leader harnesses with no inherited descriptors; every descendant found by an environment tag (detached ones too) plus the process group; SIGTERM then SIGKILL; leftovers of a killed app stopped at launch | MA-9, MA-10, R-1 tests (SIGTERM-ignoring harness and detached child) |
+| 13 | Sessions in panes | Drawn over an ordinary terminal leaf (phase 1's door): every pane operation and restoration unchanged; the shell underneath is a toggle away | AP-2, AP-3, AP-4, AP-11 tests; `verify_agent_panes.py` |
+| 14 | Focus | Non-focusing opens edit the model only; an agent pane's keyboard focus is its composer | `test_opening_without_focus_never_moves_the_users_focus`; `verify_agent_panes.py` |
+| 15 | Environment and awareness | The login shell's environment (never the caller's), the app's own `tern` first on PATH, a few appended instructions about the session; startup report with flags | MA-20, MA-27, MA-29 tests (fakes and real) |
+| 16 | Persistence | A folder per session (`session.json` + append-only `log.jsonl`), owner-only; tool output clipped in storage | R-2, R-8, R-9 tests |
+
+## Compromises
+
+Full table: COMPROMISES.md (phase 2 part). No fixed- or core-tier test fails, so none is an
+accepted test failure. In short:
+
+- **No steering:** a follow-up waits for the running turn to end (negotiable; it keeps exactly-once
+  delivery and redirects exact).
+- **The pane renders the session**, not the harness's own TUI (the shell is a toggle away).
+- **Sessions stop when Tern quits** (your choice); running turns are interrupted cleanly and continue
+  after the next launch, with a note.
+- **After a crash of the whole product**, a message written to Claude in the instant before counts
+  as delivered (Claude can't be asked; Codex is).
+- **Codex:** a deny carries no message; MCP elicitation forms and links are Codex-only.
+- `agent wait` on Codex holds its answer up to 5 s while MCP servers report in.
+- Tool output is clipped in storage (first 12 KB and last 4 KB).
+- `update --now` refuses while agent turns run unless `--force`.
+- Agent notifications are off in isolated test instances; an agent pane drags by the grip in its
+  header.
+
+## Codex review
+
+`codex review --base 4d4a1fe32 -c model_reasoning_effort="high"` in `app/` (logs:
+`logs/p2-review1.log` … `p2-review5.log`). After each round, every high (P1) and moderate (P2)
+finding was fixed, the app rebuilt, the full suite rerun (and the extra tests and
+`verify_agent_panes.py`), and a regression test added where the finding could be scripted.
+
+| Round | Findings | What was fixed |
+|---|---|---|
+| 1 | 2 P1, 9 P2 | "Allow always" for Codex permission requests matched on a truncated key (now the whole canonical JSON); `agent wait` evaluated and registered in two steps (now one step on the agent queue); recovered messages whose conversation can't resume now fail with the reason; a partial last log line left by a crash is cut off before new entries are appended; stale continuation notes are dropped from a restored queue; a redirect arriving before a turn is acknowledged interrupts that turn when it starts; MCP form answers take the schema's types; agent notifications are presented while Tern is active and clicks are handled on the main thread; waits end when their session is removed; an update download rechecks running turns. |
+| 2 | 2 P1, 7 P2 | Writes to a harness happen on its own queue (a harness that stops reading can't block every session); after a crash a Codex message is only counted delivered if the thread's history has it (a fresh thread counts as "none"); a redirect is cleared when its harness exits; cut-off messages fail when the session can't start (folder gone, harness missing); `agent interrupt` before Codex names the turn is applied when it does; an invalid `--pane`/`--window` fails before anything starts; notification authorization is requested; `agent open` of a pane showing its shell shows the session; multi-select questions. |
+| 3 | 1 P1, 3 P2 | The final process sweep at quit runs even when no harness is live (a detached child of a harness that just crashed survived a quit); a self-started turn's continuation keeps its recovery marker until it ends; an explicit `--pane`/`--window` overrides a stale caller identity (a regression from phase 1's round 5, in `tab new` and `tern claude`); no Decline button for Codex questions (its protocol can't decline). |
+| 4 | 2 P1, 2 P2 | The process group a harness led is cleaned up after it exits (a child that cleared its environment escaped the tag), safely: only when no process holds the group's id; every session, not only live ones, is marked at quit (a launching session could start during the shutdown); a wait keeps the message that was latest when it began; notifications when the session's pane shows its shell or is behind a zoomed pane. |
+| 5 | 1 P1, 4 P2 | A recovered turn whose resumed harness dies at startup is retried, then failed with the reason (it stayed pending); session files are owner-only (`--env` values may be secrets); background commands are tracked per harness process (a stopped one was counted again); timeout answers name their own message; a wait whose client disconnected is dropped. Also found while checking: `agent stop` now ends a pending recovery. |
+
+Round 5 was the last round the brief allows, so its fixes haven't had a review of their own. They
+have regression tests where they could be scripted, and the suite, the extra tests and both
+verification scripts pass on the released build.
+
+Found outside the reviews, while testing: Codex approval answers carried request id `0` as `false`
+(a JSON conversion bug) and the real Codex ignored them; the fake accepted them (Python treats
+`False == 0`). Fixed in the app, and the fake now matches ids by type, with a self-test. The agent
+pane overflowed narrow panes, the screenshot command painted terminals over agent panes, and the
+editor's tab row hid the active file in narrow panels (phase 1's open item); all fixed.
+
+## Written checks
+
+`checks/run_checks.py` (now with the agent checks) and `checks/tern_extra_evidence.py` ran on the
+final build; every screenshot was looked at and judged (`checks/tern_verdicts.py` writes the
+verdicts into `acceptance/results/checks/REPORT.md`, which also has the steps for everything NOT
+JUDGED). The screen was locked, so anything needing hands or eyes on the live window is NOT JUDGED.
+
+| Check | Verdict | Left for a person |
+|---|---|---|
+| S-1 | PASS |  |
+| S-3 | PASS | Close and pin controls on hover |
+| S-4 | NOT JUDGED | all of it |
+| S-5 | PASS |  |
+| S-6 | PASS |  |
+| S-2 | PASS |  |
+| P-2 | PASS | Choosing the menu item and seeing its dialogs |
+| I-5 | PASS | Seeing the window on screen |
+| L-9 | PASS | Pressing the keys on a real keyboard |
+| M-4 | NOT JUDGED | all of it |
+| E-1 | PASS |  |
+| E-2 | PASS |  |
+| E-3 | PASS | The 'Save changes?' dialog when closing with ⌘W |
+| E-4 | PASS |  |
+| E-5 | PASS |  |
+| E-7 | PASS | Clicking a relative link and an #anchor |
+| E-8 | NOT JUDGED | all of it |
+| I-3 | PASS |  |
+| IA-1 | PASS |  |
+| AP-1 | PASS | Typing, Enter, Esc and the card buttons with a real keyboard and mouse (scripted through the pane's controls) |
+| AP-5 | PASS |  |
+| AP-6 | NOT JUDGED | all of it (scripted parts pass) |
+| AP-7 | NOT JUDGED | all of it |
+| AP-8 | NOT JUDGED | all of it |
+| AP-10 | PASS | Expanding a tool call, Shift+Enter, the queued-messages line |
+
+## Release and update (done)
+
+- **Release v0.2.0** published with `app/dist/release.sh --version 0.2.0 --build` to
+  https://github.com/alejoacelas/tern/releases/tag/v0.2.0: `Tern-0.2.0.zip` (22.2 MB, ad-hoc signed),
+  `appcast.json` (SHA-256 and Ed25519 signature), `install.sh`. Nothing else: no source, `acceptance/`,
+  logs or keys. The one-line install command now installs 0.2.0.
+- **The copy installed on this Mac updated itself:** `tern update --check` on /Applications/Tern.app
+  0.1.0 found 0.2.0; `tern update --now` (its own update path) downloaded and verified it, installed
+  it and relaunched. Now: bundle 0.2.0, `tern --version` → 0.2.0, `tern update --check` → "installed
+  0.2.0, latest 0.2.0: up to date", no quarantine, signature verifies. Its window came back; no
+  session was created in your own state.
+- Untouched: /Applications/Shade.app, your other `~/.local/bin` entries, `~/.claude` and `~/.codex`
+  (MA-21/IA-4 tests check the config files don't change).
+
+## Left open
+
+- **Round 5's fixes haven't had a review of their own** (the brief allows five rounds). They have
+  regression tests where scriptable; the suite, extra tests and both scripts pass on the release.
+- **The 15 UI tests** need an unlocked screen (Questions, 1).
+- **Processes that both clear their environment and leave the harness's process group** (for example
+  a tool that runs `env -i setsid …`) can't be found after their harness exits; everything else a
+  session starts is (DECISIONS.md §12).
+- **Claude: a message written in the instant before a crash of the whole product** counts as
+  delivered (COMPROMISES.md); Codex is asked.
+- **Codex MCP elicitation and permission requests were tested with the fake only** (the real
+  approval test covers command approvals); Claude's elicitation isn't surfaced (never observed).
+- **Notifications (AP-7)** are off in test instances and weren't seen on screen.
+- From phase 1, unchanged: `tern-app +version` still prints "Ghostty …"; the SSH terminfo cache
+  lives under Ghostty's folder name; the fish/elvish/nushell `ssh` wrapper edits weren't run.
+
+## Questions for the user
+
+1. **Run the UI tests with the screen unlocked**, Terminal allowed under Privacy & Security →
+   Accessibility: `cd ~/dev/terminal-3/acceptance && uv run pytest --target targets/tern.json -m ui`.
+   The NOT JUDGED written checks list their steps (`acceptance/results/checks/REPORT.md`).
+2. **Steering.** Follow-ups wait for the running turn to end (never injected mid-turn), which keeps
+   delivery exactly-once and redirects exact. Want steering anyway, for Claude at least, knowing it
+   weakens those guarantees in edge cases?
+3. **Default placement.** `agent start` opens a tab without taking focus (`--background` for none,
+   `--focus` to switch to it). Should an orchestrator's workers default to `--background` instead,
+   so dozens of workers don't fill the sidebar?
+4. **Sessions and quitting.** Sessions stop when Tern quits and continue on the next message (turns
+   cut off by the quit continue by themselves). OK to keep, or worth a daemon later?
+5. **`supervise-workers`.** Want a Tern track in the skill (the mapping is under "How your
+   orchestrator uses the CLI")? `tern agent watch <worker> --notify self` replaces the watcher scripts
+   for a managed orchestrator.
+6. **Allow always.** It's per session (remembered by Tern across resumes, never written to your
+   settings). Would you rather "always" write a project rule (Claude's `localSettings`) the way the
+   terminal offers?
+
+
+---------------------------------------------------------------------------------------------------
+
 # Tern: phase 1 report
 
 ## What was built

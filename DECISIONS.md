@@ -309,9 +309,13 @@ killed and app quit), `test_a_send_that_cannot_resume_fails_at_once_and_never_st
 | B. Track descendants by parent links | Reparented processes (launchd) drop out of the tree. Misses everything after a product crash. |
 | C. **Tag by environment**: every harness gets `TERN_SESSION_ID` and `TERN_STATE_DIR`, which everything it starts inherits; the kernel's copy of each process's environment (KERN_PROCARGS2) finds them all, detached or not, even after the product was killed. Plus the process group and descendants. | A process that deliberately scrubs its environment escapes; reading every process's environment costs ~20–50 ms per sweep. |
 
-**Pick: C, with A and B on top.** Harnesses are spawned with `posix_spawn` as session leaders, with
+**Pick: C, with A and B on top.** After a harness exits, the process group it led is swept too
+(a child that cleared its environment stays in that group); a process id isn't reused while a group
+with that id exists, so the group is only touched when no process holds its id. Harnesses are
+spawned with `posix_spawn` as session leaders, with
 no inherited descriptor but their three pipes (`POSIX_SPAWN_CLOEXEC_DEFAULT`: an inherited instance
-lock would block the next launch). Stop: interrupt the running turn, close stdin, SIGTERM the group
+lock would block the next launch); writes to a harness go through its own queue, so one that stops
+reading can't block the others. Stop: interrupt the running turn, close stdin, SIGTERM the group
 and every tagged process, SIGKILL whatever is left after 1.5 s, then sweep again. Harness exits are
 reaped (no zombies). After a crash of the harness, its leftovers are swept the same way before any
 resume. At launch, every process tagged with this instance's state directory (an earlier run's) is

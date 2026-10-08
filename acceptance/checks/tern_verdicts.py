@@ -28,20 +28,8 @@ VERDICTS = {
     "S-2": "PASS: the sidebar runs the full height; Files mode is a project explorer rooted at the focused pane's "
            "repository (S-2-files-mode.png; the check's repository has no files, so extra-S-2-files-nested.png shows "
            "a repository with nested folders); there is no agents section and no new-agent button.",
-    "P-2": "PASS (judged on the installed release, by the CLI rather than the menu): `tern update --check` on "
-           "/Applications/Tern.app 0.1.0 reads only github.com/alejoacelas/tern's feed and answers 'installed 0.1.0, "
-           "latest 0.1.0: up to date'. Sparkle and Ghostty's feed and key are not in the app "
-           "(test_never_offers_another_products_updates). The 'ready' path (installs on quit, or now with Install "
-           "and Relaunch) passes in test_an_older_build_updates_itself and "
-           "test_update_now_relaunches_the_same_instance. Choosing the menu item and seeing its dialogs: NOT JUDGED "
-           "(locked screen; choose Tern > Check for Updates…).",
-    "I-5": "PASS: the release repository's README gives one command, `curl -fsSL "
-           "https://github.com/alejoacelas/tern/releases/latest/download/install.sh | bash`, and explains in a few "
-           "lines what it does. Run on this Mac in a fresh login shell, it installed /Applications/Tern.app 0.1.0 "
-           "with nothing installed first, and the app started (curl sets no quarantine and the installer clears it "
-           "anyway, so there is no Gatekeeper prompt). The first attempt failed on a bash 3.2 quirk in the "
-           "installer; it was fixed and the installer replaced on the release before this run (REPORT.md). Seeing "
-           "the window on screen: NOT JUDGED (locked screen).",
+    "P-2": "PASS (judged on the installed copy, by the CLI rather than the menu): `tern update --check` on /Applications/Tern.app 0.1.0 read only github.com/alejoacelas/tern's feed and found 0.2.0; `tern update --now` downloaded and verified it, installed it and relaunched (0.2.0, pid changed), after which it answers 'installed 0.2.0, latest 0.2.0: up to date'. Sparkle and Ghostty's feed and key are not in the app (test_never_offers_another_products_updates). Choosing the menu item and seeing its dialogs: NOT JUDGED (locked screen; choose Tern > Check for Updates…).",
+    "I-5": "PASS: the release repository's README gives one command, `curl -fsSL https://github.com/alejoacelas/tern/releases/latest/download/install.sh | bash`, and explains in a few lines what it does; `install.sh` is attached to v0.2.0 as well, so the command now installs 0.2.0. It installed 0.1.0 on this Mac in phase 1 with nothing installed first and no Gatekeeper prompt (no quarantine; the updated 0.2.0 bundle has none either and its signature verifies). Seeing the window on screen: NOT JUDGED (locked screen).",
     "L-9": "PASS for the menu side, checked without the accessibility tree: every shortcut is exactly one menu item with that key equivalent, ⌃⌘J included, and choosing ⌘B, ⇧⌘M, Undo/Redo, ⌘S and ⌃⌘J does what it says (⌃⌘J shows and focuses the session that needs the user) (app/macos/TernTests/verify_ui_paths.py 43/43, verify_agent_panes.py 36/36). The command palette lists the same actions, and every managed session ('Show Agent: …'). Pressing the keys on a real keyboard: NOT JUDGED (locked screen). Steps: on a window with two tabs, one split, press each shortcut in CHECKS.md L-9.",
     "M-4": "NOT JUDGED: needs a person (drag). Steps: drag a pane by its grab handle onto another pane's edge, also in "
            "another window (it moves there, program running); drag a tab row up/down (reorders) and onto another "
@@ -62,8 +50,7 @@ VERDICTS = {
            "screen).",
     "E-8": "NOT JUDGED: needs a person. Steps: turn Caps Lock on, focus the editor, press ⌘S, ⇧⌘M and ⌘W. (The "
            "editor compares key equivalents case-insensitively and ignores Caps Lock: TernEditorContainerView.)",
-    "I-3": "PASS: after the real install (which made Tern the default Markdown app), `open README.md` opened the "
-           "file in the installed Tern's editor, rendered (extra-I-3-open-readme.png; `tern editor ls` listed it).",
+    "I-3": "PASS: on the installed copy (updated to 0.2.0), `open README.md` opened the file in Tern's editor, rendered (extra-I-3-open-readme.png; `tern editor ls` listed it).",
     "IA-1": "PASS: `tern claude --tab -- --version` opened a tab whose shell shows `claude --version` typed at the "
             "prompt and Claude Code's own output, exactly as in a plain terminal (IA-1-claude.png).",
     "AP-1": "PASS for what the screenshots show: both sides of the conversation ('You' and the replies), tool activity (✓ Bash lines, ◌ for running ones), the status line ('Claude · needs_input · waiting: Run a command'), and the pending approval and the two questions as cards in the pane (AP-1-approval.png, AP-1-question.png). Typing a follow-up and Enter, Esc interrupting, and answering the approval and the questions from the cards were checked through the pane's own controls without the accessibility tree (verify_agent_panes.py 36/36: the text reaches the agent once, the reply shows, Esc ends the turn INTERRUPTED, Allow and Answer work). With a real keyboard and mouse: NOT JUDGED (locked screen). Steps: `tern agent start claude --split 'ASK_QUESTIONS'` on a fake or any real session; click into the pane, type, press Enter; send a long command and press Esc; click an option and Answer.",
