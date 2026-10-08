@@ -432,6 +432,7 @@
 			);
 			inputPaths = (
 				"$(PROJECT_DIR)/TernCLI/main.swift",
+				"$(PROJECT_DIR)/TernCLI/agent.swift",
 				"$(PROJECT_DIR)/TernCLI/build.sh",
 			);
 			name = "Build Tern CLI";

@@ -209,6 +209,8 @@ class AppDelegate: NSObject,
         // Tern: the control socket comes up before any window exists, so panes created
         // during restoration can already be reached.
         TernControlServer.shared.start()
+        // Managed sessions: load them, clean up after an earlier run, continue cut-off turns.
+        TernAgents.shared.bootstrap()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -935,6 +937,11 @@ class AppDelegate: NSObject,
         didReceive: UNNotificationResponse,
         withCompletionHandler: () -> Void
     ) {
+        let userInfo = didReceive.notification.request.content.userInfo
+        if Thread.isMainThread, MainActor.assumeIsolated({ TernAgentNotifications.handle(userInfo: userInfo) }) {
+            withCompletionHandler()
+            return
+        }
         ghostty.handleUserNotification(response: didReceive)
         withCompletionHandler()
     }

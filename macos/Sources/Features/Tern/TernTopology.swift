@@ -277,6 +277,10 @@ enum TernTopology {
             "title": pane.title,
         ]
         if let name = TernState.shared.paneName(pane.id) { json["name"] = name }
+        if let session = TernAgentUI.shared.session(forPane: pane.id) {
+            json["agent"] = session
+            json["showing"] = TernAgentUI.shared.showingTerminal.contains(pane.id) ? "terminal" : "agent"
+        }
         if let agent = TernState.shared.interactiveAgents[pane.id] {
             var info: [String: Any] = ["kind": agent.kind, "running": agent.running, "command": agent.commandLine]
             if let code = agent.exitCode { info["exit_code"] = code }

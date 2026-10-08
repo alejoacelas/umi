@@ -56,6 +56,14 @@ enum TernShortcuts {
                  action: { renameTab() }),
             Item(title: "Rename Pane…", key: "r", modifiers: [.command, .control, .shift], symbol: "pencil", menu: "Window",
                  action: { renamePane() }),
+            Item(title: "Jump to Agent Needing Input", key: "j", modifiers: [.command, .control], symbol: "exclamationmark.bubble",
+                 menu: "Window", action: { TernAgentUI.shared.jumpToAgentNeedingInput() }),
+            Item(title: "Toggle Agent Pane's Terminal", key: "", modifiers: [], symbol: "terminal", menu: "Window",
+                 action: {
+                     guard let pane = TernTopology.currentPane, TernAgentUI.shared.session(forPane: pane.id) != nil else { return }
+                     TernAgentUI.shared.toggleTerminal(pane)
+                 },
+                 enabled: { TernTopology.currentPane.map { TernAgentUI.shared.session(forPane: $0.id) != nil } ?? false }),
         ]
     }
 
@@ -103,11 +111,22 @@ enum TernShortcuts {
 
     /// The same actions for the command palette.
     static func paletteOptions() -> [CommandOption] {
-        items.map { item in
+        let fixed = items.map { item in
             CommandOption(title: item.title, description: nil, symbols: symbols(item), leadingIcon: item.symbol) {
                 item.action()
             }
         }
+        // Every managed session can be shown (again) from the palette (AP-4).
+        let sessions = TernAgents.queue.sync {
+            TernAgents.shared.sessions.map { ($0.record.id, $0.record.name, $0.status, $0.record.kind.rawValue) }
+        }
+        let agents = sessions.reversed().map { session in
+            CommandOption(title: "Show Agent: \(session.1)", description: "\(session.3) · \(session.2)", symbols: nil,
+                          leadingIcon: "bubble.left.and.text.bubble.right") {
+                _ = try? TernAgentUI.open(session.0, placement: .init(kind: .tab, focus: true), caller: TernCaller([:]))
+            }
+        }
+        return fixed + agents
     }
 
     private static func symbols(_ item: Item) -> [String] {

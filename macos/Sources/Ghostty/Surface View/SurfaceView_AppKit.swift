@@ -836,6 +836,14 @@ extension Ghostty {
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result { focusDidChange(true) }
+            // Tern: while a pane shows a managed session, its keyboard focus is the
+            // session's composer.
+            if result, TernAgentUI.shared.isShowingAgent(id) {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    TernAgentUI.shared.focusComposer(of: self)
+                }
+            }
             return result
         }
 

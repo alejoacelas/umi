@@ -179,9 +179,12 @@ struct TernSidebarTabRow: View {
             ?? tab.effectiveFocusedSurface
         let cwd = focusedPane.map(TernTopology.cwd(of:)).flatMap { $0.isEmpty ? nil : $0 }
         let git = cwd.flatMap { TernPaneContext.git(for: $0) }
-        let primary = tab.name.flatMap { $0.isEmpty ? nil : $0 } ?? cwd.map(TernPaneContext.folderName) ?? tab.title
-        let interactive = focusedPane.flatMap { state.interactiveAgents[$0.id] }
-        let command = interactive == nil ? focusedPane.flatMap { TernPaneContext.command(for: $0) } : nil
+        // A managed session shown in the focused pane (S-3: its status and activity).
+        let agent = focusedPane.flatMap { TernAgentUI.shared.session(forPane: $0.id) }
+            .flatMap { TernAgentUI.shared.snapshot(for: $0) }
+        let primary = tab.name.flatMap { $0.isEmpty ? nil : $0 } ?? agent?.name ?? cwd.map(TernPaneContext.folderName) ?? tab.title
+        let interactive = agent == nil ? focusedPane.flatMap { state.interactiveAgents[$0.id] } : nil
+        let command = interactive == nil && agent == nil ? focusedPane.flatMap { TernPaneContext.command(for: $0) } : nil
 
         HStack(alignment: .top, spacing: 7) {
             Group {
@@ -191,7 +194,7 @@ struct TernSidebarTabRow: View {
                     Image(systemName: "pin.fill").font(.system(size: 8.5))
                         .foregroundColor(TernTheme.textTertiary)
                 } else {
-                    Image(systemName: "terminal").font(.system(size: 10, weight: .medium))
+                    Image(systemName: agent != nil ? "bubble.left" : "terminal").font(.system(size: 10, weight: .medium))
                         .foregroundColor(TernTheme.textTertiary)
                 }
             }
@@ -254,7 +257,19 @@ struct TernSidebarTabRow: View {
                 }
 
                 // Line 2: what the focused pane is doing.
-                if let interactive {
+                if let agent {
+                    HStack(spacing: 5) {
+                        Circle().fill(Color(TernAgentPaneView.color(for: agent.status)))
+                            .frame(width: 5, height: 5)
+                        Text(agent.activity.isEmpty || agent.activity == agent.status
+                             ? "\(agent.kind.rawValue) · \(agent.status)"
+                             : "\(agent.kind.rawValue) · \(agent.status) · \(agent.activity)")
+                            .font(.system(size: 11))
+                            .foregroundColor(agent.status == "working" ? TernTheme.textSecondary : TernTheme.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                } else if let interactive {
                     HStack(spacing: 5) {
                         Circle().fill(interactive.running ? TernTheme.accent : TernTheme.textTertiary)
                             .frame(width: 5, height: 5)

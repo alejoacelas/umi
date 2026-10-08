@@ -115,20 +115,27 @@ func absolutePath(_ path: String, relativeTo base: String? = nil) -> String {
 struct Caller {
     var pane: String?
     var instance: String?
+    /// The managed session this CLI runs in (inside an agent): what `self` names.
+    var session: String?
 
     static func current() -> Caller {
         let env = ProcessInfo.processInfo.environment
-        guard let pane = env["TERN_PANE_ID"], !pane.isEmpty,
-              let instance = env["TERN_INSTANCE"], !instance.isEmpty else { return Caller() }
+        guard let instance = env["TERN_INSTANCE"], !instance.isEmpty else { return Caller() }
         let hash = instance.split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
         guard hash == stateHash(stateDirectory()) else { return Caller() }
-        return Caller(pane: pane, instance: instance)
+        var caller = Caller()
+        if let pane = env["TERN_PANE_ID"], !pane.isEmpty { caller.pane = pane }
+        if let session = env["TERN_SESSION_ID"], !session.isEmpty { caller.session = session }
+        guard caller.pane != nil || caller.session != nil else { return Caller() }
+        caller.instance = instance
+        return caller
     }
 
     var json: [String: Any] {
         var out: [String: Any] = [:]
         if let pane { out["pane"] = pane }
         if let instance { out["instance"] = instance }
+        if let session { out["session"] = session }
         return out
     }
 }
@@ -635,13 +642,21 @@ Editor
   editor mode [preview|source]
   editor default [--dry-run]             make \(productName) the default app for Markdown
 
+Managed agents (see `\(cliName) agent --help`)
+  agent start claude|codex [PROMPT…] …   start a session; prints its id
+  agent send SESSION TEXT…               a follow-up; prints the message id
+  agent wait SESSION [--report]          wait for the turn (or the worker's report)
+  agent read | ls | info | interrupt | stop | resume | approve | deny | answer | watch
+        | open | rename | rm | report
+
 Agents typed into a terminal
   claude [ARGS…] / codex [ARGS…]         a new tab running `claude ARGS…` as if typed
   claude [--tab | --split [DIR] | --window] [--cwd D] [--worktree W] [--name N] [--pane P]
          [--no-focus] -- [ARGS…]
 
 Other
-  update [--check | --now]               check for, download and install updates
+  update [--check | --now [--force]]     check for, download and install updates (--force: even while
+                                         agent turns run; they continue after the relaunch)
   doctor                                 check this machine for what \(productName) needs
   help
 
@@ -1207,7 +1222,7 @@ func interactiveAgentCommand(_ kind: String, _ argv: [String]) {
 // MARK: - Updates
 
 func updateCommand(_ argv: [String]) {
-    let args = parse(argv, ArgSpec(boolean: ["--check", "--now"]))
+    let args = parse(argv, ArgSpec(boolean: ["--check", "--now", "--force"]))
     if args.has("--check") {
         let result = callDict("update.check")
         if jsonOutput {
@@ -1223,7 +1238,9 @@ func updateCommand(_ argv: [String]) {
         }
         return
     }
-    let result = callDict(args.has("--now") ? "update.install_now" : "update.download")
+    // --force: install now even while managed-agent turns run (they're interrupted and
+    // continue after the relaunch); without it, `--now` refuses while turns run (R-10).
+    let result = callDict(args.has("--now") ? "update.install_now" : "update.download", args.has("--force") ? ["force": true] : [:])
     if jsonOutput {
         printJSON(result)
     } else if let message = result["message"] as? String {
@@ -1305,7 +1322,7 @@ func main() {
     case "doctor":
         doctor()
     case "agent", "agents":
-        fail("managed agents aren't available in this version of \(productName) yet")
+        agentCommand(rest)
     case "ping":
         let result = callDict("system.ping")
         if jsonOutput { printJSON(result) } else { print("\(productName) \(result["version"] ?? "?") pid \(result["pid"] ?? "?")") }

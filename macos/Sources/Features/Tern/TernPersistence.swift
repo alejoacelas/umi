@@ -115,6 +115,7 @@ final class TernPersistence {
         case .leaf(let view):
             var pane: [String: Any] = ["id": view.ternID, "cwd": TernTopology.cwd(of: view)]
             if let name = TernState.shared.paneName(view.id) { pane["name"] = name }
+            if let session = TernAgentUI.shared.session(forPane: view.id) { pane["agent"] = session }
             return ["pane": pane]
         case .split(let split):
             return ["split": [
@@ -214,6 +215,8 @@ final class TernPersistence {
             let view = Ghostty.SurfaceView(app, baseConfig: config, uuid: uuid)
             TernState.shared.setStartFolder(view.id, config.workingDirectory ?? NSHomeDirectory())
             if let name = pane["name"] as? String { TernState.shared.setPaneName(view.id, name) }
+            // A pane that showed a managed session shows it again (AP-11).
+            if let session = pane["agent"] as? String { TernAgentUI.shared.attach(view.id, session: session) }
             return .leaf(view: view)
         }
         if let split = json["split"] as? [String: Any],

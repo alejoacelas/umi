@@ -344,10 +344,14 @@ struct TernParams {
 struct TernCaller {
     let pane: String?
     let instance: String?
+    /// The managed session the CLI runs in (TERN_SESSION_ID), if any: what `self` names and
+    /// the parent of sessions it starts (MA-12).
+    let session: String?
 
     init(_ raw: [String: Any]) {
         pane = (raw["pane"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         instance = (raw["instance"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        session = (raw["session"] as? String).flatMap { $0.isEmpty ? nil : $0.lowercased() }
     }
 
     /// A pane id from a terminal of an earlier run of this instance.

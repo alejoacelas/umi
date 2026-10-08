@@ -237,7 +237,14 @@ final class TernUpdater: ObservableObject {
     // MARK: Installing
 
     /// Install the staged update and relaunch now (the user asked).
-    func installNow() async throws -> [String: Any] {
+    func installNow(force: Bool = true) async throws -> [String: Any] {
+        // An update cuts running agent turns off only if the user agrees (R-10).
+        let turns = TernAgents.shared.runningTurns()
+        if turns > 0 && !force {
+            throw TernError.failed("\(turns) managed-agent turn\(turns == 1 ? " is" : "s are") running. Installing now interrupts "
+                + "\(turns == 1 ? "it" : "them") (\(turns == 1 ? "it continues" : "they continue") after the relaunch): pass --force to do that, "
+                + "or let the update install when \(TernPaths.productName) quits.")
+        }
         if staged == nil { _ = try await download() }
         guard let staged else {
             return ["installed": TernVersion.current, "message": "\(TernPaths.productName) \(TernVersion.current) is up to date."]
@@ -351,7 +358,12 @@ final class TernUpdater: ObservableObject {
         guard case .ready(let version) = phase else { return }
         let alert = NSAlert()
         alert.messageText = "\(TernPaths.productName) \(version) is ready to install"
-        alert.informativeText = "It installs when you quit \(TernPaths.productName). Installing now quits and relaunches \(TernPaths.productName), which ends the programs running in its terminals."
+        var text = "It installs when you quit \(TernPaths.productName). Installing now quits and relaunches \(TernPaths.productName), which ends the programs running in its terminals."
+        let turns = TernAgents.shared.runningTurns()
+        if turns > 0 {
+            text += " \(turns) managed-agent turn\(turns == 1 ? " is" : "s are") running: installing now interrupts \(turns == 1 ? "it" : "them"), and \(turns == 1 ? "it continues" : "they continue") after the relaunch."
+        }
+        alert.informativeText = text
         alert.addButton(withTitle: "Install and Relaunch")
         alert.addButton(withTitle: "Install on Quit")
         if alert.runModal() == .alertFirstButtonReturn {

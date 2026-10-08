@@ -313,7 +313,7 @@ enum TernRPC {
         case "update.download":
             return try await TernUpdater.shared.download()
         case "update.install_now":
-            return try await TernUpdater.shared.installNow()
+            return try await TernUpdater.shared.installNow(force: params.bool("force") ?? false)
 
         // MARK: Internal (not part of the CLI contract): scripted checks of menu and editor
         // paths that otherwise need the accessibility tree.
@@ -352,9 +352,12 @@ enum TernRPC {
             TernDebug.focusEditor(in: window, selectEnd: params.bool("select_end") ?? false)
             return ["ok": true]
 
+        case "debug.agent.pane", "debug.agent.type", "debug.agent.press":
+            return try TernAgentDebug.handle(method, params, caller: caller)
+
         default:
             if method.hasPrefix("agent.") {
-                throw TernError.badRequest("managed agents aren't available in this version of \(TernPaths.productName) yet")
+                return try await TernAgentRPC.handle(method: method, params: params, caller: caller)
             }
             throw TernError.badRequest("unknown method \(method)")
         }

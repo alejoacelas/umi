@@ -99,6 +99,8 @@ private struct TerminalSplitLeaf: View {
             Ghostty.InspectableSurface(
                 surfaceView: surfaceView,
                 isSplit: isSplit)
+            // Tern: a managed session shown in this pane is drawn over its terminal.
+            .overlay { TernAgentPaneOverlay(surfaceView: surfaceView) }
             .background {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly
