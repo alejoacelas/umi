@@ -84,19 +84,21 @@ signature="$(sed -n 's/^signature=//p' <<<"$signed")"
 sha256="$(sed -n 's/^sha256=//p' <<<"$signed")"
 size="$(stat -f %z "$out/$zip_name")"
 published="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-python3 - "$out/appcast.json" <<PY
+# Values go in as arguments, never as Python source, so any text (quotes, backslashes) is kept.
+python3 - "$out/appcast.json" "$version" "$base_url$zip_name" "$size" "$sha256" "$signature" "$published" "$notes" <<'PY'
 import json, sys
+out, version, url, size, sha256, signature, published, notes = sys.argv[1:]
 json.dump({
     "product": "Tern",
-    "version": "$version",
-    "url": "$base_url$zip_name",
-    "size": $size,
-    "sha256": "$sha256",
-    "signature": "$signature",
-    "published": "$published",
+    "version": version,
+    "url": url,
+    "size": int(size),
+    "sha256": sha256,
+    "signature": signature,
+    "published": published,
     "minimum_macos": "13.0",
-    "notes": """$notes""",
-}, open(sys.argv[1], "w"), indent=2)
+    "notes": notes,
+}, open(out, "w"), indent=2)
 PY
 cp "$here/install.sh" "$out/install.sh"
 echo "release files for $version in $out"

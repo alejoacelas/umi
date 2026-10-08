@@ -75,8 +75,14 @@ enum TernTopology {
         window.tree(of: tab).root?.leaves() ?? []
     }
 
+    /// The pane's folder: what its shell reports (shell integration), else the folder of
+    /// the program in its foreground, else where it was told to start.
     static func cwd(of pane: Ghostty.SurfaceView) -> String {
         if let pwd = pane.pwd, !pwd.isEmpty { return pwd }
+        if let surface = pane.surface,
+           let folder = TernProcess.cwd(pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))) {
+            return folder
+        }
         return TernState.shared.startFolder(pane.id) ?? ""
     }
 

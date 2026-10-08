@@ -28,24 +28,32 @@ enum TernInteractive {
                                           options: options, ratio: nil, focus: focus)
         case "window":
             options.name = nil
-            result = try TernLayout.newWindow(options, tabName: name, focus: focus)
+            let source = try params.string("pane").map { try TernTopology.resolvePane($0, caller: caller) }
+            result = try TernLayout.newWindow(options, tabName: name, focus: focus,
+                                              inheritFrom: try source ?? TernTopology.callerPane(caller))
         default:
             options.name = nil
+            let explicit = try params.string("pane").map { try TernTopology.resolvePane($0, caller: caller) }
+            let callerPane = try TernTopology.callerPane(caller)
             let window: TerminalController?
             if let selector = params.string("window") {
                 window = try TernTopology.resolveWindow(selector, caller: caller)
-            } else if let selector = params.string("pane") {
-                window = TernTopology.locate(try TernTopology.resolvePane(selector, caller: caller))?.window
-            } else if let callerPane = try TernTopology.callerPane(caller) {
+            } else if let explicit {
+                window = TernTopology.locate(explicit)?.window
+            } else if let callerPane {
                 window = TernTopology.locate(callerPane)?.window
             } else {
                 window = TernTopology.currentWindow
             }
+            // Start where the pane the request is about is, not whichever pane the window shows.
+            let source = explicit ?? callerPane.flatMap { pane in
+                window == nil || TernTopology.locate(pane)?.window === window ? pane : nil
+            }
             if let window {
                 result = try TernLayout.newTab(in: window, options: options, tabName: name, color: .none,
-                                               index: nil, focus: focus, inheritFrom: nil)
+                                               index: nil, focus: focus, inheritFrom: source)
             } else {
-                result = try TernLayout.newWindow(options, tabName: name, focus: focus)
+                result = try TernLayout.newWindow(options, tabName: name, focus: focus, inheritFrom: source)
             }
         }
 
@@ -141,6 +149,18 @@ enum TernInteractive {
 /// Process facts from the kernel.
 enum TernProcess {
     static let shells: Set<String> = ["zsh", "bash", "fish", "sh", "dash", "ksh", "tcsh", "csh", "nu", "elvish", "xonsh", "login"]
+
+    /// A process's current folder (nil for processes we can't inspect, like root's `login`).
+    static func cwd(_ pid: pid_t) -> String? {
+        guard pid > 0 else { return nil }
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
+        let path = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { raw in
+            String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+        }
+        return path.isEmpty ? nil : path
+    }
 
     static func name(_ pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(MAXCOMLEN) + 1)

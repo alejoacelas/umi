@@ -94,7 +94,7 @@ enum TernLayout {
 
     /// Remember things about a new pane that the CLI reports before its shell does.
     private static func registerNewPane(_ view: Ghostty.SurfaceView, options: PaneOptions, config: Ghostty.SurfaceConfiguration) {
-        TernState.shared.setStartFolder(view.id, config.workingDirectory ?? NSHomeDirectory())
+        TernState.shared.setStartFolder(view.id, config.workingDirectory)
         if let name = options.name { TernState.shared.setPaneName(view.id, name) }
     }
 
@@ -104,9 +104,10 @@ enum TernLayout {
 
     // MARK: Creation
 
-    static func newWindow(_ options: PaneOptions, tabName: String?, focus: Bool) throws -> [String: Any] {
+    static func newWindow(_ options: PaneOptions, tabName: String?, focus: Bool,
+                          inheritFrom: Ghostty.SurfaceView? = nil) throws -> [String: Any] {
         let ghostty = try requireGhostty()
-        let source = TernTopology.currentPane
+        let source = inheritFrom ?? TernTopology.currentPane
         let config = try surfaceConfig(options, inheritingFrom: source, context: GHOSTTY_SURFACE_CONTEXT_WINDOW)
         let controller = TerminalController.newWindow(ghostty, withBaseConfig: config, focus: focus)
         let tab = controller.selectedTab
@@ -195,6 +196,12 @@ enum TernLayout {
     static func focusPane(_ pane: Ghostty.SurfaceView, activate: Bool) {
         guard let location = TernTopology.locate(pane) else { return }
         let window = location.window
+        // A zoomed tab shows only its zoomed pane: focusing another one unzooms, so the
+        // focused pane is the one on screen.
+        let tree = window.tree(of: location.tab)
+        if let zoomed = tree.zoomed, zoomed != tree.root?.node(view: pane) {
+            window.setTree(SplitTree(root: tree.root, zoomed: nil), for: location.tab)
+        }
         window.selectTab(location.tab, focus: false)
         location.tab.focusedSurface = pane
         if window.surfaceTree.contains(pane) { window.focusedSurface = pane }

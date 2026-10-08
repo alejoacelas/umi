@@ -389,9 +389,10 @@ extension Ghostty {
             // Tern: programs in this pane can find this instance and their own pane
             // (the CLI defaults to "this pane").
             surface_cfg.environmentVariables.merge(TernEnvironment.paneVariables(paneID: self.id)) { _, new in new }
-            // Tern: where the pane starts, for panes made any way (CLI, ⌘T, AppleScript),
-            // until its shell reports a folder.
-            TernState.shared.setStartFolder(self.id, surface_cfg.workingDirectory ?? NSHomeDirectory())
+            // Tern: where the pane starts when that's given, for panes made any way (CLI, ⌘T,
+            // AppleScript). Otherwise the engine picks (the configured working-directory or
+            // home) and the pane's folder is read from its process.
+            TernState.shared.setStartFolder(self.id, surface_cfg.workingDirectory)
             let surface = surface_cfg.withCValue(view: self) { surface_cfg_c in
                 ghostty_surface_new(app, &surface_cfg_c)
             }

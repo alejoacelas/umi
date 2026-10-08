@@ -38,7 +38,8 @@ enum TernRPC {
             let focus = params.bool("focus") ?? true
             var options = TernLayout.PaneOptions(params)
             options.name = nil
-            return try TernLayout.newWindow(options, tabName: params.string("name"), focus: focus)
+            return try TernLayout.newWindow(options, tabName: params.string("name"), focus: focus,
+                                            inheritFrom: try TernTopology.callerPane(caller))
 
         case "window.focus":
             let window = try TernTopology.window(params.string("window"), caller: caller)
@@ -62,20 +63,26 @@ enum TernRPC {
                 guard let parsed = TernTopology.color(named: name) else { throw badColor(name) }
                 color = parsed
             }
-            let source = try params.string("pane").map { try TernTopology.resolvePane($0, caller: caller) }
+            let explicit = try params.string("pane").map { try TernTopology.resolvePane($0, caller: caller) }
+            let callerPane = try TernTopology.callerPane(caller)
             let window: TerminalController?
             if let selector = params.string("window") {
                 window = try TernTopology.resolveWindow(selector, caller: caller)
-            } else if let source, let location = TernTopology.locate(source) {
+            } else if let explicit, let location = TernTopology.locate(explicit) {
                 window = location.window
-            } else if let callerPane = try TernTopology.callerPane(caller), let location = TernTopology.locate(callerPane) {
+            } else if let callerPane, let location = TernTopology.locate(callerPane) {
                 window = location.window
             } else {
                 window = TernTopology.currentWindow
             }
+            // The new tab starts where the pane the request is about is: the given one, else
+            // the caller's own (in that window), not whichever pane the window shows.
+            let source = explicit ?? callerPane.flatMap { pane in
+                window == nil || TernTopology.locate(pane)?.window === window ? pane : nil
+            }
             let name = params.string("name")
             guard let window else {
-                return try TernLayout.newWindow(options, tabName: name, focus: focus)
+                return try TernLayout.newWindow(options, tabName: name, focus: focus, inheritFrom: source)
             }
             return try TernLayout.newTab(in: window, options: options, tabName: name.flatMap { $0.isEmpty ? nil : $0 },
                                          color: color, index: params.int("index"), focus: focus, inheritFrom: source)
