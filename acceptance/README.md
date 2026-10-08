@@ -26,6 +26,8 @@ What the tests use:
   pending forever, truthful statuses, no leftover processes.
 - **Fault injection:** the fakes crash, hang, ignore SIGTERM, spawn detached children, flood output
   and print garbage on request.
+- **Phases:** `--phase 1` runs the tests of the app alone, leaving out those that need managed agents
+  (SPEC.md, Delivery phases).
 - **Traceability:** every run writes `results/traceability.md`, one row per requirement with its tier,
   its tests and their status.
 

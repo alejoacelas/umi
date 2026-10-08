@@ -495,8 +495,8 @@ SHORTCUTS = {
     "cmd+ctrl+n": "move the pane to a new window", "cmd+ctrl+left": "move the pane into the previous tab",
     "cmd+ctrl+right": "move the pane into the next tab", "cmd+ctrl+shift+n": "move the tab to a new window",
     "cmd+ctrl+p": "pin or unpin the tab", "cmd+ctrl+r": "rename the tab", "cmd+ctrl+shift+r": "rename the pane",
-    "cmd+ctrl+j": "jump to the agent that needs the user",
 }
+AGENT_SHORTCUTS = {"cmd+ctrl+j": "jump to the agent that needs the user"}
 
 
 @pytest.mark.req("L-9", "S-2")
@@ -506,6 +506,16 @@ def test_shortcuts_are_menu_items(inst, win, ui):
     missing = [f"{spec} ({what})" for spec, what in SHORTCUTS.items() if ui.shortcut(spec) is None]
     assert not missing, f"shortcuts with no menu item: {missing}"
     labels = {spec: ui.label(ui.shortcut(spec)) for spec in SHORTCUTS}
+    assert len(set(labels.values())) == len(labels), f"one item for two shortcuts: {labels}"
+
+
+@pytest.mark.req("L-9")
+@pytest.mark.harness
+def test_agent_shortcuts_are_menu_items(inst, win, ui):
+    shortcuts = {**SHORTCUTS, **AGENT_SHORTCUTS}
+    missing = [f"{spec} ({what})" for spec, what in AGENT_SHORTCUTS.items() if ui.shortcut(spec) is None]
+    assert not missing, f"shortcuts with no menu item: {missing}"
+    labels = {spec: ui.label(ui.shortcut(spec)) for spec in shortcuts}
     assert len(set(labels.values())) == len(labels), f"one item for two shortcuts: {labels}"
 
 

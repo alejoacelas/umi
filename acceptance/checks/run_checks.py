@@ -138,8 +138,10 @@ def setup_layout(inst, base):
         run(inst, pane, "ls -la | head -5")
     run(inst, pinned, "true")
     run(inst, named, "echo hi")
-    agent = inst.json("agent", "start", "claude", "--cwd", repo, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
-                      "--tab", "--window", w["window"], "SLEEP 600")["session"]["id"]
+    agent = None
+    if PHASE != "1":
+        agent = inst.json("agent", "start", "claude", "--cwd", repo, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
+                          "--tab", "--window", w["window"], "SLEEP 600")["session"]["id"]
     inst.cli("tab", "focus", inst.json("pane", "info", split)["tab"])
     time.sleep(1.5)
     shot, note = screenshot(inst, w["window"], "S-1-S-3-S-6-window")
@@ -147,7 +149,8 @@ def setup_layout(inst, base):
     time.sleep(1)
     files, note2 = screenshot(inst, w["window"], "S-2-files-mode")
     inst.cli("sidebar", "tabs")
-    inst.cli("agent", "stop", agent, check=False)
+    if agent:
+        inst.cli("agent", "stop", agent, check=False)
     return {"S-1": [("window", shot, note)], "S-3": [("window", shot, note)], "S-6": [("window", shot, note)],
             "S-2": [("tabs mode", shot, note), ("files mode", files, note2)]}
 
@@ -254,13 +257,19 @@ def setup_theme(target, base):
 
 
 SETUPS = [setup_layout, setup_editor, setup_agents, setup_interactive]
+PHASE = "all"
+PHASE_TWO_CHECKS = ("AP-",)   # SPEC.md, Delivery phases
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", required=True)
     parser.add_argument("--only", default="")
+    parser.add_argument("--phase", default="all", choices=["1", "all"],
+                        help="1: phase 1 (the app); checks of managed agents are deferred")
     args = parser.parse_args()
+    global PHASE
+    PHASE = args.phase
     target = Target(args.target)
     os.makedirs(OUT, exist_ok=True)
     texts = criteria()
@@ -270,6 +279,8 @@ def main():
     try:
         inst.start_app()
         for setup in SETUPS:
+            if PHASE == "1" and setup is setup_agents:
+                continue
             try:
                 evidence.update(setup(inst, base))
             except Exception:  # noqa: BLE001
@@ -287,6 +298,9 @@ def main():
              "Judge each check against its criteria; write PASS, FAIL: … or NOT JUDGED: … on its verdict line.", ""]
     for check, text in texts.items():
         if only and check not in only:
+            continue
+        if PHASE == "1" and check.startswith(PHASE_TWO_CHECKS):
+            lines += [f"## {check}", "", "Deferred to phase 2 (managed agents).", ""]
             continue
         lines += [f"## {check}", "", text, "", "**Evidence:**", ""]
         items = evidence.get(check, [])

@@ -77,6 +77,7 @@ class Target:
         self.env_names = data["env"]
         self.installer = data.get("installer")
         self.build_cli = data.get("build_cli")
+        self.release = data.get("release")
         self.restoration_safe = bool(data.get("restoration_safe", False))
         # Arguments for restart tests that need window restoration (restoration-safe builds only).
         self.restore_launch_args = data.get("restore_launch_args", [])
@@ -247,6 +248,19 @@ class Instance:
 
     def app_running(self):
         return self.app_proc is not None and self.app_proc.poll() is None
+
+    def quit_gracefully(self, timeout=30):
+        """Ask the app to quit the way ⌘Q or a logout does (a quit Apple event), not with a signal."""
+        if not self.app_running():
+            return
+        from AppKit import NSRunningApplication
+        app = NSRunningApplication.runningApplicationWithProcessIdentifier_(self.app_pid)
+        if app is not None:
+            app.terminate()
+        try:
+            self.app_proc.wait(timeout)
+        except subprocess.TimeoutExpired:
+            raise AssertionError("the app didn't quit when asked to (a confirmation dialog?)") from None
 
     def quit_app(self, timeout=20):
         """Quit the app the way the system asks apps to (SIGTERM)."""

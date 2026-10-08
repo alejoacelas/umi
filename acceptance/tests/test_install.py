@@ -5,11 +5,14 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from harness import login_which, Target, wait_until
+from harness import Instance, login_which, Target, wait_until
 
 pytestmark = pytest.mark.install
 
@@ -105,6 +108,7 @@ def test_doctor(inst):
 
 @pytest.mark.req("R-8")
 @pytest.mark.slow
+@pytest.mark.harness
 def test_upgrading_keeps_sessions(target, tmp_path):
     if not target.installer:
         pytest.skip("the target file has no installer")
@@ -133,3 +137,91 @@ def test_upgrading_keeps_sessions(target, tmp_path):
         (installed or holder).cleanup()
         time.sleep(0.5)
         shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+# ---- P-2, I-4: updates --------------------------------------------------------------------------
+
+GHOSTTY_FEEDS = (b"release.files.ghostty.org", b"tip.files.ghostty.org")
+GHOSTTY_UPDATE_KEY = b"wsNcGf5hirwtdXMVnYoxRIX/SqZQLMOsYlD3q3imeok="   # upstream Ghostty's update-signing key
+
+
+@pytest.mark.req("P-2")
+def test_never_offers_another_products_updates(target):
+    """A cheap static check: the app neither points at upstream Ghostty's update feeds nor trusts
+    updates signed with Ghostty's key."""
+    contents = os.path.join(target.app, "Contents")
+    files = [os.path.join(contents, "Info.plist")]
+    macos = os.path.join(contents, "MacOS")
+    files += [os.path.join(macos, f) for f in os.listdir(macos)]
+    for path in files:
+        with open(path, "rb") as f:
+            data = f.read()
+        for needle in (*GHOSTTY_FEEDS, GHOSTTY_UPDATE_KEY):
+            assert needle not in data, f"{os.path.relpath(path, target.app)} contains {needle.decode()}"
+
+
+def bundle_version(app):
+    with open(os.path.join(app, "Contents", "Info.plist"), "rb") as f:
+        return plistlib.load(f).get("CFBundleShortVersionString")
+
+
+@pytest.fixture
+def web(tmp_path):
+    """A local web server for release files: (folder, base URL)."""
+    root = tmp_path / "www"
+    root.mkdir()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(root)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield root, f"http://127.0.0.1:{server.server_address[1]}/"
+    server.shutdown()
+
+
+def make_release(target, version, out, base_url):
+    command = target.subst(target.release["command"], version=version, out=str(out), base_url=base_url)
+    proc = subprocess.run(command, capture_output=True, text=True, timeout=1200, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
+    assert os.path.exists(os.path.join(out, target.release["feed"])), "the release has a feed"
+
+
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_an_older_build_updates_itself(target, web, tmp_path):
+    if not (target.release and target.installer and target.env_names.get("feed_url")):
+        pytest.skip("the target file has no release command, installer or feed_url variable")
+    root, base = web
+    make_release(target, "0.0.1", root / "old", base + "old/")
+    make_release(target, "999.0.0", root / "new", base + "new/")
+    feed = {target.env_names["feed_url"]: base + "new/" + target.release["feed"]}
+    holder = Instance(target, prefix="acc-i4-", env=feed)   # its state dir and environment
+    dest = str(tmp_path / "Applications" / os.path.basename(target.app))
+    installed = None
+    try:
+        proc = run_installer(target, str(root / "old" / target.release["app"]), dest, str(tmp_path / "bin"),
+                             holder.env)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert bundle_version(dest) == "0.0.1"
+        installed = Instance(Target.from_installed(target, dest), state_dir=holder.dir, env=feed)
+        installed.start_app()
+        check = installed.json("update", "--check", timeout=120)
+        assert (check["installed"], check["latest"], check["update_available"]) == ("0.0.1", "999.0.0", True), check
+
+        # A program running in a terminal while the update downloads and waits.
+        pane = installed.json("window", "new")["pane"]
+        installed.cli("send", "--pane", pane, "-e", "i=0; while true; do i=$((i+1)); echo tick $i; sleep 1; done")
+        installed.cli("update", timeout=600)
+        pid = installed.app_pid
+        time.sleep(15)
+        assert installed.app_running() and installed.app_pid == pid, "the app was not quit to install"
+        assert bundle_version(dest) == "0.0.1", "nothing is replaced while the app runs"
+        ticks = installed.cli("read", "--pane", pane, "--lines", "3").stdout
+        time.sleep(3)
+        assert installed.cli("read", "--pane", pane, "--lines", "3").stdout != ticks, "the terminal kept running"
+
+        installed.quit_gracefully()
+        wait_until(lambda: bundle_version(dest) == "999.0.0", 180, message="the update installed on quit")
+        installed.start_app()
+        after = installed.json("update", "--check", timeout=120)
+        assert (after["installed"], after["update_available"]) == ("999.0.0", False), after
+    finally:
+        (installed or holder).cleanup()
+        time.sleep(0.5)

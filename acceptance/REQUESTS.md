@@ -120,3 +120,33 @@ fidelity and full control in the same session.
 
 > I'd rather have you disregard some fo the details of my guidance rather than skirt the best
 > practices there
+
+## Delivery in two phases, updates, and the harness decisions
+
+> actually, would it be easier to deliver first on the editor for now, and document the harness for
+> later? also, what's the easiest way to install the editor in my other computer and receive updates
+> as we keep working on it here?
+
+> I'm okay with this being public, I just want whatever's most convenient for using it across
+> computers
+
+> things I care most about are reliability and no hidden traps where the agents are not eg., running
+> a skill they're supposed to have access or confused about the environment they're running in etc.
+
+On where sessions live, the user chose to let sessions stop when the app quits and resume them
+after:
+> A sounds good, and we should put effort in being able to reliably send a message to an agent
+> session and have it running from there
+
+> on the idle problem, what about having workers report their status once they're done and
+> supervisors still have a signal that says 'harness says no work' and they're given a small hint so
+> they know there are edge cases like this
+
+> go ahead, write them, then launch the worker without asking me. subject it to 5 rounds of
+> adversarial rewiew or until no high/moderate bugs are found
+
+> do that for the editor only. once it's done, if it's done to your satisfaction, you can launch the
+> worker to do the harness and subject to adversarial review as well. use headless workers for all
+> this
+
+("The editor" here means the whole app without managed agents: SPEC.md's phase 1.)

@@ -12,7 +12,7 @@ import pytest
 
 from harness import frontmost_pid, wait_until
 
-pytestmark = pytest.mark.panes
+pytestmark = [pytest.mark.panes, pytest.mark.harness]
 
 
 def nonce():

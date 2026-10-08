@@ -41,6 +41,7 @@ def gone(pids, timeout):
 # ---- R-1 ----------------------------------------------------------------------------------------
 
 @pytest.mark.req("R-1")
+@pytest.mark.harness
 def test_quitting_the_app_leaves_no_unowned_processes(fresh):
     """Sessions may keep running after the app quits, or stop with it. Either way, nothing keeps
     running that the product no longer owns."""
@@ -60,6 +61,7 @@ def test_quitting_the_app_leaves_no_unowned_processes(fresh):
 
 
 @pytest.mark.req("R-1", "R-2")
+@pytest.mark.harness
 def test_killing_the_product_leaves_nothing_running_once_it_is_back(fresh):
     other = fresh(prefix="acc-r1k-")
     n = nonce()
@@ -71,6 +73,7 @@ def test_killing_the_product_leaves_nothing_running_once_it_is_back(fresh):
 
 
 @pytest.mark.req("R-1")
+@pytest.mark.harness
 def test_no_zombies_accumulate(inst):
     for _ in range(5):
         sid = inst.start_agent("codex", "ECHO short-lived")
@@ -94,6 +97,7 @@ def remember(inst, kind):
 
 
 @pytest.mark.req("R-2", "MA-3", "MA-4")
+@pytest.mark.harness
 def test_crash_recovery(fresh):
     other = fresh(prefix="acc-r2-")
     sessions = [remember(other, kind) for kind in ("claude", "codex")]
@@ -118,6 +122,7 @@ def test_crash_recovery(fresh):
 
 
 @pytest.mark.req("R-3", "MA-3")
+@pytest.mark.harness
 def test_restart_resumes_sessions(fresh):
     other = fresh(prefix="acc-r3-")
     sessions = [remember(other, kind) for kind in ("claude", "codex")]
@@ -146,14 +151,34 @@ def test_restart_restores_pins_and_names(target, fresh):
 
 # ---- R-4 ----------------------------------------------------------------------------------------
 
-@pytest.mark.req("R-4")
-def test_paths_with_spaces_and_long_state_dirs(target, fresh):
+def spaced_instance(fresh):
     base = os.path.realpath(tempfile.mkdtemp(prefix="acc r4 "))
     state = os.path.join(base, "state dir with spaces", "x" * 90)
     assert len(state) > 104
     other = fresh(state_dir=state)
     work = os.path.join(base, "work dir with spaces")
     os.makedirs(work)
+    return base, other, work
+
+
+@pytest.mark.req("R-4")
+def test_paths_with_spaces_and_long_state_dirs(target, fresh):
+    base, other, work = spaced_instance(fresh)
+    pane = other.cli("tab", "new", "--cwd", work).stdout.strip()
+    wait_until(lambda: os.path.realpath(other.json("pane", "info", pane).get("cwd") or "") == work, 10,
+               message="a pane in a folder with spaces")
+    other.cli("send", "--pane", pane, "-e", "echo spaced-$((40+2))")
+    other.cli("wait", "--pane", pane, "--pattern", "^spaced-42", "--timeout", "15")
+    inner = other.cli("send", "--pane", pane, "-e", f"{other.target.cli_name} pane rename spaced-ok; echo RENAMED")
+    other.cli("wait", "--pane", pane, "--pattern", "^RENAMED", "--timeout", "15")
+    assert other.json("pane", "info", pane).get("name") == "spaced-ok", "the CLI inside the pane reaches its app"
+    shutil.rmtree(base, ignore_errors=True)
+
+
+@pytest.mark.req("R-4")
+@pytest.mark.harness
+def test_agents_with_spaces_and_long_state_dirs(target, fresh):
+    base, other, work = spaced_instance(fresh)
     sid = other.json("agent", "start", "claude", "--background", "--cwd", work, "--env",
                      "FAKE_AGENT_DIR=" + other.fake_dir, "RUN pwd")["session"]["id"]
     code, out = other.wait(sid)
@@ -183,6 +208,22 @@ def test_builds_from_a_path_with_spaces(target, tmp_path):
 @pytest.mark.req("R-5")
 def test_instances_never_talk_to_each_other(fresh):
     a, b = fresh(prefix="acc-r5a-"), fresh(prefix="acc-r5b-")
+    a_pane = a.json("window", "new", "--name", "only-in-a")["pane"]
+    names_b = [t.get("name") for w in b.tree()["windows"] for t in w["tabs"]]
+    assert "only-in-a" not in names_b
+    assert b.cli("pane", "info", a_pane, check=False).returncode != 0, "B doesn't know A's panes"
+    # The CLI inside one of A's panes reaches A.
+    a.cli("send", "--pane", a_pane, "-e", f"{a.target.cli_name} --json ls > '{a.dir}/from-pane.json'; echo LISTED")
+    a.cli("wait", "--pane", a_pane, "--pattern", "^LISTED", "--timeout", "15")
+    with open(os.path.join(a.dir, "from-pane.json")) as f:
+        seen = [p["id"] for w in json.load(f)["windows"] for t in w["tabs"] for p in t["panes"]]
+    assert a_pane in seen
+
+
+@pytest.mark.req("R-5")
+@pytest.mark.harness
+def test_agents_of_one_instance_never_reach_another(fresh):
+    a, b = fresh(prefix="acc-r5a-"), fresh(prefix="acc-r5b-")
     a.cli("window", "new", "--name", "only-in-a")
     sa = a.start_agent("claude", "ECHO in a", name="only-a")
     sb = b.start_agent("codex", "ECHO in b", name="only-b")
@@ -197,22 +238,19 @@ def test_instances_never_talk_to_each_other(fresh):
     assert sa in listed and sb not in listed
 
 
-@pytest.mark.req("R-7")
-def test_stale_environments_never_act_on_the_wrong_instance(fresh):
-    a = fresh(prefix="acc-r7a-")
+def stale_pane_env(a):
     pane = a.json("window", "new")["pane"]
     dump = os.path.join(a.dir, "pane-env")
     a.cli("send", "--pane", pane, "-e", f"env > '{dump}'; echo DUMPED")
     a.cli("wait", "--pane", pane, "--pattern", "^DUMPED", "--timeout", "15")
     with open(dump) as f:
-        stale = dict(line.rstrip("\n").split("=", 1) for line in f if "=" in line)
-    sid = a.start_agent("claude", "RUN env")
-    agent_env = dict(line.split("=", 1) for line in a.wait(sid)[1]["reply"].splitlines()[1:] if "=" in line)
-    a.quit_app()
-    b = fresh(prefix="acc-r7b-")
+        return dict(line.rstrip("\n").split("=", 1) for line in f if "=" in line)
+
+
+def assert_stale_envs_never_act_on(b, envs):
     b_pane = b.json("window", "new", "--name", "b-window")["pane"]
     b_name = b.json("pane", "info", b_pane).get("name")
-    for env in (stale, agent_env):   # a terminal and an agent that outlived their instance
+    for env in envs:
         proc = subprocess.run([b.target.cli_path, "pane", "rename", "stale-was-here"], env=env, capture_output=True,
                               text=True, timeout=60, stdin=subprocess.DEVNULL)
         if proc.returncode != 0:
@@ -220,6 +258,27 @@ def test_stale_environments_never_act_on_the_wrong_instance(fresh):
         names = [p.get("name") for w in b.tree()["windows"] for t in w["tabs"] for p in t["panes"]]
         assert "stale-was-here" not in names, "a stale environment acted on another instance's pane"
     assert b.json("pane", "info", b_pane).get("name") == b_name
+
+
+@pytest.mark.req("R-7")
+def test_stale_pane_environments_never_act_on_the_wrong_instance(fresh):
+    a = fresh(prefix="acc-r7a-")
+    stale = stale_pane_env(a)
+    a.quit_app()
+    b = fresh(prefix="acc-r7b-")
+    assert_stale_envs_never_act_on(b, [stale])   # a terminal that outlived its instance
+
+
+@pytest.mark.req("R-7")
+@pytest.mark.harness
+def test_stale_environments_never_act_on_the_wrong_instance(fresh):
+    a = fresh(prefix="acc-r7a-")
+    stale = stale_pane_env(a)
+    sid = a.start_agent("claude", "RUN env")
+    agent_env = dict(line.split("=", 1) for line in a.wait(sid)[1]["reply"].splitlines()[1:] if "=" in line)
+    a.quit_app()
+    b = fresh(prefix="acc-r7b-")
+    assert_stale_envs_never_act_on(b, [stale, agent_env])   # a terminal and an agent that outlived their instance
 
 
 # ---- R-6, R-9 -----------------------------------------------------------------------------------
@@ -231,6 +290,7 @@ def timed(fn):
 
 
 @pytest.mark.req("R-6")
+@pytest.mark.harness
 def test_cli_stays_responsive_and_truthful_while_busy(inst):
     busy = [inst.start_agent("codex", "SLEEP 10") for _ in range(3)]
     asking = inst.start_agent("claude", "ASK_PERMISSION", "--permission-mode", "default")
@@ -251,6 +311,7 @@ def test_cli_stays_responsive_and_truthful_while_busy(inst):
 
 @pytest.mark.req("R-9")
 @pytest.mark.slow
+@pytest.mark.harness
 def test_long_runs_stay_fast_and_disk_follows_what_is_kept(fresh):
     other = fresh(prefix="acc-r9-")
 

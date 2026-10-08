@@ -25,7 +25,14 @@ the tests stay independent of any implementation.
    and told not to change the default Markdown app and not to launch anything.
 4. **Screenshots.** `<cli> screenshot` (a product feature in CLI.md) is how written checks collect
    visual evidence.
-5. **Optional: restoration-safe build.** Restart tests that rely on window restoration (pins, agent
+5. **Releases and updates (I-4).**
+   - A command that makes the release files for the current build, stamped with a given version, as
+     if publishing it: the feed, the downloadable update, and a stamped copy of the app. The tests
+     serve these files from a local web server.
+   - An environment variable that points an instance (app and CLI) at another feed URL instead of
+     the public one. The tests serve that feed over plain HTTP on 127.0.0.1, and the instance must
+     accept it.
+6. **Optional: restoration-safe build.** Restart tests that rely on window restoration (pins, agent
    panes coming back) need a build whose saved window state is separate from the user's installed
    copy, for example a build with a different bundle id. Without one, those tests are skipped.
 
@@ -42,7 +49,14 @@ the tests stay independent of any implementation.
   "env": {
     "state_dir": "SHADE_STATE_DIR",
     "claude_bin": "SHADE_CLAUDE_BIN",
-    "codex_bin": "SHADE_CODEX_BIN"
+    "codex_bin": "SHADE_CODEX_BIN",
+    "feed_url": "SHADE_FEED_URL"
+  },
+  "release": {
+    "command": ["bash", "/path/to/release.sh", "--version", "{version}", "--out", "{out}",
+                "--base-url", "{base_url}", "--no-publish"],
+    "feed": "appcast.xml",
+    "app": "Shade.app"
   },
   "installer": {
     "command": ["bash", "/path/to/install.sh", "--from", "{app}"],
@@ -64,6 +78,11 @@ the tests stay independent of any implementation.
   isolated instance's environment, so anything it asks the product goes to that instance.
 - **`build_cli`:** optional, for R-4 (building from a path with spaces). `source` is copied to a
   folder whose path has spaces, `{src}`, and `command` must produce the CLI binary at `{out}`.
+- **`release`:** `command` writes the release files for version `{version}` into the folder `{out}`,
+  which the tests then serve at `{base_url}` (it ends with `/`). It must not publish anything. `feed`
+  and `app` are paths relative to `{out}`: the feed file, and the stamped app the tests install as
+  the "older" build.
+- **`env.feed_url`:** the variable that points an instance at another feed.
 - **`other_products`, `other_names`:** bundle ids, and app and CLI names, this build must not collide
   with (P-1). Your own bundle id is read from your Info.plist.
 
@@ -77,6 +96,7 @@ uv run pytest --target targets/<name>.json -m managed      # one area: layout ed
                                                            # chaos panes robustness install
 uv run pytest --target targets/<name>.json -m "not slow"   # the quick loop
 uv run pytest --target targets/<name>.json --req MA-4,R-2 # only the tests of these requirements
+uv run pytest --target targets/<name>.json --phase 1      # phase 1 (the app): tests needing managed agents left out
 ACCEPTANCE_REAL=1 uv run pytest --target ... -m real       # real Claude Code / Codex (cheap models)
 uv run python checks/run_checks.py --target targets/<name>.json   # written checks: evidence + REPORT.md
 ```

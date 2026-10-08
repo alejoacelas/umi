@@ -50,22 +50,28 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-3, L-1 to L-9, M-1 to M-6, T-1 to T-7, S-1 to S-6, E-1 to E-9,
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-9, M-1 to M-6, T-1 to T-7, S-1 to S-6, E-1 to E-9,
 AP-2, AP-3, AP-9.
 
 ### Core: the orchestration loop
 These outcomes must hold every time, with both harnesses. How they are achieved is open. If something
 in the third tier makes any of these less reliable, the third-tier item gives way.
 - **Control:** start, message ids, follow-ups at any time, exactly-once delivery, wait/read, truthful
-  status, interrupt, stop, list, resume.
-- **Composition:** orchestration from inside agents, and watch/notify.
-- **Fidelity:** the workers' environment, the user's own agents left unaffected.
+  status, interrupt, redirect, stop, list, resume.
+- **Resumption:** a message sent to a session in any state gets it working again, with everything it
+  had; turns cut off by a quit, crash or update continue by themselves.
+- **Composition:** orchestration from inside agents, watch/notify, and workers' own reports.
+- **Fidelity:** a worker is the agent the user would get in their own terminal, with everything it
+  loads and the environment it gets, and it knows its situation; the user's own agents are left
+  unaffected.
+- **No hidden states:** turns an agent starts by itself are tracked, and what a worker failed to
+  load is shown.
 - **Needs input:** a session that needs input is never silently stuck.
 - **Watching and stepping in:** the user can see each worker live in a pane, and step in there.
 - **Robustness:** crashes, restarts, upgrades, isolation, long runs.
 
-Requirements: MA-1 to MA-13, MA-15, MA-17 to MA-23, IA-1, IA-3, IA-4, AP-1, AP-4, AP-5, R-1 to
-R-9.
+Requirements: MA-1 to MA-13, MA-15, MA-17 to MA-29, IA-1, IA-3, IA-4, AP-1, AP-4, AP-5, R-1 to
+R-10.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
@@ -78,6 +84,8 @@ protects. A documented compromise turns its failing tests into known, accepted f
 - How a worker's pane presents it, beyond AP-1 (AP-10).
 - Composer drafts (AP-6), desktop notifications (AP-7), copy-reply (AP-8), agent panes reopening by
   themselves after a restart (AP-11).
+- Steering: showing a follow-up to the agent while its turn is still running, rather than when the
+  turn ends (MA-3 only asks for the latter). If offered, it must not weaken MA-4.
 
 Requirements: MA-14, MA-16, IA-2, AP-6, AP-7, AP-8, AP-10, AP-11.
 
@@ -87,12 +95,36 @@ tests:
 - whether "interactive" and "managed" agents are different kinds of session at all;
 - whether a worker runs inside a terminal;
 - how a worker's pane presents it;
-- what process owns agents and sessions, and how the CLI finds the app.
+- what process owns agents and sessions, and how the CLI finds the app;
+- whether agents keep running while the app isn't. The user's call: sessions may stop when the app
+  quits, as long as MA-24 and R-10 hold. They would rather the effort go into making resumption
+  reliable than into keeping agents alive across app restarts.
 
 `REQUESTS.md`'s "two launch modes" section was the user's first guess at simplifying the problem by
 giving up something non-core. The user later said it isn't meant to be baked in (see the end of
 `REQUESTS.md`). Its reliability rules still stand: control rests on identifiers and events the
 harness itself reports, not on reading or typing into a screen.
+
+## Delivery phases
+
+The product is delivered in two phases, each built against this suite. The tiers apply within each
+phase.
+
+- **Phase 1, the app:** everything that doesn't need managed agents. That's P, I, L, M, T, S, E and
+  IA, and the parts of R-3 to R-7 about windows, panes and the CLI. Two items inside these groups
+  wait for phase 2: L-9's ⌃⌘J (jump to the agent that needs the user) and S-3's managed-agent status
+  line.
+- **Phase 2, the harness:** managed agents, built on phase 1's app. That's MA, AP, the rest of R,
+  and the agent parts above.
+
+Tests that need managed agents carry the `harness` marker. `--phase 1` leaves them out, and the
+traceability report marks requirements that only they cover as deferred.
+
+Phase 2 requirements: MA-1 to MA-29, AP-1 to AP-11, R-1, R-2, R-8 to R-10.
+
+Phase 1 must not close doors on phase 2. Its decisions about panes, the CLI, control endpoints,
+stored state and identity leave room for sessions shown in panes (AP-2), agent commands in the CLI,
+and agents reaching the app from their own processes (MA-18).
 
 ---------------------------------------------------------------------------------------------------
 
@@ -101,8 +133,8 @@ harness itself reports, not on reading or typing into a screen.
 - **P-1 [A]** The app, its bundle id, its state directory, its control endpoints and its CLI name are
   distinct from Ghostty's, from "Wraith"'s and from "Shade"'s. It can be installed and run next to
   them without either one affecting the other.
-- **P-2 [W]** The app never offers to update itself to upstream Ghostty. Its "check for updates" tells
-  the user how to update from source.
+- **P-2 [A]** The app never offers another product's updates, upstream Ghostty's included. Its
+  updates come only from the product's own release feed (I-4).
 - **P-3 [A]** Only one instance of a given build runs at a time. A second launch of the same build,
   including two simultaneous launches, ends with exactly one running instance, and that instance keeps
   serving the CLI.
@@ -120,6 +152,18 @@ harness itself reports, not on reading or typing into a screen.
 - **I-2 [A]** After install, `<cli> doctor` reports what is missing on this machine, for example
   `claude`, `codex` or `git` not on the login PATH, and exits non-zero if anything is.
 - **I-3 [W]** `open README.md` (or double-clicking a `.md` file) opens it in the app's editor.
+- **I-4 [A]** Updates. An installed copy updates itself from the product's own public release feed:
+  - it checks in the background, from a "Check for Updates…" menu item and from `<cli> update`;
+  - it verifies what it downloads, then installs it when the app quits, or at once when the user
+    asks (`<cli> update --now`, or the update prompt);
+  - it never quits the app or closes terminals by itself to install;
+  - an older build updates to a newer one end to end.
+
+  `<cli> update --check` prints the installed and the newest version. Publishing a new version from
+  the development Mac is one command.
+- **I-5 [W]** One-line install. On another Mac, one command pasted into Terminal installs the latest
+  release, with no Gatekeeper prompt and nothing to install first. The release repository's README
+  gives the command.
 
 ## L. Windows, tabs and panes
 
@@ -286,7 +330,7 @@ through the CLI, so agents can orchestrate other agents, and shows the session i
   |---|---|
   | `DONE` | 0 |
   | `NEEDS_INPUT` (pending approvals and questions listed) | 2 |
-  | `INTERRUPTED`, `FAILED`, `EXITED`, `ERROR` | 3 |
+  | `INTERRUPTED`, `FAILED`, `EXITED`, `ERROR`, `CANCELLED` | 3 |
   | `TIMEOUT` | 124 |
 
   `wait` on a session with nothing pending returns its current state immediately. An old message's
@@ -297,7 +341,8 @@ through the CLI, so agents can orchestrate other agents, and shows the session i
   and reflects reality: not "working" while the agent is idle, and not "idle" while a message is
   still unanswered.
 - **MA-8 [A]** `agent interrupt` stops the current turn; the session stays alive. Messages already
-  queued behind it still get delivered.
+  queued behind it still get delivered. A message sent right after an interrupt needs no waiting in
+  between: it's delivered once the interrupted turn has ended.
 - **MA-9 [A]** `agent stop` ends the session's work completely: its harness process and every process
   it started, including detached ones and ones that ignore polite termination. Nothing is left
   running. The conversation stays resumable.
@@ -347,11 +392,62 @@ through the CLI, so agents can orchestrate other agents, and shows the session i
 ### Real harness fidelity
 - **MA-22 [A]** All of the above holds with the real Claude Code and Codex CLIs, as tested with cheap
   models, and with the fake harnesses under any legal event ordering and timing (see `fakes/README.md`).
-- **MA-23 [A]** A managed worker has the features it would have in the user's own terminal:
+- **MA-23 [A]** A managed worker has the features it would have if the user typed the same harness
+  command in their own terminal, in that folder:
   - the user's and the project's instructions (`CLAUDE.md`, `AGENTS.md`);
-  - skills, MCP servers, plugins, hooks and subagents;
+  - skills, MCP servers (the user's and the project's), plugins, hooks and subagents;
   - slash commands that make sense without a UI;
-  - long conversations that compact.
+  - background tasks, and long conversations that compact.
+
+  This holds in a folder or worktree the user has never opened before, and after every resume
+  (MA-24).
+
+### Resumption, reports and awareness
+- **MA-24 [A]** Send and it runs. A message sent to a session in any state gets the agent working on
+  it as soon as the agent can take it. "Any state" means working, idle, stopped, crashed, or after
+  the app quit, crashed or was updated, or the machine restarted. The agent works on it:
+  - in the same conversation, with its context;
+  - with the folder, model, effort, access level, environment and harness arguments the session was
+    started with;
+  - within seconds, when nothing else is queued.
+
+  If that's impossible, for example because the folder is gone or the harness no longer has the
+  conversation, the send fails at once with the reason. It never silently starts a fresh
+  conversation.
+- **MA-25 [A]** Redirect. `agent send SESSION --interrupt TEXT` interrupts the turn running when the
+  command is given (if any) and makes TEXT the next thing the agent sees, ahead of messages already
+  queued. With `--drop-queued`, messages queued before it are dropped and end `CANCELLED`.
+  - The interrupt only ever stops the turn that was running when the command was given: never the
+    turn that carries TEXT, and never a later one.
+  - If that turn doesn't stop within 30 seconds (a hung command or harness), the session is stopped
+    and resumed, and TEXT is still delivered.
+- **MA-26 [A]** Worker reports. Inside a session, `agent report done|blocked|failed [SUMMARY…]`
+  records the worker's own verdict on its task.
+  - `agent info` and `agent ls` show the latest report (verdict, summary, time) next to what the
+    harness says: its status, and how many background tasks are still running when the harness
+    reports that.
+  - `agent wait SESSION --report` waits for a report made after the latest message to the session
+    (or after the given one). It exits 0 for done, 2 for blocked, 3 for failed, and 124 on timeout,
+    and its output includes what the harness says.
+  - The help for `agent wait` and `agent report` says, in a sentence or two, that an idle harness
+    means nothing is running right now, not that the task is done, and that a worker can resume by
+    itself (MA-28).
+- **MA-27 [A]** Workers know their situation. Without being told by whoever started it, a managed
+  worker can find out:
+  - its session name and id, and its parent session;
+  - its folder or worktree;
+  - that it is a managed session that no person may be watching;
+  - how to report (MA-26) and how to reach other sessions through `<cli>`.
+- **MA-28 [A]** Turns the agent starts itself. A harness can start a turn without a message, for
+  example when a background command finishes or a scheduled check fires (Claude Code does this).
+  - The session shows `working` during that turn and `idle` after it.
+  - The turn and its reply appear in the transcript as their own turn. They are never taken as the
+    turn or reply of a message.
+  - Messages sent meanwhile are delivered after it, in order, exactly once.
+- **MA-29 [A]** What a worker loaded. `agent info` shows what the harness reported when the session
+  last started or resumed, for example its model, its MCP servers and their state, its skills,
+  plugins and subagents. It flags anything that failed or needs the user, such as an MCP server that
+  needs authentication. `agent start` prints a one-line warning when something is flagged.
 
 ## AP. Managed agents in the app
 
@@ -420,3 +516,13 @@ through the CLI, so agents can orchestrate other agents, and shows the session i
 - **R-9 [A]** Long runs. Many sessions, long transcripts, large tool outputs and days of uptime don't
   make the CLI or the app slow or unresponsive. The product's disk usage grows only with what the user
   keeps.
+- **R-10 [A]** Cut-off turns continue. If a turn is running when the app quits, crashes or is
+  updated, or the machine restarts, that session continues by itself once the app is running again.
+  - It receives a short note saying when its turn was cut off, that anything it had running
+    (commands, background tasks, subagents) was stopped, and that it should check the state of its
+    work before carrying on.
+  - `agent wait` on the cut-off message returns the reply of the continued turn.
+  - The cut-off message is not delivered again (MA-4).
+
+  A normal quit or an update never cuts turns off silently. It either waits until they end or
+  interrupts them cleanly. An update installs while turns are running only if the user agrees.

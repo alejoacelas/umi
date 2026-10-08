@@ -19,7 +19,7 @@ from hypothesis.stateful import RuleBasedStateMachine, initialize, invariant, pr
 
 from harness import alive
 
-pytestmark = [pytest.mark.chaos, pytest.mark.managed, pytest.mark.slow]
+pytestmark = [pytest.mark.chaos, pytest.mark.managed, pytest.mark.slow, pytest.mark.harness]
 
 KINDS = ["claude", "codex"]
 TERMINAL = {"DONE", "INTERRUPTED", "FAILED", "EXITED", "ERROR"}

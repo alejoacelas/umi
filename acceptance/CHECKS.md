@@ -54,9 +54,16 @@ through the user's Ghostty config in the isolated instance.
 - Files mode is a project explorer for the focused pane's folder.
 - There's no "agents" section and no "new agent" button.
 
-**P-2: updates.** Setup: choose the app's "Check for Updates" item.
-- It never offers an upstream Ghostty update.
-- It says how to update from source.
+**P-2: updates.** Setup: choose the app's "Check for Updates…" item on an installed copy.
+- It checks the product's own feed and never offers an upstream Ghostty update.
+- When it's up to date, it says so. When an update is ready, it says it installs on quit and offers
+  to install now.
+
+**I-5: one-line install.** Setup: the release repository's README, and running its install command
+in a fresh shell with the install destination pointed at a temporary folder.
+- One command, pasted into Terminal, installs the latest release.
+- Nothing else needs installing first, and the installed app opens without a Gatekeeper prompt.
+- The command and what it does are explained in a few lines.
 
 ## Moving things
 

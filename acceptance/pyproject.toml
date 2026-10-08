@@ -27,4 +27,5 @@ markers = [
     "install: packaging and installer (I)",
     "real: real Claude Code / Codex on cheap models (set ACCEPTANCE_REAL=1)",
     "slow: takes more than ~30 s",
+    "harness: needs managed agents (phase 2; left out by --phase 1)",
 ]

@@ -14,8 +14,8 @@ present. Extra fields are fine.
   |---|---|
   | 0 | success |
   | 1 | usage error, unknown selector, failed action |
-  | 2 | `agent wait`: NEEDS_INPUT |
-  | 3 | `agent wait`: INTERRUPTED, FAILED, EXITED or ERROR |
+  | 2 | `agent wait`: NEEDS_INPUT; `agent wait --report`: blocked |
+  | 3 | `agent wait`: INTERRUPTED, FAILED, EXITED, ERROR or CANCELLED; `agent wait --report`: failed |
   | 124 | a wait timed out |
 
 - Errors go to stderr, prefixed `<cli>: `.
@@ -73,6 +73,13 @@ Objects in JSON:
 | `editor mode [preview\|source]` | toggles without an argument |
 | `editor default [--dry-run]` | make the app the default for `.md`; `--dry-run` prints the app bundle path |
 
+## Updates
+
+| Command | Notes |
+|---|---|
+| `update --check` | prints the installed and the newest version; JSON `{"installed", "latest", "update_available": bool}` |
+| `update [--now]` | downloads and verifies the newest version. It installs when the app quits, or with `--now` installs it and relaunches the app at once |
+
 ## Agents
 
 ### Interactive (plain TUI, not controlled)
@@ -85,8 +92,10 @@ options, put them before `--`: `claude [--tab | --split [DIR] | --window] [--cwd
 |---|---|
 | `agent start claude\|codex [PROMPT…] [--name N] [--cwd D] [--worktree W [--base REF]] [--model M] [--effort E] [--full-access] [--permission-mode M] [--profile P] [--env K=V]… [PLACEMENT] [--background] [--wait [--timeout S]] [-- HARNESS ARGS]` | prints the session id; JSON `{"session": Session, "message"?: Message}`; with `--wait`, behaves like `agent wait` |
 | PLACEMENT | `--tab [--window W]` (default), `--split [DIR] [--pane P]`, `--new-window`, `--focus`; `--background` shows nothing |
-| `agent send SESSION TEXT… [--wait [--timeout S]]` | prints the message id; JSON `{"message": Message, "session": Session}` |
+| `agent send SESSION TEXT… [--interrupt [--drop-queued]] [--wait [--timeout S]]` | prints the message id; JSON `{"message": Message, "session": Session}`. `--interrupt`: see SPEC MA-25 |
 | `agent wait SESSION [--message ID] [--timeout S]` | prints STATUS, then the reply (or the pending requests); JSON `{"status", "reply"?, "message"?: Message, "session": Session, "requests"?: [Request], "error"?}` |
+| `agent wait SESSION --report [--message ID] [--timeout S]` | waits for the worker's report (SPEC MA-26); prints the verdict and summary, then what the harness says; JSON `{"report": Report, "session": Session}` |
+| `agent report done\|blocked\|failed [SUMMARY…] [--session S]` | inside a managed session, S defaults to `self`; JSON `{"report": Report}` |
 | `agent read SESSION [--message ID]` | prints the reply; JSON `{"reply", "message"?}` |
 | `agent read SESSION --transcript [--last N]` | JSON `{"items": [Item]}` |
 | `agent ls [--live]` | JSON `{"sessions": [Session]}` |
@@ -106,7 +115,11 @@ SESSION is a session id or unique prefix, a name, the harness's session or threa
 
 - **Session**: `{"id", "name", "kind", "status": starting|working|idle|needs_input|exited|error,
   "activity", "cwd", "live": bool, "harness_id"?, "parent"?, "requests": [Request],
-  "last_message"?: Message, "error"?}`
+  "last_message"?: Message, "error"?, "report"?: Report, "background_tasks"?: int, "startup"?:
+  Startup}`
+- **Report**: `{"verdict": "done"|"blocked"|"failed", "summary", "at"}` (ISO 8601 time)
+- **Startup**: `{"at", "model"?, "mcp_servers"?: [{"name", "status"}], "skills"?: [str], "plugins"?: [str],
+  "agents"?: [str], "flags": [str]}`. `flags` lists what failed or needs the user, in words.
 - **Message**: `{"id", "text", "reply"?}`
 - **Request**: `{"id", "kind": "approval"|"question", "title", "detail", "questions": [{"id",
   "question", "options": [str]}], "details": {"url"?, "permissions"?, "schema"?}}`

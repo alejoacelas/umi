@@ -9,7 +9,7 @@ import pytest
 
 from harness import Instance, wait_until
 
-pytestmark = [pytest.mark.real, pytest.mark.managed, pytest.mark.slow]
+pytestmark = [pytest.mark.real, pytest.mark.managed, pytest.mark.slow, pytest.mark.harness]
 
 CLAUDE_MODEL = os.environ.get("ACCEPTANCE_CLAUDE_MODEL", "haiku")
 CODEX_MODEL = os.environ.get("ACCEPTANCE_CODEX_MODEL", "gpt-6-luna")

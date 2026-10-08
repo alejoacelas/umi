@@ -8,7 +8,14 @@
   "env": {
     "state_dir": "<STATE_DIR_ENV_VAR>",
     "claude_bin": "<CLAUDE_BIN_ENV_VAR>",
-    "codex_bin": "<CODEX_BIN_ENV_VAR>"
+    "codex_bin": "<CODEX_BIN_ENV_VAR>",
+    "feed_url": "<FEED_URL_ENV_VAR>"
+  },
+  "release": {
+    "command": ["bash", "/path/to/release.sh", "--version", "{version}", "--out", "{out}",
+                "--base-url", "{base_url}", "--no-publish"],
+    "feed": "appcast.xml",
+    "app": "YourProduct.app"
   },
   "installer": {
     "command": ["bash", "/path/to/install.sh", "--from", "{app}"],

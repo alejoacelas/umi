@@ -13,10 +13,14 @@ def pytest_addoption(parser):
     parser.addoption("--target", default=os.environ.get("ACCEPTANCE_TARGET"),
                      help="target file (targets/<name>.json); or set ACCEPTANCE_TARGET")
     parser.addoption("--req", default=None, help="comma-separated requirement ids: run only their tests")
+    parser.addoption("--phase", default=os.environ.get("ACCEPTANCE_PHASE", "all"), choices=["1", "all"],
+                     help="1: phase 1 (the app), leaving out tests that need managed agents (SPEC, Delivery "
+                          "phases); all: everything (default)")
 
 
 def pytest_configure(config):
     config._req_results = {}
+    config._deferred = set()
     config._partial = bool(config.args and [a for a in config.args if a.rstrip("/") not in ("tests", ".")])
 
 
@@ -85,6 +89,14 @@ def ui(inst):
 
 
 def pytest_collection_modifyitems(config, items):
+    if config.getoption("--phase") == "1":
+        # Phase 1 leaves out tests that need managed agents. Not a "partial" run: the report is the
+        # phase's full report, with those requirements marked deferred.
+        kept = [item for item in items if not item.get_closest_marker("harness")]
+        for item in items:
+            if item.get_closest_marker("harness"):
+                config._deferred.update(r for m in item.iter_markers("req") for r in m.args)
+        items[:] = kept
     wanted = config.getoption("--req")
     if wanted:
         ids = {r.strip() for r in wanted.split(",") if r.strip()}
@@ -144,12 +156,27 @@ def spec_priorities(spec):
     return tiers
 
 
+def phase_two(spec):
+    """Requirement ids listed on SPEC.md's "Phase 2 requirements: …" line."""
+    match = re.search(r"Phase 2 requirements: (.+?)\.\n", spec, re.S)
+    ids = set()
+    for part in re.split(r",\s*", match.group(1).replace("\n", " ")) if match else []:
+        rng = re.match(r"([A-Z]+)-(\d+) to [A-Z]+-(\d+)", part.strip())
+        if rng:
+            ids.update(f"{rng.group(1)}-{n}" for n in range(int(rng.group(2)), int(rng.group(3)) + 1))
+        elif part.strip():
+            ids.add(part.strip())
+    return ids
+
+
 def pytest_sessionfinish(session, exitstatus):
     results = session.config._req_results
     spec = open(os.path.join(ROOT, "SPEC.md")).read()
     reqs = re.findall(r"\*\*([A-Z]+-\d+) \[([AW+]+)\]\*\*", spec)
     tiers = spec_priorities(spec)
-    lines = ["# Requirement traceability", "",
+    phase1 = session.config.getoption("--phase") == "1"
+    deferred = (session.config._deferred | phase_two(spec)) if phase1 else set()
+    lines = ["# Requirement traceability" + (" (phase 1)" if phase1 else ""), "",
              "| Requirement | Tier | Kind | Status | Tests |", "|---|---|---|---|---|"]
     for req, kind in reqs:
         tests = results.get(req, [])
@@ -157,6 +184,8 @@ def pytest_sessionfinish(session, exitstatus):
             statuses = {s for _, s in tests}
             status = ("FAIL" if statuses & {"failed", "error"} else
                       "pass" if "passed" in statuses else "skipped")
+        elif req in deferred:
+            status = "deferred (phase 2)"
         else:
             status = "written check" if kind == "W" else ("not run" if "A" in kind else "")
         names = ", ".join(sorted({t.split("::")[-1] for t, _ in tests}))

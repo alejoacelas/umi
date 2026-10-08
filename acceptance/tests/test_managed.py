@@ -11,7 +11,7 @@ import pytest
 
 from harness import alive, descendants, login_env, wait_until, zombies
 
-pytestmark = pytest.mark.managed
+pytestmark = [pytest.mark.managed, pytest.mark.harness]
 
 KINDS = ["claude", "codex"]
 # How each harness spells "ask before acting" (the fakes accept the real CLIs' values).
