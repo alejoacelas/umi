@@ -42,3 +42,30 @@ hand)."
   `results/checks/REPORT.md`.
 - `checks/tern_extra_evidence.py`: screenshots for criteria `run_checks.py`'s setup can't show
   (Files mode with nested folders, Markdown images and page rules, the "changed on disk" notice).
+
+## Phase 2
+
+No existing test was changed or weakened in phase 2. Additions:
+
+- **Fake Codex: `BACKGROUND n`** (`fakes/fake_codex.py`, self-test `t_codex_background` in
+  `fakes/test_fakes.py`, documented in `fakes/README.md`). The brief asked whether Codex starts turns
+  by itself (MA-28). It was checked with the real CLI (codex-cli 0.160.0, gpt-6-luna;
+  `reference/agent-probes/probe_phase2b.py`, logs `reference/agent-logs/X15wake.jsonl` and
+  `X15wakeb.jsonl`): it doesn't. What it does do, when a command keeps running after the turn
+  (a background terminal), is send that command's `item/completed` later, with the finished turn's
+  id and no new turn. `BACKGROUND n` reproduces exactly that shape (the item open at
+  `turn/completed`, its `item/completed` n seconds later); trigger and receipt semantics are
+  unchanged, and `WAKE` on Codex still replies `wake: not supported by codex`, now verified. All
+  fake self-tests pass (43).
+- **`tests/test_tern_agents_extra.py`**: tests for risks of this build's managed-agent design:
+  Codex background tasks counted and never taken for a turn; a message the product died while
+  handing over is delivered exactly once after the restart; a session that never received a message
+  resumes after a stop; `agent wait` keeps waiting across an app restart; a self-started turn cut
+  off by a crash continues; stopping a session while its harness is still starting; a harness that
+  isn't installed fails clearly; `tern` inside an agent is this build's CLI; a redirect during a
+  self-started turn; watching a turn that already finished notifies at once; `update --now` asks
+  before cutting turns off (R-10).
+- **`app/macos/TernTests/verify_agent_panes.py`** (outside the suite, like phase 1's
+  `verify_ui_paths.py`): the agent-pane behaviors the suite checks through the accessibility tree,
+  driven through internal `debug.agent.*` methods while the screen is locked. It doesn't count as a
+  pass of the skipped UI tests; REPORT.md lists those as skipped.

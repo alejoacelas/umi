@@ -1705,6 +1705,25 @@ def t_codex_background():
     x.close()
 
 
+def t_codex_answer_id_type():
+    """An answer must carry the request's own id: `false` for request 0 is no answer (codex-cli
+    0.160.0 left the approval pending)."""
+    x = FX()
+    x.init()
+    tid = x.thread(approvalPolicy="untrusted")
+    n = x.n()
+    x.turn(tid, "ASK_APPROVAL")
+    i, req = x.server_req(n)
+    assert req["id"] == 0
+    x.send({"id": False, "result": {"decision": "accept"}})
+    time.sleep(1.0)
+    assert not [m for m in x.msgs[i:] if m.get("method") == "turn/completed"], "a mistyped id answered the request"
+    x.send({"id": 0, "result": {"decision": "accept"}})
+    j, done = x.completed(i)
+    assert done["params"]["turn"]["items"][0]["text"] == "approval accepted"
+    x.close()
+
+
 def t_claude_resume_missing():
     # C12missing / C4e: stderr line, then one error `result` on stdout, no initialize response, exit 1.
     # The fake does all of it before reading stdin, so it happens even if nothing is sent.
@@ -1871,7 +1890,7 @@ def t_codex_mcp():
     assert any("FAKE_MCP" in l for l in x.stderr), x.stderr
 
 
-TESTS = [t_codex_background, t_claude_basic, t_claude_interrupt_sleep, t_claude_interrupt_keeps_queued, t_claude_injection,
+TESTS = [t_codex_background, t_codex_answer_id_type, t_claude_basic, t_claude_interrupt_sleep, t_claude_interrupt_keeps_queued, t_claude_injection,
          t_claude_permissions, t_claude_skip_permissions, t_claude_resume, t_claude_crash_and_malformed,
          t_claude_stdin_close_mid_turn, t_codex_basic, t_codex_steer_and_commentary, t_codex_interrupt,
          t_codex_approvals, t_codex_resume_and_lock, t_codex_eof_crash_fail_queue,

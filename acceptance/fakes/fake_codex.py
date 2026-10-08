@@ -900,6 +900,10 @@ class FakeCodex(object):
 
     # ------------------------------------------------------------ client responses (approvals)
     def handle_client_response(self, msg):
+        # The real server matches ids by type too: an answer with id false to request 0 is not an
+        # answer to it (observed 2026-10-08 with codex-cli 0.160.0: the approval stayed pending).
+        if isinstance(msg["id"], bool):
+            return
         with self.cv:
             turn = self.pending_server.get(msg["id"])
             if turn is None or turn.approval is None or turn.approval["id"] != msg["id"]:

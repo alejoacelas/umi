@@ -4,7 +4,7 @@
 |---|---|
 | `fake_claude.py` | `claude -p --input-format stream-json --output-format stream-json --verbose --replay-user-messages --permission-prompt-tool stdio` (Claude Code 2.1.289) |
 | `fake_codex.py` | `codex app-server --listen stdio://` (codex-cli 0.160.0, JSON-RPC without the `"jsonrpc"` field) |
-| `test_fakes.py` | self-tests: `python3 test_fakes.py [-v] [name-filter]` (42 tests, about 60 s) |
+| `test_fakes.py` | self-tests: `python3 test_fakes.py [-v] [name-filter]` (44 tests, about 60 s) |
 
 Both are Python 3.9 stdlib-only scripts. The frame shapes and orderings come from real runs recorded in
 `../reference/agent-logs/` and summarised in `../reference/PROTOCOLS.md`. This README supersedes the "Fakes"
@@ -333,6 +333,8 @@ interleaving still depends on thread timing, so treat a seed as reproducible in 
 | interrupt during streaming leaves the item open, with no `item/completed` | PROTOCOLS X1 ("treat open items as aborted") |
 
 These hold with or without chaos:
+* An answer to a server request must carry the request's id with its type: `false` for request `0` is ignored
+  and the request stays pending, as the real 0.160.0 server did (2026-10-08, a Tern trace).
 * A `turn/start`, `turn/steer` or `turn/interrupt` that arrives while a turn is closing is answered after that
   turn's `turn/completed`. That is the X9 ordering.
 * Steer responses are written before the steered input's `userMessage` item.
