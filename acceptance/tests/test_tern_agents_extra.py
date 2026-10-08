@@ -380,3 +380,48 @@ def test_a_wait_keeps_its_message_when_someone_sends_more(inst, started):
     out, err = proc.communicate(timeout=90)
     got = json.loads(out)
     assert got["status"] == "DONE" and a in got["message"]["text"], got
+
+
+# ---- review round 5 regressions ------------------------------------------------------------------
+
+@pytest.mark.req("MA-26", "MA-9")
+def test_a_stopped_background_command_is_not_counted_again(inst, started):
+    sid = started("codex", "BACKGROUND 30 bg")
+    inst.wait(sid)
+    assert inst.info(sid).get("background_tasks") == 1
+    inst.cli("agent", "stop", sid)
+    n = nonce()
+    message = inst.send(sid, f"ECHO after {n}")
+    assert inst.wait(sid, "--message", message)[1]["status"] == "DONE"
+    assert not inst.info(sid).get("background_tasks"), inst.info(sid)
+
+
+@pytest.mark.req("MA-5")
+def test_a_timed_out_wait_names_its_own_message(inst, started):
+    sid = started("claude", "ECHO warm-up")
+    inst.wait(sid)
+    first = inst.send(sid, f"SLEEP 5 {nonce()}")
+    inst.send(sid, f"ECHO queued {nonce()}")
+    code, out = inst.wait(sid, "--message", first, timeout=1)
+    assert (code, out["status"]) == (124, "TIMEOUT") and out["message"]["id"] == first, out
+
+
+@pytest.mark.req("MA-1")
+def test_session_settings_are_private_to_the_user(inst, started):
+    """`--env` values (tokens, say) are stored with the session: only its owner can read them."""
+    sid = started("claude", "ECHO private", env={"ACC_TOKEN": "secret-" + nonce()})
+    inst.wait(sid)
+    import stat
+    for root, dirs, files in os.walk(inst.dir):
+        for name in files:
+            path = os.path.join(root, name)
+            try:
+                with open(path, "rb") as f:
+                    if b"ACC_TOKEN" not in f.read():
+                        continue
+            except OSError:
+                continue
+            if "fake-agent" in path or path.endswith("app.log"):
+                continue
+            mode = stat.S_IMODE(os.stat(path).st_mode)
+            assert mode & 0o077 == 0, f"{path} is readable by others ({oct(mode)})"
