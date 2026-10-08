@@ -360,7 +360,7 @@ enum TernRPC {
 
         default:
             if method.hasPrefix("agent.") {
-                return try await TernAgentRPC.handle(method: method, params: params, caller: caller)
+                return try await TernAgentRPC.handle(method: method, params: params, caller: caller, connection: connection)
             }
             throw TernError.badRequest("unknown method \(method)")
         }

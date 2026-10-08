@@ -5,11 +5,12 @@ import Foundation
 enum TernAgentRPC {
     static let agents = TernAgents.shared
 
-    static func handle(method: String, params: TernParams, caller: TernCaller) async throws -> [String: Any] {
+    static func handle(method: String, params: TernParams, caller: TernCaller,
+                       connection: TernConnection? = nil) async throws -> [String: Any] {
         switch method {
         case "agent.start": return try await start(params, caller: caller)
         case "agent.send": return try await send(params, caller: caller)
-        case "agent.wait": return try await wait(params, caller: caller)
+        case "agent.wait": return try await wait(params, caller: caller, connection: connection)
         case "agent.report": return try await report(params, caller: caller)
         case "agent.read": return try await read(params, caller: caller)
         case "agent.ls":
@@ -153,7 +154,7 @@ enum TernAgentRPC {
 
     // MARK: wait
 
-    static func wait(_ params: TernParams, caller: TernCaller) async throws -> [String: Any] {
+    static func wait(_ params: TernParams, caller: TernCaller, connection: TernConnection? = nil) async throws -> [String: Any] {
         let timeout = params.double("timeout")
         let forReport = params.bool("report") ?? false
         let messageID = params.string("message")
@@ -185,17 +186,19 @@ enum TernAgentRPC {
                     return
                 }
                 if let timeout, timeout <= 0 {
-                    continuation.resume(returning: timeoutResult(session, report: forReport))
+                    continuation.resume(returning: timeoutResult(session, report: forReport, target: target))
                     return
                 }
                 var finished = false
                 var waiterID: UUID?
                 var timer: DispatchWorkItem?
+                var watchdog: DispatchSourceTimer?
                 func complete(_ value: [String: Any]) {
                     guard !finished else { return }
                     finished = true
                     if let waiterID { session.removeWaiter(waiterID) }
                     timer?.cancel()
+                    watchdog?.cancel()
                     continuation.resume(returning: value)
                 }
                 waiterID = session.addWaiter {
@@ -204,9 +207,19 @@ enum TernAgentRPC {
                     return true
                 }
                 if let timeout {
-                    let work = DispatchWorkItem { complete(timeoutResult(session, report: forReport)) }
+                    let work = DispatchWorkItem { complete(timeoutResult(session, report: forReport, target: target)) }
                     timer = work
                     TernAgents.queue.asyncAfter(deadline: .now() + timeout, execute: work)
+                }
+                // A client that went away (Ctrl-C, a killed script) doesn't leave its wait behind.
+                if let connection {
+                    let source = DispatchSource.makeTimerSource(queue: TernAgents.queue)
+                    source.schedule(deadline: .now() + 2, repeating: 2)
+                    source.setEventHandler {
+                        if connection.isClosed { complete(timeoutResult(session, report: forReport, target: target)) }
+                    }
+                    watchdog = source
+                    source.resume()
                 }
             }
         }
@@ -254,9 +267,9 @@ enum TernAgentRPC {
         return ["report": report.json, "status": report.verdict.uppercased(), "session": info(session, pane: nil)]
     }
 
-    nonisolated static func timeoutResult(_ session: TernAgentSession, report: Bool) -> [String: Any] {
+    nonisolated static func timeoutResult(_ session: TernAgentSession, report: Bool, target: String?) -> [String: Any] {
         var out: [String: Any] = ["status": "TIMEOUT", "session": info(session, pane: nil)]
-        if !report, let message = session.lastMessage { out["message"] = messageJSON(message) }
+        if !report, let message = target.flatMap({ session.message($0) }) { out["message"] = messageJSON(message) }
         return out
     }
 

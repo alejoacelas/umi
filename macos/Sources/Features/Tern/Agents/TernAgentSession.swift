@@ -311,10 +311,11 @@ final class TernAgentSession {
         guard !shuttingDown else { return }
         switch phase {
         case .stopped:
-            guard !queue.isEmpty, stop == nil else { return }
+            // Messages wait, or a turn cut off before a restart waits to continue.
+            guard !queue.isEmpty || recovering, stop == nil else { return }
             guard canRelaunch else {
                 // Never pending forever (MA-4): what can't reach the agent fails, with the reason.
-                failQueued(.error, record.lastError ?? "\(record.kind.rawValue) couldn't start")
+                failOutstanding(record.lastError ?? "\(record.kind.rawValue) couldn't start")
                 changed()
                 return
             }
@@ -864,6 +865,17 @@ final class TernAgentSession {
         queue.removeAll()
         saveQueue()
         for id in ids { finish(id, .exited, error: "the session was stopped before this message was delivered") }
+        // A turn cut off before a restart and not continued yet won't be: it was stopped.
+        if recovering || record.openSelfTurn {
+            recovering = false
+            for m in messages where !m.state.isFinal && m.cutOff == true {
+                finish(m.id, .exited, error: "the session was stopped before its cut-off turn continued")
+            }
+            record.openSelfTurn = false
+            record.cutOffAt = nil
+            record.cutOffReason = nil
+            saveRecord()
+        }
         if let inFlight, message(inFlight)?.state == .sent {
             finish(inFlight, .exited, error: "the session was stopped before this message was delivered")
             self.inFlight = nil
@@ -1013,6 +1025,10 @@ final class TernAgentSession {
         }
         requests.removeAll()
         backgroundTasks = nil
+        // Tools this process was running (background commands included) ended with it.
+        for item in items where item.kind == "tool" && item.state == "running" {
+            if let ref = item.ref { updateItem(ref: ref) { $0.state = "stopped" } }
+        }
         // A redirect waiting on this process's turn: the turn is gone, the redirect goes next.
         redirect?.deadline.cancel()
         redirect = nil
@@ -1031,7 +1047,7 @@ final class TernAgentSession {
             notice("The harness exited.")
         }
         if neverReady && stopping == nil && !shuttingDown && failedLaunches >= 2 {
-            failQueued(.error, reason ?? "\(record.kind.rawValue) couldn't start")
+            failOutstanding(reason ?? "\(record.kind.rawValue) couldn't start")
         }
         saveQueue()
         phase = .cleaning

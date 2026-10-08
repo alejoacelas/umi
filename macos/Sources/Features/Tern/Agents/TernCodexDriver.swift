@@ -25,6 +25,8 @@ final class TernCodexDriver: TernHarnessDriver {
     private var commandOutput: [String: String] = [:]
     /// Command items still running after their turn ended (background terminals).
     private var openCommands: Set<String> = []
+    /// Command items this process started and hasn't finished.
+    private var runningCommands: Set<String> = []
     private var mcp: [String: [String: String]] = [:]
     private var mcpOrder: [String] = []
 
@@ -258,6 +260,7 @@ final class TernCodexDriver: TernHarnessDriver {
             }
         case "commandExecution":
             let command = Self.command(item)
+            runningCommands.insert(ref)
             if !session.hasItem(ref: ref) {
                 session.addItem(kind: "tool", text: "shell", tool: "shell", detail: command, state: "running", ref: ref)
             }
@@ -312,6 +315,7 @@ final class TernCodexDriver: TernHarnessDriver {
                 if let code = item["exitCode"] as? Int, code != 0 { entry.state = "error (exit \(code))" }
             }
             session.toolEnded(ref: ref)
+            runningCommands.remove(ref)
             if openCommands.remove(ref) != nil {
                 session.backgroundTasks = openCommands.isEmpty ? nil : openCommands.count
                 session.changed()
@@ -334,13 +338,15 @@ final class TernCodexDriver: TernHarnessDriver {
         if let id = turn["id"] as? String, session.currentTurnID != nil, session.currentTurnID != id {
             return   // not the turn we track
         }
-        // Commands still running when a turn completes keep going in the background.
-        let running = session.items.filter { $0.kind == "tool" && $0.state == "running" && $0.tool == "shell" }.compactMap(\.ref)
+        // Commands of this process still running when a turn completes keep going in the
+        // background.
+        let running = Array(runningCommands)
         if status == "completed" {
             openCommands.formUnion(running)
             session.backgroundTasks = openCommands.isEmpty ? nil : openCommands.count
         } else {
             for ref in running { session.updateItem(ref: ref) { $0.state = "interrupted" } }
+            runningCommands.removeAll()
         }
         let error = (turn["error"] as? [String: Any])?["message"] as? String
         switch status {

@@ -10,7 +10,11 @@ import Foundation
 /// which is the failure the product has to survive (R-2); a power cut can lose the tail.
 /// Removing a session deletes its folder, so disk use follows what the user keeps (R-9).
 enum TernAgentStore {
-    static var root: String { TernPaths.directory("sessions") }
+    static var root: String {
+        let dir = TernPaths.directory("sessions")
+        chmod(dir, 0o700)
+        return dir
+    }
 
     static func folder(_ id: String) -> String { (root as NSString).appendingPathComponent(id) }
 
@@ -99,11 +103,13 @@ enum TernAgentStore {
 
     static func saveRecord(_ record: TernSessionRecord) {
         let dir = folder(record.id)
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        // Owner-only: `--env` values (tokens, say) are stored here.
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
         guard let data = try? encoder.encode(record) else { return }
         let path = (dir as NSString).appendingPathComponent("session.json")
         let tmp = path + ".tmp"
-        if FileManager.default.createFile(atPath: tmp, contents: data) {
+        if FileManager.default.createFile(atPath: tmp, contents: data, attributes: [.posixPermissions: 0o600]) {
             _ = rename(tmp, path)
         }
     }
@@ -156,7 +162,9 @@ enum TernAgentStore {
             if let line = try? encoder.encode(LogEntry(m: nil, i: item)) { data.append(line); data.append(0x0A) }
         }
         let tmp = path + ".tmp"
-        if FileManager.default.createFile(atPath: tmp, contents: data) { _ = rename(tmp, path) }
+        if FileManager.default.createFile(atPath: tmp, contents: data, attributes: [.posixPermissions: 0o600]) {
+            _ = rename(tmp, path)
+        }
     }
 
     static func logSize(_ id: String) -> Int {
