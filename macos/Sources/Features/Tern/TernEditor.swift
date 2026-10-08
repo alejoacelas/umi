@@ -650,40 +650,56 @@ struct TernEditorPanel: View {
         .accessibilityLabel("Editor")
     }
 
+    /// One row when the file tabs and the Preview/Source control fit side by side; in a narrow
+    /// panel the control goes on a row of its own, so the tabs (the active one included) stay
+    /// readable.
     private var header: some View {
-        HStack(spacing: 2) {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 2) {
-                        ForEach(group.documents) { doc in
-                            TernEditorTabChip(doc: doc, selected: doc === group.active,
-                                              select: { group.active = doc },
-                                              close: { TernEditor.confirmClose(doc, in: group, window: nil) })
-                                .id(doc.id)
-                        }
-                    }
-                }
-                .clipped()
-                // The active file's tab is always in view, however narrow the panel.
-                .onAppear { scrollToActive(proxy) }
-                .onChange(of: group.active?.id) { _ in scrollToActive(proxy) }
-                .onChange(of: group.documents.count) { _ in scrollToActive(proxy) }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 2) {
+                tabs(shrinking: false)
+                Spacer(minLength: 8)
+                modeToggle
             }
-            Spacer(minLength: 8)
-            if let doc = group.active, doc.isMarkdown {
-                TernModeToggle(doc: doc)
-                    .fixedSize()
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            VStack(alignment: .leading, spacing: 0) {
+                tabs(shrinking: true)
+                    .padding(.horizontal, 10)
+                    .frame(height: 34)
+                if group.active?.isMarkdown == true {
+                    HStack {
+                        Spacer(minLength: 0)
+                        modeToggle
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 4)
+                }
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 34)
     }
 
-    private func scrollToActive(_ proxy: ScrollViewProxy) {
-        guard let id = group.active?.id else { return }
-        DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+    @ViewBuilder
+    private var modeToggle: some View {
+        if let doc = group.active, doc.isMarkdown {
+            TernModeToggle(doc: doc)
+                .fixedSize()
         }
+    }
+
+    /// The file tabs. Shrinking, they share the row and their names truncate.
+    @ViewBuilder
+    private func tabs(shrinking: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach(group.documents) { doc in
+                TernEditorTabChip(doc: doc, selected: doc === group.active,
+                                  select: { group.active = doc },
+                                  close: { TernEditor.confirmClose(doc, in: group, window: nil) })
+                    .frame(minWidth: shrinking ? 44 : nil, alignment: .leading)
+                    .fixedSize(horizontal: !shrinking, vertical: false)
+                    .layoutPriority(doc === group.active ? 1 : 0)
+            }
+        }
+        .clipped()
     }
 }
 
@@ -701,6 +717,7 @@ private struct TernEditorTabChip: View {
             Text(doc.name)
                 .font(TernTheme.uiFont)
                 .lineLimit(1)
+                .truncationMode(.middle)
             if doc.isDirty && !hovering {
                 Circle().fill(TernTheme.textSecondary).frame(width: 6, height: 6).frame(width: 14)
                     .accessibilityLabel("Unsaved changes")

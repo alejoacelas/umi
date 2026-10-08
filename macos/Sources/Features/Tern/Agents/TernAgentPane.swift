@@ -405,14 +405,37 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         }
     }
 
+    /// A view that hasn't shown its transcript yet starts at the latest turn.
+    private var scrolledOnce = false
+
     private func renderTranscript(_ snapshot: TernAgentSnapshot) {
         let clip = transcriptScroll.contentView
         let atBottom = clip.bounds.maxY >= (transcript.frame.height - 24)
         let text = TernAgentTranscriptRenderer.render(snapshot.items, expanded: model.expanded, light: TernTheme.isLight)
         transcript.textStorage?.setAttributedString(text)
         transcript.setAccessibilityValue(text.string)
-        if atBottom || lastItemsVersion <= 1 {
+        if atBottom || !scrolledOnce {
             transcript.scrollToEndOfDocument(nil)
+            if !scrolledOnce {
+                // Once laid out at its real size, too.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.layoutSubtreeIfNeeded()
+                    self.transcript.scrollToEndOfDocument(nil)
+                    self.scrolledOnce = self.window != nil
+                }
+            }
+        }
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        guard superview != nil, !scrolledOnce else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil else { return }
+            self.layoutSubtreeIfNeeded()
+            self.transcript.scrollToEndOfDocument(nil)
+            self.scrolledOnce = true
         }
     }
 
