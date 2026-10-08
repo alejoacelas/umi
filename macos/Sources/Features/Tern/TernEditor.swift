@@ -361,6 +361,24 @@ final class TernEditorGroup: ObservableObject {
         return doc
     }
 
+    /// Take over another group's documents (its tab is going away). A file this group
+    /// already has open keeps this group's copy; the other copy's unsaved edits are saved
+    /// or kept as a recovery copy.
+    func adopt(from other: TernEditorGroup) {
+        guard other !== self, !other.documents.isEmpty else { return }
+        for doc in other.documents {
+            if document(for: doc.url) != nil {
+                doc.preserveEdits()
+            } else {
+                documents.append(doc)
+            }
+        }
+        if active == nil { active = other.active.flatMap { a in documents.first { $0 === a } } ?? documents.first }
+        other.documents = []
+        other.active = nil
+        TernState.shared.layoutDidChange()
+    }
+
     func close(_ doc: TernDocument) {
         guard let index = documents.firstIndex(where: { $0 === doc }) else { return }
         documents.remove(at: index)

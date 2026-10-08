@@ -1824,10 +1824,10 @@ extension Ghostty {
         /// Handle a user notification click
         func handleUserNotification(notification: UNNotification, focus: Bool) {
             let id = notification.request.identifier
-            guard self.notificationIdentifiers.remove(id) != nil else { return }
+            self.notificationIdentifiers.remove(id)
             if focus {
-                self.window?.makeKeyAndOrderFront(self)
-                Ghostty.moveFocus(to: self)
+                // Tern: the pane may be in a tab that isn't shown; show it.
+                TernLayout.focusPane(self, activate: true)
             }
         }
 

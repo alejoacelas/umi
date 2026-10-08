@@ -98,11 +98,7 @@ def main():
         check("M-3 the move happened", moved_tab != win["tab"])
         inst.cli("pane", "focus", win["pane"])
         time.sleep(0.4)
-        print("  undo state before:", ctl.call("debug.undo"))
         ctl.call("debug.menu.perform", title="Undo")
-        time.sleep(0.3)
-        print("  undo state after:", ctl.call("debug.undo"))
-        print("  " + inst.cli("ls").stdout.replace("\n", "\n  "))
         ok = wait_until(lambda: inst.find_pane(right) and inst.find_pane(right)[1]["id"] == win["tab"], 5,
                         message="undo") if True else False
         w = next(w for w in inst.tree()["windows"] if w["id"] == win["window"])
@@ -117,6 +113,26 @@ def main():
         inst.cli("send", "--pane", right, "-e", f"echo {marker}")
         check("M-3 the moved program still runs",
               inst.cli("wait", "--pane", right, "--pattern", f"^{marker}", "--timeout", "10", check=False).returncode == 0)
+
+        # M-3 across windows: undo a move into another window; both windows come back as they were.
+        a = inst.json("window", "new", "--name", "undo-a")
+        b = inst.json("window", "new", "--name", "undo-b")
+        wait_until(lambda: inst.cli("read", "--pane", b["pane"], check=False).stdout.strip() != "", 20)
+        a2 = inst.json("pane", "info", inst.cli("split", "right", "--pane", a["pane"]).stdout.strip())["id"]
+        time.sleep(0.4)
+        inst.cli("pane", "move", a2, "--window", b["window"], "--dir", "right")
+        time.sleep(0.4)
+        ctl.call("debug.menu.perform", title="Undo")
+        time.sleep(0.6)
+        wa = next((w for w in inst.tree()["windows"] if w["id"] == a["window"]), None)
+        wb = next((w for w in inst.tree()["windows"] if w["id"] == b["window"]), None)
+        check("M-3 undo of a cross-window move restores the source window",
+              wa is not None and sorted(p["id"] for p in wa["tabs"][0]["panes"]) == sorted([a["pane"], a2]),
+              str(wa and [p["id"][:8] for p in wa["tabs"][0]["panes"]]))
+        check("M-3 undo of a cross-window move restores the destination window",
+              wb is not None and [p["id"] for p in wb["tabs"][0]["panes"]] == [b["pane"]])
+        inst.cli("window", "close", a["window"], check=False)
+        inst.cli("window", "close", b["window"], check=False)
 
         # E-3: dirty documents aren't closed silently; ⌘S saves.
         tmp = tempfile.mkdtemp(prefix="verify-editor-")

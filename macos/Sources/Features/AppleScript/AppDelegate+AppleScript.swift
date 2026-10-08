@@ -273,7 +273,10 @@ extension NSApplication {
             return nil
         }
 
-        let createdTabID = ScriptTab.stableID(controller: createdController)
+        // Tern: the new tab is the window's selected tab.
+        let createdTabID = createdController.tabs.isEmpty
+            ? ScriptTab.stableID(controller: createdController)
+            : ScriptTab.stableID(tab: createdController.selectedTab)
 
         if let targetWindow,
            let scriptTab = targetWindow.valueInTabs(uniqueID: createdTabID) {
@@ -289,7 +292,8 @@ extension NSApplication {
         // Fall back to wrapping the created controller if AppKit tab-group
         // bookkeeping has not fully refreshed in the current run loop.
         let fallbackWindow = ScriptWindow(primaryController: createdController)
-        return ScriptTab(window: fallbackWindow, controller: createdController)
+        return ScriptTab(window: fallbackWindow, controller: createdController,
+                         tab: createdController.tabs.isEmpty ? nil : createdController.selectedTab)
     }
 }
 
@@ -319,7 +323,7 @@ extension NSApplication {
     /// terminal windows. This powers both terminal enumeration and ID lookup.
     fileprivate var allSurfaceViews: [Ghostty.SurfaceView] {
         allTerminalControllers
-            .flatMap { $0.surfaceTree.root?.leaves() ?? [] }
+            .flatMap { ($0 as? TerminalController)?.allSurfaces ?? ($0.surfaceTree.root?.leaves() ?? []) }
     }
 
     /// All terminal controllers in undefined order.

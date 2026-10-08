@@ -386,7 +386,9 @@ enum TernLayout {
         let sourceTree = source.window.tree(of: source.tab)
         guard let node = sourceTree.root?.node(view: pane) else { throw TernError.notFound("the pane isn't in its tab") }
 
-        // Work out the destination tree before changing anything, so a failure changes nothing.
+        // Work out the destination before changing anything, so a failure changes nothing.
+        // The pane goes into its destination first and leaves its source second, so a window
+        // that is both (its only pane moving to a new tab) is never left empty and closed.
         switch destination {
         case .besidePane(let target, let direction):
             guard let dest = TernTopology.locate(target) else { throw TernError.notFound("the target pane isn't in a window") }
@@ -397,17 +399,17 @@ enum TernLayout {
             } else {
                 let destTree = dest.window.tree(of: dest.tab)
                 let newDestTree = try destTree.inserting(view: pane, at: target, direction: direction)
-                removeFromSource(pane, node: node, source: source)
                 dest.window.setTree(SplitTree(root: newDestTree.root, zoomed: nil), for: dest.tab)
+                removeFromSource(pane, node: node, source: source, adoptingInto: dest.tab)
             }
             if focus { focusPane(pane, activate: true) }
             return TernTopology.Location(window: dest.window, tab: dest.tab, pane: pane)
 
         case .newTab(let window, let index):
-            removeFromSource(pane, node: node, source: source)
             let tab = TernTab(tree: .init(view: pane))
             let position = index ?? ((window.index(of: source.tab).map { $0 + 1 }) ?? window.tabs.count)
             window.insertTab(tab, at: position)
+            removeFromSource(pane, node: node, source: source, adoptingInto: tab)
             if focus {
                 focusPane(pane, activate: true)
             }
@@ -415,9 +417,9 @@ enum TernLayout {
             return TernTopology.Location(window: window, tab: tab, pane: pane)
 
         case .newWindow:
-            removeFromSource(pane, node: node, source: source)
-            if size.width > 0, size.height > 0 { pane.frame.size = size }
             let tab = TernTab(tree: .init(view: pane))
+            removeFromSource(pane, node: node, source: source, adoptingInto: tab)
+            if size.width > 0, size.height > 0 { pane.frame.size = size }
             let controller = TerminalController.newWindow(
                 ghostty, tabs: [tab], selected: tab,
                 inheritBackgroundOpacity: source.window.isBackgroundOpaque,
@@ -426,11 +428,13 @@ enum TernLayout {
         }
     }
 
-    /// Take a pane out of its tab; the tab (or window) closes if it becomes empty.
+    /// Take a pane out of its tab. A tab left empty closes (and a window left without tabs);
+    /// its editor documents go with the pane to `adoptingInto`, so no edit is dropped.
     private static func removeFromSource(_ pane: Ghostty.SurfaceView, node: SplitTree<Ghostty.SurfaceView>.Node,
-                                         source: TernTopology.Location) {
+                                         source: TernTopology.Location, adoptingInto destination: TernTab) {
         let newTree = source.window.tree(of: source.tab).removing(node)
         if newTree.isEmpty {
+            destination.editor.adopt(from: source.tab.editor)
             source.window.detachTab(source.tab, focusNeighbor: false)
             TernEvents.shared.emit("tab.closed", ["tab": source.tab.idString, "window": source.window.ternIDString])
         } else {
@@ -607,64 +611,90 @@ struct TernSnapshot {
         guard let ghostty = TernLayout.ghostty else { return }
         let mine = Set(windows.map { ObjectIdentifier($0.box) })
 
-        // First pull every pane this snapshot places out of wherever it is now, so no pane
-        // is ever in two trees.
+        // 1. Resolve what each window should hold (closed panes left out).
+        struct TabPlan {
+            let state: TabState
+            let root: SplitTree<Ghostty.SurfaceView>.Node
+        }
+        var plans: [(window: WindowState, tabs: [TabPlan])] = []
         var placed = Set<ObjectIdentifier>()
         for state in windows {
-            for tab in state.tabs {
-                for view in tab.tree?.resolve().map({ $0.leaves() }) ?? [] { placed.insert(ObjectIdentifier(view)) }
+            var tabs: [TabPlan] = []
+            for tabState in state.tabs {
+                guard let root = tabState.tree?.resolve() else { continue }
+                for view in root.leaves() { placed.insert(ObjectIdentifier(view)) }
+                tabs.append(TabPlan(state: tabState, root: root))
+            }
+            plans.append((state, tabs))
+        }
+
+        // The window each existing tab object belongs in.
+        var targetOf: [ObjectIdentifier: WindowBox] = [:]
+        for plan in plans {
+            for tab in plan.tabs {
+                if let object = tab.state.tab.value { targetOf[ObjectIdentifier(object)] = plan.window.box }
             }
         }
 
-        var restoredControllers: [(WindowState, TerminalController?)] = []
-        for state in windows {
+        // 2. Once, before restoring anything: take restored tabs out of other windows, and
+        //    the panes being placed out of every tab that isn't being restored, so no pane
+        //    is ever in two trees and nothing restored is touched again.
+        for controller in TerminalController.all where !controller.isClosed {
+            for existing in controller.tabs {
+                if let target = targetOf[ObjectIdentifier(existing)] {
+                    if target.controller !== controller {
+                        controller.detachTab(existing, focusNeighbor: false, keepWindow: true)
+                    }
+                    continue
+                }
+                let tree = controller.tree(of: existing)
+                var newTree = tree
+                for leaf in tree.root?.leaves() ?? [] where placed.contains(ObjectIdentifier(leaf)) {
+                    if let node = newTree.root?.node(view: leaf) { newTree = newTree.removing(node) }
+                }
+                guard newTree.root != tree.root else { continue }
+                if newTree.isEmpty {
+                    controller.detachTab(existing, focusNeighbor: false, keepWindow: true)
+                } else {
+                    controller.setTree(newTree, for: existing)
+                }
+            }
+        }
+
+        // 3. Restore each window.
+        for plan in plans {
+            let state = plan.window
             var tabs: [TernTab] = []
-            for tabState in state.tabs {
-                guard let root = tabState.tree?.resolve() else { continue }
+            for tabPlan in plan.tabs {
+                let tabState = tabPlan.state
                 let tab = tabState.tab.value ?? TernTab(id: tabState.id, tree: .init())
                 tab.name = tabState.name
                 tab.color = tabState.color
                 tab.pinned = tabState.pinned
                 var zoomedNode: SplitTree<Ghostty.SurfaceView>.Node?
-                if let z = tabState.zoomed?.value, let node = root.node(view: z) { zoomedNode = node }
-                tab.tree = SplitTree(root: root, zoomed: zoomedNode)
+                if let z = tabState.zoomed?.value, let node = tabPlan.root.node(view: z) { zoomedNode = node }
+                tab.tree = SplitTree(root: tabPlan.root, zoomed: zoomedNode)
                 if let f = tabState.focused?.value, tab.tree.contains(f) { tab.focusedSurface = f }
                 tabs.append(tab)
             }
-            restoredControllers.append((state, nil))
-            guard !tabs.isEmpty else {
-                // Everything in it is gone: close it if it's still open.
-                if let controller = state.box.controller {
-                    controller.closeWindowWithoutConfirmation()
+            let live = state.box.controller.flatMap { c in
+                !c.isClosed && (c.window?.isVisible ?? false || c.presentsWithoutFocus) ? c : nil
+            }
+            // Tabs the window has now that the snapshot doesn't know about (and that still
+            // hold panes) stay, after the restored ones: nothing live is ever dropped.
+            if let live {
+                for existing in live.tabs where !tabs.contains(where: { $0 === existing }) && !live.tree(of: existing).isEmpty {
+                    if existing === live.selectedTab { existing.tree = live.surfaceTree }
+                    tabs.append(existing)
                 }
+            }
+            guard !tabs.isEmpty else {
+                live?.closeWindowWithoutConfirmation()
                 continue
             }
             let selected = tabs.first { $0.id == state.selected } ?? tabs[0]
-
-            // Remove these tabs and panes from other windows they're in now.
-            for controller in TerminalController.all {
-                for existing in controller.tabs where tabs.contains(where: { $0 === existing }) && controller !== state.box.controller {
-                    controller.detachTab(existing, focusNeighbor: false, keepWindow: true)
-                }
-                for existing in controller.tabs where !tabs.contains(where: { $0 === existing }) {
-                    let tree = controller.tree(of: existing)
-                    var newTree = tree
-                    for leaf in tree.root?.leaves() ?? [] where placed.contains(ObjectIdentifier(leaf)) {
-                        if let node = newTree.root?.node(view: leaf) { newTree = newTree.removing(node) }
-                    }
-                    if newTree.root != tree.root {
-                        if newTree.isEmpty {
-                            controller.detachTab(existing, focusNeighbor: false, keepWindow: true)
-                        } else {
-                            controller.setTree(newTree, for: existing)
-                        }
-                    }
-                }
-            }
-
-            if let controller = state.box.controller, !controller.isClosed,
-               controller.window?.isVisible ?? false || controller.presentsWithoutFocus {
-                controller.restoreTabs(tabs, selected: selected, focusedPane: state.focusedPane?.value)
+            if let live {
+                live.restoreTabs(tabs, selected: selected, focusedPane: state.focusedPane?.value)
             } else {
                 let controller = TerminalController.newWindow(
                     ghostty, tabs: tabs, selected: selected, frame: state.frame, focus: false, registerUndo: false)
@@ -673,23 +703,22 @@ struct TernSnapshot {
             }
         }
 
-        // Windows the undone step created, now empty or holding only panes that moved back.
+        // 4. Windows the undone step created, now holding only panes that moved back, and
+        //    windows emptied by the restore, close.
         for state in other.windows where !mine.contains(ObjectIdentifier(state.box)) {
-            guard let controller = state.box.controller else { continue }
-            let remaining = controller.allSurfaces.filter { !placed.contains(ObjectIdentifier($0)) }
-            if remaining.isEmpty {
+            guard let controller = state.box.controller, !controller.isClosed else { continue }
+            if controller.allSurfaces.allSatisfy({ placed.contains(ObjectIdentifier($0)) }) {
                 controller.closeWindowWithoutConfirmation()
             }
         }
-        // Windows emptied by the restore (all their tabs moved back elsewhere).
-        for controller in TerminalController.all where controller.tabs.isEmpty {
+        for controller in TerminalController.all where controller.tabs.isEmpty && !controller.isClosed {
             controller.closeWindowWithoutConfirmation()
         }
 
         // Focus as it was, in the window that has it.
-        if let focusedWindow = restoredControllers.first?.0.box.controller,
-           let pane = focusedWindow.focusedSurface,
-           focusedWindow.window?.isKeyWindow ?? false {
+        for plan in plans {
+            guard let controller = plan.window.box.controller, controller.window?.isKeyWindow ?? false,
+                  let pane = controller.focusedSurface else { continue }
             DispatchQueue.main.async { Ghostty.moveFocus(to: pane) }
         }
         TernState.shared.layoutDidChange()

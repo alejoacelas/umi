@@ -60,6 +60,9 @@ final class ScriptWindow: NSObject {
     @objc(tabs)
     var tabs: [ScriptTab] {
         guard NSApp.isAppleScriptEnabled else { return [] }
+        if let tern = primaryController as? TerminalController {
+            return tern.tabs.map { ScriptTab(window: self, controller: tern, tab: $0) }
+        }
         return controllers.map { ScriptTab(window: self, controller: $0) }
     }
 
@@ -69,6 +72,9 @@ final class ScriptWindow: NSObject {
     @objc(selectedTab)
     var selectedTab: ScriptTab? {
         guard NSApp.isAppleScriptEnabled else { return nil }
+        if let tern = primaryController as? TerminalController, !tern.tabs.isEmpty {
+            return ScriptTab(window: self, controller: tern, tab: tern.selectedTab)
+        }
         guard let selectedController else { return nil }
         return ScriptTab(window: self, controller: selectedController)
     }
@@ -82,6 +88,10 @@ final class ScriptWindow: NSObject {
     @objc(valueInTabsWithUniqueID:)
     func valueInTabs(uniqueID: String) -> ScriptTab? {
         guard NSApp.isAppleScriptEnabled else { return nil }
+        if let tern = primaryController as? TerminalController {
+            guard let tab = tern.tabs.first(where: { ScriptTab.stableID(tab: $0) == uniqueID }) else { return nil }
+            return ScriptTab(window: self, controller: tern, tab: tab)
+        }
         guard let controller = controller(tabID: uniqueID) else { return nil }
         return ScriptTab(window: self, controller: controller)
     }
@@ -93,7 +103,7 @@ final class ScriptWindow: NSObject {
     var terminals: [ScriptTerminal] {
         guard NSApp.isAppleScriptEnabled else { return [] }
         return controllers
-            .flatMap { $0.surfaceTree.root?.leaves() ?? [] }
+            .flatMap { ($0 as? TerminalController)?.allSurfaces ?? ($0.surfaceTree.root?.leaves() ?? []) }
             .map(ScriptTerminal.init)
     }
 
@@ -102,7 +112,7 @@ final class ScriptWindow: NSObject {
     func valueInTerminals(uniqueID: String) -> ScriptTerminal? {
         guard NSApp.isAppleScriptEnabled else { return nil }
         return controllers
-            .flatMap { $0.surfaceTree.root?.leaves() ?? [] }
+            .flatMap { ($0 as? TerminalController)?.allSurfaces ?? ($0.surfaceTree.root?.leaves() ?? []) }
             .first(where: { $0.id.uuidString == uniqueID })
             .map(ScriptTerminal.init)
     }
