@@ -1,7 +1,5 @@
 # Tern: phase 1 report
 
-_Draft: results sections are filled in at the end of the run._
-
 ## What was built
 
 **Tern** is a fork of Ghostty (`35a81a980`) for working with coding agents. Phase 1 is the app:
@@ -49,7 +47,71 @@ Where things are:
 | `app/macos/TernTests/verify_ui_paths.py` | Checks of the UI-only behaviors without the accessibility tree |
 | `DECISIONS.md`, `COMPROMISES.md`, `acceptance/TEST_CHANGES.md` | Decisions, trade-offs, suite changes |
 
-<!-- STATUS -->
+## Phase-1 status
+
+From the last full run on the published build (`uv run pytest --target targets/tern.json --phase 1`: 64 passed, 6 skipped, 0 failed) and the judged written checks. Phase-2 requirements (managed agents) are left out; the full table, with test names, is `acceptance/results/traceability.md`.
+
+| Requirement | Tier | Kind | Tests | Written check |
+|---|---|---|---|---|
+| P-1 | Fixed | A | pass |  |
+| P-2 | Fixed | A | pass | pass; part by hand not judged |
+| P-3 | Fixed | A | pass |  |
+| P-4 | Fixed | A | pass |  |
+| I-1 | Fixed | A | pass |  |
+| I-2 | Fixed | A | pass |  |
+| I-3 | Fixed | W | written check | pass |
+| I-4 | Fixed | A | pass |  |
+| I-5 | Fixed | W | pass | pass; part by hand not judged |
+| L-1 | Fixed | A | pass |  |
+| L-2 | Fixed | A | pass |  |
+| L-3 | Fixed | A | pass |  |
+| L-4 | Fixed | A | pass |  |
+| L-5 | Fixed | A | pass |  |
+| L-6 | Fixed | A | pass |  |
+| L-7 | Fixed | A | pass |  |
+| L-8 | Fixed | A | pass |  |
+| L-9 | Fixed | W | skipped (locked screen); passes in verify_ui_paths.py | pass; part by hand not judged |
+| M-1 | Fixed | A | pass |  |
+| M-2 | Fixed | A | pass |  |
+| M-3 | Fixed | A | skipped (locked screen); passes in verify_ui_paths.py |  |
+| M-4 | Fixed | W | written check | not judged (by hand) |
+| M-5 | Fixed | A | pass |  |
+| M-6 | Fixed | A | pass |  |
+| T-1 | Fixed | A | pass |  |
+| T-2 | Fixed | A | pass |  |
+| T-3 | Fixed | A | pass |  |
+| T-4 | Fixed | A | pass |  |
+| T-5 | Fixed | A | pass |  |
+| T-6 | Fixed | A | pass |  |
+| T-7 | Fixed | A | pass |  |
+| S-1 | Fixed | W | written check | pass |
+| S-2 | Fixed | A+W | pass | pass |
+| S-3 | Fixed | W | written check | pass; part by hand not judged |
+| S-4 | Fixed | W | written check | not judged (by hand) |
+| S-5 | Fixed | W | written check | pass |
+| S-6 | Fixed | W | written check | pass |
+| E-1 | Fixed | A+W | pass | pass |
+| E-2 | Fixed | A+W | pass | pass |
+| E-3 | Fixed | A+W | pass | pass; part by hand not judged |
+| E-4 | Fixed | A+W | skipped (locked screen); passes in verify_ui_paths.py | pass |
+| E-5 | Fixed | A+W | skipped (locked screen); passes in verify_ui_paths.py | pass |
+| E-6 | Fixed | A | pass |  |
+| E-7 | Fixed | W | written check | pass; part by hand not judged |
+| E-8 | Fixed | W | written check | not judged (by hand) |
+| E-9 | Fixed | A | pass |  |
+| IA-1 | Core | A+W | pass | pass |
+| IA-2 | Negotiable | A | pass |  |
+| IA-3 | Core | A | pass |  |
+| MA-13 | Core | A | pass |  |
+| R-3 | Core | A | pass |  |
+| R-4 | Core | A | pass |  |
+| R-5 | Core | A | pass |  |
+| R-6 | Core | A | pass |  |
+| R-7 | Core | A | pass |  |
+
+- No phase-1 test fails. Every fixed- and core-tier test passes except the four whose UI tests were skipped because the screen was locked (L-9, M-3, E-4, E-5). Their behaviors pass through `app/macos/TernTests/verify_ui_paths.py` (43/43), which drives the same paths through Tern's internal `debug.*` methods.
+- The only negotiable phase-1 requirement passes, so COMPROMISES.md holds trade-offs, not failures.
+- Extra tests for this design's risks: `acceptance/tests/test_tern_extra.py` (22, all pass). Ghostty's own unit tests: 354 passed, 0 failed.
 
 ## Decisions
 
@@ -60,7 +122,7 @@ Details, candidates and costs: DECISIONS.md.
 | 1 | Tabs, and content that isn't a terminal | Tern's own tab model in each window (no AppKit tab groups); the editor is a per-tab panel; phase 2's agent views go on top of panes, so every pane stays a terminal | The M-1–M-6 tests (programs and scrollback survive every move), `test_moving_a_windows_only_pane_to_a_new_tab_keeps_it`, `test_editor_documents_follow_a_pane_out_of_its_dissolving_tab` |
 | 2 | Focus (L-8) | `--no-focus` edits the model and nothing else; new windows go below the key window without activating the app | `test_no_focus_creation_never_changes_the_users_focus` and `test_no_focus_move_keeps_selection_and_front_app` sample `ls` throughout; `test_no_focus_creation_keeps_a_background_app_in_the_background` puts Finder in front first |
 | 3 | Finding the right instance | Socket path derived from the state directory (`<per-user temp>/tern-<hash>.sock`); panes carry the instance and run id, and stale ones are refused | `test_paths_with_spaces_and_long_state_dirs`, `test_instances_never_talk_to_each_other`, `test_a_terminal_of_an_earlier_run_never_acts_on_the_new_run`, `test_the_cli_outside_tern_ignores_another_instances_pane` |
-| 4 | Single instance | `flock` on `<state>/instance.lock` before Ghostty starts | `test_simultaneous_launches_leave_one_instance` |
+| 4 | Single instance | `flock` on `<state>/instance.lock` before the app starts (after Ghostty's `+action` commands, which run without it) | `test_simultaneous_launches_leave_one_instance` |
 | 5 | Markdown | Foundation's GFM parser → HTML in a `WKWebView` with JavaScript off and a no-script CSP | `test_open_modes_and_several_documents`; E-1 and E-7 screenshots |
 | 6 | Persistence | Tern's own `layout.json`/`ui.json` in the state directory, saved continuously and at quit; AppKit restoration off | `test_restart_restores_pins_and_names`, the R-3 tests, the restored-frame probe (review round 2) |
 | 7 | Updates | Tern's own updater (Ed25519-signed JSON feed, installs after the app quits); Sparkle removed | `test_never_offers_another_products_updates`, `test_an_older_build_updates_itself`, `test_installer`, and the installed release finding no newer update |
@@ -84,7 +146,36 @@ accepted test failure. In short:
 The six accessibility-tree UI tests were skipped because the screen was locked, not because of a
 trade-off. Their behaviors were checked another way (below).
 
-<!-- CHECKS -->
+## Written checks
+
+`checks/run_checks.py --phase 1` ran on the published build, plus `checks/tern_extra_evidence.py` for screenshots its setup can't produce. Each verdict was judged by looking at the evidence. Full verdicts, with the steps for everything NOT JUDGED: `acceptance/results/checks/REPORT.md`. The screen was locked, so anything needing a person's hands or eyes on the live window is NOT JUDGED.
+
+| Check | Verdict | Left for a person |
+|---|---|---|
+| S-1 | PASS |  |
+| S-3 | PASS | Close and pin controls on hover |
+| S-4 | NOT JUDGED | all of it |
+| S-5 | PASS |  |
+| S-6 | PASS |  |
+| S-2 | PASS |  |
+| P-2 | PASS | Choosing the menu item and seeing its dialogs |
+| I-5 | PASS | Seeing the window on screen |
+| L-9 | PASS | Pressing the keys on a real keyboard |
+| M-4 | NOT JUDGED | all of it |
+| E-1 | PASS |  |
+| E-2 | PASS |  |
+| E-3 | PASS | The 'Save changes?' dialog when closing with ⌘W |
+| E-4 | PASS |  |
+| E-5 | PASS |  |
+| E-7 | PASS | Clicking a relative link and an #anchor |
+| E-8 | NOT JUDGED | all of it |
+| I-3 | PASS |  |
+| IA-1 | PASS |  |
+
+E-1 passes with one flaw: with two files open in a narrow editor panel, the second file's tab is
+partly hidden behind the Preview/Source control (the tab row scrolls but doesn't follow the active
+file). E-3, E-4 and E-5 were judged through scripted checks plus screenshots, because typing into the
+editor needs the accessibility tree.
 
 ## Codex review
 
@@ -98,10 +189,28 @@ that could be scripted.
 | 1 | 3 P1, 1 P2 | Undo of a move only touches the windows it restores (it could take panes out of unrelated windows); moving a window's only pane to a new tab inserts before removing (the window closed under it); a tab emptied by a move hands its editor documents to the destination; AppleScript tab objects are bound to Tern's tabs. |
 | 2 | 1 P1, 5 P2 | Undo/redo of a move keeps the tab's unsaved editor documents; a pane closed in a hidden tab can be undone (its tree is held for the undo interval); New Tab can be redone; AppleScript and App Intents focus, split and close panes in hidden tabs; notification clicks focus the quick terminal again; the CLI's login-shell timeout holds even when the shell hangs. Also found while probing: restored windows came back at the default frame. |
 | 3 | 4 P1, 2 P2 | The feed's version (not covered by the signature) is checked before it names a folder (path traversal); quitting asks when a program runs in a hidden tab; `tern claude --window` types its command (the new window wasn't listed yet); Ghostty's Sparkle unit tests removed with Sparkle (unit tests: 354 passed); the Zig build helper uses `Tern.app`/`tern-app`; Redo of a split brings the pane back. |
-
 | 4 | 1 P1, 7 P2 | The shell integration's `ssh` wrapper calls the renamed core executable (`ssh` failed with SSH integration on); Ghostty's `+action` commands run before the single-instance lock; command-palette jumps reach panes in hidden tabs; `wait --pattern` sees output that scrolled past the screen (and, on its first read, the scrollback); `wait --idle` measures bytes written, not screen changes (two small libghostty additions); `update --now` relaunches an isolated instance as itself (and the installer no longer waits on an unreaped exited app); panes made by ⌘T or AppleScript record their starting folder; `keys shift+1` types `!`. Found while rerunning the checks: the editor crashed (an uncaught AppKit exception) when a file reloaded shorter than the cursor position; fixed, with a check. Crash reports had gone to Ghostty's folder (`~/.local/state/ghostty/crash`); they now go to Tern's, and the eight reports from this run were removed. |
+| 5 | 0 P1, 4 P2 | New tabs (and `tern claude` tabs) start in the folder of the pane they come from, not the window's focused pane; without shell integration a pane's folder is read from its process (it was assumed to be home, ignoring a configured `working-directory`); focusing another pane of a zoomed tab unzooms it; `release.sh` passes release notes as data. |
 
-<!-- REVIEW-MORE -->
+Round 5 was the last round the brief allows, so its fixes weren't reviewed again. They are
+covered by new tests, and the suite, the extra tests and `verify_ui_paths.py` pass on the
+published build.
+
+After the reviews, the first real one-line install failed: under a UTF-8 locale (which Terminal
+sets), macOS's bash 3.2 read `$version…` as one longer variable name, and the suite's installer
+test (which installs from a local app) never reached that line. The installer was fixed, a test of
+the download path with and without a locale was added (it fails on the old installer), and
+`install.sh` was replaced on the v0.1.0 release (the app zip and feed are unchanged).
+
+**Left open**
+- Round 5's fixes haven't had a Codex review of their own.
+- The `ssh` wrapper edits for fish, elvish and nushell weren't run (those shells aren't
+  installed here); bash and zsh were tested.
+- Ghostty's core still names itself in a few places Tern doesn't control: `tern-app +version`
+  prints "Ghostty 1.3.2…", and the SSH terminfo cache lives under Ghostty's XDG folder name.
+- The six accessibility-tree UI tests need an unlocked screen (Questions, 1).
+- With two files in a narrow editor panel, the active file's tab can sit half hidden behind the
+  Preview/Source control (E-1). Fix: scroll the tab row to the active file.
 
 ## Questions for the user
 
@@ -165,6 +274,29 @@ that could be scripted.
 - **The main actor.** All model changes happen on the main actor; agent I/O (pipes, JSON-RPC to
   `codex app-server`, Claude's stream-json) should run on their own queues and hop to the main
   actor only to publish state.
+
+## Release and install (done)
+
+- **Repository:** https://github.com/alejoacelas/tern (public). It holds only:
+  - the README with the install command;
+  - LICENSE (MIT, with Ghostty's notice);
+  - `licenses/` (the embedded fonts).
+
+  No source, `acceptance/`, logs or keys are in it. Its commit uses your GitHub noreply address,
+  not this Mac's user and host name.
+- **Release v0.1.0** has three files:
+  - `Tern-0.1.0.zip` (21.7 MB; the reviewed build, ad-hoc signed);
+  - `appcast.json` (its SHA-256 and Ed25519 signature);
+  - `install.sh`, replaced after the locale fix described under Codex review.
+- **Installed on this Mac** with the one-line command in a fresh login shell:
+  - `/Applications/Tern.app` 0.1.0, running;
+  - `~/.local/bin/tern`, a link to the app's CLI;
+  - no quarantine attribute, so it opened without a Gatekeeper prompt;
+  - `tern update --check` on the installed copy: "installed 0.1.0, latest 0.1.0: up to date".
+- **Markdown default.** The install made Tern the default app for Markdown, as the brief allows
+  at the final install. It was Shade (`dev.shade.terminal`) before. To switch back: Finder → a
+  `.md` file → Get Info → Open with → Shade → Change All….
+- **Untouched:** `/Applications/Shade.app` and your other `~/.local/bin` entries.
 
 ## Install on the other Mac
 

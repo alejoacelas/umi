@@ -32,3 +32,13 @@ evidence is collected as before.
 
 **Requirement.** CHECKS.md: "When the evidence can't show a criterion …, the check says (by
 hand)."
+
+## Additions (no existing test changed)
+
+- `tests/test_tern_extra.py`: 22 tests for risks this build's design introduces (hidden tabs whose
+  panes keep running, instance and run identity, moves and undo, `wait`, the renamed core
+  executable, `update --now`, the installer's download path). All pass.
+- `checks/tern_verdicts.py`: the judged written-check verdicts, written into
+  `results/checks/REPORT.md`.
+- `checks/tern_extra_evidence.py`: screenshots for criteria `run_checks.py`'s setup can't show
+  (Files mode with nested folders, Markdown images and page rules, the "changed on disk" notice).

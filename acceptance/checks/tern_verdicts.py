@@ -20,9 +20,10 @@ VERDICTS = {
     "S-3": "PASS for everything the screenshot can show: the pinned tab is first (pin icon, hairline below); line 1 "
            "is the name or else the folder, then the branch (⑂ feature-branch); the linked worktree shows a "
            "different icon, the accent color and '· worktree'; the split tab shows a pane count (3); line 2 is the "
-           "last command (`ls -la | head -5`, `echo hi`, `true`), and an exited interactive agent shows "
-           "'claude · exited' (IA-1-claude.png). The managed-agent line is phase 2. Close and pin controls on hover: "
-           "NOT JUDGED (the screen was locked; hover a row and check a pin and an ✕ appear).",
+           "last command (`true`, `echo hi`, `ls -la | head -5`), and an exited interactive agent shows 'claude · "
+           "exited' (IA-1-claude.png). The split tab's line 2 follows its focused pane, which hasn't run anything, "
+           "so it shows the folder. The managed-agent line is phase 2. Close and pin controls on hover: NOT JUDGED "
+           "(the screen was locked; hover a row and check a pin and an ✕ appear).",
     "S-4": "NOT JUDGED: needs a person (the screen was locked). Steps: click a row (selects), double-click (inline "
            "rename field), right-click (Rename, Pin/Unpin, Tab Color, Move Tab to New Window / to Window N, Close "
            "Tab), drag a row up or down (reorders) and onto another window's sidebar (moves the tab).",
@@ -33,16 +34,20 @@ VERDICTS = {
     "S-2": "PASS: the sidebar runs the full height; Files mode is a project explorer rooted at the focused pane's "
            "repository (S-2-files-mode.png; the check's repository has no files, so extra-S-2-files-nested.png shows "
            "a repository with nested folders); there is no agents section and no new-agent button.",
-    "P-2": "PASS (judged on the installed release): `tern update --check` and the menu use only "
-           "github.com/alejoacelas/tern's feed; up to date reports 'installed 0.1.0, latest 0.1.0: up to date'. "
-           "Sparkle and Ghostty's feed and key are not in the app (test_never_offers_another_products_updates). The "
-           "'ready' prompt (installs on quit, offers Install and Relaunch) was checked in code and through "
-           "test_an_older_build_updates_itself; seeing the dialog itself: NOT JUDGED (locked screen).",
+    "P-2": "PASS (judged on the installed release, by the CLI rather than the menu): `tern update --check` on "
+           "/Applications/Tern.app 0.1.0 reads only github.com/alejoacelas/tern's feed and answers 'installed 0.1.0, "
+           "latest 0.1.0: up to date'. Sparkle and Ghostty's feed and key are not in the app "
+           "(test_never_offers_another_products_updates). The 'ready' path (installs on quit, or now with Install "
+           "and Relaunch) passes in test_an_older_build_updates_itself and "
+           "test_update_now_relaunches_the_same_instance. Choosing the menu item and seeing its dialogs: NOT JUDGED "
+           "(locked screen; choose Tern > Check for Updates…).",
     "I-5": "PASS: the release repository's README gives one command, `curl -fsSL "
            "https://github.com/alejoacelas/tern/releases/latest/download/install.sh | bash`, and explains in a few "
-           "lines what it does. It was run on this Mac in a fresh shell and installed /Applications/Tern.app "
-           "without anything else installed first; curl sets no quarantine and the installer clears it anyway, "
-           "so there is no Gatekeeper prompt. Seeing the app open on screen: NOT JUDGED (locked screen).",
+           "lines what it does. Run on this Mac in a fresh login shell, it installed /Applications/Tern.app 0.1.0 "
+           "with nothing installed first, and the app started (curl sets no quarantine and the installer clears it "
+           "anyway, so there is no Gatekeeper prompt). The first attempt failed on a bash 3.2 quirk in the "
+           "installer; it was fixed and the installer replaced on the release before this run (REPORT.md). Seeing "
+           "the window on screen: NOT JUDGED (locked screen).",
     "L-9": "PASS for the menu side, checked without the accessibility tree: every shortcut is exactly one menu item "
            "with that key equivalent, and choosing ⌘B, ⇧⌘M, Undo/Redo and ⌘S does what it says "
            "(app/macos/TernTests/verify_ui_paths.py, 43/43). The command palette lists the same actions "
@@ -52,9 +57,10 @@ VERDICTS = {
            "another window (it moves there, program running); drag a tab row up/down (reorders) and onto another "
            "window's sidebar (moves the tab).",
     "E-1": "PASS: headings, emphasis, inline code, links, nested list, task list with checkboxes, table and code "
-           "block render (E-1-preview.png); the local image, the remote badge in a link, and the raw-HTML image "
-           "render (extra-E-1-E-7-images.png); the editor sits beside the tab's terminal with two files as editor "
-           "tabs.",
+           "block render (E-1-preview.png); the local image, the remote badge in a link and the raw-HTML image "
+           "render (extra-E-1-E-7-images.png); the editor sits beside the tab's terminals with two files as editor "
+           "tabs. A flaw: with two files in a narrow editor panel, the second file's tab is partly hidden behind the "
+           "Preview/Source control (the tab row scrolls, but doesn't scroll to the active file).",
     "E-2": "PASS: a visible Preview | Source control in the editor header (E-1-preview.png, E-2-source.png).",
     "E-3": "PASS through scripted checks (closing a dirty file from the CLI is refused; ⌘S through the menu saves; "
            "--force discards), plus closing a tab or quitting saves or keeps a recovery copy (code: "
@@ -70,8 +76,8 @@ VERDICTS = {
            "screen).",
     "E-8": "NOT JUDGED: needs a person. Steps: turn Caps Lock on, focus the editor, press ⌘S, ⇧⌘M and ⌘W. (The "
            "editor compares key equivalents case-insensitively and ignores Caps Lock: TernEditorContainerView.)",
-    "I-3": "NOT JUDGED: needs a person after the install (the installer made Tern the default Markdown app). Steps: "
-           "`open README.md` in Terminal; it opens in Tern's editor.",
+    "I-3": "PASS: after the real install (which made Tern the default Markdown app), `open README.md` opened the "
+           "file in the installed Tern's editor, rendered (extra-I-3-open-readme.png; `tern editor ls` listed it).",
     "IA-1": "PASS: `tern claude --tab -- --version` opened a tab whose shell shows `claude --version` typed at the "
             "prompt and Claude Code's own output, exactly as in a plain terminal (IA-1-claude.png).",
 }
