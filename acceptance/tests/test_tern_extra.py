@@ -160,3 +160,32 @@ def test_the_cli_outside_tern_ignores_another_instances_pane(fresh):
                           timeout=60, stdin=subprocess.DEVNULL)
     assert proc.returncode == 0, proc.stderr
     assert a_pane not in proc.stdout, "B answered with A's pane"
+
+
+@pytest.mark.req("M-1")
+def test_moving_a_windows_only_pane_to_a_new_tab_keeps_it(inst):
+    """The pane is the only pane of its window's only tab: moving it to a new tab of that same
+    window must not close the window it is moving into."""
+    created = inst.json("window", "new")
+    pane = created["pane"]
+    wait_until(lambda: inst.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20, message="prompt")
+    inst.cli("pane", "move", pane, "--new-tab", "--no-focus")
+    found = wait_until(lambda: inst.find_pane(pane), 5, message="the moved pane")
+    assert found[0]["id"] == created["window"] and len(found[0]["tabs"]) == 1
+    marker = "ALIVE-" + uuid.uuid4().hex[:6]
+    inst.cli("send", "--pane", pane, "-e", f"echo {marker}")
+    inst.cli("wait", "--pane", pane, "--pattern", f"^{marker}$", "--timeout", "10")
+    inst.cli("window", "close", created["window"])
+
+
+@pytest.mark.req("E-1", "E-3", "M-1")
+def test_editor_documents_follow_a_pane_out_of_its_dissolving_tab(inst, win, tmp_path):
+    """A tab's editor documents belong to the tab; when its last pane moves away the tab goes,
+    and its documents go with the pane rather than vanishing."""
+    doc = tmp_path / "carried.md"
+    doc.write_text("# carried\n")
+    pane = inst.cli("tab", "new", "--window", win["window"], "--no-focus").stdout.strip()
+    inst.cli("edit", str(doc), "--pane", pane)
+    inst.cli("pane", "move", pane, "--to", win["pane"], "--dir", "right", "--no-focus")
+    docs = inst.json("editor", "ls", "--pane", pane)["documents"]
+    assert any(os.path.realpath(d["path"]) == os.path.realpath(doc) for d in docs), docs

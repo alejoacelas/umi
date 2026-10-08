@@ -22,6 +22,15 @@ sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 from harness import UI, Instance, Target, wait_until  # noqa: E402
 
+
+def screen_locked():
+    """True while the screen is locked: the accessibility tree is then unusable (see conftest.py)."""
+    try:
+        import Quartz
+        return bool((Quartz.CGSessionCopyCurrentDictionary() or {}).get("CGSSessionScreenIsLocked", False))
+    except Exception:  # noqa: BLE001
+        return False
+
 OUT = os.path.join(ROOT, "results", "checks")
 
 
@@ -175,7 +184,7 @@ def setup_editor(inst, base):
     source, n2 = screenshot(inst, w["window"], "E-2-source")
     inst.cli("editor", "mode", "preview", "--pane", w["pane"], check=False)
     # E-4: modify in the editor, then on disk.
-    ui = UI(inst.app_pid) if UI.available() else None
+    ui = UI(inst.app_pid) if UI.available() and not screen_locked() else None
     e4 = []
     if ui:
         inst.cli("edit", os.path.join(folder, "notes.txt"), "--pane", w["pane"])

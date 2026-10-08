@@ -19,3 +19,16 @@ test checks changed; they run exactly as before on an unlocked screen.
 **Requirement.** The suite's own premise (TEST_INTERFACE.md): "UI tests (`ui` fixture) need this
 terminal to have the Accessibility permission … Without it they're skipped, and the report says
 so." A locked screen is the same situation: the accessibility tree is unavailable.
+
+## 2. The written-checks script doesn't walk the accessibility tree on a locked screen (`checks/run_checks.py`)
+
+**What was wrong.** Same cause as change 1: `setup_editor` uses the accessibility tree to type into
+the editor for E-4's evidence whenever this process has the Accessibility permission. On a locked
+screen the walk never ends and the script hangs before writing `REPORT.md`.
+
+**Change.** That step is skipped while the screen is locked (the check then says "could not edit
+through accessibility; do it by hand", which the script already handles). Every other piece of
+evidence is collected as before.
+
+**Requirement.** CHECKS.md: "When the evidence can't show a criterion …, the check says (by
+hand)."
