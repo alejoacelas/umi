@@ -493,39 +493,17 @@ enum TernLayout {
 
     private static func registerUndo(_ name: String, undoManager: ExpiringUndoManager,
                                      restore: TernSnapshot, redo: TernSnapshot) {
-        undoManager.beginUndoGrouping()
-        undoManager.setActionName(name)
         undoManager.registerUndo(withTarget: TernSnapshotTarget.shared, expiresAfter: moveUndoExpiration) { _ in
             restore.apply(closing: redo)
             registerUndo(name, undoManager: undoManager, restore: redo, redo: restore)
         }
-        undoManager.endUndoGrouping()
-        TernUndo.closeAutomaticGroupSoon()
+        undoManager.setActionName(name)
     }
 }
 
 @MainActor
 final class TernSnapshotTarget: NSObject {
     static let shared = TernSnapshotTarget()
-}
-
-/// Undo groups for programmatic changes.
-///
-/// AppKit closes automatic undo groups at the end of a UI event. Changes made from the
-/// control socket aren't inside an event, so their undo entries would pile into one
-/// lingering automatic group and a single Undo would revert several unrelated operations.
-@MainActor
-enum TernUndo {
-    static func closeAutomaticGroupSoon() {
-        guard NSApp.currentEvent == nil else { return }
-        DispatchQueue.main.async {
-            guard let event = NSEvent.otherEvent(
-                with: .applicationDefined, location: .zero, modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
-                subtype: 0x7465, data1: 0, data2: 0) else { return }
-            NSApp.postEvent(event, atStart: false)
-        }
-    }
 }
 
 /// The layout of some windows at one moment, with panes held weakly.
@@ -684,7 +662,8 @@ struct TernSnapshot {
                 }
             }
 
-            if let controller = state.box.controller, controller.window?.isVisible ?? false || controller.presentsWithoutFocus {
+            if let controller = state.box.controller, !controller.isClosed,
+               controller.window?.isVisible ?? false || controller.presentsWithoutFocus {
                 controller.restoreTabs(tabs, selected: selected, focusedPane: state.focusedPane?.value)
             } else {
                 let controller = TerminalController.newWindow(

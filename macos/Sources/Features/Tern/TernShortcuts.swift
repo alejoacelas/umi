@@ -73,7 +73,7 @@ enum TernShortcuts {
                 && existing.keyEquivalentModifierMask == item.modifiers && handlers[existing] == nil {
                 existing.keyEquivalent = ""
             }
-            let menuItem = NSMenuItem(title: item.title, action: #selector(TernMenuTarget.perform(_:)), keyEquivalent: item.key)
+            let menuItem = NSMenuItem(title: item.title, action: #selector(TernMenuTarget.performTernItem(_:)), keyEquivalent: item.key)
             menuItem.keyEquivalentModifierMask = item.modifiers
             menuItem.target = TernMenuTarget.shared
             if #available(macOS 26.0, *) {
@@ -206,7 +206,8 @@ enum TernShortcuts {
 final class TernMenuTarget: NSObject, NSMenuItemValidation {
     static let shared = TernMenuTarget()
 
-    @MainActor @objc func perform(_ sender: NSMenuItem) {
+    /// Not `perform(_:)`: that's NSObject's `performSelector:`.
+    @MainActor @objc func performTernItem(_ sender: NSMenuItem) {
         TernShortcuts.perform(sender)
     }
 

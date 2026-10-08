@@ -39,6 +39,9 @@ class TerminalController: BaseTerminalController {
     /// A name given at creation (`window new --name`), usable as a selector.
     var windowName: String?
 
+    /// The window was closed (AppKit may keep the object around for a moment).
+    private(set) var isClosed = false
+
     /// The initial window presentation is deferred by one runloop turn in a few places so
     /// AppKit can settle window state first. Close actions must cancel it to avoid
     /// re-showing a window that was already closed.
@@ -257,9 +260,7 @@ class TerminalController: BaseTerminalController {
     /// Replace the whole tab list (undo and restoration).
     func restoreTabs(_ newTabs: [TernTab], selected: TernTab, focusedPane: Ghostty.SurfaceView?) {
         guard !newTabs.isEmpty else { return }
-        if let current = selectedTabStorage {
-            current.tree = surfaceTree
-        }
+        // The given tabs carry the trees to show; the visible tree is replaced, not saved.
         tabs = Self.ordered(newTabs)
         switchingTabs = true
         selectedTabStorage = tabs.contains { $0 === selected } ? selected : tabs[0]
@@ -1020,6 +1021,7 @@ class TerminalController: BaseTerminalController {
     }
 
     override func windowWillClose(_ notification: Notification) {
+        isClosed = true
         super.windowWillClose(notification)
         cancelPendingInitialPresentation()
         TernState.shared.windowClosed(self)

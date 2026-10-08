@@ -18,3 +18,21 @@ enum TernAppLifecycle {
         TernControlServer.shared.stop()
     }
 }
+
+
+/// Logs undo-group opening and closing when TERN_TRACE_UNDO is set (debugging aid).
+enum TernUndoTrace {
+    static func install(_ manager: UndoManager) {
+        guard ProcessInfo.processInfo.environment["TERN_TRACE_UNDO"] != nil else { return }
+        let center = NotificationCenter.default
+        for name in [Notification.Name.NSUndoManagerDidOpenUndoGroup, .NSUndoManagerDidCloseUndoGroup,
+                     .NSUndoManagerWillUndoChange, .NSUndoManagerDidUndoChange] {
+            center.addObserver(forName: name, object: manager, queue: nil) { note in
+                let stack = Thread.callStackSymbols.dropFirst(3).prefix(12)
+                    .map { $0.split(separator: " ", omittingEmptySubsequences: true).dropFirst(3).prefix(1).joined() }
+                    .joined(separator: " < ")
+                FileHandle.standardError.write("\(Date().timeIntervalSince1970) \(note.name.rawValue) level=\(manager.groupingLevel) \(stack)\n".data(using: .utf8)!)
+            }
+        }
+    }
+}

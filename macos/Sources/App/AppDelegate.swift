@@ -230,6 +230,7 @@ class AppDelegate: NSObject,
         ghosttyConfigDidChange(config: ghostty.config)
 
         // Tern: menus, saved state and updates.
+        TernUndoTrace.install(undoManager)
         TernShortcuts.install()
         TernPersistence.shared.restoreUI()
         undoManager.disableUndoRegistration()

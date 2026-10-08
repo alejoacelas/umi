@@ -24,8 +24,8 @@ enum TernTopology {
     /// Open Tern windows, oldest first (their `#N` order).
     static var windows: [TerminalController] {
         TerminalController.all
+            .filter { !$0.isClosed && !$0.tabs.isEmpty && $0.window != nil }
             .filter { $0.window?.isVisible ?? false || $0.window?.isMiniaturized ?? false || $0.presentsWithoutFocus }
-            .filter { !$0.tabs.isEmpty && $0.window != nil }
             .sorted { $0.createdAt < $1.createdAt }
     }
 

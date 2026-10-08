@@ -5,6 +5,11 @@ import GhosttyKit
 @MainActor
 enum TernRPC {
     static func handle(method: String, params: TernParams, caller: TernCaller, connection: TernConnection) async throws -> [String: Any]? {
+        defer { TernUndo.requestDidEnd() }
+        return try await dispatch(method: method, params: params, caller: caller, connection: connection)
+    }
+
+    private static func dispatch(method: String, params: TernParams, caller: TernCaller, connection: TernConnection) async throws -> [String: Any]? {
         switch method {
         // MARK: System
         case "system.ping":
@@ -291,6 +296,38 @@ enum TernRPC {
         case "update.install_now":
             return try await TernUpdater.shared.installNow()
 
+        // MARK: Internal (not part of the CLI contract): scripted checks of menu and editor
+        // paths that otherwise need the accessibility tree.
+        case "debug.menu":
+            return ["items": TernDebug.menuItems()]
+        case "debug.undo":
+            guard let um = (NSApp.delegate as? AppDelegate)?.undoManager else { return [:] }
+            return ["can_undo": um.canUndo, "can_redo": um.canRedo, "undo": um.undoActionName,
+                    "redo": um.redoActionName, "level": um.groupingLevel]
+        case "debug.menu.perform":
+            guard let title = params.string("title") else { throw TernError.badRequest("give a menu item title") }
+            try TernDebug.performMenuItem(title)
+            return ["performed": title]
+        case "debug.editor.type":
+            let (_, tab) = try TernEditor.targetTab(params, caller: caller, createWindow: false)
+            guard let doc = params.string("path").flatMap({ tab.editor.document(for: URL(fileURLWithPath: $0)) }) ?? tab.editor.active else {
+                throw TernError.notFound("no such document")
+            }
+            let text = params.string("text") ?? ""
+            if params.bool("replace") ?? false || !text.isEmpty {
+                doc.text = (params.bool("replace") ?? false) ? text : doc.text + text
+            }
+            tab.editor.active = doc
+            var json = TernEditor.json(doc)
+            json["text"] = doc.text
+            json["error"] = doc.error ?? ""
+            return json
+        case "debug.editor.focus":
+            let (window, tab) = try TernTopology.tab(params.string("tab"), caller: caller)
+            TernLayout.focusTab(tab, in: window)
+            TernDebug.focusEditor(in: window)
+            return ["ok": true]
+
         default:
             if method.hasPrefix("agent.") {
                 throw TernError.badRequest("managed agents aren't available in this version of \(TernPaths.productName) yet")
@@ -301,5 +338,27 @@ enum TernRPC {
 
     private static func badColor(_ name: String) -> TernError {
         TernError.badRequest("unknown color \"\(name)\" (use blue, purple, pink, red, orange, yellow, green, teal, graphite or none)")
+    }
+}
+
+
+/// Each control request is its own undo step.
+///
+/// A change registers undo into AppKit's automatic undo group, and AppKit closes that group
+/// only after it handles a UI event. Requests aren't UI events: with the user away (no
+/// events), every later change would land in the same group and one Undo would revert them
+/// all. So a request that left the group open posts a harmless application-defined event;
+/// AppKit handles it and closes the group. (Closing it by hand makes AppKit throw later, and
+/// explicit groups don't help: AppKit nests them in its automatic one, and an empty explicit
+/// group clears the redo stack.)
+@MainActor
+enum TernUndo {
+    static func requestDidEnd() {
+        guard let manager = (NSApp.delegate as? AppDelegate)?.undoManager, manager.groupingLevel > 0 else { return }
+        guard let event = NSEvent.otherEvent(
+            with: .applicationDefined, location: .zero, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
+            subtype: 0x7465, data1: 0, data2: 0) else { return }
+        NSApp.postEvent(event, atStart: false)
     }
 }
