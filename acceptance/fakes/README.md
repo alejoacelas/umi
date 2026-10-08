@@ -4,12 +4,14 @@
 |---|---|
 | `fake_claude.py` | `claude -p --input-format stream-json --output-format stream-json --verbose --replay-user-messages --permission-prompt-tool stdio` (Claude Code 2.1.289) |
 | `fake_codex.py` | `codex app-server --listen stdio://` (codex-cli 0.160.0, JSON-RPC without the `"jsonrpc"` field) |
-| `test_fakes.py` | self-tests: `python3 test_fakes.py [-v] [name-filter]` (33 tests, about 40 s) |
+| `test_fakes.py` | self-tests: `python3 test_fakes.py [-v] [name-filter]` (42 tests, about 60 s) |
 
 Both are Python 3.9 stdlib-only scripts. The frame shapes and orderings come from real runs recorded in
 `../reference/agent-logs/` and summarised in `../reference/PROTOCOLS.md`. This README supersedes the "Fakes"
 section at the end of PROTOCOLS.md: thinking and rate-limit frames now exist under chaos, `task_started` is
-now delayed, and the periodic queue notification is now emulated under chaos.
+now delayed, and the periodic queue notification is now emulated under chaos. The 2026-10-08 recordings
+(C11wake, C12missing, C12othercwd, C13projectmcp, X14missing) added `WAKE`, `FAKE_MCP` and the missing-session
+checks.
 
 The design rule: a fake may do anything the real harness was observed to do, or can clearly do, and nothing
 it cannot. When a behavior was not probed, it is either left out or listed below as inferred.
@@ -18,11 +20,13 @@ it cannot. When a behavior was not probed, it is either left out or listed below
 
 | variable | fake | effect |
 |---|---|---|
-| `FAKE_AGENT_DIR` | both | Root for all state. Defaults to `<tmp>/fake-agent`. Holds `claude/<session>.json`, `codex/threads/<thread>.json` plus `<thread>.lock` (owner pid), `receipts.jsonl` and `stubborn.pid`. |
+| `FAKE_AGENT_DIR` | both | Root for all state. Defaults to `<tmp>/fake-agent`. Holds `claude/<session>.json`, `claude/tasks/<session>/<task>.output` (WAKE), `codex/threads/<thread>.json` plus `<thread>.lock` (owner pid), `receipts.jsonl`, `self_turns.jsonl` and `stubborn.pid`. |
 | `FAKE_CHAOS=<int>` | both | Turns on chaos mode, seeded by the integer. Unset or empty turns it off. See [Chaos mode](#chaos-mode). |
 | `FAKE_SLOW_START=<secs>` | both | Sleeps before reading stdin, so the `initialize` answer (and anything else) comes late. |
 | `FAKE_INPUT_DELAY=<secs>` | codex | Gap between `turn/started` and the first `userMessage` item. The real gap is 0.04 to 2.8 s (X1, X3, X4). An interrupt inside it drops the input (see [Early interrupt](#codex-early-interrupt)). |
 | `CLAUDE_CODE_SDK_READS_SESSION_STATE=1` (or `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1`) | claude | Emits `system/session_state_changed` frames, as the real CLI does only when this is set. |
+| `FAKE_MCP=<name:status,...>` | both | MCP servers and their startup status, comma-separated, status one of `connected`, `pending`, `failed`, `needs-auth` (for example `github:connected,jira:needs-auth`). Claude lists them in every `system/init`; Codex sends `mcpServer/startupStatus/updated` notifications. See [MCP servers](#mcp-servers-fake_mcp). Unset or empty means no servers, as before. A malformed entry makes the fake exit 2 at startup with a `bad FAKE_MCP entry` line on stderr. |
+| `FAKE_WAKE_TURN_SECS=<secs>` | claude | How long a self-started `WAKE` turn spends between its `system/init` and its reply. Default 1.5: in C11wake the real one took 1.55 s from `task_notification` to `result`. Interruptible. |
 
 Command-line handling:
 * Claude accepts `--session-id`, `--resume`, `--fork-session`, `--model`, `--permission-mode`, `--effort` and
@@ -34,6 +38,7 @@ Command-line handling:
 
 A trigger is a substring of the user message text. Everything after `RUN ` is the command, and the fake does
 not scan it for triggers. That lets a test pass `SLEEP`, `CRASH` and so on to a nested agent through `RUN`.
+Likewise everything after `WAKE n` (up to a `RUN `) is the wake text and is not scanned for triggers.
 
 | trigger | claude | codex | behavior |
 |---|---|---|---|
@@ -57,9 +62,10 @@ not scan it for triggers. That lets a test pass `SLEEP`, `CRASH` and so on to a 
 | `EXIT_CLEAN` | yes | yes | once the reply is done and the harness is idle, it exits 0 on its own while stdin is still open. Codex releases its thread locks first. |
 | `IGNORE_TERM` | yes | yes | ignores SIGTERM from then on. Only SIGKILL works. |
 | `SPAWN_STUBBORN` | yes | yes | starts a child in its own session that ignores SIGTERM and sleeps 300 s. Its pid goes to `$FAKE_AGENT_DIR/stubborn.pid`. |
+| `WAKE n [text]` | yes | reply only | Claude: a Bash `sleep n` with `run_in_background: true` and reply `started`. n seconds later the fake starts a turn by itself whose reply is `woke: <text>` (or `woke`). See [Turns the harness starts by itself](#turns-the-harness-starts-by-itself-wake). Codex replies `wake: not supported by codex`. |
 
 A message sent to Claude while a turn runs gets `command_lifecycle queued`. It is injected at the next tool
-boundary (after SLEEP, RUN, HUGE or ASK_*), or it runs as the next turn. Codex `turn/start` during an active
+boundary (after SLEEP, RUN, HUGE, WAKE or ASK_*), or it runs as the next turn. Codex `turn/start` during an active
 turn steers into it, and the input is delivered at the next tool boundary or after the final answer.
 
 ### STATE
@@ -91,6 +97,57 @@ No real Claude log shows an API error, so this shape is inferred, not probed. Th
 The basis is the result schema itself: real success results always carry `api_error_status` (null in every
 log), which only makes sense if API errors arrive in the success shape. Like any error result, it makes the
 exit code 1 if it is the last result (PROTOCOLS C1).
+
+## Turns the harness starts by itself (WAKE)
+
+Claude Code starts a turn on its own when a background command finishes. This was recorded on 2026-10-08
+(`reference/agent-logs/C11wake.jsonl`, script `reference/agent-probes/probe_phase2.py C11wake`): haiku ran
+`sleep 8; echo done-xyz` with `run_in_background: true`, replied `started`, and 8 s later the CLI ran a
+second turn although nothing was sent. `WAKE n [text]` reproduces both turns.
+
+The turn that sends `WAKE` (frames in C11wake order):
+```
+assistant  tool_use Bash {"command": "sleep <n>", "run_in_background": true}
+system     background_tasks_changed {"tasks": [{"task_id", "run_id", "task_type": "local_bash", "description": "sleep <n>"}]}
+system     task_started {"task_id", "run_id", "tool_use_id", "description", "is_backgrounded": true, "task_type": "local_bash"}
+user       tool_result "Command running in background with ID: <task_id>. Output is being written to: <file>. You will
+           be notified when it completes. To check interim output, use Read on that file path."
+           tool_use_result {..., "noOutputExpected": false, "backgroundTaskId": "<task_id>"}
+assistant  "started"  ->  result  ->  lifecycle completed  ->  idle
+```
+`task_id` looks like the real one (`b` + 8 characters), `run_id` too (`<9 chars>-<8 hex>`). The output file is
+`$FAKE_AGENT_DIR/claude/tasks/<session>/<task_id>.output` (empty, since `sleep` prints nothing).
+
+n seconds later, with no input:
+```
+system     task_updated {"task_id", "run_id", "patch": {"status": "completed", "end_time": <ms>}}
+system     task_notification {"task_id", "run_id", "tool_use_id", "status": "completed", "output_file",
+           "summary": "Background command \"sleep <n>\" completed (exit code 0)"}
+system     background_tasks_changed {"tasks": []}        (the tasks still running, if any)
+system     session_state_changed running                  (only with the session-state env var)
+system     init
+           ... FAKE_WAKE_TURN_SECS (default 1.5 s) ...
+assistant  "woke: <text>"   (no user_message_uuid)
+result     success, "woke: <text>", no user_message_uuid(s), num_turns 1, the next result_index,
+           "origin": {"kind": "task-notification", "producer": "session-task", "runId": "<run_id>"}
+system     session_state_changed idle
+```
+There is no user replay and there are no `command_lifecycle` frames, because no message was sent. The
+`origin` field and the missing `user_message_uuid(s)` are exactly what the real result carried. Under chaos
+the turn gets the usual thinking, `thinking_tokens` and `rate_limit_event` noise (C11wake has all three).
+
+Rules the fake follows:
+* If another turn is running when the n seconds are up, the whole sequence above starts right after that
+  turn's result. If messages were queued behind that turn too, the self-started turn goes first and there is
+  no `idle` between them.
+* A message sent while the self-started turn runs gets `command_lifecycle queued` and runs as the next turn
+  (the turn has no tool call, so nothing is injected into it). An interrupt ends it like any turn: an error
+  result, still with `origin`, and no lifecycle frames.
+* Several `WAKE`s can be pending at once; each has its own task and its own self-started turn.
+* The self-started turn writes no receipt. It is recorded in `self_turns.jsonl` instead (see
+  [Receipts](#receipts)).
+* Codex: no recording shows the app-server starting a turn by itself, so `WAKE` there only replies
+  `wake: not supported by codex`.
 
 ## Allow for the rest of the session
 
@@ -173,6 +230,65 @@ Messages that never reach the model write no receipt. That covers a Codex input 
 interrupt, and a Claude message still queued when the process dies. A message delivered by a process that
 later crashes keeps its receipt. A product that resends such a message produces a second receipt, which is
 the point.
+
+A turn the harness starts by itself (Claude `WAKE`) is not a delivery, so it writes no receipt. It appends
+one line to `$FAKE_AGENT_DIR/self_turns.jsonl` instead, in the same single-write way, when the turn starts
+(at its `system/init`):
+
+```json
+{"harness": "claude", "session": "<session id>", "text": "<the reply it produces: woke: <text> | woke>", "ts": 1791239000.1}
+```
+
+An interrupted self-started turn is still recorded, although its reply never appears.
+
+## Missing conversations and other folders
+
+Recorded on 2026-10-08 (`probe_phase2.py`). The fakes already behaved this way; the self-tests now pin it.
+
+| case | real behavior | fake |
+|---|---|---|
+| Claude `--resume <unknown uuid>` (`C12missing`, also `C4e`) | stderr `No conversation found with session ID: <id>`, then **one `result` on stdout**: `subtype:"error_during_execution"`, `is_error:true`, `num_turns:0`, `session_id:<id>`, `errors:["No conversation found with session ID: <id>"]`, `result_index:0`. No answer to `initialize`. Stdout closes about 1.2 s after start, exit code 1. A later stdin write gets a broken pipe. | the same frame with the same key set, before reading stdin, exit 1 |
+| Claude `--resume <id>` from another working directory (`C12othercwd-1`, `-2`) | works. Same `session_id`, context kept (it recalled the codeword), and `system/init.cwd` is the new directory. | sessions live under `$FAKE_AGENT_DIR/claude/`, whatever the cwd; `system/init.cwd` and `STATE.cwd` report the new cwd |
+| Codex `thread/resume` of an unknown thread (`X14missing`, also `X7`) | `{"error": {"code": -32600, "message": "no rollout found for thread id <id>"}, "id": N}`. No notifications. The server keeps running. | the same, no notifications (not even with `FAKE_MCP`); later requests work |
+
+Note that C12missing contradicts the idea that a missing Claude session fails "before any stdout output": the
+stderr line and the `result` frame arrive together. Only the `--session-id` errors (C4c, C4g) leave stdout
+empty.
+
+## MCP servers (FAKE_MCP)
+
+`FAKE_MCP=github:connected,jira:needs-auth,slow:pending,broken:failed` declares four servers.
+
+**Claude.** Every `system/init` (every turn, including self-started ones) carries them in order:
+`"mcp_servers": [{"name": "github", "status": "connected", "source": "project"}, ...]`. Real entries always
+have `name`, `status` and `source`. The claude.ai connectors in C1, C10 and C11wake have `source:"claudeai"`
+and statuses `pending`, `connected` and `needs-auth`. A server from the project's `.mcp.json` has
+`source:"project"`, and one whose command exits at once is `failed` (`C13projectmcp`), so the fake uses
+`source:"project"`. The real statuses change between turns (`pending` on the first turn, `connected` later in
+C1 and C11wake); the fake keeps the declared status for the life of the process.
+
+**Codex.** Every X log has the same notification, with these five keys:
+```
+{"method": "mcpServer/startupStatus/updated",
+ "params": {"threadId": T, "name": "node_repl", "status": "starting", "error": null, "failureReason": null},
+ "emittedAtMs": ...}
+```
+All servers report `starting` together, and each reports `ready` 0.2 to 1.5 s later, in varying order. After
+`thread/start` the `starting` ones come right after `thread/started` (X1, X2accept, X7). After a
+`thread/resume` that loads the thread they come before the response (X5c_b). A failed resume sends none
+(X14missing). Only `starting` and `ready` were ever recorded. The 0.160.0 schema
+(`McpServerStatusUpdatedNotification`) allows `starting | ready | failed | cancelled`, with `failureReason`
+`"reauthenticationRequired"` or null. The fake maps:
+
+| `FAKE_MCP` status | Codex notifications | basis |
+|---|---|---|
+| `connected` | `starting`, then `ready` | every X log |
+| `pending` | `starting` only | a server that has not finished starting |
+| `failed` | `starting`, then `failed`, ``error: "MCP client for `<name>` failed to start: fake MCP server exited"``, `failureReason: null` | schema; the message prefix is a string in the 0.160.0 binary |
+| `needs-auth` | `starting`, then `failed`, ``error: "MCP client for `<name>` failed to start: requires OAuth reauthentication. Use your client's MCP OAuth sign-in flow."``, `failureReason: "reauthenticationRequired"` | schema; the phrases are strings in the 0.160.0 binary |
+
+The final status follows 0.2 s after `starting` (chaos: 0.1 to 1.5 s, and both orders shuffled). The
+notifications carry no `turnId` and may land inside a turn, as in the real logs.
 
 ## Chaos mode
 
@@ -270,6 +386,23 @@ inside that gap therefore never records the input. A product must not assume tha
 * Claude `set_model` only changes what `system/init` and STATE report. `set_permission_mode` also changes
   whether `ASK_PERMISSION` asks. No real model switching exists in either fake.
 * Chaos timing (40 ms per frame) slows a turn by about 0.2 to 0.5 s. Allow for it in timeouts.
+* `WAKE` (Claude). Only the idle case was recorded (C11wake). Not probed, so chosen by the fake:
+  * When the n seconds end during another turn, the fake holds back the whole sequence, `task_updated` and
+    `task_notification` included, until that turn's result. The real CLI may report the task at once and may
+    hand the notification to the running turn at its next tool call instead of starting a new turn.
+  * Stdin EOF while a background command still runs: the fake exits once idle, and the self-started turn
+    never happens. C11wake closed stdin only after the second turn.
+  * The background command is a timer, not a process. It always ends with exit code 0 and an empty output
+    file, and an interrupt or a new turn does not stop it.
+  * The self-started reply is one text frame. The real model described the command's result.
+* `WAKE` (Codex): "not supported" is unverified. No recording shows the app-server starting a turn by
+  itself, and nothing probed whether a background process could make it do so.
+* `FAKE_MCP`: statuses never change during a process. Claude entries always say `source:"project"`. The
+  Codex `failed` / `needs-auth` error texts are assembled from strings in the 0.160.0 binary, not observed, and
+  `cancelled` is never produced. The repeated `ready` notifications seen at turn start in X10 and X12 are not
+  reproduced, and there is no `mcpServerStatus/list` method.
+* Codex `thread/resume`: the real server also sends `thread/status/changed {"type":"idle"}` right before the
+  resume response (X5c_b). The fake does not.
 
 ## Writing tests against the fakes
 
@@ -289,6 +422,11 @@ inside that gap therefore never records the input. A product must not assume tha
   `IGNORE_TERM` (needs SIGKILL) and `SPAWN_STUBBORN` (a leaked process to clean up).
 * For orchestration, have an agent run `RUN <product-cli> ...`. The command inherits the fake's environment
   and cwd, and its text is never scanned for triggers.
+* For a turn the agent starts by itself, send `WAKE n <nonce>` and expect `woke: <nonce>` in the product's
+  transcript, exactly one `self_turns.jsonl` line with that text, and no receipt for it. Use
+  `FAKE_WAKE_TURN_SECS` to make the product observe the agent working.
+* For MCP status display, set `FAKE_MCP`. Remember that Claude reports statuses only at `system/init`, so
+  nothing shows before the first turn, while Codex reports them right after `thread/start` / `thread/resume`.
 
 ## Self-tests and comparison with the real harnesses
 
@@ -302,10 +440,20 @@ inside that gap therefore never records the input. A product must not assume tha
   * receipts, STATE and FAIL;
   * remembered approvals for both harnesses: session scope, persisted destinations and the resume/new-process cases;
   * every hostile trigger, RUN (env, cwd, exit code, trigger isolation, interrupt and SIGTERM kill the
-    command) and slow start.
+    command) and slow start;
+  * `WAKE`: the C11wake frames and shapes, the timing, no receipt plus one `self_turns.jsonl` line, the
+    deferral behind a busy turn, a message queued behind a self-started turn, an interrupt during one, stdin
+    EOF, chaos legality, and the Codex reply;
+  * missing conversations (C12missing, X14missing) and resuming from another folder (C12othercwd);
+  * `FAKE_MCP` for both harnesses (with and without chaos, after `thread/start` and `thread/resume`), unset,
+    and malformed.
 * The C10 and X13 scenarios (remembered approvals) were also replayed against the fakes with the same
   filters. Both are identical.
 * `../reference/agent-probes/compare_fake.py` and `compare_fake_codex.py` replay real scenarios against the
   fakes with chaos off and diff the frame-type sequences. C1, C2, C3int, C9, X1, X2accept, X2decline, X3, X10
-  and X12 are all identical. The scripts expect a `fake_*.py` next to a `logs/` copy of `agent-logs/`. Run
-  them from a scratch copy so they do not write into `reference/`.
+  and X12 are all identical. So are the 2026-10-08 additions: C11wake (also with `task_started` /
+  `task_notification` kept, plus the key sets of the task frames, the background `tool_use_result`, the
+  result's `origin` and the `mcp_servers` entries), C12missing (plus exit code and stderr), C12othercwd-1/-2,
+  X14missing (plus the error code), and the Codex MCP notifications: order after `thread/start` (X2accept),
+  order around `thread/resume` (X5c_b) and key set. The scripts expect a `fake_*.py` next to a `logs/` copy of
+  `agent-logs/`. Run them from a scratch copy so they do not write into `reference/`.

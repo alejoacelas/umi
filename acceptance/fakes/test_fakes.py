@@ -23,16 +23,16 @@ TMP = tempfile.mkdtemp(prefix="fake-agent-test-")
 
 
 class Proc(object):
-    def __init__(self, argv, env_extra=None):
+    def __init__(self, argv, env_extra=None, cwd=None):
         env = dict(os.environ)
         env["FAKE_AGENT_DIR"] = TMP
         env["CLAUDE_CODE_SDK_READS_SESSION_STATE"] = "1"
-        for k in ("FAKE_CHAOS", "FAKE_SLOW_START", "FAKE_INPUT_DELAY"):
+        for k in ("FAKE_CHAOS", "FAKE_SLOW_START", "FAKE_INPUT_DELAY", "FAKE_MCP", "FAKE_WAKE_TURN_SECS"):
             env.pop(k, None)
         env.update(env_extra or {})
         self.t_spawn = time.time()
         self.p = subprocess.Popen([sys.executable] + argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, text=True, env=env, cwd=TMP, bufsize=1)
+                                  stderr=subprocess.PIPE, text=True, env=env, cwd=cwd or TMP, bufsize=1)
         self.msgs = []
         self.garbage = []          # non-JSON stdout lines (GARBAGE trigger)
         self.blank = 0             # blank stdout lines
@@ -177,7 +177,8 @@ class FC(Proc):
     def __init__(self, *flags, **kw):
         Proc.__init__(self, [FAKE_CLAUDE, "-p", "--input-format", "stream-json", "--output-format",
                              "stream-json", "--verbose", "--replay-user-messages", "--permission-prompt-tool",
-                             "stdio", "--model", "haiku", "--some-unknown-flag"] + list(flags), kw.get("env"))
+                             "stdio", "--model", "haiku", "--some-unknown-flag"] + list(flags), kw.get("env"),
+                      kw.get("cwd"))
 
     def init(self):
         self.send({"type": "control_request", "request_id": "init1",
@@ -733,6 +734,14 @@ def receipts_for(session):
     return [r for r in receipts() if r["session"] == session]
 
 
+def self_turns_for(session):
+    try:
+        recs = [json.loads(l) for l in open(os.path.join(TMP, "self_turns.jsonl"))]
+    except IOError:
+        return []
+    return [r for r in recs if r["session"] == session]
+
+
 def final_text(turn_payload):
     return turn_payload["items"][0]["text"]
 
@@ -756,6 +765,9 @@ def check_claude_sequence(msgs, sent):
     covered = [u for _, r in results for u in r.get("user_message_uuids", [])]
     assert sorted(covered) == sorted(sent), (covered, sent)
     for i, r in results:
+        if "origin" in r:   # a turn the harness started by itself (WAKE, C11wake): it covers no message
+            assert "user_message_uuid" not in r and "user_message_uuids" not in r, r
+            continue
         uu = r["user_message_uuids"]
         assert r["user_message_uuid"] == uu[0]
         if r["is_error"]:
@@ -771,6 +783,10 @@ def check_claude_sequence(msgs, sent):
         assert prev < a < ri
         prev = ri
         asst = [m for m in msgs[a:ri] if m.get("type") == "assistant"]
+        if "origin" in r:
+            assert all("user_message_uuid" not in m for m in asst)
+            assert not any(m.get("isReplay") for m in msgs[a:ri]), "a self-started turn replays nothing"
+            continue
         assert asst and asst[0].get("user_message_uuid") == r["user_message_uuid"]
         assert all("user_message_uuid" not in m for m in asst[1:])
     assert sorted(m["uuid"] for m in msgs if m.get("isReplay")) == sorted(sent)
@@ -1502,6 +1518,328 @@ def t_codex_always():
     os.remove(rules)
 
 
+# ============================================================ turns the harness starts by itself (C11wake)
+
+def is_self_result(m):
+    return m.get("type") == "result" and "origin" in m
+
+
+def t_claude_wake():
+    c = FC("--dangerously-skip-permissions")
+    c.init()
+    n = c.n()
+    r = claude_say(c, "WAKE 1 nonce-w1 ECHO CRASH")     # the WAKE text is not scanned for triggers
+    t_started = time.time()
+    assert r["result"] == "started", r
+    sid = r["session_id"]
+    first = c.msgs[n:]
+    tu = [m for m in first if m.get("type") == "assistant" and m["message"]["content"][0]["type"] == "tool_use"][0]
+    block = tu["message"]["content"][0]
+    assert block["name"] == "Bash" and block["input"] == {"command": "sleep 1", "run_in_background": True}, block
+    k = first.index(tu)
+    seq = c.types(n)
+    assert seq[k + 1:k + 4] == ["system:background_tasks_changed", "system:task_started", "user"], seq
+    btc, ts, tr = first[k + 1:k + 4]
+    task = ts["task_id"]
+    assert btc["tasks"] == [{"task_id": task, "run_id": ts["run_id"], "task_type": "local_bash",
+                             "description": "sleep 1"}], btc
+    assert ts["is_backgrounded"] is True and ts["tool_use_id"] == block["id"] and ts["task_type"] == "local_bash"
+    res = tr["message"]["content"][0]
+    assert res["tool_use_id"] == block["id"] and res["is_error"] is False
+    assert res["content"].startswith("Command running in background with ID: %s. Output is being written to: " % task)
+    assert res["content"].endswith("You will be notified when it completes. To check interim output, use Read on "
+                                   "that file path.")
+    assert tr["tool_use_result"]["backgroundTaskId"] == task
+    assert seq[-4:] == ["assistant", "result", "lifecycle:completed", "system:idle"], seq
+    # the turn nobody sent
+    n2 = c.n()
+    i, r2 = c.wait_for(is_self_result, start=n2, what="self-started result")
+    assert time.time() - t_started >= 2.2, "1 s command + FAKE_WAKE_TURN_SECS (default 1.5)"
+    i_idle, _ = c.state("idle", i)
+    seq = c.types(n2, i_idle + 1)
+    assert seq == ["system:task_updated", "system:task_notification", "system:background_tasks_changed",
+                   "system:running", "system:init", "assistant", "result", "system:idle"], seq
+    upd, note, btc2 = c.msgs[n2:n2 + 3]
+    assert upd["task_id"] == task and upd["run_id"] == ts["run_id"] and upd["patch"]["status"] == "completed"
+    assert note["task_id"] == task and note["tool_use_id"] == block["id"] and note["status"] == "completed"
+    assert note["summary"] == 'Background command "sleep 1" completed (exit code 0)' and note["output_file"]
+    assert btc2["tasks"] == []
+    assert r2["result"] == "woke: nonce-w1 ECHO CRASH" and r2["subtype"] == "success" and not r2["is_error"]
+    assert r2["origin"] == {"kind": "task-notification", "producer": "session-task", "runId": ts["run_id"]}, r2
+    assert r2["result_index"] == 1 and r2["num_turns"] == 1 and r2["session_id"] == sid
+    assert "user_message_uuid" not in r2 and "user_message_uuids" not in r2
+    assert all("user_message_uuid" not in m for m in c.msgs[n2:i] if m.get("type") == "assistant")
+    # no receipt for it; one self_turns.jsonl line instead
+    assert [x["text"] for x in receipts_for(sid)] == ["WAKE 1 nonce-w1 ECHO CRASH"]
+    st = self_turns_for(sid)
+    assert len(st) == 1 and st[0]["harness"] == "claude" and st[0]["text"] == "woke: nonce-w1 ECHO CRASH", st
+    assert set(st[0]) == {"harness", "session", "text", "ts"}
+    c.close()
+    assert c.exit_code() == 0
+
+
+def t_claude_wake_busy_and_queue():
+    c = FC()
+    c.init()
+    sent = []
+    r = claude_say(c, "WAKE 0.3")
+    sent.append(r["user_message_uuid"])
+    sid = r["session_id"]
+    # the timer fires during another turn: the self-started turn follows that turn
+    n = c.n()
+    u = c.user("SLEEP 1.5")
+    sent.append(u)
+    i_r, _ = c.wait_for(lambda m: m.get("type") == "result" and u in m.get("user_message_uuids", []), start=n)
+    i_upd, _ = c.wait_for(lambda m: m.get("subtype") == "task_updated", start=n)
+    assert i_upd > i_r, "the self-started turn waits for the running turn"
+    i_init, _ = c.wait_for(lambda m: m.get("subtype") == "init", start=i_upd)
+    # a message arriving during the self-started turn is queued and runs after it
+    u2 = c.user("during the self-started turn")
+    sent.append(u2)
+    i_self, r_self = c.wait_for(is_self_result, start=i_upd)
+    assert r_self["result"] == "woke"
+    i_q, _ = c.lifecycle(u2, "queued", i_init)
+    i_s, _ = c.lifecycle(u2, "started", i_init)
+    assert i_q < i_self < i_s
+    assert "system:idle" not in c.types(i_self, i_s), "no idle between the two turns (C9b)"
+    i, r2 = c.wait_for(lambda m: m.get("type") == "result" and u2 in m.get("user_message_uuids", []), start=i_s)
+    assert r2["result"] == "ok: during the self-started turn"
+    c.state("idle", i)
+    # an interrupt during a self-started turn ends it like any turn
+    r = claude_say(c, "WAKE 0.2 interrupted one")
+    sent.append(r["user_message_uuid"])
+    n = c.n()
+    c.wait_for(lambda m: m.get("subtype") == "init", start=n, what="self-started init")
+    i, resp = c.interrupt("wint")
+    assert resp["response"]["response"] == {"still_queued": []}
+    i, r3 = c.wait_for(is_self_result, start=n)
+    assert r3["is_error"] and r3["subtype"] == "error_during_execution" and "user_message_uuids" not in r3
+    c.state("idle", i)
+    r = claude_say(c, "after")
+    assert r["result"] == "ok: after"
+    sent.append(r["user_message_uuid"])
+    # stdin EOF while a background command still runs: the fake exits once idle; the wake is lost (not probed)
+    r = claude_say(c, "WAKE 5")
+    sent.append(r["user_message_uuid"])
+    t0 = time.time()
+    c.close()
+    assert c.exit_code() == 0 and time.time() - t0 < 2
+    check_claude_sequence(c.msgs, sent)
+    assert sorted(r["message"] for r in receipts_for(sid)) == sorted(sent)
+    assert [x["text"] for x in self_turns_for(sid)] == ["woke", "woke: interrupted one"]
+
+
+def t_claude_chaos_wake():
+    for seed in CHAOS_SEEDS:
+        c = FC(env={"FAKE_CHAOS": str(seed), "FAKE_WAKE_TURN_SECS": "0.3"})
+        c.init()
+        sent = []
+        n = c.n()
+        u = c.user("WAKE 0.2 chaos %d" % seed)
+        sent.append(u)
+        i, r = c.wait_for(is_self_result, start=n)
+        assert r["result"] == "woke: chaos %d" % seed
+        c.state("idle", i)
+        n = c.n()
+        u = c.user("first SLEEP 0.6 WAKE 0.1")
+        sent.append(u)
+        c.tool_use(n)
+        u2 = c.user("second")
+        sent.append(u2)
+        i, r = c.wait_for(is_self_result, start=n)
+        c.lifecycle(u2, "completed", n)
+        c.state("idle", i)
+        c.close()
+        assert c.exit_code() == 0
+        check_claude_sequence(c.msgs, sent)
+
+
+def t_codex_wake():
+    x = FX()
+    x.init()
+    tid = x.thread()
+    t, _ = codex_say(x, tid, "WAKE 0.3 hello CRASH")
+    assert final_text(t) == "wake: not supported by codex"
+    n = x.n()
+    time.sleep(0.8)
+    assert x.alive() and not any(m.get("method") == "turn/started" for m in x.msgs[n:])
+    x.close()
+    assert x.exit_code() == 0
+
+
+# ============================================================ missing conversations (C12, X14)
+
+C12_RESULT_KEYS = {"type", "subtype", "duration_ms", "duration_api_ms", "is_error", "num_turns", "stop_reason",
+                   "session_id", "total_cost_usd", "usage", "modelUsage", "permission_denials", "uuid", "errors",
+                   "result_index"}
+
+
+def t_claude_resume_missing():
+    # C12missing / C4e: stderr line, then one error `result` on stdout, no initialize response, exit 1.
+    # The fake does all of it before reading stdin, so it happens even if nothing is sent.
+    bad = str(uuid.uuid4())
+    c = FC("--resume", bad)
+    i, r = c.result()
+    assert c.exit_code() == 1
+    time.sleep(0.2)
+    assert c.stderr == ["No conversation found with session ID: %s" % bad], c.stderr
+    assert c.msgs == [r], c.msgs
+    assert set(r) == C12_RESULT_KEYS, set(r) ^ C12_RESULT_KEYS
+    assert r["subtype"] == "error_during_execution" and r["is_error"] is True and r["num_turns"] == 0
+    assert r["session_id"] == bad and r["result_index"] == 0 and r["stop_reason"] is None
+    assert r["errors"] == ["No conversation found with session ID: %s" % bad]
+    assert not os.path.exists(os.path.join(TMP, "claude", bad + ".json"))
+    # with an initialize sent first (as in C12missing) there is still no answer to it
+    c = FC("--resume", bad)
+    try:
+        c.send({"type": "control_request", "request_id": "init1", "request": {"subtype": "initialize", "hooks": None}})
+    except (BrokenPipeError, OSError):
+        pass
+    c.result()
+    assert c.exit_code() == 1
+    assert not any(m.get("type") == "control_response" for m in c.msgs)
+
+
+def t_claude_resume_other_cwd():
+    # C12othercwd-1/-2: a session made in one folder resumes from another, keeps context, reports the new cwd
+    a, b = os.path.join(TMP, "cwd-a"), os.path.join(TMP, "cwd-b")
+    os.makedirs(a, exist_ok=True)
+    os.makedirs(b, exist_ok=True)
+    sid = str(uuid.uuid4())
+    c = FC("--session-id", sid, cwd=a)
+    c.init()
+    assert claude_say(c, "remember KUMQUAT")["result"] == "ok: remember KUMQUAT"
+    assert [m for m in c.msgs if m.get("subtype") == "init"][0]["cwd"] == os.path.realpath(a)
+    c.close()
+    assert c.exit_code() == 0
+    c = FC("--resume", sid, cwd=b)
+    c.init()
+    r = claude_say(c, "RECALL")
+    assert r["result"] == "history: remember KUMQUAT" and r["session_id"] == sid, r
+    init = [m for m in c.msgs if m.get("subtype") == "init"][0]
+    assert init["cwd"] == os.path.realpath(b) and init["session_id"] == sid
+    assert json.loads(claude_say(c, "STATE")["result"])["cwd"] == os.path.realpath(b)
+    c.close()
+    assert c.exit_code() == 0
+
+
+def t_codex_resume_missing():
+    # X14missing: JSON-RPC error -32600 "no rollout found for thread id <id>"; the server keeps running
+    x = FX(env={"FAKE_MCP": "github:connected"})
+    x.init()
+    bad = str(uuid.uuid4())
+    n = x.n()
+    r = x.call("thread/resume", {"threadId": bad})
+    assert r == {"error": {"code": -32600, "message": "no rollout found for thread id %s" % bad}, "id": r["id"]}, r
+    time.sleep(0.3)
+    assert x.alive() and x.msgs[n:] == [r], "no notifications for a failed resume"
+    assert x.call("turn/start", {"threadId": bad, "input": []})["error"]["message"] == "thread not found: %s" % bad
+    assert not os.path.exists(os.path.join(TMP, "codex", "threads", bad + ".lock"))
+    tid = x.thread()
+    t, _ = codex_say(x, tid, "still here")
+    assert final_text(t) == "ok: still here"
+    x.close()
+    assert x.exit_code() == 0
+
+
+# ============================================================ FAKE_MCP
+
+MCP_ENV = "github:connected, jira:needs-auth,slow:pending,broken:failed"
+
+
+def t_claude_mcp():
+    # C13projectmcp: a project (.mcp.json) server appears as {"name", "status", "source": "project"}
+    expected = [{"name": n, "status": s, "source": "project"} for n, s in
+                (("github", "connected"), ("jira", "needs-auth"), ("slow", "pending"), ("broken", "failed"))]
+    c = FC(env={"FAKE_MCP": MCP_ENV, "FAKE_WAKE_TURN_SECS": "0.2"})
+    c.init()
+    claude_say(c, "one")
+    n = c.n()
+    c.user("WAKE 0.1")
+    c.wait_for(is_self_result, start=n)
+    inits = [m for m in c.msgs if m.get("subtype") == "init"]
+    assert len(inits) == 3 and all(m["mcp_servers"] == expected for m in inits), [m["mcp_servers"] for m in inits]
+    c.close()
+    assert c.exit_code() == 0
+    c = FC()
+    c.init()
+    claude_say(c, "none")
+    assert [m for m in c.msgs if m.get("subtype") == "init"][0]["mcp_servers"] == []
+    c.close()
+    assert c.exit_code() == 0
+    c = FC(env={"FAKE_MCP": "github:bogus"})
+    assert c.exit_code() == 2
+    time.sleep(0.1)
+    assert any("FAKE_MCP" in l for l in c.stderr) and c.msgs == [], c.stderr
+
+
+def mcp_notes(proc, start=0):
+    return [(i, m["params"]) for i, m in enumerate(proc.msgs) if i >= start
+            and m.get("method") == "mcpServer/startupStatus/updated"]
+
+
+def check_codex_mcp(x, tid, start):
+    """X logs: every server reports "starting", then its final status, all with the five real keys."""
+    end = time.time() + 5
+    while len(mcp_notes(x, start)) < 7 and time.time() < end:
+        time.sleep(0.05)
+    notes = mcp_notes(x, start)
+    assert len(notes) == 7, notes
+    for _, p in notes:
+        assert set(p) == {"threadId", "name", "status", "error", "failureReason"} and p["threadId"] == tid, p
+    assert sorted(p["name"] for _, p in notes[:4]) == ["broken", "github", "jira", "slow"]
+    assert all(p["status"] == "starting" and p["error"] is None and p["failureReason"] is None for _, p in notes[:4])
+    finals = {p["name"]: p for _, p in notes[4:]}
+    assert set(finals) == {"github", "jira", "broken"}, finals
+    assert finals["github"]["status"] == "ready" and finals["github"]["error"] is None
+    assert finals["jira"]["status"] == "failed" and finals["jira"]["failureReason"] == "reauthenticationRequired"
+    assert finals["jira"]["error"].startswith("MCP client for `jira` failed to start")
+    assert finals["broken"]["status"] == "failed" and finals["broken"]["failureReason"] is None
+    assert finals["broken"]["error"].startswith("MCP client for `broken` failed to start")
+    return notes
+
+
+def t_codex_mcp():
+    for chaos in (None, "3"):
+        env = {"FAKE_MCP": MCP_ENV}
+        if chaos:
+            env["FAKE_CHAOS"] = chaos
+        x = FX(env=env)
+        x.init()
+        n = x.n()
+        tid = x.thread()
+        i_ts, _ = x.note("thread/started", n)
+        notes = check_codex_mcp(x, tid, n)
+        assert notes[0][0] > i_ts, "thread/start: after thread/started (X1, X2, X7)"
+        t, _ = codex_say(x, tid, "with mcp")
+        assert final_text(t) == "ok: with mcp"
+        x.close()
+        assert x.exit_code() == 0
+        # thread/resume that loads the thread: "starting" before the response (X5c_b)
+        y = FX(env=env)
+        y.init()
+        n = y.n()
+        rid = y.req("thread/resume", {"threadId": tid})
+        i_resp, resp = y.wait_for(lambda m: m.get("id") == rid and "method" not in m)
+        assert "result" in resp
+        notes = check_codex_mcp(y, tid, n)
+        assert max(i for i, _ in notes[:4]) < i_resp < min(i for i, _ in notes[4:])
+        y.close()
+        assert y.exit_code() == 0
+    x = FX()
+    x.init()
+    tid = x.thread()
+    codex_say(x, tid, "no mcp")
+    time.sleep(0.4)
+    assert mcp_notes(x) == []
+    x.close()
+    assert x.exit_code() == 0
+    x = FX(env={"FAKE_MCP": "github"})
+    assert x.exit_code() == 2
+    time.sleep(0.1)
+    assert any("FAKE_MCP" in l for l in x.stderr), x.stderr
+
+
 TESTS = [t_claude_basic, t_claude_interrupt_sleep, t_claude_interrupt_keeps_queued, t_claude_injection,
          t_claude_permissions, t_claude_skip_permissions, t_claude_resume, t_claude_crash_and_malformed,
          t_claude_stdin_close_mid_turn, t_codex_basic, t_codex_steer_and_commentary, t_codex_interrupt,
@@ -1509,7 +1847,9 @@ TESTS = [t_claude_basic, t_claude_interrupt_sleep, t_claude_interrupt_keeps_queu
          t_claude_chaos_basic, t_claude_chaos_injection_choice, t_codex_chaos_basic, t_codex_chaos_steer_race,
          t_codex_early_interrupt, t_receipts_exactly_once, t_state, t_fail, t_hostile_garbage, t_hostile_huge,
          t_hostile_stderr_spam, t_hostile_hang, t_hostile_exit_clean, t_hostile_term_and_stubborn, t_run,
-         t_slow_start, t_claude_always, t_codex_always]
+         t_slow_start, t_claude_always, t_codex_always, t_claude_wake, t_claude_wake_busy_and_queue,
+         t_claude_chaos_wake, t_codex_wake, t_claude_resume_missing, t_claude_resume_other_cwd,
+         t_codex_resume_missing, t_claude_mcp, t_codex_mcp]
 
 
 def main():

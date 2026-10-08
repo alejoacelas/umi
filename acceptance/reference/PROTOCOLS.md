@@ -221,6 +221,62 @@ On a later resume the turn is persisted as `status:"interrupted"`, and its comma
 
 ---------------------------------------------------------------------------------------------------
 
+## Part 3: recordings of 2026-10-08 (Claude Code 2.1.289 haiku, codex-cli 0.160.0)
+
+Logs are in `agent-logs/`, the script is `agent-probes/probe_phase2.py` (C13projectmcp was recorded separately).
+
+### C11. A turn the CLI starts by itself (`agent-logs/C11wake.jsonl`)
+The model ran Bash `sleep 8; echo done-xyz` with `run_in_background: true` and replied `started`. 8 s later,
+with nothing sent, the CLI ran another turn:
+```
+(turn 1) assistant tool_use Bash {"command":"sleep 8; echo done-xyz","run_in_background":true}
+         system/background_tasks_changed {"tasks":[{"task_id":"bofgoz5j9","run_id":"0muzq2k5n-3c7b4f6b","task_type":"local_bash","description":"sleep 8; echo done-xyz"}]}
+         system/task_started {task_id, run_id, tool_use_id, description, "is_backgrounded":true, "task_type":"local_bash"}
+         user tool_result "Command running in background with ID: bofgoz5j9. Output is being written to: /private/tmp/claude-501/<cwd-slug>/<session>/tasks/bofgoz5j9.output. You will be notified when it completes. To check interim output, use Read on that file path."
+              tool_use_result {"stdout":"","stderr":"","interrupted":false,"isImage":false,"noOutputExpected":false,"backgroundTaskId":"bofgoz5j9"}
+         assistant "started" → result (num_turns 2) → lifecycle completed → idle
+(8 s later, no input)
+         system/task_updated {task_id, run_id, "patch":{"status":"completed","end_time":<ms>}}
+         system/task_notification {task_id, run_id, tool_use_id, "status":"completed", output_file, "summary":"Background command \"sleep 8; echo done-xyz\" completed (exit code 0)"}
+         system/background_tasks_changed {"tasks":[]}
+         system/session_state_changed running
+         system/init
+         thinking_tokens (no user_message_uuid) → assistant thinking → assistant text (no user_message_uuid)
+         result {"subtype":"success","result":"Background command completed with exit code 0. Output: `done-xyz`","num_turns":1,"result_index":1,
+                 "origin":{"kind":"task-notification","producer":"session-task","runId":"0muzq2k5n-3c7b4f6b"}}   (no user_message_uuid(s))
+         system/session_state_changed idle
+```
+No user replay and no `command_lifecycle` frames for the second turn. It took 1.55 s from `task_notification`
+to `result`. **A `result` can belong to no message the client sent**: it then has `origin` and no
+`user_message_uuid(s)`. Not probed: a background task finishing while another turn runs, stdin EOF with a
+background task still running, and an interrupt while one runs.
+
+### C12. Missing session, other folder (`agent-logs/C12missing.jsonl`, `C12othercwd-1/-2.jsonl`)
+* `--resume <unknown uuid>` behaves exactly as C4e: stderr `No conversation found with session ID: <id>` and,
+  at the same moment, the `result` error frame on stdout (`errors:["No conversation found with session ID: <id>"]`,
+  `num_turns:0`, `result_index:0`). No `initialize` answer; stdout closes about 1.2 s after start, exit code 1, and later writes get EPIPE.
+* `--resume <id>` from a different working directory works: same `session_id`, context kept ("kumquat"), and
+  `system/init.cwd` is the new directory.
+
+### C13. A project MCP server (`agent-logs/C13projectmcp.jsonl`)
+A `.mcp.json` with `{"mcpServers":{"probe-srv":{"command":"/usr/bin/true"}}}` shows up in `system/init` as
+`{"name":"probe-srv","status":"failed","source":"project"}`, next to the claude.ai connectors
+(`source:"claudeai"`). Statuses seen across all C logs: `pending`, `connected`, `needs-auth`, `failed`. They
+change between turns (connectors are `pending` on the first turn and `connected` later).
+
+### X14. Resuming an unknown thread (`agent-logs/X14missing.jsonl`)
+`thread/resume` → `{"error":{"code":-32600,"message":"no rollout found for thread id <id>"},"id":2}` with no
+notifications. The server keeps running (same as X7).
+
+### Codex MCP startup notifications (all X logs)
+`{"method":"mcpServer/startupStatus/updated","params":{"threadId":T,"name":"codex_apps","status":"starting","error":null,"failureReason":null},"emittedAtMs":…}`.
+After `thread/start`, every server reports `starting` right after `thread/started`, then `ready` 0.2 to 1.5 s
+later, in varying order. After a `thread/resume` that loads the thread, `starting` comes before the response,
+together with `thread/status/changed {"type":"idle"}` (X5c_b). Only `starting` and `ready` were recorded. The
+0.160.0 schema allows `starting | ready | failed | cancelled` and `failureReason: "reauthenticationRequired" | null`.
+
+---------------------------------------------------------------------------------------------------
+
 ## Surprises, and what the driver should do
 1. **Claude: one malformed stdin line kills the process (exit 1).** Validate and serialize every line. Codex just logs it.
 2. **Claude echoes our control_response for can_use_tool on stdout.** Ignore control_responses whose ids we didn't originate.
@@ -236,6 +292,7 @@ On a later resume the turn is persisted as `status:"interrupted"`, and its comma
 11. **Codex: a thread can only be live in one app-server process at a time**, and unsubscribe doesn't free it: a second process that resumes the same thread is refused ("already has an active writer") until the first process exits.
 12. **Codex: a steered turn can have several `final_answer` messages**, but `turn/completed.items` keeps only the last one.
 13. **Codex: a failed turn leaves the thread status at `systemError`**, not `idle`, so use `turn/completed` as the end-of-turn signal. An experimental server-side queue exists and auto-drains.
+14. **Claude can start a turn by itself** when a background command finishes (C11): `system/init` → assistant → `result` with `origin:{"kind":"task-notification",…}` and no `user_message_uuid(s)`, with no message sent and no lifecycle frames.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -251,6 +308,7 @@ On a later resume the turn is persisted as `status:"interrupted"`, and its comma
   * `RECALL`: replies `history: …` with the earlier user texts, which is handy to prove a resume worked.
   * `FAIL`: Codex only; a model containing `no-such-model` behaves the same way.
   * default: `ok: <text>`.
+* The "Fakes" notes here are historical; `acceptance/fakes/README.md` is current (it covers WAKE, FAKE_MCP and the C12/X14 checks).
 * Known simplifications:
   * No thinking or rate-limit frames.
   * Claude's `task_started` is emitted immediately rather than after about 3s.

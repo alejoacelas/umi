@@ -15,10 +15,18 @@ Sessions persist as JSON under $FAKE_AGENT_DIR/claude/ (default: <tmp>/fake-agen
 Every user message handed to the "model" appends one line to
 $FAKE_AGENT_DIR/receipts.jsonl.
 
-Env: FAKE_CHAOS=<seed> (legal timing/noise/ordering variation), FAKE_SLOW_START=<secs>.
+Env: FAKE_CHAOS=<seed> (legal timing/noise/ordering variation), FAKE_SLOW_START=<secs>,
+FAKE_MCP=<name:status,...> (servers listed in every system/init's mcp_servers with source
+"project"; status one of connected, pending, failed, needs-auth), FAKE_WAKE_TURN_SECS=<secs>
+(how long a self-started WAKE turn takes before its reply; default 1.5, like C11wake).
 
 Triggers (substring of the user message text; text after `RUN ` is the command and
 is not scanned for other triggers):
+  WAKE n [text]    a Bash tool_use with run_in_background lasting n seconds (C11wake frames); reply
+                   "started". After n s the fake starts a turn by itself (task_updated,
+                   task_notification, background_tasks_changed, running, system/init, assistant
+                   "woke: <text>" / "woke", result with origin task-notification, idle). No receipt;
+                   one line in $FAKE_AGENT_DIR/self_turns.jsonl. The text is not scanned for triggers.
   CRASH            exit(1) mid-turn after the replay (stderr explains)
   FAIL             the turn fails like an API error (synthetic assistant "API Error: 404 ..." text,
                    result subtype "success" with is_error true and api_error_status 404); a model
@@ -49,7 +57,7 @@ is not scanned for other triggers):
   RECALL           reply "history: <previous user texts joined by ' | '>"
   default reply    "ok: <text>"
 A user message arriving while a turn runs gets `command_lifecycle queued`; it is
-injected at the next tool boundary (after SLEEP / RUN / HUGE / ASK_*) like the real
+injected at the next tool boundary (after SLEEP / RUN / HUGE / WAKE / ASK_*) like the real
 CLI (replay + `started`, `completed` just before the shared `result`), otherwise
 it runs as the next turn. Under FAKE_CHAOS it may also be left for the next turn.
 """
@@ -85,6 +93,11 @@ INTERRUPT_TOOL_TEXT = ("The user doesn't want to proceed with this tool use. The
 STDIN_CLOSED_PERM = ("Tool permission request failed: AbortError: Tool permission stream closed "
                      "before response received")
 TASK_STARTED_AFTER = 3.0   # the real Bash tool reports task_started ~3 s into a command (C2, C5, C9)
+WAKE_RE = re.compile(r"\bWAKE[ \t]+([0-9]*\.?[0-9]+)(?=\s|$)")
+WAKE_TURN_SECS = 1.5       # C11wake: ~1.5 s from task_notification to the self-started turn's result
+BG_RESULT_TEXT = ("Command running in background with ID: %s. Output is being written to: %s. You will be "
+                  "notified when it completes. To check interim output, use Read on that file path.")   # C11wake
+MCP_STATUSES = ("connected", "pending", "failed", "needs-auth")
 GARBAGE_LINES = ["", "this is not json", "   ", "\x1b[33mWARN\x1b[0m fake garbage on stdout",
                  "{\"type\": \"assistant\", \"truncated", "[object Object]"]
 
@@ -123,6 +136,58 @@ def split_run(text):
     if not m:
         return text, None
     return text[:m.start()], m.group(1).strip()
+
+
+def split_wake(trig):
+    """(trig without the WAKE text, (seconds string, wake text) or None). The text is never scanned."""
+    m = WAKE_RE.search(trig)
+    if not m:
+        return trig, None
+    return trig[:m.end()], (m.group(1), trig[m.end():].strip())
+
+
+def scan(text):
+    """(text scanned for triggers, RUN command or None, WAKE (secs, text) or None)."""
+    trig, run_cmd = split_run(text)
+    trig, wake = split_wake(trig)
+    return trig, run_cmd, wake
+
+
+def parse_fake_mcp():
+    """FAKE_MCP="name:status,..." -> [(name, status)]. A bad entry is a test-setup error: exit 2."""
+    out = []
+    for part in (os.environ.get("FAKE_MCP") or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        name, sep, status = part.rpartition(":")
+        name, status = name.strip(), status.strip()
+        if not sep or not name or status not in MCP_STATUSES:
+            sys.stderr.write("fake_claude: bad FAKE_MCP entry %r (want name:status with status one of %s)\n"
+                             % (part, ", ".join(MCP_STATUSES)))
+            sys.stderr.flush()
+            sys.exit(2)
+        out.append((name, status))
+    return out
+
+
+def write_self_turn(session, text):
+    """One JSON line per turn the harness started by itself (WAKE); a single O_APPEND write."""
+    rec = {"harness": "claude", "session": session, "text": text, "ts": time.time()}
+    data = (json.dumps(rec) + "\n").encode("utf-8")
+    root = agent_root()
+    os.makedirs(root, exist_ok=True)
+    fd = os.open(os.path.join(root, "self_turns.jsonl"), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        while data:
+            data = data[os.write(fd, data):]
+    finally:
+        os.close(fd)
+
+
+def short_id(n):
+    alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+    return "".join(random.choice(alphabet) for _ in range(n))
 
 
 def spam_stderr():
@@ -324,6 +389,7 @@ class Turn(object):
         self.num_turns = 1
         self.first_frame = True        # the first assistant frame carries user_message_uuid(s)
         self.first_response = True     # the first API response is followed by a rate_limit_event
+        self.origin = None             # a self-started (WAKE) turn: the result's `origin` (C11wake)
 
 
 class FakeClaude(object):
@@ -353,6 +419,11 @@ class FakeClaude(object):
         self.history = []
         self.session_rules = {"allow": [], "deny": [], "ask": []}   # destination session / cliArg
         self.extra_dirs = []
+        self.mcp = parse_fake_mcp()    # FAKE_MCP: [(name, status)] for system/init.mcp_servers
+        self.bg_tasks = {}             # WAKE: running background tasks by task_id (insertion ordered)
+        self.wakes_due = []            # WAKE: finished background tasks waiting for their self-started turn
+        raw = os.environ.get("FAKE_WAKE_TURN_SECS")
+        self.wake_turn_secs = float(raw) if raw not in (None, "") else WAKE_TURN_SECS
 
     # ------------------------------------------------------------ output
     def emit(self, obj):
@@ -479,7 +550,9 @@ class FakeClaude(object):
                 "session_state": "running" if self.turn_active else "idle", "capabilities": []}
 
     def system_init(self):
-        return self.sysmsg("init", cwd=os.getcwd(), tools=["Bash", "Read", "Write", "Edit"], mcp_servers=[],
+        # C13projectmcp: a server from the project's .mcp.json is {"name", "status", "source": "project"}
+        mcp = [{"name": name, "status": status, "source": "project"} for name, status in self.mcp]
+        return self.sysmsg("init", cwd=os.getcwd(), tools=["Bash", "Read", "Write", "Edit"], mcp_servers=mcp,
                            model=self.model, permissionMode=self.perm_mode, slash_commands=[],
                            apiKeySource="none", claude_code_version=VERSION, output_style="default",
                            agents=[], skills=[], plugins=[], fast_mode_state="off")
@@ -533,7 +606,7 @@ class FakeClaude(object):
         self.emit(m)
 
     def result(self, ok, text, uuids, denials, num_turns, started_at, errors=None, terminal="completed",
-               stop="end_turn", api_error=None):
+               stop="end_turn", api_error=None, origin=None):
         r = {"type": "result", "subtype": "success" if ok else "error_during_execution",
              "is_error": not ok, "duration_ms": int((time.time() - started_at) * 1000),
              "duration_api_ms": 0, "num_turns": num_turns, "stop_reason": stop,
@@ -553,6 +626,8 @@ class FakeClaude(object):
             # an API error ends the turn "successfully" with is_error set (the schema's api_error_status)
             r["is_error"] = True
             r["api_error_status"] = api_error
+        if origin is not None:
+            r["origin"] = origin      # a turn nobody sent (C11wake: kind task-notification)
         self.result_index += 1
         self.last_is_error = r["is_error"]
         return r
@@ -729,7 +804,7 @@ class FakeClaude(object):
 
     def delivered(self, item):
         """Checks that happen right after the model received a message."""
-        trig = split_run(item["text"])[0]
+        trig = scan(item["text"])[0]
         if "CRASH" in trig:
             self.crash()
         if "HANG" in trig:
@@ -750,7 +825,7 @@ class FakeClaude(object):
         try:
             while work:
                 item = work.pop(0)
-                trig, run_cmd = split_run(item["text"])
+                trig, run_cmd, wake = scan(item["text"])
                 if "FAIL" in trig or "no-such-model" in self.model:
                     with self.cv:
                         turn.finishing = True
@@ -773,6 +848,10 @@ class FakeClaude(object):
                     used_tool = True
                     self.bash_tool(turn, "sleep %s" % m.group(1), "Sleep %s seconds" % m.group(1),
                                    secs=float(m.group(1)))
+                if wake is not None:
+                    used_tool = True
+                    self.background_bash(turn, wake[0], wake[1])
+                    extra = "started"
                 m = re.search(r"HUGE\s+([0-9]*\.?[0-9]+)", trig)
                 if m:
                     used_tool = True
@@ -877,6 +956,93 @@ class FakeClaude(object):
         turn.tool_use_id = None
         turn.task_id = None
         return code, output
+
+    # ------------------------------------------------------------ background tasks and self-started turns (C11wake)
+    def bg_task_list(self):
+        """background_tasks_changed.tasks: the background tasks still running (caller holds the lock)."""
+        return [{"task_id": t["task_id"], "run_id": t["run_id"], "task_type": "local_bash",
+                 "description": t["description"]} for t in self.bg_tasks.values() if not t["done"]]
+
+    def background_bash(self, turn, secs, text):
+        """WAKE: a Bash tool_use with run_in_background. The tool returns at once; after `secs` seconds the
+        task completes and the fake starts a turn by itself (wake_fire -> worker -> run_self_turn).
+        Frames and texts as in C11wake: background_tasks_changed, task_started(is_backgrounded), tool_result."""
+        turn.num_turns += 1
+        tid = "toolu_fake_" + uuidlib.uuid4().hex[:20]
+        command = "sleep %s" % secs
+        self.api_response(turn, [{"type": "tool_use", "id": tid, "name": "Bash",
+                                  "input": {"command": command, "run_in_background": True}}])
+        task_id = "b" + short_id(8)
+        run_id = "%s-%s" % (short_id(9), uuidlib.uuid4().hex[:8])
+        out_dir = os.path.join(agent_root(), "claude", "tasks", self.session_id)
+        os.makedirs(out_dir, exist_ok=True)
+        output_file = os.path.join(out_dir, task_id + ".output")
+        open(output_file, "w").close()       # `sleep` prints nothing; the real CLI writes the output here
+        task = {"task_id": task_id, "run_id": run_id, "tool_use_id": tid, "description": command,
+                "output_file": output_file, "text": text, "done": False, "end_ms": None}
+        with self.cv:
+            self.bg_tasks[task_id] = task
+            self.emit(self.sysmsg("background_tasks_changed", tasks=self.bg_task_list()))
+        self.emit(self.sysmsg("task_started", task_id=task_id, run_id=run_id, tool_use_id=tid,
+                              description=command, is_backgrounded=True, task_type="local_bash"))
+        self.emit(self.user_frame([{"tool_use_id": tid, "type": "tool_result",
+                                    "content": BG_RESULT_TEXT % (task_id, output_file), "is_error": False}],
+                                  tool_use_result={"stdout": "", "stderr": "", "interrupted": False, "isImage": False,
+                                                   "noOutputExpected": False, "backgroundTaskId": task_id}))
+        timer = threading.Timer(float(secs), self.wake_fire, args=(task_id,))
+        timer.daemon = True
+        timer.start()
+
+    def wake_fire(self, task_id):
+        """Timer thread: the background command finished. The worker starts the self-started turn as soon
+        as no other turn is running."""
+        with self.cv:
+            task = self.bg_tasks.get(task_id)
+            if task is None or task["done"]:
+                return
+            task["done"] = True
+            task["end_ms"] = int(time.time() * 1000)
+            self.wakes_due.append(task)
+            self.cv.notify_all()
+
+    def begin_self_turn(self, task):
+        """Caller holds the lock. C11wake order: task_updated, task_notification, background_tasks_changed
+        (the remaining tasks), session_state_changed running. No user replay and no command_lifecycle."""
+        self.bg_tasks.pop(task["task_id"], None)
+        self.emit(self.sysmsg("task_updated", task_id=task["task_id"], run_id=task["run_id"],
+                              patch={"status": "completed", "end_time": task["end_ms"]}))
+        self.emit(self.sysmsg("task_notification", task_id=task["task_id"], run_id=task["run_id"],
+                              tool_use_id=task["tool_use_id"], status="completed", output_file=task["output_file"],
+                              summary='Background command "%s" completed (exit code 0)' % task["description"]))
+        self.emit(self.sysmsg("background_tasks_changed", tasks=self.bg_task_list()))
+        if not self.turn_active:
+            self.turn_active = True
+            self.state("running")
+
+    def run_self_turn(self, task):
+        """A turn nobody sent: system/init, (chaos noise), a pause of FAKE_WAKE_TURN_SECS, the reply, and a
+        result with `origin` and no user_message_uuid(s). Interruptible like any turn."""
+        turn = self.turn
+        turn.index = self.result_index
+        turn.origin = {"kind": "task-notification", "producer": "session-task", "runId": task["run_id"]}
+        t0 = time.time()
+        final = "woke: " + task["text"] if task["text"] else "woke"
+        self.emit(self.system_init())
+        write_self_turn(self.session_id, final)
+        self.noise_thinking_tokens(turn)
+        try:
+            self.wait_until(turn, deadline=time.time() + self.wake_turn_secs)
+            with self.cv:
+                if turn.interrupt_flag:
+                    raise Interrupted(turn.interrupt_rid)
+                turn.finishing = True
+        except Interrupted as e:
+            self.finish_interrupted(turn, e, t0)
+            return
+        self.api_response(turn, [{"type": "text", "text": final}])
+        self.history.append({"role": "assistant", "text": final})
+        self.save()
+        self.emit(self.result(True, final, [], [], 1, t0, origin=turn.origin))
 
     # ------------------------------------------------------------ permission rules (C10)
     def load_settings(self, dest):
@@ -1082,20 +1248,29 @@ class FakeClaude(object):
         self.emit(self.result(False, None, turn.started, turn.denials, turn.num_turns + 1, t0, terminal=terminal,
                               stop="tool_use" if terminal == "aborted_tools" else None,
                               errors=["[ede_diagnostic] result_type=user last_content_type=n/a "
-                                      "stop_reason=tool_use"]))
+                                      "stop_reason=tool_use"], origin=turn.origin))
         for u in turn.started:
             self.lifecycle(u, "cancelled")
 
     def worker(self):
         while True:
             with self.cv:
-                while not self.pending and not self.eof:
+                while not self.pending and not self.wakes_due and not self.eof:
                     self.cv.wait()
-                if not self.pending:
+                item = wake = None
+                if self.wakes_due:     # a finished background task goes first, right after the running turn
+                    wake = self.wakes_due.pop(0)
+                    self.turn = Turn()
+                    self.begin_self_turn(wake)
+                elif self.pending:
+                    item = self.pending.pop(0)
+                    self.turn = Turn()
+                else:
                     break
-                item = self.pending.pop(0)
-                self.turn = Turn()
-            self.run_turn(item)
+            if wake is not None:
+                self.run_self_turn(wake)
+            else:
+                self.run_turn(item)
             with self.cv:
                 self.turn = None
                 if not self.pending:

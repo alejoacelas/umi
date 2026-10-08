@@ -373,10 +373,17 @@ class Instance:
     def wait(self, session, *options, timeout=60):
         proc = self.cli("--json", "agent", "wait", session, "--timeout", str(timeout), *options, check=False,
                         timeout=timeout + 60)
-        return proc.returncode, json.loads(proc.stdout)
+        try:
+            return proc.returncode, json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            raise AssertionError(f"`agent wait {session} {' '.join(options)}` exited {proc.returncode} without "
+                                 f"a JSON answer: {(proc.stdout + proc.stderr).strip()[:500]!r}") from None
 
     def info(self, session):
         return self.json("agent", "info", session)
+
+    def read_reply(self, session, message):
+        return self.json("agent", "read", session, "--message", message)["reply"]
 
     def agents(self):
         return self.json("agent", "ls", timeout=30)["sessions"]

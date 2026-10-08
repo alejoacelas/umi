@@ -19,7 +19,11 @@ message handed to the "model" (= its userMessage item) appends one line to
 $FAKE_AGENT_DIR/receipts.jsonl.
 
 Env: FAKE_CHAOS=<seed>, FAKE_SLOW_START=<secs>, FAKE_INPUT_DELAY=<secs> (gap between
-turn/started and the first userMessage item; an interrupt inside it drops the input).
+turn/started and the first userMessage item; an interrupt inside it drops the input),
+FAKE_MCP=<name:status,...> (status connected/pending/failed/needs-auth): after thread/start and a
+thread/resume that loads a thread, mcpServer/startupStatus/updated "starting" for each server, then
+"ready" (connected), "failed" (failed), "failed" + failureReason "reauthenticationRequired"
+(needs-auth) or nothing more (pending).
 
 Triggers (substring of the user text; text after `RUN ` is the command and is not
 scanned for other triggers):
@@ -54,6 +58,7 @@ scanned for other triggers):
   STATE          reply is one line of JSON: harness, session, model, effort, full_access,
                  permission_mode, cwd, argv (what this harness was told)
   ECHO           reply == user text;  RECALL -> "history: <prior user texts>"
+  WAKE n [text]  reply "wake: not supported by codex" (Codex was never seen starting a turn by itself)
   default        "ok: <text>"
 """
 import json
@@ -72,6 +77,9 @@ import uuid as uuidlib
 VERSION = "0.160.0"
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 RUN_RE = re.compile(r"\bRUN[ \t]+(.+)")
+WAKE_RE = re.compile(r"\bWAKE[ \t]+([0-9]*\.?[0-9]+)(?=\s|$)")
+MCP_STATUSES = ("connected", "pending", "failed", "needs-auth")
+MCP_FINAL_AFTER = 0.2      # "ready" came 0.2-1.5 s after "starting" in every X log
 KNOWN_METHODS = ["initialize", "thread/start", "thread/resume", "thread/unsubscribe",
                  "thread/turns/list", "turn/start", "turn/steer", "turn/interrupt", "thread/queue/add",
                  "thread/queue/list", "thread/queue/delete", "thread/queue/start"]
@@ -138,6 +146,48 @@ def split_run(text):
     return text[:m.start()], m.group(1).strip()
 
 
+def split_wake(trig):
+    """(trig without the WAKE text, (seconds string, wake text) or None). The text is never scanned."""
+    m = WAKE_RE.search(trig)
+    if not m:
+        return trig, None
+    return trig[:m.end()], (m.group(1), trig[m.end():].strip())
+
+
+def parse_fake_mcp():
+    """FAKE_MCP="name:status,..." -> [(name, status)]. A bad entry is a test-setup error: exit 2."""
+    out = []
+    for part in (os.environ.get("FAKE_MCP") or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        name, sep, status = part.rpartition(":")
+        name, status = name.strip(), status.strip()
+        if not sep or not name or status not in MCP_STATUSES:
+            sys.stderr.write("fake_codex: bad FAKE_MCP entry %r (want name:status with status one of %s)\n"
+                             % (part, ", ".join(MCP_STATUSES)))
+            sys.stderr.flush()
+            sys.exit(2)
+        out.append((name, status))
+    return out
+
+
+def mcp_final(name, status):
+    """The last mcpServer/startupStatus/updated for a FAKE_MCP status (None: stays "starting").
+    0.160.0 schema: McpServerStartupState starting|ready|failed|cancelled, McpServerStartupFailureReason
+    reauthenticationRequired. Error texts are built from strings in the 0.160.0 binary (not observed live)."""
+    if status == "connected":
+        return {"status": "ready", "error": None, "failureReason": None}
+    if status == "failed":
+        return {"status": "failed", "error": "MCP client for `%s` failed to start: fake MCP server exited" % name,
+                "failureReason": None}
+    if status == "needs-auth":
+        return {"status": "failed", "error": "MCP client for `%s` failed to start: requires OAuth reauthentication. "
+                                             "Use your client's MCP OAuth sign-in flow." % name,
+                "failureReason": "reauthenticationRequired"}
+    return None
+
+
 def spam_stderr():
     chunk = "".join("fake stderr spam line %06d %s\n" % (i, "." * 70) for i in range(1000))
     for _ in range(20):          # ~2 MB; blocks if nobody drains our stderr (that is the point)
@@ -190,6 +240,13 @@ class Chaos(object):
     def randint(self, a, b):
         with self._lock:
             return self._dec.randint(a, b)
+
+    def shuffled(self, seq):
+        seq = list(seq)
+        if self.on:
+            with self._lock:
+                self._dec.shuffle(seq)
+        return seq
 
     def write(self, stream, line):
         """Write one line: in chaos mode after a 0-40 ms delay, sometimes as two writes 1-15 ms apart."""
@@ -298,6 +355,7 @@ class FakeCodex(object):
         self.input_delay = float(os.environ.get("FAKE_INPUT_DELAY") or 0)
         self.session_approvals = {}   # thread id -> commands approved with acceptForSession (memory only)
         self.config = parse_config_args(sys.argv[1:])
+        self.mcp = parse_fake_mcp()     # FAKE_MCP: [(name, status)]
         self.home = os.path.join(agent_root(), "codex")
         self.tdir = os.path.join(self.home, "threads")
         os.makedirs(self.tdir, exist_ok=True)
@@ -394,6 +452,32 @@ class FakeCodex(object):
             self.queue_watch.add(tid)
         if first:
             threading.Thread(target=self.queue_poller, daemon=True).start()
+
+    # ------------------------------------------------------------ MCP startup (FAKE_MCP)
+    def mcp_startup(self, tid):
+        """mcpServer/startupStatus/updated: "starting" for every server at once, then each final status
+        a little later (X logs: 0.2-1.5 s later, order varying). Chaos shuffles both orders and spreads
+        the final ones over 0.1-1.5 s."""
+        if not self.mcp:
+            return
+        for name, _ in self.chaos.shuffled(self.mcp):
+            self.notify("mcpServer/startupStatus/updated", {"threadId": tid, "name": name, "status": "starting",
+                                                            "error": None, "failureReason": None})
+        finals = [(name, mcp_final(name, st)) for name, st in self.mcp if mcp_final(name, st) is not None]
+        if finals:
+            threading.Thread(target=self.mcp_finish, args=(tid, finals), daemon=True).start()
+
+    def mcp_finish(self, tid, finals):
+        t0 = time.time()
+        if self.chaos.on:
+            plan = sorted((self.chaos.uniform(0.1, 1.5), name, fin) for name, fin in finals)
+        else:
+            plan = [(MCP_FINAL_AFTER, name, fin) for name, fin in finals]
+        for at, name, fin in plan:
+            time.sleep(max(0.0, t0 + at - time.time()))
+            params = {"threadId": tid, "name": name}
+            params.update(fin)
+            self.notify("mcpServer/startupStatus/updated", params)
 
     # ------------------------------------------------------------ persistence
     def path(self, tid):
@@ -602,6 +686,7 @@ class FakeCodex(object):
         resp = self.thread_response(th)
         self.write({"id": rid, "result": resp})
         self.notify("thread/started", {"thread": self.thread_obj(th)})
+        self.mcp_startup(tid)          # X1, X2*, X7: right after thread/started
         return None
 
     def m_thread_resume(self, p, rid):
@@ -625,6 +710,7 @@ class FakeCodex(object):
             th["status"] = {"type": "idle"}
             with self.cv:
                 self.threads[tid] = th
+            self.mcp_startup(tid)      # X5c_b: before the thread/resume response
         for k_in, k_th in (("model", "model"), ("approvalPolicy", "approvalPolicy"), ("sandbox", "sandbox"),
                            ("cwd", "cwd"), ("effort", "effort")):
             if p.get(k_in):
@@ -1148,6 +1234,7 @@ class FakeCodex(object):
                     self.save_progress(th, turn)
                     text = inp["text"]
                     trig, run_cmd = split_run(text)
+                    trig, wake = split_wake(trig)
                     if "HANG" in trig:
                         self.hang()
                     if "CRASH" in trig:
@@ -1173,6 +1260,8 @@ class FakeCodex(object):
                     if m:
                         used_tool = True
                         self.run_sleep(th, turn, float(m.group(1)), m.group(1))
+                    if wake is not None:
+                        extra = "wake: not supported by codex"
                     m = re.search(r"HUGE\s+([0-9]*\.?[0-9]+)", trig)
                     if m:
                         used_tool = True

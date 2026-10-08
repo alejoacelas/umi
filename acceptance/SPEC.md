@@ -447,7 +447,8 @@ through the CLI, so agents can orchestrate other agents, and shows the session i
 - **MA-29 [A]** What a worker loaded. `agent info` shows what the harness reported when the session
   last started or resumed, for example its model, its MCP servers and their state, its skills,
   plugins and subagents. It flags anything that failed or needs the user, such as an MCP server that
-  needs authentication. `agent start` prints a one-line warning when something is flagged.
+  needs authentication. `agent wait` and `agent start --wait` print a one-line warning when something
+  is flagged.
 
 ## AP. Managed agents in the app
 

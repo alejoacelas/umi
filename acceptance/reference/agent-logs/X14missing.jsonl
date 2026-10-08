@@ -1,0 +1,10 @@
+{"t": 0.0, "k": "meta", "m": {"cmd": ["codex", "app-server", "--listen", "stdio://"]}}
+{"t": 0.0, "k": "in", "m": {"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "probe", "title": null, "version": "0"}, "capabilities": {"experimentalApi": true, "requestAttestation": false}}}}
+{"t": 0.16, "k": "out", "m": {"id": 1, "result": {"userAgent": "probe/0.160.0 (Mac OS 26.3.1; arm64) Apple_Terminal/466 (probe; 0)", "codexHome": "/Users/alejo-m1/.codex", "platformFamily": "unix", "platformOs": "macos"}}}
+{"t": 0.16, "k": "in", "m": {"method": "initialized"}}
+{"t": 0.16, "k": "in", "m": {"id": 2, "method": "thread/resume", "params": {"threadId": "71f8bc62-b67a-41f1-8afd-212d78fba92d"}}}
+{"t": 0.16, "k": "out", "m": {"method": "remoteControl/status/changed", "params": {"status": "disabled", "serverName": "Alejos-MacBook-Air-2.local", "installationId": "d5878efc-96d2-47a7-8113-2448e0929d81", "environmentId": null}, "emittedAtMs": 1791475223739}}
+{"t": 0.2, "k": "out", "m": {"error": {"code": -32600, "message": "no rollout found for thread id 71f8bc62-b67a-41f1-8afd-212d78fba92d"}, "id": 2}}
+{"t": 0.2, "k": "meta", "m": "close stdin"}
+{"t": 0.21, "k": "eof", "m": "stdout closed"}
+{"t": 0.43, "k": "meta", "m": {"exit_code": 0}}
