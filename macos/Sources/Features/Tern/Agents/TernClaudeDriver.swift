@@ -350,6 +350,9 @@ final class TernClaudeDriver: TernHarnessDriver {
     }
 
     static func describeTool(_ name: String, _ input: [String: Any]) -> String {
+        if name == "AskUserQuestion", let questions = input["questions"] as? [[String: Any]] {
+            return questions.compactMap { $0["question"] as? String }.joined(separator: " / ")
+        }
         if let command = input["command"] as? String { return command }
         if let path = input["file_path"] as? String ?? input["notebook_path"] as? String { return path }
         if let pattern = input["pattern"] as? String {

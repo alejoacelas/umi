@@ -23,6 +23,13 @@ enum TernAgentDebug {
                 out["composer_focused"] = view.window?.firstResponder === view
                 out["texts"] = texts(in: owner)
                 out["buttons"] = buttons(in: owner).map(\.title)
+                out["frame"] = NSStringFromRect(owner.convert(owner.bounds, to: nil))
+                out["pane_frame"] = NSStringFromRect(pane.convert(pane.bounds, to: nil))
+                out["header_fitting"] = NSStringFromSize(owner.subviews.first?.fittingSize ?? .zero)
+                out["subviews"] = owner.subviews.map { "\(type(of: $0)) \(NSStringFromRect($0.frame))" }
+                out["transcript_frame"] = NSStringFromRect(owner.transcript.frame)
+                out["container_width"] = owner.transcript.textContainer?.containerSize.width ?? -1
+                out["has_ambiguous"] = owner.hasAmbiguousLayout
             }
             return out
         case "debug.agent.type":

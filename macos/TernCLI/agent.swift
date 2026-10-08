@@ -297,6 +297,11 @@ func finishWait(_ params: [String: Any], report: Bool) -> Never {
     let out = result ?? [:]
     let session = out["session"] as? [String: Any] ?? [:]
     if let warning = out["warning"] as? String { eprint("\(cliName): warning: \(warning)") }
+    if report, out["report"] == nil, out["status"] as? String == "ERROR" {
+        // The session went away while waiting.
+        if jsonOutput { printJSON(out) } else { print("ERROR: \(out["error"] as? String ?? "the wait ended")") }
+        exit(3)
+    }
     if report {
         let reportInfo = out["report"] as? [String: Any]
         let verdict = reportInfo?["verdict"] as? String

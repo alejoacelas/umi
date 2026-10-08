@@ -34,6 +34,7 @@ final class TernAgents: @unchecked Sendable {
                 let session = TernAgentSession(record: entry.record)
                 session.manager = self
                 session.adopt(messages: entry.messages, items: entry.items)
+                session.resetForRecovery()
                 session.restoreQueue()
                 sessions.append(session)
                 byID[entry.record.id] = session
@@ -45,7 +46,6 @@ final class TernAgents: @unchecked Sendable {
                 TernProcessTree.terminate(Set(leftovers.map(\.pid)), grace: 1.0)
             }
             for session in sessions {
-                session.resetForRecovery()
                 let cut = session.cutOffMessages()
                 let logTime = (try? FileManager.default.attributesOfItem(
                     atPath: (TernAgentStore.folder(session.record.id) as NSString).appendingPathComponent("log.jsonl"))[.modificationDate]
@@ -89,6 +89,7 @@ final class TernAgents: @unchecked Sendable {
         sessions.removeAll { $0 === session }
         byID.removeValue(forKey: session.record.id)
         TernAgentStore.remove(session.record.id)
+        session.changed()   // waiters on it end with "removed"
         let id = session.record.id
         DispatchQueue.main.async { MainActor.assumeIsolated { TernAgentUI.sessionRemoved(id) } }
     }

@@ -396,7 +396,7 @@ final class TernCodexDriver: TernHarnessDriver {
             var detail = parts.isEmpty ? Self.compactJSON(permissions) : parts.joined(separator: "; ")
             if let reason = params["reason"] as? String { detail += " — \(reason)" }
             open(kind: "approval", title: "Grant permissions", detail: detail, permissions: permissions,
-                 ruleTool: "permissions", ruleContent: Self.compactJSON(permissions))
+                 ruleTool: "permissions", ruleContent: Self.canonicalJSON(permissions))
         case "item/tool/requestUserInput":
             let questions = (params["questions"] as? [[String: Any]] ?? []).enumerated().map { index, q in
                 TernAgentQuestion(id: q["id"] as? String ?? "\(index + 1)", question: q["question"] as? String ?? "?",
@@ -471,11 +471,33 @@ final class TernCodexDriver: TernHarnessDriver {
             result = ["action": "decline", "content": NSNull()]
         case ("mcpServer/elicitation/request", .answers(let given)):
             var content: [String: Any] = [:]
+            let properties = ((request.schema?.any as? [String: Any])?["properties"] as? [String: Any]) ?? [:]
             for question in request.questions {
                 guard let text = given[question.id] ?? given[question.question] else {
                     return "no value for field \(question.id)"
                 }
-                content[question.id] = text
+                // Values take the type the form's schema asks for.
+                let type = (properties[question.id] as? [String: Any])?["type"] as? String
+                switch type {
+                case "boolean":
+                    switch text.lowercased() {
+                    case "true", "yes", "y", "1", "on": content[question.id] = true
+                    case "false", "no", "n", "0", "off": content[question.id] = false
+                    default: return "field \(question.id) takes true or false (got \(text))"
+                    }
+                case "integer":
+                    guard let n = Int(text.trimmingCharacters(in: .whitespaces)) else {
+                        return "field \(question.id) takes a whole number (got \(text))"
+                    }
+                    content[question.id] = n
+                case "number":
+                    guard let n = Double(text.trimmingCharacters(in: .whitespaces)) else {
+                        return "field \(question.id) takes a number (got \(text))"
+                    }
+                    content[question.id] = n
+                default:
+                    content[question.id] = text
+                }
             }
             result = ["action": "accept", "content": content]
         case (_, .answers):
@@ -496,6 +518,14 @@ final class TernCodexDriver: TernHarnessDriver {
     static func command(_ item: [String: Any]) -> String {
         if let action = (item["commandActions"] as? [[String: Any]])?.first?["command"] as? String { return action }
         return item["command"] as? String ?? ""
+    }
+
+    /// The whole value, keys sorted: what "allow always" matches on (never truncated).
+    static func canonicalJSON(_ value: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: TernJSON.sanitize(value), options: [.sortedKeys]) else {
+            return "\(value)"
+        }
+        return String(decoding: data, as: UTF8.self)
     }
 
     static func compactJSON(_ value: Any?) -> String {

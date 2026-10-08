@@ -145,18 +145,34 @@ enum TernAgentRPC {
         let timeout = params.double("timeout")
         let forReport = params.bool("report") ?? false
         let messageID = params.string("message")
-        // Resolve once; evaluate now and after every change of the session.
-        let (session, initial): (TernAgentSession, [String: Any]?) = try await agents.run {
-            let session = try agents.resolve(params.string("session"), caller: caller)
-            if let messageID, session.message(messageID) == nil {
-                throw TernError.notFound("\(session.record.name) has no message \(messageID)")
-            }
-            return (session, forReport ? reportResult(session, messageID) : waitResult(session, messageID))
-        }
-        if let initial { return initial }
-        if let timeout, timeout <= 0 { return try await agents.run { timeoutResult(session, report: forReport) } }
+        // Resolve, evaluate and register in one step on the agent queue, so no change can fall
+        // between the first look and the waiter.
         return try await withCheckedThrowingContinuation { continuation in
             TernAgents.queue.async {
+                let session: TernAgentSession
+                do {
+                    session = try agents.resolve(params.string("session"), caller: caller)
+                    if let messageID, session.message(messageID) == nil {
+                        throw TernError.notFound("\(session.record.name) has no message \(messageID)")
+                    }
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                func evaluate() -> [String: Any]? {
+                    if agents.session(id: session.record.id) == nil {
+                        return ["status": "ERROR", "error": "the session was removed", "session": info(session, pane: nil)]
+                    }
+                    return forReport ? reportResult(session, messageID) : waitResult(session, messageID)
+                }
+                if let now = evaluate() {
+                    continuation.resume(returning: now)
+                    return
+                }
+                if let timeout, timeout <= 0 {
+                    continuation.resume(returning: timeoutResult(session, report: forReport))
+                    return
+                }
                 var finished = false
                 var waiterID: UUID?
                 var timer: DispatchWorkItem?
@@ -168,15 +184,9 @@ enum TernAgentRPC {
                     continuation.resume(returning: value)
                 }
                 waiterID = session.addWaiter {
-                    if agents.session(id: session.record.id) == nil {
-                        complete(["status": "ERROR", "error": "the session was removed", "session": info(session, pane: nil)])
-                        return true
-                    }
-                    if let result = forReport ? reportResult(session, messageID) : waitResult(session, messageID) {
-                        complete(result)
-                        return true
-                    }
-                    return false
+                    guard let result = evaluate() else { return false }
+                    complete(result)
+                    return true
                 }
                 if let timeout {
                     let work = DispatchWorkItem { complete(timeoutResult(session, report: forReport)) }
@@ -188,7 +198,7 @@ enum TernAgentRPC {
     }
 
     /// The answer to `agent wait`, or nil to keep waiting.
-    static func waitResult(_ session: TernAgentSession, _ messageID: String?) -> [String: Any]? {
+    nonisolated static func waitResult(_ session: TernAgentSession, _ messageID: String?) -> [String: Any]? {
         let target = messageID.flatMap { session.message($0) } ?? session.lastMessage
         var out: [String: Any] = ["session": info(session, pane: nil)]
         if let warning = startupWarning(session) { out["warning"] = warning }
@@ -222,21 +232,21 @@ enum TernAgentRPC {
         return nil
     }
 
-    static func reportResult(_ session: TernAgentSession, _ messageID: String?) -> [String: Any]? {
+    nonisolated static func reportResult(_ session: TernAgentSession, _ messageID: String?) -> [String: Any]? {
         let target = messageID.flatMap { session.message($0) } ?? session.lastMessage
         let after = target?.order ?? 0
         guard let report = session.record.report, report.order > after else { return nil }
         return ["report": report.json, "status": report.verdict.uppercased(), "session": info(session, pane: nil)]
     }
 
-    static func timeoutResult(_ session: TernAgentSession, report: Bool) -> [String: Any] {
+    nonisolated static func timeoutResult(_ session: TernAgentSession, report: Bool) -> [String: Any] {
         var out: [String: Any] = ["status": "TIMEOUT", "session": info(session, pane: nil)]
         if !report, let message = session.lastMessage { out["message"] = messageJSON(message) }
         return out
     }
 
     /// One line about what the harness reported as failed or needing the user (MA-29).
-    static func startupWarning(_ session: TernAgentSession) -> String? {
+    nonisolated static func startupWarning(_ session: TernAgentSession) -> String? {
         guard let flags = session.record.startup?.flags, !flags.isEmpty else { return nil }
         return "\(session.record.name): " + flags.joined(separator: "; ")
             + " (see `\(TernPaths.cliName) agent info \(session.record.name)`)"
@@ -430,7 +440,7 @@ enum TernAgentRPC {
 
     // MARK: JSON
 
-    static func messageJSON(_ message: TernAgentMessage) -> [String: Any] {
+    nonisolated static func messageJSON(_ message: TernAgentMessage) -> [String: Any] {
         var out: [String: Any] = ["id": message.id, "text": message.text, "status": message.state.waitStatus,
                                   "state": message.state.rawValue, "at": TernAgentTime.iso(message.createdAt)]
         if let reply = message.reply { out["reply"] = reply }
@@ -439,7 +449,7 @@ enum TernAgentRPC {
         return out
     }
 
-    static func info(_ session: TernAgentSession, pane: String?) -> [String: Any] {
+    nonisolated static func info(_ session: TernAgentSession, pane: String?) -> [String: Any] {
         let record = session.record
         var out: [String: Any] = [
             "id": record.id, "name": record.name, "kind": record.kind.rawValue, "status": session.status,

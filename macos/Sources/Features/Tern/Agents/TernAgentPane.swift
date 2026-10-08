@@ -36,6 +36,7 @@ struct TernAgentPaneOverlay: View {
                 }
             } else {
                 TernAgentPaneRepresentable(surfaceView: surfaceView, sessionID: session)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -51,6 +52,12 @@ private struct TernAgentPaneRepresentable: NSViewRepresentable {
 
     func updateNSView(_ view: TernAgentPaneView, context: Context) {
         view.surface = surfaceView
+    }
+
+    /// Always exactly the pane's size, whatever its content would like.
+    @available(macOS 13.0, *)
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: TernAgentPaneView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions(by: CGSize(width: 400, height: 300))
     }
 
     static func dismantleNSView(_ view: TernAgentPaneView, coordinator: ()) {
@@ -163,6 +170,10 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
 
     private func build() {
         wantsLayer = true
+        setContentHuggingPriority(.init(1), for: .horizontal)
+        setContentHuggingPriority(.init(1), for: .vertical)
+        setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        setContentCompressionResistancePriority(.init(1), for: .vertical)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Agent session")
@@ -190,11 +201,19 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
 
         headerStack.orientation = .horizontal
         headerStack.spacing = 8
-        headerStack.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 8)
+        headerStack.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 8)
         headerStack.alignment = .centerY
         let spacer = NSView()
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
-        headerStack.setViews([statusDot, titleLabel, statusLabel, spacer, interruptButton, terminalButton], in: .leading)
+        headerStack.distribution = .fill
+        for view in [statusDot, titleLabel, spacer, interruptButton, terminalButton] { headerStack.addArrangedSubview(view) }
+        // A narrow pane truncates the title instead of growing past its edge.
+        headerStack.setHuggingPriority(.init(1), for: .horizontal)
+        statusLabel.setContentCompressionResistancePriority(.init(10), for: .horizontal)
+        titleLabel.setContentCompressionResistancePriority(.init(20), for: .horizontal)
+        for button in [interruptButton, terminalButton] {
+            button.setContentCompressionResistancePriority(.init(30), for: .horizontal)
+        }
 
         transcript.isEditable = false
         transcript.isSelectable = true
@@ -204,8 +223,12 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         transcript.isHorizontallyResizable = false
         transcript.autoresizingMask = [.width]
         transcript.textContainer?.widthTracksTextView = true
+        transcript.minSize = .zero
+        transcript.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         transcript.delegate = self
         transcript.unregisterDraggedTypes()
+        // Links (tool lines that expand) keep their own colors.
+        transcript.linkTextAttributes = [.cursor: NSCursor.pointingHand]
         transcript.setAccessibilityLabel("Transcript")
         transcriptScroll.documentView = transcript
         transcriptScroll.hasVerticalScroller = true
@@ -232,6 +255,8 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         composer.isVerticallyResizable = true
         composer.autoresizingMask = [.width]
         composer.textContainer?.widthTracksTextView = true
+        composer.minSize = .zero
+        composer.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         composer.delegate = self
         composer.unregisterDraggedTypes()
         composer.owner = self
@@ -245,11 +270,16 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         composerScroll.layer?.cornerRadius = 8
 
         placeholder.font = .systemFont(ofSize: 13)
+        placeholder.lineBreakMode = .byTruncatingTail
+        placeholder.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        for label in [queuedLabel, errorLabel] {
+            label.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        }
         placeholder.isEditable = false
         placeholder.isSelectable = false
         placeholder.setAccessibilityElement(false)
 
-        for view in [headerStack, transcriptScroll, requestsStack, queuedLabel, errorLabel, composerScroll, placeholder] {
+        for view in [headerStack, statusLabel, transcriptScroll, requestsStack, queuedLabel, errorLabel, composerScroll, placeholder] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -260,7 +290,11 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
             headerStack.leadingAnchor.constraint(equalTo: leadingAnchor),
             headerStack.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            transcriptScroll.topAnchor.constraint(equalTo: headerStack.bottomAnchor),
+            statusLabel.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: -4),
+            statusLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 25),
+            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
+
+            transcriptScroll.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 2),
             transcriptScroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             transcriptScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
 
@@ -289,13 +323,25 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         applyColors()
     }
 
+    override func layout() {
+        super.layout()
+        // Text views wrap at their scroll view's width.
+        for (scroll, text) in [(transcriptScroll, transcript as NSTextView), (composerScroll, composer as NSTextView)] {
+            let width = scroll.contentSize.width
+            if abs(text.frame.width - width) > 0.5 {
+                text.setFrameSize(NSSize(width: width, height: max(text.frame.height, scroll.contentSize.height)))
+            }
+        }
+    }
+
     private func rebuildDragHandle() {
         dragHost?.removeFromSuperview()
         dragHost = nil
         guard let surface else { return }
         let host = NSHostingView(rootView: AnyView(TernAgentDragHandle(surfaceView: surface)))
         host.translatesAutoresizingMaskIntoConstraints = false
-        headerStack.insertView(host, at: 0, in: .leading)
+        host.setContentCompressionResistancePriority(.required, for: .horizontal)
+        headerStack.insertArrangedSubview(host, at: 0)
         dragHost = host
     }
 
@@ -376,7 +422,9 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         renderedRequests = ids
         for view in requestsStack.arrangedSubviews { view.removeFromSuperview() }
         for request in requests {
-            requestsStack.addArrangedSubview(TernAgentRequestCard(request: request, sessionID: sessionID))
+            let card = TernAgentRequestCard(request: request, sessionID: sessionID)
+            requestsStack.addArrangedSubview(card)
+            card.widthAnchor.constraint(lessThanOrEqualTo: requestsStack.widthAnchor, constant: -24).isActive = true
         }
     }
 
@@ -513,8 +561,26 @@ final class TernAgentRequestCard: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// Labels wrap at the card's width.
+    override func layout() {
+        super.layout()
+        let width = max(40, bounds.width - 20)
+        var changed = false
+        func update(_ view: NSView) {
+            if let label = view as? NSTextField, !label.isEditable, label.cell?.wraps == true,
+               abs(label.preferredMaxLayoutWidth - width) > 1 {
+                label.preferredMaxLayoutWidth = width
+                changed = true
+            }
+            view.subviews.forEach(update)
+        }
+        update(self)
+        if changed { super.layout() }
+    }
+
     private func build() {
         wantsLayer = true
+        setContentCompressionResistancePriority(.init(1), for: .horizontal)
         layer?.cornerRadius = 8
         layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.10).cgColor
         let stack = NSStackView()
@@ -523,6 +589,7 @@ final class TernAgentRequestCard: NSView {
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setClippingResistancePriority(.init(100), for: .horizontal)
         addSubview(stack)
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -537,7 +604,7 @@ final class TernAgentRequestCard: NSView {
             let detail = NSTextField(wrappingLabelWithString: request.detail)
             detail.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
             detail.textColor = ink.withAlphaComponent(0.8)
-            detail.preferredMaxLayoutWidth = 520
+            detail.preferredMaxLayoutWidth = 360
             stack.addArrangedSubview(detail)
         }
         if request.kind == "question" {
@@ -545,7 +612,7 @@ final class TernAgentRequestCard: NSView {
                 let label = NSTextField(wrappingLabelWithString: "\(index + 1). \(question.question)")
                 label.font = .systemFont(ofSize: 12)
                 label.textColor = ink
-                label.preferredMaxLayoutWidth = 520
+                label.preferredMaxLayoutWidth = 360
                 stack.addArrangedSubview(label)
                 let row = NSStackView()
                 row.orientation = .horizontal
@@ -560,7 +627,9 @@ final class TernAgentRequestCard: NSView {
                 let field = NSTextField(string: "")
                 field.placeholderString = question.options.isEmpty ? "Answer" : "Or type an answer"
                 field.controlSize = .small
-                field.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+                let minimum = field.widthAnchor.constraint(greaterThanOrEqualToConstant: 120)
+                minimum.priority = .init(200)
+                minimum.isActive = true
                 field.setAccessibilityLabel("Answer to question \(index + 1)")
                 fields[question.id] = field
                 row.addArrangedSubview(field)
@@ -595,6 +664,18 @@ final class TernAgentRequestCard: NSView {
             row.spacing = 6
             stack.addArrangedSubview(row)
         }
+        // However narrow the pane, the card fits: rows clip, labels wrap, fields shrink.
+        func relax(_ view: NSView) {
+            view.setContentCompressionResistancePriority(.init(100), for: .horizontal)
+            if let row = view as? NSStackView { row.setClippingResistancePriority(.init(100), for: .horizontal) }
+            if let label = view as? NSTextField, !label.isEditable {
+                label.preferredMaxLayoutWidth = 0
+                label.cell?.wraps = true
+                label.cell?.truncatesLastVisibleLine = true
+            }
+            for child in view.subviews { relax(child) }
+        }
+        relax(stack)
     }
 
     @objc private func optionPressed(_ sender: TernAgentOptionButton) {

@@ -88,6 +88,9 @@ final class TernAgentSession {
         let deadline: DispatchWorkItem
     }
     private var redirect: Redirect?
+    /// A redirect arrived while a message was written but its turn not yet acknowledged: that
+    /// turn is interrupted as soon as it starts.
+    private var interruptWhenInFlightStarts = false
 
     private var waiters: [UUID: () -> Bool] = [:]
     private(set) var version = 0
@@ -427,6 +430,16 @@ final class TernAgentSession {
         failQueued(.error, reason)
         if let inFlight { finish(inFlight, .error, error: reason) }
         inFlight = nil
+        // Turns cut off before the restart can't continue either: their messages fail too.
+        recovering = false
+        for m in messages where !m.state.isFinal && (m.cutOff == true || m.state == .sent || m.state == .delivered) {
+            finish(m.id, .error, error: reason)
+        }
+        if record.openSelfTurn {
+            record.openSelfTurn = false
+            record.cutOffAt = nil
+            record.cutOffReason = nil
+        }
         notice("Couldn't resume the conversation: \(reason)")
         saveRecord()
         changed()
@@ -571,8 +584,28 @@ final class TernAgentSession {
             record.openSelfTurn = true
             saveRecord()
             notice("The agent started a turn by itself.")
+        } else if interruptWhenInFlightStarts {
+            interruptWhenInFlightStarts = false
+            armRedirectInterrupt()
         }
         changed()
+    }
+
+    /// Interrupt the turn now running for a redirect; restart the harness if it doesn't stop.
+    private func armRedirectInterrupt() {
+        guard let current = turn, live else { return }
+        turn?.interruptRequested = true
+        let turnStartedAt = current.startedAt
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.redirect != nil, let running = self.turn, running.startedAt == turnStartedAt else { return }
+            self.notice("The turn didn't stop within 30 seconds of the interrupt; restarting the harness.")
+            self.redirect = nil
+            self.restartHarness()
+        }
+        redirect?.deadline.cancel()
+        redirect = Redirect(turnID: current.id, turnStartedAt: turnStartedAt, deadline: work)
+        TernAgents.queue.asyncAfter(deadline: .now() + 30, execute: work)
+        driver?.interrupt(turnID: current.id)
     }
 
     func setTurnID(_ id: String) {
@@ -782,18 +815,11 @@ final class TernAgentSession {
             for id in dropped { finish(id, .cancelled, error: "dropped by a redirect") }
         }
         let message = enqueue(text: text, from: from, front: true)
-        if let current = turn, live {
-            turn?.interruptRequested = true
-            let turnStartedAt = current.startedAt
-            let work = DispatchWorkItem { [weak self] in
-                guard let self, self.redirect != nil, let running = self.turn, running.startedAt == turnStartedAt else { return }
-                self.notice("The turn didn't stop within 30 seconds of the interrupt; restarting the harness.")
-                self.redirect = nil
-                self.restartHarness()
-            }
-            redirect = Redirect(turnID: current.id, turnStartedAt: turnStartedAt, deadline: work)
-            TernAgents.queue.asyncAfter(deadline: .now() + 30, execute: work)
-            driver?.interrupt(turnID: current.id)
+        if turn == nil, inFlight != nil, live {
+            interruptWhenInFlightStarts = true
+        }
+        if turn != nil, live {
+            armRedirectInterrupt()
         }
         changed()
         pump()
@@ -1003,8 +1029,10 @@ final class TernAgentSession {
             finish(id, .exited, error: "the session was stopped before this message was delivered")
         } else {
             update(id) { $0.state = .queued }
-            queue.insert(id, at: 0)
+            // Behind a redirect that was waiting for it, ahead of everything else.
+            queue.insert(id, at: interruptWhenInFlightStarts ? min(1, queue.count) : 0)
         }
+        interruptWhenInFlightStarts = false
     }
 
     static func lastLines(_ text: String, count: Int = 3) -> String {
@@ -1079,10 +1107,16 @@ final class TernAgentSession {
         messages.filter { ($0.state == .delivered || $0.state == .sent) && $0.note != true }
     }
 
+    /// Before the queue is restored: a continuation note that never finished (cut off itself,
+    /// or still queued) is replaced by a fresh one, so it must not be delivered too.
     func resetForRecovery() {
         for m in messages where m.note == true && !m.state.isFinal {
-            // A note that was itself cut off: its messages get a new note.
-            finish(m.id, .interrupted, error: "cut off again")
+            finish(m.id, .interrupted, error: "replaced by a new continuation note")
+        }
+        let finished = Set(messages.filter(\.state.isFinal).map(\.id))
+        if let saved = record.queue, saved.contains(where: finished.contains) {
+            record.queue = saved.filter { !finished.contains($0) }
+            saveRecord()
         }
     }
 }

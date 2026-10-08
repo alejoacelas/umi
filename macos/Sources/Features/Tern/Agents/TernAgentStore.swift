@@ -53,7 +53,14 @@ enum TernAgentStore {
         var messageIndex: [String: Int] = [:]
         var items: [TernTranscriptItem] = []
         var itemIndex: [String: Int] = [:]
-        if let log = FileManager.default.contents(atPath: (dir as NSString).appendingPathComponent("log.jsonl")) {
+        let logPath = (dir as NSString).appendingPathComponent("log.jsonl")
+        if let log = FileManager.default.contents(atPath: logPath) {
+            // A crash can leave a partial last line: cut it off, so the next entry starts on a
+            // line of its own.
+            if let last = log.last, last != 0x0A {
+                let keep = (log.lastIndex(of: 0x0A).map { $0 + 1 }) ?? 0
+                truncate(logPath, off_t(keep))
+            }
             for line in log.split(separator: 0x0A) where !line.isEmpty {
                 guard let entry = try? decoder.decode(LogEntry.self, from: Data(line)) else { continue }
                 if let message = entry.m {

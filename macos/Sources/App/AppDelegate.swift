@@ -938,7 +938,11 @@ class AppDelegate: NSObject,
         withCompletionHandler: () -> Void
     ) {
         let userInfo = didReceive.notification.request.content.userInfo
-        if Thread.isMainThread, MainActor.assumeIsolated({ TernAgentNotifications.handle(userInfo: userInfo) }) {
+        if let session = userInfo["tern_agent_session"] as? String {
+            // A managed session's notification: show the session (on the main thread).
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { _ = TernAgentNotifications.handle(userInfo: ["tern_agent_session": session]) }
+            }
             withCompletionHandler()
             return
         }
@@ -951,7 +955,9 @@ class AppDelegate: NSObject,
         willPresent: UNNotification,
         withCompletionHandler: (UNNotificationPresentationOptions) -> Void
     ) {
-        let shouldPresent = ghostty.shouldPresentNotification(notification: willPresent)
+        // Managed sessions decide themselves whether to notify (not while their pane is in front).
+        let shouldPresent = willPresent.request.content.userInfo["tern_agent_session"] != nil
+            || ghostty.shouldPresentNotification(notification: willPresent)
         let options: UNNotificationPresentationOptions = shouldPresent ? [.banner, .sound] : []
         withCompletionHandler(options)
     }

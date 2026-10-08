@@ -246,6 +246,12 @@ final class TernUpdater: ObservableObject {
                 + "or let the update install when \(TernPaths.productName) quits.")
         }
         if staged == nil { _ = try await download() }
+        // A turn may have started during the download.
+        let turnsNow = TernAgents.shared.runningTurns()
+        if turnsNow > 0 && !force {
+            throw TernError.failed("\(turnsNow) managed-agent turn\(turnsNow == 1 ? " is" : "s are") running; the update is downloaded "
+                + "and installs when \(TernPaths.productName) quits (or pass --force to install now and interrupt them).")
+        }
         guard let staged else {
             return ["installed": TernVersion.current, "message": "\(TernPaths.productName) \(TernVersion.current) is up to date."]
         }

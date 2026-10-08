@@ -222,7 +222,9 @@ enum TernScreenshot {
         (window.backgroundColor ?? .black).setFill()
         bounds.fill()
         image.draw(in: bounds)
-        for pane in controller.surfaceTree.root?.leaves() ?? [] where pane.window === window && !pane.isHiddenOrHasHiddenAncestor {
+        // (A pane showing a managed session is drawn by its AppKit view, already in the capture.)
+        for pane in controller.surfaceTree.root?.leaves() ?? [] where pane.window === window && !pane.isHiddenOrHasHiddenAncestor
+            && !TernAgentUI.shared.isShowingAgent(pane.id) {
             guard let paneImage = pane.terminalImage() else { continue }
             let frame = pane.convert(pane.bounds, to: content)
             paneImage.draw(in: frame)
