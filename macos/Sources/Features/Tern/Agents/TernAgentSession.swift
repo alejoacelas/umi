@@ -334,7 +334,7 @@ final class TernAgentSession {
         guard phase == .stopped else { return }
         var isDir = ObjCBool(false)
         guard FileManager.default.fileExists(atPath: record.cwd, isDirectory: &isDir), isDir.boolValue else {
-            failQueued(.error, "the session's folder \(record.cwd) no longer exists")
+            failOutstanding("the session's folder \(record.cwd) no longer exists")
             record.ended = "error"
             record.lastError = "the session's folder \(record.cwd) no longer exists"
             saveRecord()
@@ -393,8 +393,8 @@ final class TernAgentSession {
         driver = nil
         record.ended = "error"
         record.lastError = reason
+        failOutstanding(reason)
         saveRecord()
-        failQueued(.error, reason)
         notice("Couldn't start \(record.kind.rawValue): \(reason)")
         changed()
     }
@@ -427,19 +427,7 @@ final class TernAgentSession {
         record.lastError = reason
         record.ended = "error"
         failedLaunches = 99
-        failQueued(.error, reason)
-        if let inFlight { finish(inFlight, .error, error: reason) }
-        inFlight = nil
-        // Turns cut off before the restart can't continue either: their messages fail too.
-        recovering = false
-        for m in messages where !m.state.isFinal && (m.cutOff == true || m.state == .sent || m.state == .delivered) {
-            finish(m.id, .error, error: reason)
-        }
-        if record.openSelfTurn {
-            record.openSelfTurn = false
-            record.cutOffAt = nil
-            record.cutOffReason = nil
-        }
+        failOutstanding(reason)
         notice("Couldn't resume the conversation: \(reason)")
         saveRecord()
         changed()
@@ -500,8 +488,11 @@ final class TernAgentSession {
         recovering = false
         // Claude can't say whether a message written just before the crash arrived; it was
         // written to its stdin, which it reads before anything else, so count it delivered.
-        for m in messages where m.state == .sent && m.id != inFlight && !queue.contains(m.id) {
-            update(m.id) { $0.state = .delivered; $0.cutOff = true; $0.cutOffAt = $0.cutOffAt ?? Date() }
+        // (Codex says: its thread's history settled each one in reconcileDelivery.)
+        if record.kind == .claude {
+            for m in messages where m.state == .sent && m.id != inFlight && !queue.contains(m.id) {
+                update(m.id) { $0.state = .delivered; $0.cutOff = true; $0.cutOffAt = $0.cutOffAt ?? Date() }
+            }
         }
         let cut = messages.filter { $0.cutOff == true && !$0.state.isFinal && $0.note != true }
         guard !cut.isEmpty || record.openSelfTurn else { return }
@@ -586,7 +577,12 @@ final class TernAgentSession {
             notice("The agent started a turn by itself.")
         } else if interruptWhenInFlightStarts {
             interruptWhenInFlightStarts = false
+            interruptPending = false
             armRedirectInterrupt()
+        } else if interruptPending {
+            interruptPending = false
+            turn?.interruptRequested = true
+            driver?.interrupt(turnID: turn?.id)
         }
         changed()
     }
@@ -719,6 +715,23 @@ final class TernAgentSession {
         manager?.messageFinished(session: self, id)
     }
 
+    /// The harness can't run for this session: everything still waiting on it ends with the
+    /// reason, queued messages and turns cut off before a restart alike (never pending forever).
+    private func failOutstanding(_ reason: String) {
+        failQueued(.error, reason)
+        if let inFlight { finish(inFlight, .error, error: reason) }
+        inFlight = nil
+        recovering = false
+        for m in messages where !m.state.isFinal && (m.cutOff == true || m.state == .sent || m.state == .delivered) {
+            finish(m.id, .error, error: reason)
+        }
+        if record.openSelfTurn {
+            record.openSelfTurn = false
+            record.cutOffAt = nil
+            record.cutOffReason = nil
+        }
+    }
+
     /// Fail everything queued (the harness can't take messages).
     private func failQueued(_ state: TernMessageState, _ reason: String) {
         let ids = queue
@@ -799,12 +812,20 @@ final class TernAgentSession {
             return true
         }
         if inFlight != nil {
-            // Written but not confirmed: the harness is about to start it.
-            driver.interrupt(turnID: nil)
+            // Written but its turn not started yet: interrupt that turn as soon as it exists.
+            // (Claude reads stdin in order, so an interrupt sent now lands after the message.)
+            if record.kind == .claude {
+                driver.interrupt(turnID: nil)
+            } else {
+                interruptPending = true
+            }
             return true
         }
         return false
     }
+
+    /// `agent interrupt` arrived while a message was written but its turn not yet named.
+    private var interruptPending = false
 
     /// `agent send --interrupt`: TEXT goes first, the turn running now (if any) is
     /// interrupted, and a turn that doesn't stop within 30 s gets its harness restarted.
@@ -980,6 +1001,10 @@ final class TernAgentSession {
         }
         requests.removeAll()
         backgroundTasks = nil
+        // A redirect waiting on this process's turn: the turn is gone, the redirect goes next.
+        redirect?.deadline.cancel()
+        redirect = nil
+        interruptPending = false
         if shuttingDown {
             record.ended = "stopped"
         } else if let stopping {

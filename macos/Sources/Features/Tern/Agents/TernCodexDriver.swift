@@ -118,14 +118,15 @@ final class TernCodexDriver: TernHarnessDriver {
         mcp.removeAll()
         mcpOrder.removeAll()
         session.startupBegins()
-        let turns = (response["thread"] as? [String: Any])?["turns"] as? [[String: Any]] ?? []
+        // The thread's turns (a fresh thread has none) say which messages it really received.
+        let turnList = (response["thread"] as? [String: Any])?["turns"] as? [[String: Any]]
         var received = Set<String>()
-        for turn in turns {
+        for turn in turnList ?? [] {
             for item in turn["items"] as? [[String: Any]] ?? [] where item["type"] as? String == "userMessage" {
                 if let client = item["clientId"] as? String { received.insert(client) }
             }
         }
-        session.reconcileDelivery(received: received, known: !turns.isEmpty)
+        session.reconcileDelivery(received: received, known: turnList != nil)
     }
 
     func send(_ message: TernAgentMessage) -> Bool {

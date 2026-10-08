@@ -207,6 +207,7 @@ func agentStart(_ argv: [String]) {
     let result = callDict("agent.start", params)
     let session = result["session"] as? [String: Any] ?? [:]
     let id = session["id"] as? String ?? ""
+    if let paneError = result["pane_error"] as? String { eprint("\(cliName): warning: \(paneError)") }
     if args.has("--wait") {
         var waitParams: [String: Any] = ["session": id]
         if let message = (result["message"] as? [String: Any])?["id"] as? String { waitParams["message"] = message }

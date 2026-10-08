@@ -620,6 +620,7 @@ final class TernAgentRequestCard: NSView {
                 for option in question.options {
                     let button = TernAgentOptionButton(title: option, target: self, action: #selector(optionPressed(_:)))
                     button.questionID = question.id
+                    if question.multiSelect { button.setButtonType(.pushOnPushOff) }
                     button.bezelStyle = .rounded
                     button.controlSize = .small
                     row.addArrangedSubview(button)
@@ -679,7 +680,16 @@ final class TernAgentRequestCard: NSView {
     }
 
     @objc private func optionPressed(_ sender: TernAgentOptionButton) {
-        guard let id = sender.questionID else { return }
+        guard let id = sender.questionID, let question = request.questions.first(where: { $0.id == id }) else { return }
+        if question.multiSelect {
+            // Several options: each click adds or removes one; Answer sends them.
+            var chosen = (fields[id]?.stringValue ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if let index = chosen.firstIndex(of: sender.title) { chosen.remove(at: index) } else { chosen.append(sender.title) }
+            fields[id]?.stringValue = chosen.joined(separator: ", ")
+            sender.state = chosen.contains(sender.title) ? .on : .off
+            return
+        }
         fields[id]?.stringValue = sender.title
         if request.questions.count == 1 { submitPressed() }
     }

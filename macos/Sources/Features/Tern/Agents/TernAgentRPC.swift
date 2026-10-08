@@ -78,6 +78,12 @@ enum TernAgentRPC {
         let harnessArgs = params.strings("harness_args") ?? []
         let prompt = params.string("prompt").flatMap { $0.isEmpty ? nil : $0 }
         let placement = try Placement(params, caller: caller)
+        // A placement that names a pane or window that doesn't exist fails before anything starts.
+        if let placement {
+            if let pane = placement.pane { _ = try TernTopology.resolvePane(pane, caller: caller) }
+            if let window = placement.window { _ = try TernTopology.resolveWindow(window, caller: caller) }
+            if placement.kind == .split { _ = try TernLayout.direction(placement.direction) }
+        }
         let result: (TernAgentSession, TernAgentMessage?) = try await agents.run {
             let id = UUID().uuidString.lowercased()
             let name = params.string("name").flatMap { $0.isEmpty ? nil : $0 } ?? "\(kind.rawValue)-\(id.prefix(6))"
@@ -103,8 +109,13 @@ enum TernAgentRPC {
         }
         let session = result.0
         var pane: String?
+        var paneError: String?
         if let placement {
-            pane = try? TernAgentUI.open(session.record.id, placement: placement, caller: caller)
+            do {
+                pane = try TernAgentUI.open(session.record.id, placement: placement, caller: caller)
+            } catch {
+                paneError = (error as? TernError)?.message ?? "\(error)"
+            }
         }
         TernEvents.shared.emit("agent.started", ["session": session.record.id, "name": session.record.name,
                                                  "kind": kind.rawValue])
@@ -112,6 +123,7 @@ enum TernAgentRPC {
             var out: [String: Any] = ["session": info(session, pane: pane)]
             if let message = result.1 { out["message"] = messageJSON(message) }
             if let pane { out["pane"] = pane }
+            if let paneError { out["pane_error"] = "the session started, but couldn't be shown: \(paneError)" }
             return out
         }
     }

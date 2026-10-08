@@ -126,6 +126,11 @@ def main():
         ctl.call("debug.menu.perform", title="Toggle Agent Pane's Terminal")
         soon(lambda: pane_state(pane).get("showing") == "agent", 5)
         check("a draft survives showing the terminal and back", pane_state(pane).get("composer") == "a draft not sent yet")
+        ctl.call("debug.menu.perform", title="Toggle Agent Pane's Terminal")
+        soon(lambda: pane_state(pane).get("showing") == "terminal", 5)
+        inst.json("agent", "open", sid, "--focus")
+        check("`agent open` of a pane showing its shell shows the session again",
+              soon(lambda: pane_state(pane).get("showing") == "agent", 5))
         inst.cli("pane", "move", pane, "--new-tab")
         time.sleep(1.0)
         check("a draft survives moving the pane", pane_state(pane).get("composer") == "a draft not sent yet")

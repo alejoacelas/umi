@@ -27,7 +27,11 @@ enum TernAgentNotifications {
         content.userInfo = ["tern_agent_session": snapshot.id]
         let request = UNNotificationRequest(identifier: "tern-agent-\(snapshot.id)-\(UUID().uuidString)", content: content,
                                             trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in }
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            center.add(request) { _ in }
+        }
     }
 
     /// Isolated test instances don't post notifications.

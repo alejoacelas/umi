@@ -108,7 +108,12 @@ final class TernAgentUI: ObservableObject {
     /// for it. Without focus, nothing about the user's focus changes (L-8).
     static func open(_ sessionID: String, placement: TernAgentRPC.Placement, caller: TernCaller) throws -> String {
         if let existing = livePane(for: sessionID) {
-            if placement.focus { TernLayout.focusPane(existing, activate: true) }
+            // Showing the session again means showing it, not its shell.
+            shared.showingTerminal.remove(existing.id)
+            if placement.focus {
+                TernLayout.focusPane(existing, activate: true)
+                DispatchQueue.main.async { shared.focusComposer(of: existing) }
+            }
             return existing.ternID
         }
         let cwd = TernAgents.queue.sync { TernAgents.shared.session(id: sessionID)?.record.cwd }

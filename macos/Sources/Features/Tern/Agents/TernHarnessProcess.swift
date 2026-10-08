@@ -106,7 +106,6 @@ final class TernHarnessProcess: @unchecked Sendable {
 
     // MARK: Writing
 
-    /// Write one line (a newline is added). False if the harness can't take input any more.
     /// `TERN_AGENT_TRACE=<folder>` (on the app): every line to and from harnesses is appended
     /// to `<folder>/<pid>.jsonl`, for debugging a protocol exchange.
     private static let traceFolder = ProcessInfo.processInfo.environment["TERN_AGENT_TRACE"].flatMap { $0.isEmpty ? nil : $0 }
@@ -128,25 +127,46 @@ final class TernHarnessProcess: @unchecked Sendable {
         record.withUnsafeBytes { _ = Darwin.write(traceFD, $0.baseAddress!, $0.count) }
     }
 
+    /// Writes happen in order on the process's own queue, never on the caller's: a harness
+    /// that stops reading stdin can block only its own writer, not the agent queue.
+    private let writeQueue = DispatchQueue(label: "dev.tern.harness.stdin")
+    private var fdClosed = false   // touched only on writeQueue
+
+    /// Queue one line (a newline is added). False if the harness takes no more input.
     @discardableResult
     func writeLine(_ data: Data) -> Bool {
         trace("in", data)
         writeLock.lock()
-        defer { writeLock.unlock() }
-        guard !stdinClosed else { return false }
+        let closed = stdinClosed
+        writeLock.unlock()
+        guard !closed else { return false }
         var bytes = data
         bytes.append(0x0A)
-        return bytes.withUnsafeBytes { raw -> Bool in
-            var offset = 0
-            while offset < raw.count {
-                let n = Darwin.write(stdinFD, raw.baseAddress!.advanced(by: offset), raw.count - offset)
-                if n < 0 {
-                    if errno == EINTR { continue }
-                    return false
+        let fd = stdinFD
+        writeQueue.async { [weak self] in
+            guard let self, !self.fdClosed else { return }
+            bytes.withUnsafeBytes { raw in
+                var offset = 0
+                while offset < raw.count {
+                    let n = Darwin.write(fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        return
+                    }
+                    offset += n
                 }
-                offset += n
             }
-            return true
+        }
+        return true
+    }
+
+    /// Close stdin after everything already queued has been written.
+    private func closeStdinOnWriter() {
+        let fd = stdinFD
+        writeQueue.async { [weak self] in
+            guard let self, !self.fdClosed else { return }
+            self.fdClosed = true
+            close(fd)
         }
     }
 
@@ -161,7 +181,7 @@ final class TernHarnessProcess: @unchecked Sendable {
         defer { writeLock.unlock() }
         guard !stdinClosed else { return }
         stdinClosed = true
-        close(stdinFD)
+        closeStdinOnWriter()
     }
 
     var hasExited: Bool {
@@ -278,7 +298,7 @@ final class TernHarnessProcess: @unchecked Sendable {
         writeLock.lock()
         if !stdinClosed {
             stdinClosed = true
-            close(stdinFD)
+            closeStdinOnWriter()
         }
         writeLock.unlock()
         queue.async { [onEnd] in onEnd(status, tail) }
