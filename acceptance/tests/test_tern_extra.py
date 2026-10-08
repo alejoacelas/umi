@@ -405,3 +405,34 @@ def test_a_panes_folder_is_right_without_shell_integration(target, tmp_path):
         wait_until(lambda: pane_info(inst, pane)["cwd"] == "/usr/bin", 10, message="the folder after cd")
     finally:
         inst.cleanup()
+
+
+@pytest.mark.req("I-1", "I-5")
+@pytest.mark.slow
+def test_the_installer_downloads_a_release_in_a_bare_shell(target, tmp_path):
+    """The one-line install downloads from the release feed, in a shell with nothing set up:
+    no locale (bash then reads `$name…` as one longer variable name), a minimal PATH."""
+    if not (target.release and target.installer):
+        pytest.skip("the target file has no release command or installer")
+    from test_install import bundle_version, make_release
+
+    root = tmp_path / "www"
+    root.mkdir()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(root)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}/"
+    try:
+        make_release(target, "0.0.7", root / "rel", base + "rel/")
+        installer = root / "rel" / "install.sh"
+        assert installer.exists(), "the release has no install.sh"
+        dest = tmp_path / "Applications" / os.path.basename(target.app)
+        names = target.installer["env"]
+        env = {"HOME": os.environ["HOME"], "USER": os.environ.get("USER", ""), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+               names["dest"]: str(dest), names["bin"]: str(tmp_path / "bin"), names["no_default"]: "1",
+               names["no_launch"]: "1", "TERN_INSTALL_FEED": base + "rel/" + target.release["feed"]}
+        proc = subprocess.run(["/bin/bash", "-c", f"cat '{installer}' | bash"], env=env, capture_output=True,
+                              text=True, timeout=300, stdin=subprocess.DEVNULL)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert bundle_version(str(dest)) == "0.0.7"
+    finally:
+        server.shutdown()
