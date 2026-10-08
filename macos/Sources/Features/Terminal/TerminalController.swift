@@ -42,6 +42,9 @@ class TerminalController: BaseTerminalController {
     /// The window was closed (AppKit may keep the object around for a moment).
     private(set) var isClosed = false
 
+    /// A frame chosen for this window (restored or undone) that showing it must not override.
+    private var explicitFrame: NSRect?
+
     /// The initial window presentation is deferred by one runloop turn in a few places so
     /// AppKit can settle window state first. Close actions must cancel it to avoid
     /// re-showing a window that was already closed.
@@ -525,6 +528,7 @@ class TerminalController: BaseTerminalController {
 
         if let window = c.window {
             if let frame {
+                c.explicitFrame = frame
                 window.setFrame(frame, display: false)
             } else if let treeSize, treeSize.width > 0, treeSize.height > 0 {
                 let chrome = TernTheme.chromeSize(sidebar: TernState.shared.sidebarVisible)
@@ -629,6 +633,10 @@ class TerminalController: BaseTerminalController {
             undoManager.registerUndo(withTarget: self, expiresAfter: undoExpiration) { target in
                 undoManager.disableUndoRegistration {
                     target.closeTabImmediately(tab, registerUndo: false)
+                }
+                // Redo opens the tab again, like Ghostty's New Tab.
+                undoManager.registerUndo(withTarget: target, expiresAfter: target.undoExpiration) { target in
+                    target.addTab(config: config, at: index, select: select, focus: focus, name: name, color: color)
                 }
             }
         }
@@ -749,6 +757,78 @@ class TerminalController: BaseTerminalController {
             tab.tree = newTree
             TernState.shared.layoutDidChange()
         }
+    }
+
+    /// Replace a tab's tree as one undoable step. Undo holds the old tree, and so its panes,
+    /// for the undo interval, as closing a visible pane does.
+    func replaceTree(_ newTree: SplitTree<Ghostty.SurfaceView>, for tab: TernTab, undoAction: String) {
+        let oldTree = tree(of: tab)
+        setTree(newTree, for: tab)
+        guard let undoManager else { return }
+        undoManager.setActionName(undoAction)
+        undoManager.registerUndo(withTarget: self, expiresAfter: undoExpiration) { target in
+            guard !target.isClosed, target.tabs.contains(where: { $0 === tab }) else { return }
+            target.replaceTree(oldTree, for: tab, undoAction: undoAction)
+        }
+    }
+
+    /// Close part of a tab that isn't shown; a tab left empty closes. Both can be undone.
+    func closeHiddenNode(_ node: SplitTree<Ghostty.SurfaceView>.Node, in tab: TernTab) {
+        let newTree = tree(of: tab).removing(node)
+        if newTree.isEmpty {
+            closeTabImmediately(tab)
+        } else {
+            replaceTree(newTree, for: tab, undoAction: "Close Terminal")
+        }
+    }
+
+    // MARK: Panes in hidden tabs (AppleScript, App Intents)
+
+    /// The base class only knows the shown tree; a pane in a hidden tab goes through its tab.
+    private func hiddenTab(containing view: Ghostty.SurfaceView) -> TernTab? {
+        surfaceTree.contains(view) ? nil : tabs.first { $0.contains(view) }
+    }
+
+    override func focusSurface(_ view: Ghostty.SurfaceView) {
+        if let tab = hiddenTab(containing: view) { selectTab(tab, focus: false) }
+        super.focusSurface(view)
+    }
+
+    @discardableResult
+    override func newSplit(
+        at oldView: Ghostty.SurfaceView,
+        direction: SplitTree<Ghostty.SurfaceView>.NewDirection,
+        baseConfig config: Ghostty.SurfaceConfiguration? = nil
+    ) -> Ghostty.SurfaceView? {
+        guard let tab = hiddenTab(containing: oldView) else {
+            return super.newSplit(at: oldView, direction: direction, baseConfig: config)
+        }
+        // Split inside the hidden tab and leave it hidden, as Ghostty does in a background tab.
+        guard let app = ghostty.app else { return nil }
+        let newView = Ghostty.SurfaceView(app, baseConfig: config)
+        guard let newTree = try? tab.tree.inserting(view: newView, at: oldView, direction: direction) else { return nil }
+        let bounds = surfaceTree.viewBounds()
+        if bounds.width > 0, bounds.height > 0 {
+            newView.frame = CGRect(origin: .zero, size: CGSize(width: bounds.width / 2, height: bounds.height))
+            newView.sizeDidChange(newView.frame.size)
+        }
+        replaceTree(SplitTree(root: newTree.root, zoomed: nil), for: tab, undoAction: "New Split")
+        tab.focusedSurface = newView
+        return newView
+    }
+
+    override func closeSurface(_ view: Ghostty.SurfaceView, withConfirmation: Bool = true) {
+        guard let tab = hiddenTab(containing: view), let node = tab.tree.root?.node(view: view) else {
+            super.closeSurface(view, withConfirmation: withConfirmation)
+            return
+        }
+        if withConfirmation {
+            // Show the tab, so the question is about something the person can see.
+            selectTab(tab, focus: true)
+            super.closeSurface(view, withConfirmation: true)
+            return
+        }
+        closeHiddenNode(node, in: tab)
     }
 
     /// Close a tab without asking. Undo brings it back (for as long as undo-timeout keeps
@@ -990,6 +1070,11 @@ class TerminalController: BaseTerminalController {
     /// Place the window before it's first shown.
     private func positionWindow() {
         guard let terminalWindow = window as? TerminalWindow else { return }
+        if let explicitFrame {
+            terminalWindow.setFrame(explicitFrame, display: false)
+            terminalWindow.constrainToScreen()
+            return
+        }
         let originChanged = terminalWindow.setInitialWindowPosition(
             x: derivedConfig.windowPositionX,
             y: derivedConfig.windowPositionY,

@@ -361,10 +361,43 @@ func loginShell(_ command: String, timeout: TimeInterval = 30) -> String? {
     process.standardInput = FileHandle.nullDevice
     do { try process.run() } catch { return nil }
     let deadline = Date().addingTimeInterval(timeout)
-    let data = out.fileHandleForReading.readDataToEndOfFile()
-    while process.isRunning && Date() < deadline { usleep(20_000) }
+    // Read on another thread, so a startup script that hangs, or a child that keeps stdout
+    // open, can't outlast the timeout.
+    let output = OutputBuffer()
+    let finished = DispatchSemaphore(value: 0)
+    let fd = out.fileHandleForReading.fileDescriptor
+    Thread.detachNewThread {
+        var buffer = [UInt8](repeating: 0, count: 65536)
+        while true {
+            let n = read(fd, &buffer, buffer.count)
+            if n < 0 && errno == EINTR { continue }
+            if n <= 0 { break }
+            output.append(Data(buffer[0..<n]))
+        }
+        finished.signal()
+    }
+    let timedOut = finished.wait(timeout: .now() + timeout) == .timedOut
+    while !timedOut && process.isRunning && Date() < deadline { usleep(20_000) }
     if process.isRunning { process.terminate() }
-    return String(decoding: data, as: UTF8.self)
+    return String(decoding: output.contents, as: UTF8.self)
+}
+
+/// Bytes collected by one thread and read by another.
+final class OutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        data.append(chunk)
+        lock.unlock()
+    }
+
+    var contents: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return data
+    }
 }
 
 /// Where a program is found on the login shell's PATH.

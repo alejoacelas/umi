@@ -208,6 +208,71 @@ def main():
         ctl.call("debug.menu.perform", title=m_title)
         mode = next(d for d in inst.json("editor", "ls", "--pane", win["pane"])["documents"] if d["path"].endswith("README.md"))["mode"]
         check("E-2 ⇧⌘M toggles preview to source", mode == "source", mode)
+
+        # Undo and redo of moving a tab's only pane keep the tab's unsaved editor documents.
+        solo = inst.json("window", "new", "--name", "undo-editor")
+        wait_until(lambda: inst.cli("read", "--pane", solo["pane"], check=False).stdout.strip() != "", 20)
+        moved = os.path.join(tmp, "moved.txt")
+        with open(moved, "w") as f:
+            f.write("on disk\n")
+        inst.cli("edit", moved, "--pane", solo["pane"])
+        ctl.call("debug.editor.type", pane=solo["pane"], path=moved, text="unsaved edit\n", replace=True)
+
+        def moved_doc():
+            try:
+                doc = ctl.call("debug.editor.type", pane=solo["pane"], path=moved)
+            except RuntimeError:
+                return None
+            return doc if os.path.basename(doc["path"]) == "moved.txt" else None
+
+        inst.cli("pane", "move", solo["pane"], "--new-tab")
+        time.sleep(0.4)
+        ctl.call("debug.menu.perform", title="Undo")
+        time.sleep(0.6)
+        doc = moved_doc()
+        check("undo of a move keeps the tab's unsaved document", doc and doc["dirty"] and doc["text"] == "unsaved edit\n",
+              str(doc and doc["text"]))
+        ctl.call("debug.menu.perform", title="Redo")
+        time.sleep(0.6)
+        doc = moved_doc()
+        check("redo of a move keeps the tab's unsaved document", doc and doc["dirty"] and doc["text"] == "unsaved edit\n",
+              str(doc and doc["text"]))
+        check("the file on disk wasn't touched", open(moved).read() == "on disk\n")
+        inst.cli("editor", "close", moved, "--force", "--pane", solo["pane"])
+
+        # Closing a pane in a hidden tab can be undone, with its program still running.
+        h = inst.json("window", "new", "--name", "undo-hidden")
+        wait_until(lambda: inst.cli("read", "--pane", h["pane"], check=False).stdout.strip() != "", 20)
+        h2 = inst.json("pane", "info", inst.cli("split", "right", "--pane", h["pane"]).stdout.strip())["id"]
+        wait_until(lambda: inst.cli("read", "--pane", h2, check=False).stdout.strip() != "", 20)
+        inst.json("tab", "new", "--window", h["window"])
+        time.sleep(0.4)
+        inst.cli("pane", "close", h2)
+        time.sleep(0.4)
+        check("closing a pane in a hidden tab removes it", not inst.find_pane(h2))
+        ctl.call("debug.menu.perform", title="Undo")
+        ok = wait_until(lambda: bool(inst.find_pane(h2)), 5, message="undo hidden close") if True else False
+        check("undo brings back a pane closed in a hidden tab", ok and inst.find_pane(h2)[1]["id"] == h["tab"])
+        marker = "HIDDEN-%d" % time.time()
+        inst.cli("send", "--pane", h2, "-e", f"echo {marker}", check=False)
+        check("the restored hidden pane's program still runs",
+              inst.cli("wait", "--pane", h2, "--pattern", f"^{marker}", "--timeout", "10", check=False).returncode == 0)
+
+        # Undoing New Tab leaves Redo, which opens the tab again.
+        def tab_count():
+            return len(next(w for w in inst.tree()["windows"] if w["id"] == h["window"])["tabs"])
+
+        before = tab_count()
+        inst.json("tab", "new", "--window", h["window"])
+        time.sleep(0.4)
+        ctl.call("debug.menu.perform", title="Undo")
+        time.sleep(0.4)
+        state = ctl.call("debug.undo")
+        check("undoing New Tab closes it and leaves Redo", tab_count() == before and state["can_redo"]
+              and state["redo"] == "New Tab", str(state))
+        ctl.call("debug.menu.perform", title="Redo")
+        time.sleep(0.4)
+        check("redoing New Tab opens it again", tab_count() == before + 1)
     finally:
         inst.cleanup()
 

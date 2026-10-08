@@ -240,14 +240,8 @@ enum TernLayout {
             window.closeSurface(node, withConfirmation: false)
             return
         }
-        let newTree = tree.removing(node)
-        if newTree.isEmpty {
-            window.closeTabImmediately(tab)
-        } else {
-            undoable("Close Terminal", windows: [window]) {
-                window.setTree(newTree, for: tab)
-            }
-        }
+        // Undo keeps the closed pane alive for the undo interval, as for a visible pane.
+        window.closeHiddenNode(node, in: tab)
     }
 
     // MARK: Zoom, resize, swap, equalize
@@ -638,7 +632,9 @@ struct TernSnapshot {
 
         // 2. Once, before restoring anything: take restored tabs out of other windows, and
         //    the panes being placed out of every tab that isn't being restored, so no pane
-        //    is ever in two trees and nothing restored is touched again.
+        //    is ever in two trees and nothing restored is touched again. A tab this empties
+        //    leaves its editor documents to the restored tab that gets its panes back.
+        var orphans: [(editor: TernEditorGroup, panes: Set<ObjectIdentifier>)] = []
         for controller in TerminalController.all where !controller.isClosed {
             for existing in controller.tabs {
                 if let target = targetOf[ObjectIdentifier(existing)] {
@@ -654,6 +650,7 @@ struct TernSnapshot {
                 }
                 guard newTree.root != tree.root else { continue }
                 if newTree.isEmpty {
+                    orphans.append((existing.editor, Set((tree.root?.leaves() ?? []).map(ObjectIdentifier.init))))
                     controller.detachTab(existing, focusNeighbor: false, keepWindow: true)
                 } else {
                     controller.setTree(newTree, for: existing)
@@ -675,6 +672,10 @@ struct TernSnapshot {
                 if let z = tabState.zoomed?.value, let node = tabPlan.root.node(view: z) { zoomedNode = node }
                 tab.tree = SplitTree(root: tabPlan.root, zoomed: zoomedNode)
                 if let f = tabState.focused?.value, tab.tree.contains(f) { tab.focusedSurface = f }
+                let leaves = Set(tabPlan.root.leaves().map(ObjectIdentifier.init))
+                for orphan in orphans where !orphan.panes.isDisjoint(with: leaves) {
+                    tab.editor.adopt(from: orphan.editor)
+                }
                 tabs.append(tab)
             }
             let live = state.box.controller.flatMap { c in
@@ -701,6 +702,11 @@ struct TernSnapshot {
                 state.box.controller = controller
                 TernSnapshot.boxes[ObjectIdentifier(controller)] = state.box
             }
+        }
+
+        // Documents no restored tab took are saved, or kept as a recovery copy.
+        for orphan in orphans {
+            for doc in orphan.editor.documents { doc.preserveEdits() }
         }
 
         // 4. Windows the undone step created, now holding only panes that moved back, and

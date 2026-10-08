@@ -1826,8 +1826,14 @@ extension Ghostty {
             let id = notification.request.identifier
             self.notificationIdentifiers.remove(id)
             if focus {
-                // Tern: the pane may be in a tab that isn't shown; show it.
-                TernLayout.focusPane(self, activate: true)
+                // Tern: the pane may be in a tab that isn't shown; show it. Panes outside
+                // Tern's windows (the quick terminal) are focused as before.
+                if TernTopology.locate(self) != nil {
+                    TernLayout.focusPane(self, activate: true)
+                } else {
+                    self.window?.makeKeyAndOrderFront(self)
+                    Ghostty.moveFocus(to: self)
+                }
             }
         }
 
