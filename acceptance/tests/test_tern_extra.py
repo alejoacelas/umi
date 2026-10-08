@@ -7,6 +7,7 @@ These tests check the outcomes those choices put at risk. Black-box like the res
 
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -410,8 +411,9 @@ def test_a_panes_folder_is_right_without_shell_integration(target, tmp_path):
 @pytest.mark.req("I-1", "I-5")
 @pytest.mark.slow
 def test_the_installer_downloads_a_release_in_a_bare_shell(target, tmp_path):
-    """The one-line install downloads from the release feed, in a shell with nothing set up:
-    no locale (bash then reads `$name…` as one longer variable name), a minimal PATH."""
+    """The one-line install downloads from the release feed in a plain shell (minimal PATH),
+    with a UTF-8 locale as Terminal sets (bash 3.2 then reads `$name…` as one longer variable
+    name) and with none."""
     if not (target.release and target.installer):
         pytest.skip("the target file has no release command or installer")
     from test_install import bundle_version, make_release
@@ -430,9 +432,11 @@ def test_the_installer_downloads_a_release_in_a_bare_shell(target, tmp_path):
         env = {"HOME": os.environ["HOME"], "USER": os.environ.get("USER", ""), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
                names["dest"]: str(dest), names["bin"]: str(tmp_path / "bin"), names["no_default"]: "1",
                names["no_launch"]: "1", "TERN_INSTALL_FEED": base + "rel/" + target.release["feed"]}
-        proc = subprocess.run(["/bin/bash", "-c", f"cat '{installer}' | bash"], env=env, capture_output=True,
-                              text=True, timeout=300, stdin=subprocess.DEVNULL)
-        assert proc.returncode == 0, proc.stdout + proc.stderr
-        assert bundle_version(str(dest)) == "0.0.7"
+        for locale in ({"LANG": "en_US.UTF-8"}, {}):
+            shutil.rmtree(dest, ignore_errors=True)
+            proc = subprocess.run(["/bin/bash", "-c", f"cat '{installer}' | bash"], env={**env, **locale},
+                                  capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
+            assert proc.returncode == 0, f"{locale}: " + proc.stdout + proc.stderr
+            assert bundle_version(str(dest)) == "0.0.7"
     finally:
         server.shutdown()
