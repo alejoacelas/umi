@@ -387,7 +387,9 @@ through the CLI, so agents can orchestrate other agents, and shows the session i
   another agent's session variables.
 - **MA-21 [A]** Managed agents use the user's own logins and subscriptions, and never the user's
   shared Codex daemon. Running a managed Codex session doesn't change how the user's own `codex`
-  behaves.
+  behaves. The one exception is a change Codex makes itself whenever it runs: with a writable sandbox
+  in a git project, it marks that project as trusted in the user's config, exactly as it does when
+  run in a terminal.
 
 ### Real harness fidelity
 - **MA-22 [A]** All of the above holds with the real Claude Code and Codex CLIs, as tested with cheap

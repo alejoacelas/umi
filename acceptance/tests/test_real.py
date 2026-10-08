@@ -3,8 +3,10 @@ ACCEPTANCE_REAL=1. Models: ACCEPTANCE_CLAUDE_MODEL (default haiku), ACCEPTANCE_C
 
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -141,14 +143,60 @@ def test_project_skill_is_available(real, tmp_path):
     real.cli("agent", "stop", sid)
 
 
+CODEX_CONFIG = os.path.expanduser("~/.codex/config.toml")
+
+
+def trust_blocks(text):
+    """The `[projects."<path>"]` blocks of a Codex config, by path."""
+    return {m.group(1): m.group(0) for m in re.finditer(r'(?m)^\[projects\."([^"]+)"\]\n(?:(?!\[).*\n?)*', text)}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def leave_no_codex_trust_behind():
+    """Codex marks a git project it runs in with a writable sandbox as trusted, in the user's own config
+    (so does `codex exec -s workspace-write` in a terminal). Remove the entries this module's
+    throwaway folders added, and nothing else."""
+    before = open(CODEX_CONFIG).read() if os.path.exists(CODEX_CONFIG) else None
+    yield
+    if before is None or not os.path.exists(CODEX_CONFIG):
+        return
+    now = open(CODEX_CONFIG).read()
+    temp_roots = tuple(os.path.realpath(d) + os.sep for d in (tempfile.gettempdir(), "/tmp"))
+    added = [block for path, block in trust_blocks(now).items()
+             if path not in trust_blocks(before) and os.path.realpath(path).startswith(temp_roots)]
+    if added:
+        for block in added:
+            now = now.replace(block, "", 1)
+        tmp = CODEX_CONFIG + ".acceptance-tmp"
+        with open(tmp, "w") as f:
+            f.write(re.sub(r"\n{3,}", "\n\n", now))
+        os.chmod(tmp, os.stat(CODEX_CONFIG).st_mode & 0o777)
+        os.replace(tmp, CODEX_CONFIG)
+
+
 @pytest.mark.req("MA-21", "IA-4")
-def test_user_codex_and_claude_config_untouched(real):
-    watched = [os.path.expanduser(p) for p in ("~/.codex/config.toml", "~/.claude/settings.json")]
-    before = {p: open(p, "rb").read() for p in watched if os.path.exists(p)}
-    sid = start(real, "codex", "Reply with exactly: ok", "--full-access")
+def test_user_codex_and_claude_config_untouched(real, tmp_path):
+    """A managed session changes the user's own harness configuration only as the same command run in
+    their terminal would. The one change Codex makes itself, for any writable sandbox in a git project
+    (checked with `codex exec -s workspace-write` in a fresh repo), is to mark that project trusted."""
+    project = tmp_path / "never-opened"
+    project.mkdir()
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    watched = [CODEX_CONFIG, os.path.expanduser("~/.claude/settings.json")]
+    before = {p: open(p).read() for p in watched if os.path.exists(p)}
+    sid = real.json("agent", "start", "codex", "--background", "--cwd", str(project), "--model", CODEX_MODEL,
+                    "--effort", "low", "--full-access", "Reply with exactly: ok")["session"]["id"]
     wait(real, sid)
     real.cli("agent", "stop", sid)
-    after = {p: open(p, "rb").read() for p in watched if os.path.exists(p)}
+    after = {p: open(p).read() for p in watched if os.path.exists(p)}
+    if CODEX_CONFIG in after:
+        own = {os.path.realpath(project), str(project)}
+        for path, block in trust_blocks(after[CODEX_CONFIG]).items():
+            if path in own and path not in trust_blocks(before.get(CODEX_CONFIG, "")):
+                assert block.split("\n", 1)[1].strip() == 'trust_level = "trusted"', block
+                after[CODEX_CONFIG] = after[CODEX_CONFIG].replace(block, "", 1)
+        after[CODEX_CONFIG] = re.sub(r"\n{2,}", "\n", after[CODEX_CONFIG]).strip()
+        before[CODEX_CONFIG] = re.sub(r"\n{2,}", "\n", before.get(CODEX_CONFIG, "")).strip()
     assert before == after
 
 
@@ -186,6 +234,29 @@ def never_opened_project(tmp_path, name):
     return project, words, hook_file
 
 
+def settled_answer(real, sid, words, timeout=300):
+    """Everything the agent and its tools said once it has settled. A model may hand work to a background
+    subagent or command and end its turn with "waiting for …"; the answer then comes in a turn the agent
+    starts by itself when that work finishes (MA-28). Settled means every word has appeared, or the
+    session has been idle with no background task for 10 s. The words are known only to the project's
+    features, so finding one in a tool's output is proof enough that the feature was loaded and used."""
+    deadline = time.time() + timeout
+    quiet_since = None
+    while True:
+        replies = " ".join(" ".join(str(i.get(k) or "") for k in ("text", "detail", "output"))
+                           for i in real.transcript(sid) if i["kind"] in ("assistant", "tool"))
+        if all(w in replies for w in words) or time.time() > deadline:
+            return replies
+        info = real.info(sid)
+        if info["status"] == "idle" and not info.get("background_tasks"):
+            quiet_since = quiet_since or time.time()
+            if time.time() - quiet_since > 10:
+                return replies
+        else:
+            quiet_since = None
+        time.sleep(1)
+
+
 @pytest.mark.req("MA-23", "MA-24")
 def test_project_features_load_in_a_never_opened_folder_and_after_resume(real, tmp_path):
     project, words, hook_file = never_opened_project(tmp_path, "proj-features")
@@ -195,8 +266,9 @@ def test_project_features_load_in_a_never_opened_folder_and_after_resume(real, t
                     "--full-access", prompt)["session"]["id"]
     code, out = wait(real, sid, timeout=300)
     assert out["status"] == "DONE", out
-    assert words["mcp"] in out["reply"], f"the project's MCP server wasn't used: {out['reply']}"
-    assert words["agent"] in out["reply"], f"the project's subagent wasn't used: {out['reply']}"
+    replies = settled_answer(real, sid, [words["mcp"], words["agent"]])
+    assert words["mcp"] in replies, f"the project's MCP server wasn't used: {replies}"
+    assert words["agent"] in replies, f"the project's subagent wasn't used: {replies}"
     assert hook_file.exists(), "the project's hook didn't run"
     real.cli("agent", "stop", sid)
     wait_until(lambda: real.info(sid)["status"] == "exited", 30, message="exited")

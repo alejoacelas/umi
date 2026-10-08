@@ -79,3 +79,21 @@ No existing test was changed or weakened in phase 2. Additions:
   `verify_ui_paths.py`): the agent-pane behaviors the suite checks through the accessibility tree,
   driven through internal `debug.agent.*` methods while the screen is locked. It doesn't count as a
   pass of the skipped UI tests; REPORT.md lists those as skipped.
+
+## After phase 2 (by the supervisor of the runs)
+
+- **`test_project_features_load_in_a_never_opened_folder_and_after_resume`** (`tests/test_real.py`).
+  Haiku sometimes ran the subagent in the background and ended its turn with "waiting for the
+  codeword-keeper agent"; the answer came in the turn Claude started by itself when the subagent
+  finished (recorded: the task's `task_notification` arrives inside the turn, then a `result` with
+  `origin.kind = task-notification`). The test took the first turn's reply as the answer. It now waits
+  until the session settles and looks for each codeword in the agent's replies and its tools' output
+  (the words exist only in the project's MCP server and subagent). MA-28: "A harness can start a turn
+  without a message, for example when a background command finishes".
+- **`test_user_codex_and_claude_config_untouched`** (`tests/test_real.py`) passed only because an
+  earlier test had already run Codex in the same folder. Codex marks a git project it runs in with a
+  writable sandbox as trusted in `~/.codex/config.toml`, and so does `codex exec -s workspace-write` or
+  `--dangerously-bypass-approvals-and-sandbox` in a terminal (checked in a fresh repo with a throwaway
+  `CODEX_HOME`; read-only writes nothing). The test now uses a never-opened folder and allows only
+  that entry; SPEC MA-21 says so. A module fixture removes the trust entries the module's throwaway
+  folders caused, and nothing else, so test runs stop adding to the user's Codex config.
