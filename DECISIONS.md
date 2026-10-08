@@ -102,7 +102,7 @@ front first and checks it stays there.
 |---|---|
 | A. Rely on LaunchServices | Doesn't cover direct launches of the executable (scripts, tests, two copies of the app). |
 | B. "Whoever binds the socket wins" | Racy: both launches can unlink a stale socket and bind. |
-| C. **`flock` on `<state dir>/instance.lock`** taken first thing in `main`, before Ghostty initializes or any window exists | Released by the kernel however the process dies, so a crash never leaves a stale lock. |
+| C. **`flock` on `<state dir>/instance.lock`** taken in `main` before the app starts or any window exists (after Ghostty's `+action` commands, such as the shell integration's `+ssh`, which run without the app) | Released by the kernel however the process dies, so a crash never leaves a stale lock. |
 
 **Pick: C.** A losing launch asks the winner to show itself (`system.activate`) and exits 0.
 **Evidence:** `test_simultaneous_launches_leave_one_instance`.

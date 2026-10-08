@@ -16,7 +16,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from harness import clean_env, frontmost_pid, login_which, wait_until
+from harness import CLIError, Instance, Target, clean_env, frontmost_pid, login_which, wait_until
 
 pytestmark = pytest.mark.layout
 
@@ -226,4 +226,127 @@ def test_a_feed_whose_version_isnt_a_version_is_refused(fresh, tmp_path):
         assert proc.returncode != 0, proc.stdout
         assert "version" in (proc.stderr + proc.stdout), proc.stderr
     finally:
+        server.shutdown()
+
+
+
+@pytest.mark.req("T-3")
+def test_wait_sees_output_that_scrolled_past_the_screen(inst, win):
+    """A marker followed by more output than the screen holds still matches, whether the wait
+    started before the output or just after it scrolled away."""
+    pane = win["pane"]
+    marker = "EARLY-" + uuid.uuid4().hex[:6]
+    waiter = subprocess.Popen([inst.target.cli_path, "wait", "--pane", pane, "--pattern", f"^{marker}$",
+                               "--timeout", "20"], env=inst.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, stdin=subprocess.DEVNULL)
+    time.sleep(0.5)
+    inst.cli("send", "--pane", pane, "-e", f"echo {marker}; seq 1 3000")
+    out, err = waiter.communicate(timeout=40)
+    assert waiter.returncode == 0 and out.strip() == marker, err
+    marker = "LATE-" + uuid.uuid4().hex[:6]
+    inst.cli("send", "--pane", pane, "-e", f"echo {marker}; seq 1 3000")
+    time.sleep(1.5)
+    assert inst.cli("wait", "--pane", pane, "--pattern", f"^{marker}$", "--timeout", "10").stdout.strip() == marker
+
+
+@pytest.mark.req("T-3")
+def test_idle_means_no_output_not_an_unchanged_screen(inst, win):
+    """A program that keeps rewriting the same text is not idle."""
+    pane = win["pane"]
+    inst.cli("send", "--pane", pane, "-e", "while true; do printf '\\rSAME'; sleep 0.05; done")
+    time.sleep(1)
+    try:
+        busy = inst.cli("wait", "--pane", pane, "--idle", "0.5", "--timeout", "3", check=False)
+        assert busy.returncode == 124, busy.stdout + busy.stderr
+    finally:
+        inst.cli("keys", "--pane", pane, "ctrl+c")
+    assert inst.cli("wait", "--pane", pane, "--idle", "0.5", "--timeout", "10", check=False).returncode == 0
+
+
+@pytest.mark.req("T-2")
+def test_shifted_keys_type_shifted_characters(inst, win):
+    pane = win["pane"]
+    inst.cli("send", "--pane", pane, "-e", "cat")
+    time.sleep(0.8)
+    try:
+        inst.cli("keys", "--pane", pane, "shift+1", "shift+2", "shift+/", "shift+9", "enter")
+        assert inst.cli("wait", "--pane", pane, "--pattern", r"^!@\?\($", "--timeout", "10").stdout.strip() == "!@?("
+    finally:
+        inst.cli("keys", "--pane", pane, "ctrl+c")
+
+
+@pytest.mark.req("P-3")
+def test_core_cli_actions_run_beside_the_running_app(inst):
+    """Ghostty's `+action` commands (the shell integration's `+ssh` among them) run on their own
+    even while the app runs for the same state directory; they don't hand over to it."""
+    proc = subprocess.run([inst.target.executable, "+version"], env=inst.env, capture_output=True, text=True,
+                          timeout=60, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0 and "1." in proc.stdout, proc.stdout + proc.stderr
+    assert inst.app_running()
+
+
+@pytest.mark.req("P-1")
+def test_ssh_integration_reaches_the_renamed_executable(target):
+    """With ssh-env/ssh-terminfo on, the shell integration's `ssh` wrapper calls the app's core
+    executable, which Tern renamed."""
+    custom = Target(target.path, dict(target.data, launch_args=list(target.launch_args)
+                                      + ["--shell-integration-features=ssh-env,ssh-terminfo"]))
+    inst = Instance(custom, prefix="acc-ssh-")
+    inst.start_app()
+    try:
+        pane = inst.json("window", "new")["pane"]
+        wait_until(lambda: inst.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20, message="prompt")
+        time.sleep(1)
+        inst.cli("send", "--pane", pane, "-e", "whence -w ssh; ssh -V; echo SSH-DONE")
+        inst.cli("wait", "--pane", pane, "--pattern", "^SSH-DONE$", "--timeout", "20")
+        screen = inst.cli("read", "--pane", pane, "--scrollback").stdout
+        if "ssh: function" not in screen:
+            pytest.skip("the login shell isn't zsh with Ghostty's shell integration")
+        assert "OpenSSH" in screen and "no such file" not in screen.lower(), screen
+    finally:
+        inst.cleanup()
+
+
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_update_now_relaunches_the_same_instance(target, tmp_path):
+    """`update --now` quits, installs and relaunches; an instance with its own state directory
+    comes back as that instance, not as the default one."""
+    if not (target.release and target.installer and target.env_names.get("feed_url")):
+        pytest.skip("the target file has no release command, installer or feed_url variable")
+    from test_install import bundle_version, make_release, run_installer
+
+    root = tmp_path / "www"
+    root.mkdir()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(root)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}/"
+    dest = str(tmp_path / "Applications" / os.path.basename(target.app))
+    installed = None
+    try:
+        make_release(target, "0.0.1", root / "old", base + "old/")
+        make_release(target, "999.0.0", root / "new", base + "new/")
+        feed = {target.env_names["feed_url"]: base + "new/" + target.release["feed"]}
+        holder = Instance(target, prefix="acc-now-", env=feed)
+        proc = run_installer(target, str(root / "old" / target.release["app"]), dest, str(tmp_path / "bin"),
+                             holder.env)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        installed = Instance(Target.from_installed(target, dest), state_dir=holder.dir, env=feed)
+        installed.start_app()
+        installed.cli("update", "--now", timeout=600)
+        wait_until(lambda: bundle_version(dest) == "999.0.0", 180, message="the update installed")
+
+        def relaunched():
+            try:
+                return installed.json("update", "--check", timeout=60)
+            except (CLIError, subprocess.TimeoutExpired):
+                return None
+
+        after = wait_until(relaunched, 60, message="the same instance relaunched")
+        assert (after["installed"], after["update_available"]) == ("999.0.0", False), after
+    finally:
+        subprocess.run(["pkill", "-TERM", "-f", f"{dest}/Contents/MacOS/"], capture_output=True)
+        time.sleep(1)
+        if installed:
+            installed.cleanup()
         server.shutdown()

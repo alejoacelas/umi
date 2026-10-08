@@ -85,7 +85,20 @@ trade-off. Their behaviors were checked another way (below).
 
 <!-- CHECKS -->
 
-<!-- REVIEW -->
+## Codex review
+
+`codex review --base upstream-base -c model_reasoning_effort="high"` in `app/`. After each round,
+every high (P1) and moderate (P2) finding was fixed, the app rebuilt, and the phase-1 suite and
+`verify_ui_paths.py` rerun before the next round. Regression checks were added for the findings
+that could be scripted.
+
+| Round | Findings | What was fixed |
+|---|---|---|
+| 1 | 3 P1, 1 P2 | Undo of a move only touches the windows it restores (it could take panes out of unrelated windows); moving a window's only pane to a new tab inserts before removing (the window closed under it); a tab emptied by a move hands its editor documents to the destination; AppleScript tab objects are bound to Tern's tabs. |
+| 2 | 1 P1, 5 P2 | Undo/redo of a move keeps the tab's unsaved editor documents; a pane closed in a hidden tab can be undone (its tree is held for the undo interval); New Tab can be redone; AppleScript and App Intents focus, split and close panes in hidden tabs; notification clicks focus the quick terminal again; the CLI's login-shell timeout holds even when the shell hangs. Also found while probing: restored windows came back at the default frame. |
+| 3 | 4 P1, 2 P2 | The feed's version (not covered by the signature) is checked before it names a folder (path traversal); quitting asks when a program runs in a hidden tab; `tern claude --window` types its command (the new window wasn't listed yet); Ghostty's Sparkle unit tests removed with Sparkle (unit tests: 354 passed); the Zig build helper uses `Tern.app`/`tern-app`; Redo of a split brings the pane back. |
+
+<!-- REVIEW-MORE -->
 
 ## Questions for the user
 
