@@ -23,7 +23,7 @@ final class TernEvents {
     static let subscriberBacklogLimit = 4 * 1024 * 1024
 
     func addSubscriber(_ connection: TernConnection, filters: [String], pane: String?) {
-        connection.outgoingLimit = Self.subscriberBacklogLimit
+        connection.setOutgoingLimit(Self.subscriberBacklogLimit)
         subscribers[ObjectIdentifier(connection)] = .init(connection: connection, filters: filters, pane: pane)
     }
 

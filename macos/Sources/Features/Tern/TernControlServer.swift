@@ -145,8 +145,13 @@ final class TernConnection: @unchecked Sendable {
     private var outBuffer = Data()
     private var closed = false
 
-    /// Event subscribers that fall this far behind are disconnected.
-    var outgoingLimit = 512 * 1024 * 1024
+    /// Clients that fall this far behind are disconnected (only touched on `queue`).
+    private var outgoingLimit = 512 * 1024 * 1024
+
+    /// Lower the backlog limit (event subscribers).
+    func setOutgoingLimit(_ limit: Int) {
+        queue.async { [weak self] in self?.outgoingLimit = limit }
+    }
 
     init(fd: Int32, server: TernControlServer) {
         self.fd = fd

@@ -3,6 +3,8 @@
 #
 #   dist/release.sh --version X.Y.Z [--build] [--out DIR] [--base-url URL] [--no-publish] [--notes TEXT]
 #
+# Publishing an update from this Mac:  app/dist/release.sh --version X.Y.Z --build
+#
 # Stamps a copy of the built app with the version, signs it (ad hoc), zips it, signs the zip
 # with the update-signing key (login keychain item "Tern Update Signing Key", backup in
 # ~/.config/tern/update-signing-key) and writes the feed (appcast.json). Unless --no-publish,
@@ -35,8 +37,19 @@ fi
 [[ "$base_url" == */ ]] || base_url="$base_url/"
 
 if [[ "$build" == 1 ]]; then
-    (cd "$root/macos" && xattr -cr build/ReleaseLocal/Tern.app 2>/dev/null || true
-     xcodebuild -target Ghostty -configuration ReleaseLocal -arch arm64 build | grep -E "error:|BUILD" )
+    zig="${ZIG:-$HOME/.local/zig/zig-aarch64-macos-0.16.0/zig}"
+    command -v "$zig" >/dev/null 2>&1 || zig="$(command -v zig || true)"
+    [[ -n "$zig" ]] || { echo "release.sh: --build needs Zig 0.16 (set ZIG=/path/to/zig)" >&2; exit 1; }
+    echo "building libghostty…"
+    (cd "$root" && "$zig" build -Doptimize=ReleaseFast -Dxcframework-target=native -Demit-macos-app=false)
+    echo "building Tern.app…"
+    (cd "$root/macos" && { xattr -cr build/ReleaseLocal/Tern.app 2>/dev/null || true; } \
+        && xcodebuild -target Ghostty -configuration ReleaseLocal -arch arm64 build > "$root/dist/build.log" 2>&1) \
+        || { grep -E "error:" "$root/dist/build.log" | head -20 >&2; echo "release.sh: the build failed (dist/build.log)" >&2; exit 1; }
+fi
+if [[ "$publish" == 1 && -n "$(git -C "$root" status --porcelain --untracked-files=no)" ]]; then
+    echo "release.sh: the checkout has uncommitted changes; commit them before publishing" >&2
+    exit 1
 fi
 [[ -d "$app" ]] || { echo "release.sh: no app at $app (build it, or pass --build)" >&2; exit 1; }
 

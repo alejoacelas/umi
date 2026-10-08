@@ -181,7 +181,7 @@ class TerminalController: BaseTerminalController {
     /// Insert a tab, keeping pinned tabs first. `index` is a position among all tabs and
     /// is clamped into the tab's group.
     func insertTab(_ tab: TernTab, at index: Int? = nil) {
-        precondition(!tabs.contains { $0 === tab })
+        guard !tabs.contains(where: { $0 === tab }) else { return }
         let pinnedCount = tabs.filter(\.pinned).count
         var position = index ?? tabs.count
         if tab.pinned {

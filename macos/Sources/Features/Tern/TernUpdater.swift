@@ -145,6 +145,10 @@ final class TernUpdater: ObservableObject {
 
     /// Download and verify the newest version and stage it to install at quit.
     func download() async throws -> [String: Any] {
+        // A development build would replace itself (the build folder's app) with a release.
+        guard TernVersion.isRelease else {
+            throw TernError.failed("this is a development build of \(TernPaths.productName); it doesn't update itself (install a release instead)")
+        }
         let release: Release
         if let downloadTask {
             release = try await downloadTask.value
