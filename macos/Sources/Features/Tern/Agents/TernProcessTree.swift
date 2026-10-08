@@ -111,15 +111,29 @@ enum TernProcessTree {
         return !(all().first { $0.pid == pid }?.zombie ?? false)
     }
 
+    /// Members of the process group a harness led, once the harness itself is gone. A process
+    /// id isn't reused while a group with that id exists, so if no process has the group's id
+    /// the members are the harness's leftovers (children that cleared their environment
+    /// included). If a process has that id, it is the live harness (counted elsewhere) or an
+    /// unrelated process that reused the id: the group isn't touched.
+    static func orphanedGroup(_ pgid: pid_t, in infos: [Info]) -> [pid_t] {
+        guard pgid > 1, !infos.contains(where: { $0.pid == pgid && !$0.zombie }) else { return [] }
+        return members(ofGroup: pgid, in: infos)
+    }
+
     /// Everything that belongs to a session right now: its harness's group and descendants,
-    /// and any process carrying the session's tag.
-    static func sessionProcesses(session: String, stateDir: String, harness: pid_t?) -> Set<pid_t> {
+    /// the group a harness that already exited left behind, and any process carrying the
+    /// session's tag.
+    static func sessionProcesses(session: String, stateDir: String, harness: pid_t?, exitedHarness: pid_t? = nil) -> Set<pid_t> {
         let infos = all()
         var pids = Set<pid_t>()
         if let harness, harness > 1 {
             pids.insert(harness)
             pids.formUnion(members(ofGroup: harness, in: infos))
             pids.formUnion(descendants(of: harness, in: infos))
+        }
+        if let exitedHarness {
+            pids.formUnion(orphanedGroup(exitedHarness, in: infos))
         }
         let me = getpid()
         for info in infos where info.pid != me && !info.zombie {

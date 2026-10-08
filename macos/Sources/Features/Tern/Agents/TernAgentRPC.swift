@@ -171,11 +171,14 @@ enum TernAgentRPC {
                     continuation.resume(throwing: error)
                     return
                 }
+                // The latest message is fixed now: a follow-up someone sends meanwhile doesn't
+                // change what this wait is for.
+                let target = messageID ?? session.lastMessage?.id
                 func evaluate() -> [String: Any]? {
                     if agents.session(id: session.record.id) == nil {
                         return ["status": "ERROR", "error": "the session was removed", "session": info(session, pane: nil)]
                     }
-                    return forReport ? reportResult(session, messageID) : waitResult(session, messageID)
+                    return forReport ? reportResult(session, target) : waitResult(session, target)
                 }
                 if let now = evaluate() {
                     continuation.resume(returning: now)

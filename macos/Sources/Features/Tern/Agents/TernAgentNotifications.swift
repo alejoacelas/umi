@@ -11,10 +11,14 @@ enum TernAgentNotifications {
         let needsInput = snapshot.status == "needs_input"
         guard finished || needsInput else { return }
         // Not when the user is looking at it.
-        if NSApp.isActive, let pane = TernAgentUI.livePane(for: snapshot.id),
+        if NSApp.isActive, let pane = TernAgentUI.livePane(for: snapshot.id), TernAgentUI.shared.isShowingAgent(pane.id),
            let location = TernTopology.locate(pane), location.tab === location.window.selectedTab,
            location.window.window?.isKeyWindow == true, location.window.window?.isVisible == true {
-            return
+            // On screen only if no other pane of the tab is zoomed over it.
+            let tree = location.window.tree(of: location.tab)
+            var visible = true
+            if let zoomed = tree.zoomed, case .leaf(let view) = zoomed, view !== pane { visible = false }
+            if visible { return }
         }
         guard TernAgentNotifications.enabled else { return }
         let content = UNMutableNotificationContent()

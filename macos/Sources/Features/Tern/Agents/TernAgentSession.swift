@@ -875,6 +875,12 @@ final class TernAgentSession {
     func beginShutdown(reason: String) {
         shuttingDown = true
         shutdownReason = reason
+        if phase == .launching {
+            // Still preparing to spawn: don't start now.
+            generation += 1
+            phase = .stopped
+            driver = nil
+        }
         if let current = turn, live {
             for m in current.messages where message(m)?.state == .delivered {
                 update(m) { $0.cutOff = true; $0.cutOffAt = Date(); $0.cutOffReason = reason }
@@ -902,8 +908,10 @@ final class TernAgentSession {
         guard let process else {
             // Nothing running; still make sure nothing of this session is left.
             let id = record.id
+            let lastPID = record.pid
             DispatchQueue.global().async {
-                let leftovers = TernProcessTree.sessionProcesses(session: id, stateDir: TernPaths.stateDirectory, harness: nil)
+                let leftovers = TernProcessTree.sessionProcesses(session: id, stateDir: TernPaths.stateDirectory, harness: nil,
+                                                                 exitedHarness: lastPID)
                 TernProcessTree.terminate(leftovers, grace: 1.0)
                 TernAgents.queue.async { completion?() }
             }
@@ -952,6 +960,7 @@ final class TernAgentSession {
 
     private func processEnded(status: Int32, stderr: String) {
         let stopping = stop
+        let endedPID = process?.pid
         let wasReady = everReady && phase != .starting
         let neverReady = phase == .starting || phase == .launching
         process = nil
@@ -1032,7 +1041,8 @@ final class TernAgentSession {
         // resume if messages wait.
         let id = record.id
         DispatchQueue.global().async { [weak self] in
-            let leftovers = TernProcessTree.sessionProcesses(session: id, stateDir: TernPaths.stateDirectory, harness: nil)
+            let leftovers = TernProcessTree.sessionProcesses(session: id, stateDir: TernPaths.stateDirectory, harness: nil,
+                                                             exitedHarness: endedPID)
             TernProcessTree.terminate(leftovers, grace: 1.5)
             TernAgents.queue.async {
                 guard let self else { return }

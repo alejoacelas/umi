@@ -41,9 +41,13 @@ final class TernAgents: @unchecked Sendable {
             }
             // Processes of sessions from an earlier run (the app was killed or crashed):
             // nothing started before keeps running (R-1).
-            let leftovers = TernProcessTree.tagged(sessions: nil, stateDir: TernPaths.stateDirectory)
+            var leftovers = Set(TernProcessTree.tagged(sessions: nil, stateDir: TernPaths.stateDirectory).map(\.pid))
+            let infos = TernProcessTree.all()
+            for session in sessions {
+                if let pid = session.record.pid { leftovers.formUnion(TernProcessTree.orphanedGroup(pid, in: infos)) }
+            }
             if !leftovers.isEmpty {
-                TernProcessTree.terminate(Set(leftovers.map(\.pid)), grace: 1.0)
+                TernProcessTree.terminate(leftovers, grace: 1.0)
             }
             for session in sessions {
                 let cut = session.cutOffMessages()
@@ -176,8 +180,9 @@ final class TernAgents: @unchecked Sendable {
     func shutdown(reason: String) {
         var anyLive = false
         Self.queue.sync {
-            for session in sessions where session.live {
-                anyLive = true
+            // Every session: one that is launching or cleaning up must not start a harness now.
+            for session in sessions {
+                if session.live { anyLive = true }
                 session.beginShutdown(reason: reason)
             }
         }
