@@ -42,7 +42,8 @@ Where things are:
 | `app/macos/Sources/Features/Terminal/TerminalController.swift` | Windows with Tern's own tabs |
 | `app/macos/TernCLI/` | The `tern` CLI (one Swift file, `build.sh`) |
 | `app/dist/` | `release.sh`, `install.sh`, `sign-update.swift` |
-| `app/src/apprt/embedded.zig` | The one libghostty addition: `ghostty_surface_read_output_text` |
+| `app/src/apprt/embedded.zig`, `app/src/termio/Termio.zig` | libghostty additions: `ghostty_surface_read_output_text` and `ghostty_surface_read_output_tail` (output without the prompt and typed input), `ghostty_surface_output_bytes` (a count of bytes the program wrote, for `wait --idle`) |
+| `app/src/shell-integration/`, `app/src/crash/dir.zig` | The SSH wrappers call `tern-app` (the renamed core executable); crash reports go to `~/.local/state/tern/crash` |
 | `acceptance/targets/tern.json` | The suite's target file |
 | `acceptance/tests/test_tern_extra.py` | Tests added for this design's risks |
 | `app/macos/TernTests/verify_ui_paths.py` | Checks of the UI-only behaviors without the accessibility tree |
@@ -97,6 +98,8 @@ that could be scripted.
 | 1 | 3 P1, 1 P2 | Undo of a move only touches the windows it restores (it could take panes out of unrelated windows); moving a window's only pane to a new tab inserts before removing (the window closed under it); a tab emptied by a move hands its editor documents to the destination; AppleScript tab objects are bound to Tern's tabs. |
 | 2 | 1 P1, 5 P2 | Undo/redo of a move keeps the tab's unsaved editor documents; a pane closed in a hidden tab can be undone (its tree is held for the undo interval); New Tab can be redone; AppleScript and App Intents focus, split and close panes in hidden tabs; notification clicks focus the quick terminal again; the CLI's login-shell timeout holds even when the shell hangs. Also found while probing: restored windows came back at the default frame. |
 | 3 | 4 P1, 2 P2 | The feed's version (not covered by the signature) is checked before it names a folder (path traversal); quitting asks when a program runs in a hidden tab; `tern claude --window` types its command (the new window wasn't listed yet); Ghostty's Sparkle unit tests removed with Sparkle (unit tests: 354 passed); the Zig build helper uses `Tern.app`/`tern-app`; Redo of a split brings the pane back. |
+
+| 4 | 1 P1, 7 P2 | The shell integration's `ssh` wrapper calls the renamed core executable (`ssh` failed with SSH integration on); Ghostty's `+action` commands run before the single-instance lock; command-palette jumps reach panes in hidden tabs; `wait --pattern` sees output that scrolled past the screen (and, on its first read, the scrollback); `wait --idle` measures bytes written, not screen changes (two small libghostty additions); `update --now` relaunches an isolated instance as itself (and the installer no longer waits on an unreaped exited app); panes made by ⌘T or AppleScript record their starting folder; `keys shift+1` types `!`. Found while rerunning the checks: the editor crashed (an uncaught AppKit exception) when a file reloaded shorter than the cursor position; fixed, with a check. Crash reports had gone to Ghostty's folder (`~/.local/state/ghostty/crash`); they now go to Tern's, and the eight reports from this run were removed. |
 
 <!-- REVIEW-MORE -->
 

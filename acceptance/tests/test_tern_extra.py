@@ -350,3 +350,58 @@ def test_update_now_relaunches_the_same_instance(target, tmp_path):
         if installed:
             installed.cleanup()
         server.shutdown()
+
+
+@pytest.mark.req("L-6", "IA-3")
+def test_new_tabs_start_in_the_folder_of_the_pane_they_come_from(inst, win, tmp_path):
+    """A tab made from a pane that isn't the one its window has focused starts in that pane's
+    folder: from inside the pane, and for `tern claude --pane`."""
+    a_dir = tmp_path / "repo-a"
+    b_dir = tmp_path / "repo-b"
+    a_dir.mkdir()
+    b_dir.mkdir()
+    a = pane_info(inst, inst.cli("split", "right", "--pane", win["pane"], "--cwd", str(a_dir)).stdout.strip())["id"]
+    b = pane_info(inst, inst.cli("split", "down", "--pane", win["pane"], "--cwd", str(b_dir)).stdout.strip())["id"]
+    wait_until(lambda: inst.cli("read", "--pane", a, check=False).stdout.strip() != "", 20, message="prompt")
+    inst.cli("pane", "focus", b)
+    out = tmp_path / "out.json"
+    inst.cli("send", "--pane", a, "-e", f"'{inst.target.cli_path}' --json tab new --no-focus > '{out}'")
+    wait_until(lambda: out.exists() and out.read_text().strip(), 20, message="the tab made from inside pane A")
+    made = json.loads(out.read_text())["pane"]
+    wait_until(lambda: os.path.realpath(pane_info(inst, made)["cwd"]) == os.path.realpath(a_dir), 15,
+               message="the new tab in A's folder")
+    if login_which("claude"):
+        result = inst.json("claude", "--tab", "--pane", a, "--no-focus", "--", "--version")
+        wait_until(lambda: os.path.realpath(pane_info(inst, result["pane"])["cwd"]) == os.path.realpath(a_dir), 15,
+                   message="the agent's tab in A's folder")
+
+
+@pytest.mark.req("L-3")
+def test_focusing_another_pane_of_a_zoomed_tab_unzooms_it(inst, win):
+    """The focused pane is always one on screen."""
+    other = pane_info(inst, inst.cli("split", "right", "--pane", win["pane"]).stdout.strip())["id"]
+    inst.cli("pane", "zoom", win["pane"])
+    assert inst.find_pane(win["pane"])[1].get("zoomed_pane") == win["pane"]
+    inst.cli("pane", "focus", other)
+    tab = inst.find_pane(other)[1]
+    assert tab.get("zoomed_pane") is None and tab["focused_pane"] == other, tab
+
+
+@pytest.mark.req("L-6", "R-3")
+def test_a_panes_folder_is_right_without_shell_integration(target, tmp_path):
+    """Without shell integration the shell reports no folder: a pane's folder is its program's,
+    starting at the configured working-directory and following `cd`."""
+    start = tmp_path / "start"
+    start.mkdir()
+    custom = Target(target.path, dict(target.data, launch_args=list(target.launch_args)
+                                      + ["--shell-integration=none", f"--working-directory={start}"]))
+    inst = Instance(custom, prefix="acc-nosi-")
+    inst.start_app()
+    try:
+        pane = inst.json("window", "new")["pane"]
+        wait_until(lambda: os.path.realpath(pane_info(inst, pane)["cwd"] or "/") == os.path.realpath(start), 20,
+                   message="the configured working directory")
+        inst.cli("send", "--pane", pane, "-e", "cd /usr/bin")
+        wait_until(lambda: pane_info(inst, pane)["cwd"] == "/usr/bin", 10, message="the folder after cd")
+    finally:
+        inst.cleanup()

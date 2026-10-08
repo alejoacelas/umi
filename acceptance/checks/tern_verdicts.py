@@ -45,7 +45,7 @@ VERDICTS = {
            "so there is no Gatekeeper prompt. Seeing the app open on screen: NOT JUDGED (locked screen).",
     "L-9": "PASS for the menu side, checked without the accessibility tree: every shortcut is exactly one menu item "
            "with that key equivalent, and choosing ⌘B, ⇧⌘M, Undo/Redo and ⌘S does what it says "
-           "(app/macos/TernTests/verify_ui_paths.py, 39/39). The command palette lists the same actions "
+           "(app/macos/TernTests/verify_ui_paths.py, 43/43). The command palette lists the same actions "
            "(TernShortcuts.paletteOptions). Pressing the keys on a real keyboard: NOT JUDGED (locked screen). Steps: "
            "on a window with two tabs, one split, press each shortcut in CHECKS.md L-9. ⌃⌘J is phase 2.",
     "M-4": "NOT JUDGED: needs a person (drag). Steps: drag a pane by its grab handle onto another pane's edge, also in "
