@@ -48,8 +48,16 @@ keeps the leaf type and pane identity it relies on.
   `test_a_pane_that_exits_in_a_background_tab_is_removed`,
   `test_splitting_and_moving_in_a_background_tab_changes_no_focus`.
 - Undo of moves across tabs and windows restores trees and focus from snapshots that hold panes
-  weakly (undo never keeps a closed pane's process alive): `test_undo_redo_of_moves` (UI test;
-  see the report for whether it ran).
+  weakly (undo never keeps a closed pane's process alive). The restore runs in phases (resolve
+  every window, take placed panes out of other tabs once, then restore each window) so restoring
+  one window can't disturb another. `test_undo_redo_of_moves` is a UI test (skipped while the
+  screen was locked); `app/macos/TernTests/verify_ui_paths.py` checks undo and redo of a move
+  within a window and across windows through the Edit menu, without the accessibility tree.
+- Undo steps for CLI changes: AppKit closes its automatic undo group only after a UI event, so a
+  request that registered undo posts a harmless application-defined event. (Explicit groups were
+  tried and rejected: AppKit nests them in its automatic group, and an empty one clears the redo
+  stack; closing the automatic group by hand makes AppKit throw later. All three were reproduced
+  in a standalone program.)
 - Editor documents per tab: `test_open_modes_and_several_documents`,
   `test_edit_targets_the_calling_pane_and_never_falls_back`.
 

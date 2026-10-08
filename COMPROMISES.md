@@ -23,5 +23,5 @@ macOS then hides every window's accessibility tree, so the suite's six UI tests 
 `test_undo_redo_of_moves`, `test_toggle_shows_the_source`, `test_dirty_documents_are_not_closed_silently_and_save_works`,
 `test_follows_changes_on_disk`, `test_non_utf8_files_keep_their_encoding`) were skipped. The same
 behaviors were checked through Tern's internal `debug.*` control methods
-(`app/macos/TernTests/verify_ui_paths.py`, 29/29 checks pass), but the UI tests themselves need an
+(`app/macos/TernTests/verify_ui_paths.py`, 39/39 checks pass), but the UI tests themselves need an
 unlocked screen. See REPORT.md, "Questions for the user".

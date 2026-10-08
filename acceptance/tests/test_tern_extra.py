@@ -5,14 +5,18 @@ its instance from the state directory, and remembers which run of the app a pane
 These tests check the outcomes those choices put at risk. Black-box like the rest of the suite.
 """
 
+import json
 import os
 import subprocess
+import threading
 import time
 import uuid
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from harness import clean_env, frontmost_pid, wait_until
+from harness import clean_env, frontmost_pid, login_which, wait_until
 
 pytestmark = pytest.mark.layout
 
@@ -189,3 +193,37 @@ def test_editor_documents_follow_a_pane_out_of_its_dissolving_tab(inst, win, tmp
     inst.cli("pane", "move", pane, "--to", win["pane"], "--dir", "right", "--no-focus")
     docs = inst.json("editor", "ls", "--pane", pane)["documents"]
     assert any(os.path.realpath(d["path"]) == os.path.realpath(doc) for d in docs), docs
+
+
+@pytest.mark.req("IA-1", "IA-3")
+def test_an_agent_launched_into_a_new_window_gets_its_command(inst, win):
+    """A new window that takes focus shows on the next turn of the run loop; the agent's command
+    must still be typed into its pane, and the agent noted."""
+    if not login_which("claude"):
+        pytest.skip("claude is not on the login PATH")
+    result = inst.json("claude", "--window", "--", "--version")
+    inst.cli("wait", "--pane", result["pane"], "--pattern", r"\(Claude Code\)", "--timeout", "30")
+    agent = inst.find_pane(result["pane"])[2].get("interactive_agent") or {}
+    assert agent.get("kind") == "claude", agent
+    inst.cli("window", "close", inst.find_pane(result["pane"])[0]["id"], check=False)
+
+
+@pytest.mark.req("I-4")
+def test_a_feed_whose_version_isnt_a_version_is_refused(fresh, tmp_path):
+    """The feed's version isn't covered by the update's signature and names a folder on disk, so
+    anything but a plain dotted number is refused before it's used."""
+    root = tmp_path / "www"
+    root.mkdir()
+    (root / "appcast.json").write_text(json.dumps({
+        "product": "Tern", "version": "99/../../victim", "url": "Tern-99.zip", "size": 1,
+        "sha256": "00" * 32, "signature": "AAAA",
+    }))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(root)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        a = fresh(env={"TERN_FEED_URL": f"http://127.0.0.1:{server.server_address[1]}/appcast.json"})
+        proc = a.cli("update", "--check", check=False)
+        assert proc.returncode != 0, proc.stdout
+        assert "version" in (proc.stderr + proc.stdout), proc.stderr
+    finally:
+        server.shutdown()
