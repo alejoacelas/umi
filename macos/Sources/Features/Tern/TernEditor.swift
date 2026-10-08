@@ -643,9 +643,11 @@ struct TernEditorPanel: View {
                     }
                 }
             }
+            .clipped()
             Spacer(minLength: 8)
             if let doc = group.active, doc.isMarkdown {
                 TernModeToggle(doc: doc)
+                    .fixedSize()
             }
         }
         .padding(.horizontal, 10)

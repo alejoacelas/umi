@@ -12,7 +12,9 @@ enum TernInteractive {
         }
         guard let line = params.string("line"), !line.isEmpty else { throw TernError.badRequest("nothing to run") }
         var options = TernLayout.PaneOptions(params)
-        options.input = line + "\n"
+        // The command is typed once the shell is at its first prompt (below), like a person
+        // typing into a fresh terminal, not ahead of the shell starting.
+        options.input = nil
         options.command = nil
         let name = options.name
         let focus = params.bool("focus") ?? true
@@ -50,12 +52,34 @@ enum TernInteractive {
         if let paneID = result["pane"] as? String,
            let pane = TernTopology.allSurfaces.first(where: { $0.ternID == paneID }) {
             TernState.shared.setInteractiveAgent(pane.id, TernInteractiveAgent(kind: kind, commandLine: line, running: true))
+            typeWhenReady(line, into: pane)
             watch(pane)
             TernEvents.shared.emit("agent.interactive.started", ["pane": paneID, "kind": kind, "command": line])
         }
         var out = result
         out["command"] = line
         return out
+    }
+
+    /// Type the command when the shell is ready: its shell integration reports the folder at
+    /// the first prompt. Without shell integration, once something is on screen and the
+    /// shell is in the foreground (or after a few seconds regardless).
+    private static func typeWhenReady(_ line: String, into pane: Ghostty.SurfaceView) {
+        Task { @MainActor in
+            let start = Date()
+            while Date().timeIntervalSince(start) < 6 {
+                if pane.pwd != nil { break }
+                if Date().timeIntervalSince(start) > 2.5,
+                   !TernInput.read(pane, scrollback: false, lines: nil).isEmpty,
+                   let surface = pane.surface,
+                   TernProcess.isShell(pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))) {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            guard pane.surface != nil else { return }
+            try? await TernInput.send(text: line, to: pane, enter: true)
+        }
     }
 
     // MARK: Noticing the exit
