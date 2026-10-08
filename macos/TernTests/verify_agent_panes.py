@@ -59,6 +59,25 @@ def main():
         def pane_state(pane):
             return ctl.call("debug.agent.pane", pane=pane)
 
+        # L-9: ⌃⌘J is a menu item (one), and it shows and focuses the session that needs the user.
+        items = ctl.call("debug.menu")["items"]
+        jump = [i for i in items if i["key"].lower() == "j" and tuple(i["modifiers"]) == ("ctrl", "cmd")]
+        check("L-9 menu item for ctrl+cmd+j (jump to the agent that needs the user)", len(jump) == 1,
+              f"found {[m['title'] for m in jump]}")
+        waiting = start(inst, "claude", "ASK_QUESTIONS", "--background")
+        inst.wait(waiting)
+        if jump:
+            ctl.call("debug.menu.perform", title=jump[0]["title"])
+            shown = soon(lambda: inst.find_agent_pane(waiting), 10)
+            check("⌃⌘J shows the session that needs the user", shown)
+            if shown:
+                check("and focuses its pane", soon(lambda: inst.find_agent_pane(waiting)[1]["focused_pane"] ==
+                                                   inst.find_agent_pane(waiting)[2]["id"], 5))
+                inst.cli("pane", "close", inst.find_agent_pane(waiting)[2]["id"], check=False)
+        inst.cli("agent", "stop", waiting, check=False)
+        inst.cli("window", "focus", win["window"])
+        inst.cli("tab", "focus", win["tab"])
+
         # AP-1: a follow-up typed into the pane and Enter sends it (both harnesses).
         for kind in ("claude", "codex"):
             secret = "reply-" + nonce()

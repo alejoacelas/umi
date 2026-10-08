@@ -652,16 +652,23 @@ struct TernEditorPanel: View {
 
     private var header: some View {
         HStack(spacing: 2) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(group.documents) { doc in
-                        TernEditorTabChip(doc: doc, selected: doc === group.active,
-                                          select: { group.active = doc },
-                                          close: { TernEditor.confirmClose(doc, in: group, window: nil) })
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 2) {
+                        ForEach(group.documents) { doc in
+                            TernEditorTabChip(doc: doc, selected: doc === group.active,
+                                              select: { group.active = doc },
+                                              close: { TernEditor.confirmClose(doc, in: group, window: nil) })
+                                .id(doc.id)
+                        }
                     }
                 }
+                .clipped()
+                // The active file's tab is always in view, however narrow the panel.
+                .onAppear { scrollToActive(proxy) }
+                .onChange(of: group.active?.id) { _ in scrollToActive(proxy) }
+                .onChange(of: group.documents.count) { _ in scrollToActive(proxy) }
             }
-            .clipped()
             Spacer(minLength: 8)
             if let doc = group.active, doc.isMarkdown {
                 TernModeToggle(doc: doc)
@@ -670,6 +677,13 @@ struct TernEditorPanel: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
+    }
+
+    private func scrollToActive(_ proxy: ScrollViewProxy) {
+        guard let id = group.active?.id else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
+        }
     }
 }
 

@@ -107,8 +107,30 @@ final class TernHarnessProcess: @unchecked Sendable {
     // MARK: Writing
 
     /// Write one line (a newline is added). False if the harness can't take input any more.
+    /// `TERN_AGENT_TRACE=<folder>` (on the app): every line to and from harnesses is appended
+    /// to `<folder>/<pid>.jsonl`, for debugging a protocol exchange.
+    private static let traceFolder = ProcessInfo.processInfo.environment["TERN_AGENT_TRACE"].flatMap { $0.isEmpty ? nil : $0 }
+    private lazy var traceFD: Int32 = {
+        guard let folder = Self.traceFolder else { return -1 }
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        return open("\(folder)/\(pid).jsonl", O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0o600)
+    }()
+    private let traceLock = NSLock()
+
+    func trace(_ direction: String, _ line: Data) {
+        guard Self.traceFolder != nil else { return }
+        traceLock.lock()
+        defer { traceLock.unlock() }
+        guard traceFD >= 0 else { return }
+        var record = Data("{\"t\":\(Date().timeIntervalSince1970),\"k\":\"\(direction)\",\"m\":".utf8)
+        record.append(line.prefix(64 * 1024))
+        record.append(contentsOf: Array("}\n".utf8))
+        record.withUnsafeBytes { _ = Darwin.write(traceFD, $0.baseAddress!, $0.count) }
+    }
+
     @discardableResult
     func writeLine(_ data: Data) -> Bool {
+        trace("in", data)
         writeLock.lock()
         defer { writeLock.unlock() }
         guard !stdinClosed else { return false }
@@ -174,7 +196,10 @@ final class TernHarnessProcess: @unchecked Sendable {
                 var start = buffer.startIndex
                 while let newline = buffer[start...].firstIndex(of: 0x0A) {
                     let line = buffer[start..<newline]
-                    if !line.isEmpty { self?.onLine(Data(line)) }
+                    if !line.isEmpty {
+                        self?.trace("out", Data(line))
+                        self?.onLine(Data(line))
+                    }
                     start = buffer.index(after: newline)
                 }
                 if start != buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }

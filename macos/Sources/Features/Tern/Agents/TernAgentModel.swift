@@ -246,9 +246,10 @@ enum TernJSONValue: Codable {
     init(_ any: Any?) {
         switch any {
         case nil, is NSNull: self = .null
-        case let b as Bool where type(of: b) == Bool.self: self = .bool(b)
+        // NSNumber first: a JSON 0 or 1 also casts to Bool, and a request id of 0 must stay 0.
         case let n as NSNumber:
             if CFGetTypeID(n) == CFBooleanGetTypeID() { self = .bool(n.boolValue) } else { self = .number(n.doubleValue) }
+        case let b as Bool: self = .bool(b)
         case let s as String: self = .string(s)
         case let a as [Any]: self = .array(a.map { TernJSONValue($0) })
         case let d as [String: Any]: self = .object(d.mapValues { TernJSONValue($0) })
