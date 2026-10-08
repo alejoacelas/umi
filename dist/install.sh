@@ -14,10 +14,11 @@
 #   TERN_INSTALL_BIN=DIR            where `tern` is linked (default ~/.local/bin)
 #   TERN_INSTALL_NO_DEFAULT=1       don't make Tern the default app for Markdown
 #   TERN_INSTALL_NO_LAUNCH=1        don't open Tern afterwards
+#   TERN_INSTALL_FEED=URL           the release feed to install from (default: the latest release)
 set -euo pipefail
 
 repo="alejoacelas/tern"
-feed="https://github.com/$repo/releases/latest/download/appcast.json"
+feed="${TERN_INSTALL_FEED:-https://github.com/$repo/releases/latest/download/appcast.json}"
 from=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -52,7 +53,7 @@ else
     version="$(plutil -extract version raw -o - "$work/appcast.json" 2>/dev/null)" || die "the release feed is unreadable"
     url="$(plutil -extract url raw -o - "$work/appcast.json")"
     sha256="$(plutil -extract sha256 raw -o - "$work/appcast.json")"
-    say "Downloading Tern $version…"
+    say "Downloading Tern ${version}…"
     curl -fsSL "$url" -o "$work/Tern.zip" || die "couldn't download $url"
     actual="$(shasum -a 256 "$work/Tern.zip" | awk '{print $1}')"
     [[ "$actual" == "$sha256" ]] || die "the download doesn't match the release's checksum"
