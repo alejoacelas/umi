@@ -64,6 +64,11 @@ extension Ghostty {
                 return nil
             }
 
+            // Tern: our defaults load first so the user's Ghostty config overrides them.
+            if path == nil, let defaults = TernTheme.defaultsConfigPath() {
+                ghostty_config_load_file(cfg, defaults)
+            }
+
             // Load our configuration from files, CLI args, and then any referenced files.
             if let path {
                 ghostty_config_load_file(cfg, path)

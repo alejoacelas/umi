@@ -1901,6 +1901,54 @@ pub const CAPI = struct {
         return readTextLocked(surface, core_sel, result);
     }
 
+    /// Like ghostty_surface_read_text, but only program output: cells the
+    /// shell marked as its prompt or as typed input (semantic prompts, OSC
+    /// 133) are left out. Line breaks are kept. Without shell integration
+    /// every cell is output, so this reads the same as read_text.
+    export fn ghostty_surface_read_output_text(
+        surface: *Surface,
+        sel: Selection,
+        result: *Text,
+    ) bool {
+        surface.core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer surface.core_surface.renderer_state.mutex.unlock(global.io());
+
+        const screen = surface.core_surface.renderer_state.terminal.screens.active;
+        const core_sel = sel.core(screen) orelse return false;
+        const alloc = global.alloc();
+
+        const map = screen.selectionStringMap(alloc, .{
+            .sel = core_sel,
+            .trim = false,
+        }) catch |err| {
+            log.warn("error reading output text err={}", .{err});
+            return false;
+        };
+        defer map.deinit(alloc);
+
+        var out: std.ArrayList(u8) = .empty;
+        defer out.deinit(alloc);
+        out.ensureTotalCapacity(alloc, map.string.len + 1) catch return false;
+        for (map.string, 0..) |byte, i| {
+            if (byte != '\n') {
+                const pin = map.map.get(i) orelse continue;
+                if (pin.rowAndCell().cell.semantic_content != .output) continue;
+            }
+            out.appendAssumeCapacity(byte);
+        }
+
+        const text = out.toOwnedSliceSentinel(alloc, 0) catch return false;
+        result.* = .{
+            .tl_px_x = -1,
+            .tl_px_y = -1,
+            .offset_start = 0,
+            .offset_len = 0,
+            .text = text.ptr,
+            .text_len = text.len,
+        };
+        return true;
+    }
+
     fn readTextLocked(
         surface: *Surface,
         core_sel: terminal.Selection,

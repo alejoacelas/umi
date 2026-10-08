@@ -247,18 +247,33 @@ class BaseTerminalController: NSWindowController,
     /// view relationship.
     static func controller(owning surface: Ghostty.SurfaceView) -> BaseTerminalController? {
         if let controller = surfaceControllers.object(forKey: surface),
-           controller.surfaceTree.contains(surface) {
+           controller.ownsSurface(surface) {
             return controller
         }
 
         if let controller = surface.window?.windowController as? BaseTerminalController,
-           controller.surfaceTree.contains(surface) {
+           controller.ownsSurface(surface) {
             return controller
         }
 
         return NSApp.windows
             .compactMap { $0.windowController as? BaseTerminalController }
-            .first { $0.surfaceTree.contains(surface) }
+            .first { $0.ownsSurface(surface) }
+    }
+
+    /// Whether a surface belongs to this controller, shown or not. Tern windows have
+    /// tabs whose panes aren't in the visible `surfaceTree`.
+    func ownsSurface(_ surface: Ghostty.SurfaceView) -> Bool {
+        surfaceTree.contains(surface)
+    }
+
+    /// What a tree change belongs to, so undo can put it back in the right place even
+    /// after the window switched to showing something else (Tern: the tab).
+    func undoTreeOwner() -> AnyObject? { nil }
+
+    /// Put back a tree from undo. Tern windows apply it to the tab it came from.
+    func restoreUndoTree(_ tree: SplitTree<Ghostty.SurfaceView>, owner: AnyObject?) {
+        surfaceTree = tree
     }
 
     private static func updateSurfaceControllers(
@@ -343,6 +358,7 @@ class BaseTerminalController: NSWindowController,
             focusedSurface = nil
         }
         syncSurfaceTreeOcclusionState()
+        TernState.shared.layoutDidChange()
     }
 
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
@@ -545,6 +561,7 @@ class BaseTerminalController: NSWindowController,
     ) {
         // Setup our new split tree
         let oldTree = surfaceTree
+        let owner = undoTreeOwner()
         surfaceTree = newTree
         if let newView {
             DispatchQueue.main.async {
@@ -562,7 +579,7 @@ class BaseTerminalController: NSWindowController,
             withTarget: self,
             expiresAfter: undoExpiration
         ) { target in
-            target.surfaceTree = oldTree
+            target.restoreUndoTree(oldTree, owner: owner)
             if let oldView {
                 DispatchQueue.main.async {
                     Ghostty.moveFocus(to: oldView, from: target.focusedSurface)
@@ -1173,22 +1190,8 @@ class BaseTerminalController: NSWindowController,
     }
 
     func defaultUpdateOverlayVisibility() -> Bool {
-        guard let window else { return true }
-
-        // No titlebar we always show the update overlay because it can't support
-        // updates in the titlebar
-        guard window.styleMask.contains(.titled) else {
-            return true
-        }
-
-        // If it's a non terminal window we can't trust it has an update accessory,
-        // so we always want to show the overlay.
-        guard let window = window as? TerminalWindow else {
-            return true
-        }
-
-        // Show the overlay if the window isn't.
-        return !window.supportsUpdateAccessory
+        // Tern shows update state in the sidebar, never as an overlay.
+        false
     }
 
     // MARK: NSWindowDelegate
@@ -1282,7 +1285,7 @@ class BaseTerminalController: NSWindowController,
         syncSurfaceTreeOcclusionState()
     }
 
-    private func syncSurfaceTreeOcclusionState() {
+    func syncSurfaceTreeOcclusionState() {
         let visible = self.window?.occlusionState.contains(.visible) ?? false
         for view in surfaceTree {
             if let surface = view.surface, view.isWindowVisible != visible {

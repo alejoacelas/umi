@@ -2,6 +2,15 @@ import AppKit
 import Cocoa
 import GhosttyKit
 
+// Tern: terminals must not inherit another agent's session markers or another Tern pane's
+// identity from whatever launched the app. This runs before ghostty_init, which captures
+// the process environment.
+TernEnvironment.scrubInherited()
+
+// Tern: one instance per state directory (P-3). A second launch hands over to the first
+// and exits before creating anything.
+TernSingleInstance.acquireOrExit()
+
 // Initialize Ghostty global state. We do this once right away because the
 // CLI APIs require it and it lets us ensure it is done immediately for the
 // rest of the app.

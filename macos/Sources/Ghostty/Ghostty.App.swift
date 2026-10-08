@@ -1644,6 +1644,15 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
 
+                // Tern: a command in this pane ended (shell integration). Notes the exit
+                // of an agent launched as typed, and finishes the sidebar's command line.
+                TernCommandLog.shared.commandFinished(surfaceView.id)
+                let exitCode = Int(v.exit_code)
+                DispatchQueue.main.async {
+                    TernInteractive.commandFinished(surfaceView, exitCode: exitCode >= 0 ? exitCode : nil)
+                    TernState.shared.layoutDidChange()
+                }
+
                 // Determine if we even care about command finish notifications
                 guard let config = (NSApplication.shared.delegate as? AppDelegate)?.ghostty.config else { return }
                 switch config.notifyOnCommandFinish {
@@ -1820,6 +1829,9 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 guard let title = String(cString: v.title!, encoding: .utf8) else { return }
+                // Tern: every title change is the running (or finished) command, for the
+                // sidebar, recorded before the display debounce so instant commands count.
+                TernCommandLog.shared.recordTitle(surfaceView.id, title)
                 surfaceView.setTitle(title)
 
             default:

@@ -95,13 +95,9 @@ class TerminalWindow: NSWindow {
             self.configureTabContextMenuIfNeeded(menu)
         }
 
-        // This is required so that window restoration properly creates our tabs
-        // again. I'm not sure why this is required. If you don't do this, then
-        // tabs restore as separate windows.
-        tabbingMode = .preferred
-        DispatchQueue.main.async {
-            self.tabbingMode = .automatic
-        }
+        // Tern keeps its own tabs; AppKit must never group windows into native tabs
+        // (a new window always stays a separate window, M-6).
+        tabbingMode = .disallowed
 
         // All new windows are based on the app config at the time of creation.
         guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
@@ -144,16 +140,6 @@ class TerminalWindow: NSWindow {
             addTitlebarAccessoryViewController(resetZoomAccessory)
             resetZoomAccessory.view.translatesAutoresizingMaskIntoConstraints = false
 
-            // Create update notification accessory
-            if supportsUpdateAccessory {
-                updateAccessory.layoutAttribute = .right
-                updateAccessory.view = NonDraggableHostingView(rootView: UpdateAccessoryView(
-                    viewModel: viewModel,
-                    model: appDelegate.updateViewModel
-                ))
-                addTitlebarAccessoryViewController(updateAccessory)
-                updateAccessory.view.translatesAutoresizingMaskIntoConstraints = false
-            }
         }
 
         // Setup the accessory view for tabs that shows our keyboard shortcuts,
@@ -247,8 +233,8 @@ class TerminalWindow: NSWindow {
 
         // It takes an event loop cycle to merge all the windows so we set a
         // short timer to relabel the tabs (issue #1902)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.terminalController?.relabelTabs()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            TernState.shared.layoutDidChange()
         }
     }
 
@@ -719,17 +705,7 @@ extension TerminalWindow {
     }
 
     /// A pill-shaped button that displays update status and provides access to update actions.
-    struct UpdateAccessoryView: View {
-        @ObservedObject var viewModel: ViewModel
-        @ObservedObject var model: UpdateViewModel
 
-        var body: some View {
-            // We use the same top/trailing padding so that it hugs the same.
-            UpdatePill(model: model)
-                .padding(.top, viewModel.accessoryTopPadding)
-                .padding(.trailing, viewModel.accessoryTopPadding)
-        }
-    }
 
 }
 

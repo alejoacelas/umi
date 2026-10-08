@@ -384,7 +384,11 @@ extension Ghostty {
             ) { [weak self] event in self?.localEventHandler(event) }
 
             // Setup our surface. This will also initialize all the terminal IO.
-            let surface_cfg = baseConfig ?? SurfaceConfiguration()
+            var surface_cfg = baseConfig ?? SurfaceConfiguration()
+
+            // Tern: programs in this pane can find this instance and their own pane
+            // (the CLI defaults to "this pane").
+            surface_cfg.environmentVariables.merge(TernEnvironment.paneVariables(paneID: self.id)) { _, new in new }
             let surface = surface_cfg.withCValue(view: self) { surface_cfg_c in
                 ghostty_surface_new(app, &surface_cfg_c)
             }

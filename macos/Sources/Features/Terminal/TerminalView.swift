@@ -58,6 +58,16 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     @FocusedValue(\.ghosttySurfacePwd) private var surfacePwd
     @FocusedValue(\.ghosttySurfaceCellSize) private var cellSize
 
+    // Tern: the sidebar and editor around a window's terminals.
+    @ObservedObject private var ternState = TernState.shared
+
+    /// The focused terminal's initial size plus the sidebar.
+    private var idealContentSize: CGSize? {
+        guard let initial = lastFocusedSurface?.value?.initialSize else { return nil }
+        let chrome = TernTheme.chromeSize(sidebar: ternState.sidebarVisible && viewModel is TerminalController)
+        return CGSize(width: initial.width + chrome.width, height: initial.height + chrome.height)
+    }
+
     // The pwd of the focused surface as a URL
     private var pwdURL: URL? {
         guard let surfacePwd, surfacePwd != "" else { return nil }
@@ -72,54 +82,45 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
             ErrorView()
         case .ready:
             ZStack {
-                VStack(spacing: 0) {
-                    // If we're running in debug mode we show a warning so that users
-                    // know that performance will be degraded.
-                    if Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE {
-                        DebugBuildWarningView()
-                    }
+                GeometryReader { geometry in
+                    // The window's content runs under the titlebar: the sidebar spans the
+                    // full height and the terminals start below the titlebar band.
+                    let topInset = geometry.safeAreaInsets.top
+                    let controller = viewModel as? TerminalController
+                    let _ = TernTheme.adopt(background: ghostty.config.backgroundColor)
 
-                    TerminalSplitTreeView(
-                        tree: viewModel.surfaceTree,
-                        action: { delegate?.performSplitAction($0) })
-                        .environmentObject(ghostty)
-                        .ghosttyLastFocusedSurface(lastFocusedSurface)
-                        .focused($focused)
-                        .onAppear { self.focused = true }
-                        .onChange(of: focusedSurface) { newValue in
-                            // We want to keep track of our last focused surface so even if
-                            // we lose focus we keep this set to the last non-nil value.
-                            if newValue != nil {
-                                lastFocusedSurface = .init(newValue)
-                                self.delegate?.focusedSurfaceDidChange(to: newValue)
+                    HStack(spacing: 0) {
+                        if ternState.sidebarVisible, let controller {
+                            TernSidebar(controller: controller, topInset: topInset)
+                                .frame(width: TernTheme.sidebarWidth)
+                                .transition(.move(edge: .leading))
+                        }
+
+                        Group {
+                            if let controller {
+                                TernEditorSplit(group: controller.selectedTab.editor,
+                                                background: ghostty.config.backgroundColor) {
+                                    terminals
+                                }
+                                .id(controller.selectedTab.id)
+                            } else {
+                                terminals
                             }
                         }
-                        .onChange(of: pwdURL) { newValue in
-                            self.delegate?.pwdDidChange(to: newValue)
-                        }
-                        .onChange(of: cellSize) { newValue in
-                            guard let size = newValue else { return }
-                            self.delegate?.cellSizeDidChange(to: size)
-                        }
-                        .frame(idealWidth: lastFocusedSurface?.value?.initialSize?.width,
-                               idealHeight: lastFocusedSurface?.value?.initialSize?.height)
+                        .padding(.top, topInset)
+                    }
+                    .animation(.easeInOut(duration: 0.16), value: ternState.sidebarVisible)
+                    .ignoresSafeArea(.container, edges: .top)
                 }
-                // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
-                .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == .hidden ? .top : [])
+                .frame(idealWidth: idealContentSize?.width, idealHeight: idealContentSize?.height)
 
                 if let surfaceView = lastFocusedSurface?.value {
                     TerminalCommandPaletteView(
                         surfaceView: surfaceView,
                         isPresented: $viewModel.commandPaletteIsShowing,
-                        ghosttyConfig: ghostty.config,
-                        updateViewModel: (NSApp.delegate as? AppDelegate)?.updateViewModel) { action in
+                        ghosttyConfig: ghostty.config) { action in
                         self.delegate?.performAction(action, on: surfaceView)
                     }
-                }
-
-                // Show update information above all else.
-                if viewModel.updateOverlayIsVisible {
-                    UpdateOverlay()
                 }
             }
             .frame(maxWidth: .greatestFiniteMagnitude, maxHeight: .greatestFiniteMagnitude)
@@ -127,19 +128,41 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     }
 }
 
-private struct UpdateOverlay: View {
-    var body: some View {
-        if let appDelegate = NSApp.delegate as? AppDelegate {
-            VStack {
-                Spacer()
-
-                HStack {
-                    Spacer()
-                    UpdatePill(model: appDelegate.updateViewModel)
-                        .padding(.bottom, 9)
-                        .padding(.trailing, 9)
-                }
+extension TerminalView {
+    /// The split tree of terminals (and the debug-build banner).
+    @ViewBuilder
+    fileprivate var terminals: some View {
+        VStack(spacing: 0) {
+            // If we're running in debug mode we show a warning so that users
+            // know that performance will be degraded.
+            if Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE {
+                DebugBuildWarningView()
             }
+
+            TerminalSplitTreeView(
+                tree: viewModel.surfaceTree,
+                action: { delegate?.performSplitAction($0) })
+                .environmentObject(ghostty)
+                .ghosttyLastFocusedSurface(lastFocusedSurface)
+                .focused($focused)
+                .onAppear { self.focused = true }
+                .onChange(of: focusedSurface) { newValue in
+                    // We want to keep track of our last focused surface so even if
+                    // we lose focus we keep this set to the last non-nil value.
+                    if newValue != nil {
+                        lastFocusedSurface = .init(newValue)
+                        self.delegate?.focusedSurfaceDidChange(to: newValue)
+                    }
+                }
+                .onChange(of: pwdURL) { newValue in
+                    self.delegate?.pwdDidChange(to: newValue)
+                }
+                .onChange(of: cellSize) { newValue in
+                    guard let size = newValue else { return }
+                    self.delegate?.cellSizeDidChange(to: size)
+                }
+                .frame(idealWidth: lastFocusedSurface?.value?.initialSize?.width,
+                       idealHeight: lastFocusedSurface?.value?.initialSize?.height)
         }
     }
 }

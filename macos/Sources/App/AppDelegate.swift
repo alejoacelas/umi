@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import UserNotifications
 import OSLog
-import Sparkle
 import GhosttyKit
 
 class AppDelegate: NSObject,
@@ -148,11 +147,8 @@ class AppDelegate: NSObject,
         }
     }
 
-    /// Manages updates
-    let updateController = UpdateController()
-    var updateViewModel: UpdateViewModel {
-        updateController.viewModel
-    }
+    /// Tern's updater (Ghostty's Sparkle updater, which points at Ghostty's feed, is gone).
+    var updater: TernUpdater { TernUpdater.shared }
 
     /// The elapsed time since the process was started
     var timeSinceLaunch: TimeInterval {
@@ -209,6 +205,10 @@ class AppDelegate: NSObject,
             // Manual autofill via the `Edit => AutoFill` menu item still work as expected.
             "NSAutoFillHeuristicControllerEnabled": false,
         ])
+
+        // Tern: the control socket comes up before any window exists, so panes created
+        // during restoration can already be reached.
+        TernControlServer.shared.start()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -229,8 +229,13 @@ class AppDelegate: NSObject,
         // Initial config loading
         ghosttyConfigDidChange(config: ghostty.config)
 
-        // Start our update checker.
-        updateController.startUpdater()
+        // Tern: menus, saved state and updates.
+        TernShortcuts.install()
+        TernPersistence.shared.restoreUI()
+        undoManager.disableUndoRegistration()
+        TernPersistence.shared.restoreLayout()
+        undoManager.enableUndoRegistration()
+        TernUpdater.shared.startBackgroundChecks()
 
         // Register our service provider. This must happen after everything is initialized.
         NSApp.servicesProvider = ServiceProvider()
@@ -391,7 +396,18 @@ class AppDelegate: NSObject,
 
         // If we've already accepted to install an update, then we don't need to
         // confirm quit. The user is already expecting the update to happen.
-        if updateController.shouldTerminateWithoutWarning {
+        if TernUpdater.shared.isQuittingForUpdate {
+            return .terminateNow
+        }
+
+        // Tern: a quit asked for by another process (a script, an installer, the Dock)
+        // is deliberate: no dialog. Edits in the editor are saved or kept as recovery
+        // copies at termination, and the layout is saved continuously. Quitting with ⌘Q
+        // inside the app still asks when programs are running.
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           event.eventID == kAEQuitApplication,
+           let sender = event.attributeDescriptor(forKeyword: keySenderPIDAttr)?.int32Value,
+           sender != getpid() {
             return .terminateNow
         }
 
@@ -420,6 +436,8 @@ class AppDelegate: NSObject,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        TernAppLifecycle.willTerminate()
+
         // We have no notifications we want to persist after death,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.
@@ -488,6 +506,11 @@ class AppDelegate: NSObject,
         var isDirectory = ObjCBool(true)
         guard FileManager.default.fileExists(atPath: filename, isDirectory: &isDirectory) else { return false }
 
+        // Tern: Markdown and text files open in the editor (I-3).
+        if !isDirectory.boolValue, TernEditor.handles(URL(fileURLWithPath: filename)) {
+            return TernEditor.openFromSystem(URL(fileURLWithPath: filename))
+        }
+
         // Set to true if confirmation is required before starting up the
         // new terminal.
         var requiresConfirm: Bool = false
@@ -529,7 +552,7 @@ class AppDelegate: NSObject,
             // may want to show this as a sheet on the focused window (especially if we're
             // opening a tab). I'm not sure.
             let alert = NSAlert()
-            alert.messageText = "Allow Ghostty to execute \"\(filename)\"?"
+            alert.messageText = "Allow Tern to execute \"\(filename)\"?"
             alert.addButton(withTitle: "Allow")
             alert.addButton(withTitle: "Cancel")
             alert.alertStyle = .warning
@@ -581,6 +604,17 @@ class AppDelegate: NSObject,
 
         // We need to keep a strong reference to it so it isn't disabled.
         signals.append(sigusr2)
+
+        // Tern: the system (or a script) asking us to quit with SIGTERM saves state,
+        // keeps editor edits, installs a staged update, then exits.
+        signal(SIGTERM, SIG_IGN)
+        let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        sigterm.setEventHandler {
+            MainActor.assumeIsolated { TernAppLifecycle.willTerminate() }
+            exit(0)
+        }
+        sigterm.resume()
+        signals.append(sigterm)
     }
 
     // MARK: Notifications and Events
@@ -680,7 +714,6 @@ class AppDelegate: NSObject,
 
     @MainActor @objc private func keyboardSelectionDidChange(_ notification: Notification) {
         syncMenuShortcuts(ghostty.config)
-        TerminalController.all.forEach { $0.relabelTabs() }
     }
 
     @objc private func ghosttyBellDidRing(_ notification: Notification) {
@@ -792,40 +825,14 @@ class AppDelegate: NSObject,
         // Depending on the "window-save-state" setting we have to set the NSQuitAlwaysKeepsWindows
         // configuration. This is the only way to carefully control whether macOS invokes the
         // state restoration system.
-        switch config.windowSaveState {
-        case "never": UserDefaults.ghostty.setValue(false, forKey: "NSQuitAlwaysKeepsWindows")
-        case "always": UserDefaults.ghostty.setValue(true, forKey: "NSQuitAlwaysKeepsWindows")
-        case "default": fallthrough
-        default: UserDefaults.ghostty.removeObject(forKey: "NSQuitAlwaysKeepsWindows")
-        }
-
-        // Sync our auto-update settings. If SUEnableAutomaticChecks (in our Info.plist) is
-        // explicitly false (NO), auto-updates are disabled. Otherwise, we use the behavior
-        // defined by our "auto-update" configuration (if set) or fall back to Sparkle
-        // user-based defaults.
-        if Bundle.main.infoDictionary?["SUEnableAutomaticChecks"] as? Bool == false {
-            updateController.updater.automaticallyChecksForUpdates = false
-            updateController.updater.automaticallyDownloadsUpdates = false
-        } else if let autoUpdate = config.autoUpdate {
-            updateController.updater.automaticallyChecksForUpdates =
-                autoUpdate == .check || autoUpdate == .download
-            updateController.updater.automaticallyDownloadsUpdates =
-                autoUpdate == .download
-            /*
-             To test `auto-update` easily, uncomment the line below and
-             delete `SUEnableAutomaticChecks` in Ghostty-Info.plist.
-
-             Note: When `auto-update = download`, you may need to
-             `Clean Build Folder` if a background install has already begun.
-             */
-            // updateController.updater.checkForUpdatesInBackground()
-        }
+        // Tern restores windows from its own state directory, never through AppKit's
+        // saved state (shared by every copy of the same bundle id).
+        UserDefaults.ghostty.setValue(false, forKey: "NSQuitAlwaysKeepsWindows")
 
         // Config could change keybindings, so update everything that depends on that
         DispatchQueue.main.async {
             self.syncMenuShortcuts(config)
         }
-        TerminalController.all.forEach { $0.relabelTabs() }
 
         // Update our badge since config can change what we show.
         syncDockBadge()
@@ -982,8 +989,12 @@ class AppDelegate: NSObject,
     }
 
     @IBAction func checkForUpdates(_ sender: Any?) {
-        updateController.checkForUpdates()
-        // UpdateSimulator.happyPath.simulate(with: updateViewModel)
+        TernUpdater.shared.checkFromMenu()
+    }
+
+    /// Quit to install an update the user asked for: no confirmations.
+    func terminateForUpdate() {
+        NSApp.terminate(nil)
     }
 
     @IBAction func newWindow(_ sender: Any?) {
