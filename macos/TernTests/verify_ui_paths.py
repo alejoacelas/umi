@@ -24,6 +24,14 @@ from harness import Instance, Target, wait_until  # noqa: E402
 results = []
 
 
+def soon(predicate, timeout):
+    """The predicate's value once true, or False after the timeout (without raising)."""
+    try:
+        return wait_until(predicate, timeout)
+    except AssertionError:
+        return False
+
+
 def check(name, condition, detail=""):
     results.append((name, bool(condition), detail))
     print(("PASS " if condition else "FAIL ") + name + (f" ({detail})" if detail and not condition else ""))
@@ -99,8 +107,7 @@ def main():
         inst.cli("pane", "focus", win["pane"])
         time.sleep(0.4)
         ctl.call("debug.menu.perform", title="Undo")
-        ok = wait_until(lambda: inst.find_pane(right) and inst.find_pane(right)[1]["id"] == win["tab"], 5,
-                        message="undo") if True else False
+        ok = soon(lambda: inst.find_pane(right) and inst.find_pane(right)[1]["id"] == win["tab"], 5)
         w = next(w for w in inst.tree()["windows"] if w["id"] == win["window"])
         tab = next(t for t in w["tabs"] if t["id"] == win["tab"])
         check("M-3 undo puts the pane back", bool(ok) and len(w["tabs"]) == 1)
@@ -251,7 +258,7 @@ def main():
         time.sleep(0.4)
         check("closing a pane in a hidden tab removes it", not inst.find_pane(h2))
         ctl.call("debug.menu.perform", title="Undo")
-        ok = wait_until(lambda: bool(inst.find_pane(h2)), 5, message="undo hidden close") if True else False
+        ok = soon(lambda: bool(inst.find_pane(h2)), 5)
         check("undo brings back a pane closed in a hidden tab", ok and inst.find_pane(h2)[1]["id"] == h["tab"])
         marker = "HIDDEN-%d" % time.time()
         inst.cli("send", "--pane", h2, "-e", f"echo {marker}", check=False)
@@ -273,6 +280,34 @@ def main():
         ctl.call("debug.menu.perform", title="Redo")
         time.sleep(0.4)
         check("redoing New Tab opens it again", tab_count() == before + 1)
+
+        # Undo and Redo of a split made in a hidden tab bring the same pane back.
+        hidden_tab = h["tab"]
+        s = inst.cli("split", "down", "--pane", h["pane"], "--no-focus").stdout.strip()
+        s_id = inst.json("pane", "info", s)["id"]
+        time.sleep(0.4)
+        ctl.call("debug.menu.perform", title="Undo")
+        time.sleep(0.4)
+        check("undo of a split removes the new pane", not inst.find_pane(s_id))
+        ctl.call("debug.menu.perform", title="Redo")
+        ok = soon(lambda: bool(inst.find_pane(s_id)), 5)
+        check("redo of a split brings the same pane back", ok and inst.find_pane(s_id)[1]["id"] == hidden_tab)
+
+        # A program running in a hidden tab makes closing the window (and quitting) ask first.
+        q = inst.json("window", "new", "--name", "confirm")
+        wait_until(lambda: inst.cli("read", "--pane", q["pane"], check=False).stdout.strip() != "", 20)
+        busy = inst.json("tab", "new", "--window", q["window"])
+        wait_until(lambda: inst.cli("read", "--pane", busy["pane"], check=False).stdout.strip() != "", 20)
+        time.sleep(0.5)
+        inst.cli("send", "--pane", busy["pane"], "-e", "sleep 90")
+        inst.cli("tab", "focus", q["tab"])
+
+        def needs_confirmation():
+            return next(w for w in ctl.call("debug.confirm")["windows"] if w["window"] == q["window"])["needs_confirmation"]
+
+        ok = soon(needs_confirmation, 10)
+        check("a program in a hidden tab makes closing the window ask", ok)
+        inst.cli("keys", "--pane", busy["pane"], "ctrl+c", check=False)
     finally:
         inst.cleanup()
 

@@ -163,9 +163,8 @@ enum TernLayout {
                 view.sizeDidChange(view.frame.size)
             }
         }
-        undoable("New Split", windows: [window]) {
-            window.setTree(newTree, for: tab)
-        }
+        // Undo holds the new pane for the undo interval, so Redo can bring it back.
+        window.replaceTree(newTree, for: tab, undoAction: "New Split")
         if focus {
             focusPane(view, activate: true)
         }

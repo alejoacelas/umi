@@ -49,8 +49,10 @@ enum TernInteractive {
             }
         }
 
+        // A new window shows on the next turn of the run loop, so TernTopology doesn't list
+        // it yet: look the pane up in every window.
         if let paneID = result["pane"] as? String,
-           let pane = TernTopology.allSurfaces.first(where: { $0.ternID == paneID }) {
+           let pane = TerminalController.all.lazy.flatMap(\.allSurfaces).first(where: { $0.ternID == paneID }) {
             TernState.shared.setInteractiveAgent(pane.id, TernInteractiveAgent(kind: kind, commandLine: line, running: true))
             typeWhenReady(line, into: pane)
             watch(pane)

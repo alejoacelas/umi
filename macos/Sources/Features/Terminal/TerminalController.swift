@@ -763,7 +763,12 @@ class TerminalController: BaseTerminalController {
     /// for the undo interval, as closing a visible pane does.
     func replaceTree(_ newTree: SplitTree<Ghostty.SurfaceView>, for tab: TernTab, undoAction: String) {
         let oldTree = tree(of: tab)
+        let lostFocus = tab === selectedTabStorage && focusedSurface.map { !newTree.contains($0) } ?? false
         setTree(newTree, for: tab)
+        // The focused pane went away (an undone split): focus moves to one that's left.
+        if lostFocus, let next = tab.focusedSurface.flatMap({ newTree.contains($0) ? $0 : nil }) ?? newTree.root?.leaves().first {
+            DispatchQueue.main.async { Ghostty.moveFocus(to: next) }
+        }
         guard let undoManager else { return }
         undoManager.setActionName(undoAction)
         undoManager.registerUndo(withTarget: self, expiresAfter: undoExpiration) { target in
@@ -1216,6 +1221,13 @@ class TerminalController: BaseTerminalController {
         window.setFrame(frame, display: true)
         window.constrainToScreen()
         return true
+    }
+
+    /// Every tab counts, not only the shown one: a program running in a hidden tab needs the
+    /// same confirmation before the window closes or the app quits.
+    override func windowCanBeClosedWithoutConfirmation() -> Bool {
+        guard super.windowCanBeClosedWithoutConfirmation() else { return false }
+        return !allSurfaces.contains { $0.needsConfirmQuit }
     }
 
     @IBAction override func closeWindow(_ sender: Any?) {

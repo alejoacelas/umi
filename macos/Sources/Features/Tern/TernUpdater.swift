@@ -117,6 +117,9 @@ final class TernUpdater: ObservableObject {
         if let product = json["product"] as? String, product != TernPaths.productName {
             throw TernError.failed("the update feed is for another product (\(product))")
         }
+        // The version isn't covered by the signature and names a folder on disk: only plain
+        // dotted numbers are accepted.
+        guard Self.isValidVersion(version) else { throw TernError.failed("the update feed's version isn't valid") }
         return Release(version: version, url: url, sha256: sha.lowercased(), signature: signature,
                        size: json["size"] as? Int, notes: json["notes"] as? String)
     }
@@ -200,7 +203,12 @@ final class TernUpdater: ObservableObject {
             throw TernError.failed("the update isn't signed with \(TernPaths.productName)'s key")
         }
 
-        let dir = (updatesDirectory as NSString).appendingPathComponent("staged-\(release.version)")
+        guard Self.isValidVersion(release.version) else { throw TernError.failed("the update feed's version isn't valid") }
+        let base = URL(fileURLWithPath: updatesDirectory).standardizedFileURL.path
+        let dir = (base as NSString).appendingPathComponent("staged-\(release.version)")
+        guard URL(fileURLWithPath: dir).standardizedFileURL.path.hasPrefix(base + "/") else {
+            throw TernError.failed("the update feed's version isn't valid")
+        }
         try? FileManager.default.removeItem(atPath: dir)
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let zip = (dir as NSString).appendingPathComponent("update.zip")
@@ -339,6 +347,11 @@ final class TernUpdater: ObservableObject {
     // MARK: Helpers
 
     /// Compare dotted versions numerically ("10.0" > "9.1").
+    /// "1", "1.2", "1.2.3" or "1.2.3.4": what release.sh publishes.
+    nonisolated static func isValidVersion(_ version: String) -> Bool {
+        version.range(of: #"^[0-9]{1,6}(\.[0-9]{1,6}){0,3}$"#, options: .regularExpression) != nil
+    }
+
     nonisolated static func compare(_ a: String, _ b: String) -> ComparisonResult {
         func parts(_ v: String) -> [Int] {
             v.split(whereSeparator: { !$0.isNumber }).map { Int($0) ?? 0 }

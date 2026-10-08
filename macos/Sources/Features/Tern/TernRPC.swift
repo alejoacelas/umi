@@ -304,6 +304,11 @@ enum TernRPC {
             guard let um = (NSApp.delegate as? AppDelegate)?.undoManager else { return [:] }
             return ["can_undo": um.canUndo, "can_redo": um.canRedo, "undo": um.undoActionName,
                     "redo": um.redoActionName, "level": um.groupingLevel]
+        case "debug.confirm":
+            // Whether closing each window (and so quitting) would ask first.
+            return ["windows": TernTopology.windows.map {
+                ["window": $0.ternIDString, "needs_confirmation": !$0.windowCanBeClosedWithoutConfirmation()]
+            }]
         case "debug.menu.perform":
             guard let title = params.string("title") else { throw TernError.badRequest("give a menu item title") }
             try TernDebug.performMenuItem(title)

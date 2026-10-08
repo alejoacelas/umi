@@ -49,7 +49,8 @@ pub fn init(
     };
 
     const env = b.graph.environ_map;
-    const app_path = b.fmt("macos/build/{s}/Ghostty.app", .{xc_config});
+    // Tern: the bundle and its executable are renamed.
+    const app_path = b.fmt("macos/build/{s}/Tern.app", .{xc_config});
 
     // Our step to build the Ghostty macOS app.
     const build = build: {
@@ -143,7 +144,7 @@ pub fn init(
         open.has_side_effects = true;
         open.cwd = b.path("");
         open.addArgs(&.{b.fmt(
-            "{s}/Contents/MacOS/ghostty",
+            "{s}/Contents/MacOS/tern-app",
             .{app_path},
         )});
 
