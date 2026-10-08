@@ -220,3 +220,58 @@ def test_installing_an_update_now_asks_before_cutting_turns_off(inst, started):
     assert proc.returncode != 0 and "--force" in proc.stderr, proc.stdout + proc.stderr
     assert inst.info(sid)["status"] == "working", "the turn keeps running"
     assert inst.app_running()
+
+
+# ---- review round 1 regressions ------------------------------------------------------------------
+
+@pytest.mark.req("MA-5", "MA-11")
+def test_a_wait_ends_when_its_session_is_removed(inst, started):
+    sid = started("claude", "ECHO hi")
+    inst.wait(sid)
+    proc = subprocess.Popen([inst.target.cli_path, "--json", "agent", "wait", sid, "--report", "--timeout", "60"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=inst.env, cwd=inst.work)
+    time.sleep(1)
+    inst.cli("agent", "rm", sid, "--force")
+    out, err = proc.communicate(timeout=30)
+    assert proc.returncode != 124 and "TIMEOUT" not in out, (out, err)
+
+
+@pytest.mark.req("MA-24", "R-10", "MA-4")
+@pytest.mark.slow
+def test_a_cut_off_turn_whose_conversation_is_gone_fails_at_once(fresh):
+    """The product is killed mid-turn and the harness's conversation disappears meanwhile: the
+    cut-off message must end with the reason, not stay pending."""
+    other = fresh(prefix="acc-x-gone-")
+    sid = other.start_agent("codex", "ECHO warm-up")
+    other.wait(sid)
+    hid = other.info(sid)["harness_id"]
+    n = nonce()
+    message = other.send(sid, f"SLEEP 30 {n}")
+    delivered_once(other, n, timeout=15)
+    other.kill_everything()
+    time.sleep(1)
+    os.remove(os.path.join(other.fake_dir, "codex", "threads", f"{hid}.json"))
+    other.start_app()
+    code, out = other.wait(sid, "--message", message, timeout=60)
+    assert code == 3 and out["status"] in ("ERROR", "FAILED"), out
+    assert (out.get("error") or "").strip(), out
+
+
+@pytest.mark.req("R-2", "MA-4")
+def test_a_partial_log_line_left_by_a_crash_loses_nothing_after_it(fresh):
+    """A crash can cut the session log's last line short. Entries written after the restart must
+    still be read back at the next one."""
+    other = fresh(prefix="acc-x-partial-")
+    sid = other.start_agent("claude", "ECHO first")
+    other.wait(sid)
+    other.quit_app()
+    log = os.path.join(other.dir, "sessions", sid, "log.jsonl")
+    with open(log, "a") as f:
+        f.write('{"m": {"id": "cut-sho')
+    other.start_app()
+    n = nonce()
+    message = other.send(sid, f"ECHO after the cut {n}")
+    other.wait(sid, "--message", message)
+    other.quit_app()
+    other.start_app()
+    assert other.read_reply(sid, message) == f"ECHO after the cut {n}"
