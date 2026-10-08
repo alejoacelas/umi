@@ -360,3 +360,23 @@ def test_an_explicit_target_overrides_a_stale_caller(inst, win):
     assert created["window"] == win["window"]
     created = inst.json("tab", "new", "--window", win["window"], "--no-focus", env=pane_env)
     assert created["window"] == win["window"]
+
+
+# ---- review round 4 regressions ------------------------------------------------------------------
+
+@pytest.mark.req("MA-5")
+def test_a_wait_keeps_its_message_when_someone_sends_more(inst, started):
+    """`agent wait SESSION` waits for the message that was the latest when it started, even if
+    another follow-up is queued meanwhile."""
+    sid = started("claude", "ECHO warm-up")
+    inst.wait(sid)
+    a = nonce()
+    inst.send(sid, f"SLEEP 2 {a}")
+    proc = subprocess.Popen([inst.target.cli_path, "--json", "agent", "wait", sid, "--timeout", "60"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=inst.env, cwd=inst.work)
+    time.sleep(0.5)
+    b = nonce()
+    inst.send(sid, f"SLEEP 3 {b}")
+    out, err = proc.communicate(timeout=90)
+    got = json.loads(out)
+    assert got["status"] == "DONE" and a in got["message"]["text"], got
