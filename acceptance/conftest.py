@@ -81,10 +81,24 @@ def win(inst, request):
     time.sleep(0.2)
 
 
+def screen_locked():
+    """True while the login session's screen is locked. macOS then resolves every window's
+    accessibility element to the application itself, so UI tests can't see anything (and a
+    tree walk loops through the menu bar forever)."""
+    try:
+        import Quartz
+        session = Quartz.CGSessionCopyCurrentDictionary() or {}
+        return bool(session.get("CGSSessionScreenIsLocked", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @pytest.fixture(scope="session")
 def ui(inst):
     if not UI.available():
         pytest.skip("this process has no Accessibility permission (System Settings → Privacy → Accessibility)")
+    if screen_locked():
+        pytest.skip("the screen is locked, so the accessibility tree is unavailable (unlock it to run UI tests)")
     return UI(inst.app_pid)
 
 
