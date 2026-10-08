@@ -506,7 +506,8 @@ final class TernAgentSession {
         let text = "[\(TernPaths.productName)] Your previous turn was cut off at \(TernAgentTime.clock(at)) because \(reason). "
             + "Everything you had running then (shell commands, background tasks and subagents) was stopped. "
             + "Check the state of your work before carrying on, then continue where you left off."
-        record.openSelfTurn = false
+        // openSelfTurn stays set until the note's turn ends: a quit or crash during the
+        // continuation must continue it again.
         record.cutOffAt = nil
         record.cutOffReason = nil
         saveRecord()
@@ -638,12 +639,14 @@ final class TernAgentSession {
             updateItem(ref: "req:\(request.id)") { if $0.state == "pending" { $0.state = "withdrawn" } }
         }
         requests.removeAll()
-        if current.selfStarted {
+        let continuedSelfTurn = current.messages.contains { message($0)?.note == true }
+        if current.selfStarted || continuedSelfTurn {
             if shuttingDown {
                 // Cut off by the quit: it continues after the restart (R-10).
                 record.cutOffAt = record.cutOffAt ?? Date()
                 record.cutOffReason = record.cutOffReason ?? shutdownReason
-            } else {
+            } else if current.selfStarted || record.openSelfTurn {
+                // The self-started turn (or the note that continued it) is over.
                 record.openSelfTurn = false
             }
             saveRecord()

@@ -155,6 +155,16 @@ def main():
         check("questions answered from the pane", out["status"] == "DONE" and "Favorite color?=blue" in out["reply"], out)
         inst.cli("agent", "stop", sid, check=False)
 
+        # A Codex question can only be answered: no Decline button that would do nothing.
+        sid = inst.json("agent", "start", "codex", "--cwd", inst.work, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
+                        "--split", "right", "--pane", win["pane"], "ASK_QUESTIONS")["session"]["id"]
+        inst.wait(sid)
+        pane = soon(lambda: agent_pane(inst, sid), 10)
+        ok = soon(lambda: "Answer" in pane_state(pane).get("buttons", []), 15)
+        check("a Codex question card offers Answer and no Decline",
+              ok and "Decline" not in pane_state(pane).get("buttons", []), pane_state(pane).get("buttons"))
+        inst.cli("agent", "stop", sid, check=False)
+
         # AP-1: an approval answered from the pane.
         sid = inst.json("agent", "start", "codex", "--cwd", inst.work, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
                         "--permission-mode", "on-request", "--split", "right", "--pane", win["pane"],

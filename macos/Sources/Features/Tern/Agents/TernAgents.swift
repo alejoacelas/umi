@@ -181,9 +181,8 @@ final class TernAgents: @unchecked Sendable {
                 session.beginShutdown(reason: reason)
             }
         }
-        guard anyLive else { return }
         // Let interrupted turns end (their results record where they stopped).
-        let deadline = Date().addingTimeInterval(3)
+        let deadline = Date().addingTimeInterval(anyLive ? 3 : 0)
         while Date() < deadline {
             let running = Self.queue.sync { sessions.contains { $0.turnIsRunning && $0.live } }
             if !running { break }
@@ -197,7 +196,8 @@ final class TernAgents: @unchecked Sendable {
             }
         }
         _ = group.wait(timeout: .now() + 5)
-        // Whatever is still tagged with this instance goes now.
+        // Whatever is still tagged with this instance goes now, live harness or not (a detached
+        // child of one that already exited may still be on its way out).
         let leftovers = TernProcessTree.tagged(sessions: nil, stateDir: TernPaths.stateDirectory)
         TernProcessTree.killNow(Set(leftovers.map(\.pid)))
     }

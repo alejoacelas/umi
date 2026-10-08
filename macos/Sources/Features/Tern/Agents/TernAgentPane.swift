@@ -639,10 +639,15 @@ final class TernAgentRequestCard: NSView {
             let submit = NSButton(title: "Answer", target: self, action: #selector(submitPressed))
             submit.bezelStyle = .rounded
             submit.controlSize = .small
-            let deny = NSButton(title: "Decline", target: self, action: #selector(denyPressed))
-            deny.bezelStyle = .rounded
-            deny.controlSize = .small
-            let row = NSStackView(views: [submit, deny])
+            var actions = [submit]
+            // Codex's questions can only be answered (its protocol has no way to decline them).
+            if request.method != "item/tool/requestUserInput" {
+                let deny = NSButton(title: "Decline", target: self, action: #selector(denyPressed))
+                deny.bezelStyle = .rounded
+                deny.controlSize = .small
+                actions.append(deny)
+            }
+            let row = NSStackView(views: actions)
             row.spacing = 6
             stack.addArrangedSubview(row)
         } else {
@@ -747,7 +752,11 @@ enum TernAgentActions {
     static func respond(_ sessionID: String, _ requestID: String, _ answer: TernAgentAnswer) {
         TernAgents.queue.async {
             guard let session = TernAgents.shared.session(id: sessionID), let request = try? session.request(requestID) else { return }
-            try? session.respond(request, answer)
+            do {
+                try session.respond(request, answer)
+            } catch {
+                session.notice("Couldn't answer \(request.title.lowercased()): \((error as? TernError)?.message ?? "\(error)")")
+            }
         }
     }
 }

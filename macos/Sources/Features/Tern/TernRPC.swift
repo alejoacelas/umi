@@ -64,7 +64,10 @@ enum TernRPC {
                 color = parsed
             }
             let explicit = try params.string("pane").map { try TernTopology.resolvePane($0, caller: caller) }
-            let callerPane = try TernTopology.callerPane(caller)
+            // An explicit --pane or --window overrides the caller's own pane, so a stale caller
+            // identity doesn't matter then.
+            let callerPane = explicit == nil && params.string("window") == nil
+                ? try TernTopology.callerPane(caller) : (try? TernTopology.callerPane(caller)) ?? nil
             let window: TerminalController?
             if let selector = params.string("window") {
                 window = try TernTopology.resolveWindow(selector, caller: caller)
