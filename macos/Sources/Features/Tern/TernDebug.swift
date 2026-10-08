@@ -44,7 +44,7 @@ enum TernDebug {
     }
 
     /// Give keyboard focus to the editor's text (or preview) in a window.
-    static func focusEditor(in controller: TerminalController) {
+    static func focusEditor(in controller: TerminalController, selectEnd: Bool = false) {
         guard let window = controller.window, let content = window.contentView else { return }
         func find(_ view: NSView) -> NSView? {
             if view is TernEditorContainerView {
@@ -54,6 +54,10 @@ enum TernDebug {
             for sub in view.subviews { if let found = find(sub) { return found } }
             return nil
         }
-        if let target = find(content) { window.makeFirstResponder(target) }
+        guard let target = find(content) else { return }
+        window.makeFirstResponder(target)
+        if selectEnd, let text = target as? NSTextView {
+            text.setSelectedRange(NSRange(location: (text.string as NSString).length, length: 0))
+        }
     }
 }

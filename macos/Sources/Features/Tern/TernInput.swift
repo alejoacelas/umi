@@ -85,13 +85,25 @@ enum TernInput {
         // Control and command chords are encoded from the key, not text.
         if mods.contains(.ctrl) || mods.contains(.super) { text = nil }
 
-        if let key = Ghostty.Input.Key(rawValue: name) { return (key, mods, text, codepoint) }
         let lowered = name.lowercased()
-        if let key = allKeyNames.first(where: { $0.lowercased() == lowered }).flatMap(Ghostty.Input.Key.init(rawValue:)) {
-            return (key, mods, text, codepoint)
+        guard let key = Ghostty.Input.Key(rawValue: name)
+            ?? allKeyNames.first(where: { $0.lowercased() == lowered }).flatMap(Ghostty.Input.Key.init(rawValue:)) else {
+            throw TernError.badRequest("unknown key \"\(keyName)\" (try enter, esc, tab, backspace, up, ctrl+c, …)")
         }
-        throw TernError.badRequest("unknown key \"\(keyName)\" (try enter, esc, tab, backspace, up, ctrl+c, …)")
+        // Shifted digits and punctuation type what the keyboard types with Shift
+        // ("shift+1" is "!" on a US keyboard).
+        if mods.contains(.shift), let typed = text, typed.count == 1, let c = typed.first, !c.isLetter, c != " " {
+            text = key.keyCode.flatMap { KeyboardLayout.character(for: $0, modifiers: .shift) }.map(String.init)
+                ?? usShifted[c].map(String.init) ?? typed
+        }
+        return (key, mods, text, codepoint)
     }
+
+    private static let usShifted: [Character: Character] = [
+        "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+        "-": "_", "=": "+", ",": "<", ".": ">", "/": "?", ";": ":", "'": "\"", "[": "{", "]": "}",
+        "\\": "|", "`": "~",
+    ]
 
     private static let allKeyNames: [String] = {
         var names = ["enter", "escape", "tab", "backspace", "delete", "space", "home", "end", "pageUp", "pageDown",
@@ -117,18 +129,34 @@ enum TernInput {
             : ghostty_surface_read_text(surface, sel, &text)
         guard ok else { return "" }
         defer { ghostty_surface_free_text(surface, &text) }
-        var result = String(cString: text.text)
+        return tidy(String(cString: text.text), lines: lines)
+    }
 
+    /// The program output in the last `rows` rows of the screen, scrollback included.
+    static func readOutputTail(_ pane: Ghostty.SurfaceView, rows: Int) -> String {
+        guard let surface = pane.surface, rows > 0 else { return "" }
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_output_tail(surface, UInt32(clamping: rows), &text) else { return "" }
+        defer { ghostty_surface_free_text(surface, &text) }
+        return tidy(String(cString: text.text), lines: nil)
+    }
+
+    /// Bytes the pane's program has written so far.
+    static func outputBytes(_ pane: Ghostty.SurfaceView) -> UInt64 {
+        guard let surface = pane.surface else { return 0 }
+        return ghostty_surface_output_bytes(surface)
+    }
+
+    private static func tidy(_ raw: String, lines: Int?) -> String {
         // Trailing blank rows are just empty screen.
-        var rows = result.split(separator: "\n", omittingEmptySubsequences: false).map { line -> Substring in
+        var rows = raw.split(separator: "\n", omittingEmptySubsequences: false).map { line -> Substring in
             var line = line
             while line.last == " " { line = line.dropLast() }
             return line
         }
         while let last = rows.last, last.isEmpty { rows.removeLast() }
         if let lines, lines > 0 { rows = Array(rows.suffix(lines)) }
-        result = rows.joined(separator: "\n")
-        return result
+        return rows.joined(separator: "\n")
     }
 }
 

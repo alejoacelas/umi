@@ -1901,6 +1901,13 @@ pub const CAPI = struct {
         return readTextLocked(surface, core_sel, result);
     }
 
+    /// Tern: how many bytes the surface's child process has written so far.
+    export fn ghostty_surface_output_bytes(surface: *Surface) u64 {
+        surface.core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer surface.core_surface.renderer_state.mutex.unlock(global.io());
+        return surface.core_surface.io.output_bytes;
+    }
+
     /// Like ghostty_surface_read_text, but only program output: cells the
     /// shell marked as its prompt or as typed input (semantic prompts, OSC
     /// 133) are left out. Line breaks are kept. Without shell integration
@@ -1915,6 +1922,32 @@ pub const CAPI = struct {
 
         const screen = surface.core_surface.renderer_state.terminal.screens.active;
         const core_sel = sel.core(screen) orelse return false;
+        return readOutputLocked(screen, core_sel, result);
+    }
+
+    /// Tern: like ghostty_surface_read_output_text, for the last `rows` rows
+    /// of the screen, scrollback included, so recent output that scrolled
+    /// past the screen can be read without reading the whole scrollback.
+    export fn ghostty_surface_read_output_tail(
+        surface: *Surface,
+        rows: u32,
+        result: *Text,
+    ) bool {
+        surface.core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer surface.core_surface.renderer_state.mutex.unlock(global.io());
+
+        const screen = surface.core_surface.renderer_state.terminal.screens.active;
+        const br = screen.pages.getBottomRight(.screen) orelse return false;
+        var tl = br.up(@as(usize, rows) -| 1) orelse screen.pages.getTopLeft(.screen);
+        tl.x = 0;
+        return readOutputLocked(screen, terminal.Selection.init(tl, br, false), result);
+    }
+
+    fn readOutputLocked(
+        screen: anytype,
+        core_sel: terminal.Selection,
+        result: *Text,
+    ) bool {
         const alloc = global.alloc();
 
         const map = screen.selectionStringMap(alloc, .{

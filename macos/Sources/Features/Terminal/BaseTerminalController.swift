@@ -271,6 +271,9 @@ class BaseTerminalController: NSWindowController,
     /// after the window switched to showing something else (Tern: the tab).
     func undoTreeOwner() -> AnyObject? { nil }
 
+    /// Make a surface this controller owns visible (Tern: select its tab).
+    func revealSurface(_ surface: Ghostty.SurfaceView) {}
+
     /// Put back a tree from undo. Tern windows apply it to the tab it came from.
     func restoreUndoTree(_ tree: SplitTree<Ghostty.SurfaceView>, owner: AnyObject?) {
         surfaceTree = tree
@@ -809,7 +812,10 @@ class BaseTerminalController: NSWindowController,
 
     @objc private func ghosttyDidPresentTerminal(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        guard surfaceTree.contains(target) else { return }
+        guard ownsSurface(target) else { return }
+
+        // Tern: a pane in a tab that isn't shown is shown first.
+        revealSurface(target)
 
         // Bring the window to front and focus the surface.
         window?.makeKeyAndOrderFront(nil)

@@ -794,6 +794,10 @@ class TerminalController: BaseTerminalController {
         surfaceTree.contains(view) ? nil : tabs.first { $0.contains(view) }
     }
 
+    override func revealSurface(_ surface: Ghostty.SurfaceView) {
+        if let tab = hiddenTab(containing: surface) { selectTab(tab, focus: false) }
+    }
+
     override func focusSurface(_ view: Ghostty.SurfaceView) {
         if let tab = hiddenTab(containing: view) { selectTab(tab, focus: false) }
         super.focusSurface(view)

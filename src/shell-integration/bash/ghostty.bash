@@ -124,7 +124,10 @@ if [[ "$GHOSTTY_SHELL_FEATURES" == *ssh-* ]]; then
     flags=()
     [[ "$GHOSTTY_SHELL_FEATURES" != *ssh-env* ]] && flags+=(--forward-env=false)
     [[ "$GHOSTTY_SHELL_FEATURES" != *ssh-terminfo* ]] && flags+=(--terminfo=false)
-    "$GHOSTTY_BIN_DIR/ghostty" +ssh "${flags[@]}" -- "$@"
+    # Tern: the core executable is named tern-app.
+    builtin local ghostty="$GHOSTTY_BIN_DIR/ghostty"
+    [[ -x "$ghostty" ]] || ghostty="$GHOSTTY_BIN_DIR/tern-app"
+    "$ghostty" +ssh "${flags[@]}" -- "$@"
   }
 fi
 

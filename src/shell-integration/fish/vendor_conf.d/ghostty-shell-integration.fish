@@ -130,7 +130,10 @@ function __ghostty_setup --on-event fish_prompt -d "Setup ghostty integration"
             set -l flags
             contains ssh-env $features; or set -a flags --forward-env=false
             contains ssh-terminfo $features; or set -a flags --terminfo=false
-            "$GHOSTTY_BIN_DIR/ghostty" +ssh $flags -- $argv
+            # Tern: the core executable is named tern-app.
+            set -l ghostty "$GHOSTTY_BIN_DIR/ghostty"
+            test -x "$ghostty"; or set ghostty "$GHOSTTY_BIN_DIR/tern-app"
+            $ghostty +ssh $flags -- $argv
         end
     end
 

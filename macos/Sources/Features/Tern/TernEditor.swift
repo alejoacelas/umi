@@ -867,11 +867,14 @@ struct TernSourceEditor: NSViewRepresentable {
             let selection = textView.selectedRanges
             textView.string = doc.text
             let length = (doc.text as NSString).length
-            textView.selectedRanges = selection.compactMap { value in
+            // Keep the selection where it was, clamped to the new text. AppKit throws (and the
+            // app crashes) if given no ranges, as when a reload is shorter than the old cursor.
+            let clamped = selection.map { value -> NSValue in
                 let range = value.rangeValue
-                return range.location <= length ? NSValue(range: NSRange(location: range.location, length: min(range.length, length - range.location))) : nil
+                let location = min(range.location, length)
+                return NSValue(range: NSRange(location: location, length: min(range.length, length - location)))
             }
-            if textView.selectedRanges.isEmpty { textView.setSelectedRange(NSRange(location: 0, length: 0)) }
+            textView.selectedRanges = clamped.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : clamped
         }
         if textView.textColor != TernTheme.textNSColor { textView.textColor = TernTheme.textNSColor }
     }

@@ -7,10 +7,6 @@ import GhosttyKit
 // the process environment.
 TernEnvironment.scrubInherited()
 
-// Tern: one instance per state directory (P-3). A second launch hands over to the first
-// and exits before creating anything.
-TernSingleInstance.acquireOrExit()
-
 // Initialize Ghostty global state. We do this once right away because the
 // CLI APIs require it and it lets us ensure it is done immediately for the
 // rest of the app.
@@ -38,5 +34,10 @@ if ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) != GHOSTTY_SUCCE
 // This will run the CLI action and exit if one was specified. A CLI
 // action is a command starting with a `+`, such as `ghostty +boo`.
 ghostty_cli_try_action()
+
+// Tern: one instance per state directory (P-3). A second launch hands over to the first
+// and exits before creating anything. CLI actions (above, such as `+ssh` from the shell
+// integration) run without the app, so they come first.
+TernSingleInstance.acquireOrExit()
 
 _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)

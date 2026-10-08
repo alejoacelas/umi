@@ -13,7 +13,13 @@ export module ghostty {
       return
     }
 
-    let ghostty = ($env.GHOSTTY_BIN_DIR? | default "") | path join "ghostty"
+    # Tern: the core executable is named tern-app.
+    let bin_dir = ($env.GHOSTTY_BIN_DIR? | default "")
+    let ghostty = if ($bin_dir | path join "ghostty" | path exists) {
+      $bin_dir | path join "ghostty"
+    } else {
+      $bin_dir | path join "tern-app"
+    }
     mut flags = []
     if not (has_feature "ssh-env") {
       $flags = ($flags ++ ["--forward-env=false"])

@@ -69,6 +69,11 @@ terminal_stream: StreamHandler.Stream,
 /// flooding with cursor resets.
 last_cursor_reset: ?std.Io.Timestamp = null,
 
+/// Bytes read from the child process so far (Tern: `wait --idle` measures output, and
+/// `wait --pattern` bounds how much scrollback new output can have filled). Protected by
+/// the renderer state mutex, like the terminal.
+output_bytes: u64 = 0,
+
 /// State we have for thread enter. This may be null if we don't need
 /// to keep track of any state or if its already been freed.
 thread_enter_state: ?*ThreadEnterState = null,
@@ -702,6 +707,8 @@ pub fn processOutput(self: *Termio, buf: []const u8) void {
 
 /// Process output from readdata but the lock is already held.
 fn processOutputLocked(self: *Termio, buf: []const u8) void {
+    self.output_bytes +%= buf.len;
+
     // Schedule a render. We can call this first because we have the lock.
     self.terminal_stream.handler.queueRender() catch unreachable;
 

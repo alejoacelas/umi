@@ -264,7 +264,11 @@ final class TernUpdater: ObservableObject {
         } catch {
             return
         }
-        let args = [script, String(getpid()), staged.app.path, destination.path, relaunchAfterInstall ? "1" : "0", log]
+        // An isolated instance relaunches as itself: same state directory and feed.
+        let environment = ProcessInfo.processInfo.environment
+        let args = [script, String(getpid()), staged.app.path, destination.path, relaunchAfterInstall ? "1" : "0", log,
+                    TernPaths.isIsolated ? TernPaths.stateDirectory : "",
+                    TernPaths.isIsolated ? environment["TERN_FEED_URL"] ?? "" : ""]
         Self.spawnDetached("/bin/sh", args)
     }
 
@@ -272,12 +276,14 @@ final class TernUpdater: ObservableObject {
     /// quarantine and optionally relaunches.
     static let installerScript = """
     #!/bin/sh
-    # Tern update installer: install.sh PID STAGED_APP DEST_APP RELAUNCH LOG
-    pid="$1"; staged="$2"; dest="$3"; relaunch="$4"; log="$5"
+    # Tern update installer: install.sh PID STAGED_APP DEST_APP RELAUNCH LOG [STATE_DIR [FEED_URL]]
+    pid="$1"; staged="$2"; dest="$3"; relaunch="$4"; log="$5"; state="${6:-}"; feed="${7:-}"
     exec >>"$log" 2>&1
     echo "$(date): installing $staged over $dest (waiting for pid $pid)"
     i=0
     while kill -0 "$pid" 2>/dev/null; do
+        # An exited app its parent hasn't reaped yet is done too.
+        case "$(/bin/ps -o stat= -p "$pid" 2>/dev/null)" in Z*) break ;; esac
         i=$((i+1)); [ "$i" -gt 600 ] && { echo "app didn't exit; giving up"; exit 1; }
         sleep 0.2
     done
@@ -293,7 +299,16 @@ final class TernUpdater: ObservableObject {
         exit 1
     fi
     rmdir "$(dirname "$staged")" 2>/dev/null
-    if [ "$relaunch" = "1" ]; then /usr/bin/open "$dest"; fi
+    if [ "$relaunch" = "1" ]; then
+        if [ -n "$state" ]; then
+            # An instance with its own state directory comes back as that instance.
+            set -- "TERN_STATE_DIR=$state"
+            [ -n "$feed" ] && set -- "$@" "TERN_FEED_URL=$feed"
+            /usr/bin/env "$@" "$dest/Contents/MacOS/tern-app" >/dev/null 2>&1 &
+        else
+            /usr/bin/open "$dest"
+        fi
+    fi
     """
 
     // MARK: Prompts (Check for Updates…)

@@ -992,12 +992,21 @@ func waitCommand(_ argv: [String]) {
     guard let paneID = info["id"] as? String else { fail("wait: no such pane") }
     let deadline = timeout.map { Date().addingTimeInterval($0) }
     var lastText: String?
+    var lastBytes: Int?
     var lastChange = Date()
     while true {
         let result: [String: Any]
+        var params: [String: Any] = ["pane": paneID, "output_only": regex != nil, "recent": true]
+        if let lastBytes {
+            // After the first read, ask for everything written since, even what scrolled past the screen.
+            params["since_bytes"] = lastBytes
+        } else if regex != nil {
+            // The first read covers the scrollback too: output that arrived (and scrolled away)
+            // between `send` and this wait still counts.
+            params["scrollback"] = true
+        }
         do {
-            result = try client.call("pane.read", ["pane": paneID, "output_only": regex != nil, "recent": true])
-                as? [String: Any] ?? [:]
+            result = try client.call("pane.read", params) as? [String: Any] ?? [:]
         } catch let error as RPCError {
             if error.code == "not_found" { fail("the pane closed while waiting") }
             fail(error.message)
@@ -1005,6 +1014,8 @@ func waitCommand(_ argv: [String]) {
             fail("\(error)")
         }
         let text = result["text"] as? String ?? ""
+        let bytes = result["output_bytes"] as? Int
+        defer { lastBytes = bytes }
         if let regex {
             let range = NSRange(text.startIndex..<text.endIndex, in: text)
             if let match = regex.firstMatch(in: text, range: range), let found = Range(match.range, in: text) {
@@ -1013,7 +1024,11 @@ func waitCommand(_ argv: [String]) {
                 return
             }
         } else if let idle {
-            if text != lastText {
+            // Idle means no output at all, not an unchanged screen (a program can keep
+            // redrawing the same text).
+            if let bytes, bytes != lastBytes {
+                lastChange = Date()
+            } else if bytes == nil, text != lastText {
                 lastText = text
                 lastChange = Date()
             } else if Date().timeIntervalSince(lastChange) >= idle {

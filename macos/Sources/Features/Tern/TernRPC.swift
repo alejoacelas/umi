@@ -235,11 +235,23 @@ enum TernRPC {
 
         case "pane.read", "read":
             let pane = try TernTopology.pane(params.string("pane"), caller: caller)
-            let text = TernInput.read(pane,
+            let outputOnly = params.bool("output_only") ?? false
+            let bytes = TernInput.outputBytes(pane)
+            var text = TernInput.read(pane,
                                       scrollback: params.bool("scrollback") ?? false,
                                       lines: params.int("lines"),
-                                      outputOnly: params.bool("output_only") ?? false)
-            return ["pane": pane.ternID, "text": text]
+                                      outputOnly: outputOnly)
+            // `wait`: output written since an earlier read may have scrolled past the screen.
+            // Every row takes at least one byte, so the last (new bytes + screen rows) rows
+            // hold all of it.
+            if outputOnly, let since = params.int("since_bytes"), let surface = pane.surface {
+                let fresh = Int(clamping: bytes) - since
+                let screenRows = Int(ghostty_surface_size(surface).rows)
+                if fresh > screenRows {
+                    text = TernInput.readOutputTail(pane, rows: min(fresh, 1_000_000) + screenRows)
+                }
+            }
+            return ["pane": pane.ternID, "text": text, "output_bytes": Int(clamping: bytes)]
 
         // MARK: Events, notifications, UI
         case "events.subscribe":
@@ -330,7 +342,7 @@ enum TernRPC {
         case "debug.editor.focus":
             let (window, tab) = try TernTopology.tab(params.string("tab"), caller: caller)
             TernLayout.focusTab(tab, in: window)
-            TernDebug.focusEditor(in: window)
+            TernDebug.focusEditor(in: window, selectEnd: params.bool("select_end") ?? false)
             return ["ok": true]
 
         default:

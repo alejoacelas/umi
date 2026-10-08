@@ -1238,6 +1238,10 @@ GHOSTTY_API bool ghostty_surface_read_selection(ghostty_surface_t, ghostty_text_
 GHOSTTY_API bool ghostty_surface_read_text(ghostty_surface_t,
                                               ghostty_selection_s,
                                               ghostty_text_s*);
+GHOSTTY_API uint64_t ghostty_surface_output_bytes(ghostty_surface_t);
+GHOSTTY_API bool ghostty_surface_read_output_tail(ghostty_surface_t,
+                                                 uint32_t,
+                                                 ghostty_text_s*);
 GHOSTTY_API bool ghostty_surface_read_output_text(ghostty_surface_t,
                                                      ghostty_selection_s,
                                                      ghostty_text_s*);

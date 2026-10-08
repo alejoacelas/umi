@@ -178,6 +178,21 @@ def main():
         ok = wait_until(lambda: ctl.call("debug.editor.type", pane=win["pane"], path=txt)["text"] == "recreated\n",
                         10, message="recreated")
         check("E-4 a deleted and recreated file is picked up", ok)
+
+        # A reload shorter than where the cursor was keeps the app running (AppKit throws if the
+        # restored selection is empty).
+        with open(txt, "w") as f:
+            f.write("a much longer line of text than the reload will have\n")
+        soon(lambda: ctl.call("debug.editor.type", pane=win["pane"], path=txt)["text"].startswith("a much"), 10)
+        ctl.call("debug.editor.focus", tab=win["tab"], select_end=True)
+        time.sleep(0.3)
+        with open(txt, "w") as f:
+            f.write("short\n")
+        ok = soon(lambda: ctl.call("debug.editor.type", pane=win["pane"], path=txt)["text"] == "short\n", 10)
+        check("E-4 a reload shorter than the cursor position doesn't crash", ok and inst.app_running())
+        with open(txt, "w") as f:
+            f.write("recreated\n")
+        soon(lambda: ctl.call("debug.editor.type", pane=win["pane"], path=txt)["text"] == "recreated\n", 10)
         ctl.call("debug.editor.type", pane=win["pane"], path=txt, text=" (unsaved)")
         with open(txt, "w") as f:
             f.write("disk changed under edits\n")
