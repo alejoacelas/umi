@@ -1674,6 +1674,37 @@ C12_RESULT_KEYS = {"type", "subtype", "duration_ms", "duration_api_ms", "is_erro
                    "result_index"}
 
 
+def t_codex_background():
+    """BACKGROUND n: the X15wake shape. The command item stays open past turn/completed, its
+    item/completed arrives n s later with the finished turn's id, and no turn starts by itself."""
+    x = FX(env={"FAKE_AGENT_DIR": os.path.join(TMP, "bg-" + uuid.uuid4().hex[:6])})
+    x.init()
+    tid = x.thread()
+    n = x.n()
+    r, cmid = x.turn(tid, "BACKGROUND 1.5 now")
+    turn_id = r["result"]["turn"]["id"]
+    i, done = x.completed(n)
+    assert done["params"]["turn"]["items"][0]["text"] == "started"
+    started = [m for m in x.msgs[n:i] if m.get("method") == "item/started"
+               and m["params"]["item"]["type"] == "commandExecution"]
+    assert len(started) == 1 and started[0]["params"]["item"]["status"] == "inProgress"
+    ref = started[0]["params"]["item"]["id"]
+    assert not [m for m in x.msgs[n:i] if m.get("method") == "item/completed"
+                and m["params"]["item"]["id"] == ref], "the command is still running when the turn ends"
+    j, late = x.wait_for(lambda m: m.get("method") == "item/completed" and m["params"]["item"]["id"] == ref,
+                         start=i, timeout=10, what="the background command's item/completed")
+    assert late["params"]["turnId"] == turn_id and late["params"]["item"]["status"] == "completed"
+    assert late["params"]["item"]["exitCode"] == 0
+    time.sleep(0.5)
+    assert not [m for m in x.msgs[i:] if m.get("method") == "turn/started"], "no turn started by itself"
+    # The thread takes messages normally afterwards.
+    n = x.n()
+    x.turn(tid, "ECHO after")
+    i, done = x.completed(n)
+    assert done["params"]["turn"]["items"][0]["text"] == "ECHO after"
+    x.close()
+
+
 def t_claude_resume_missing():
     # C12missing / C4e: stderr line, then one error `result` on stdout, no initialize response, exit 1.
     # The fake does all of it before reading stdin, so it happens even if nothing is sent.
@@ -1840,7 +1871,7 @@ def t_codex_mcp():
     assert any("FAKE_MCP" in l for l in x.stderr), x.stderr
 
 
-TESTS = [t_claude_basic, t_claude_interrupt_sleep, t_claude_interrupt_keeps_queued, t_claude_injection,
+TESTS = [t_codex_background, t_claude_basic, t_claude_interrupt_sleep, t_claude_interrupt_keeps_queued, t_claude_injection,
          t_claude_permissions, t_claude_skip_permissions, t_claude_resume, t_claude_crash_and_malformed,
          t_claude_stdin_close_mid_turn, t_codex_basic, t_codex_steer_and_commentary, t_codex_interrupt,
          t_codex_approvals, t_codex_resume_and_lock, t_codex_eof_crash_fail_queue,

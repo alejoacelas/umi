@@ -62,7 +62,8 @@ Likewise everything after `WAKE n` (up to a `RUN `) is the wake text and is not 
 | `EXIT_CLEAN` | yes | yes | once the reply is done and the harness is idle, it exits 0 on its own while stdin is still open. Codex releases its thread locks first. |
 | `IGNORE_TERM` | yes | yes | ignores SIGTERM from then on. Only SIGKILL works. |
 | `SPAWN_STUBBORN` | yes | yes | starts a child in its own session that ignores SIGTERM and sleeps 300 s. Its pid goes to `$FAKE_AGENT_DIR/stubborn.pid`. |
-| `WAKE n [text]` | yes | reply only | Claude: a Bash `sleep n` with `run_in_background: true` and reply `started`. n seconds later the fake starts a turn by itself whose reply is `woke: <text>` (or `woke`). See [Turns the harness starts by itself](#turns-the-harness-starts-by-itself-wake). Codex replies `wake: not supported by codex`. |
+| `WAKE n [text]` | yes | reply only | Claude: a Bash `sleep n` with `run_in_background: true` and reply `started`. n seconds later the fake starts a turn by itself whose reply is `woke: <text>` (or `woke`). See [Turns the harness starts by itself](#turns-the-harness-starts-by-itself-wake). Codex replies `wake: not supported by codex`: the real Codex was checked and doesn't start turns by itself (X15wake). |
+| `BACKGROUND n` | - | yes | Codex: a `commandExecution` `sleep n` run as a background terminal. The reply is `started` and the turn completes while the item is still open; n seconds later `item/completed` arrives for it, with the finished turn's id and no new turn (X15wake). |
 
 A message sent to Claude while a turn runs gets `command_lifecycle queued`. It is injected at the next tool
 boundary (after SLEEP, RUN, HUGE, WAKE or ASK_*), or it runs as the next turn. Codex `turn/start` during an active
@@ -146,8 +147,14 @@ Rules the fake follows:
 * Several `WAKE`s can be pending at once; each has its own task and its own self-started turn.
 * The self-started turn writes no receipt. It is recorded in `self_turns.jsonl` instead (see
   [Receipts](#receipts)).
-* Codex: no recording shows the app-server starting a turn by itself, so `WAKE` there only replies
-  `wake: not supported by codex`.
+* Codex doesn't start a turn by itself. Recorded on 2026-10-08 (`reference/agent-logs/X15wake.jsonl` and
+  `X15wakeb.jsonl`, script `reference/agent-probes/probe_phase2b.py`): asked to start a background command and
+  end its turn, gpt-6-luna ran `sleep 15; echo bg-done-42 > bg-done.txt` as a background terminal (a
+  `commandExecution` item, source `unifiedExecStartup`, still `inProgress` at `turn/completed`). 14 s later the
+  server sent that item's `item/completed` (status `completed`, exit code 0, the finished turn's `turnId`), and
+  nothing else: no `turn/started` in 60 s of idling. X15wakeb (asked to be notified when the command ends)
+  waited for the command in the foreground instead, and also started no turn of its own in 75 s. So `WAKE`
+  on Codex only replies `wake: not supported by codex`, and `BACKGROUND n` reproduces the background terminal.
 
 ## Allow for the rest of the session
 
@@ -395,8 +402,9 @@ inside that gap therefore never records the input. A product must not assume tha
   * The background command is a timer, not a process. It always ends with exit code 0 and an empty output
     file, and an interrupt or a new turn does not stop it.
   * The self-started reply is one text frame. The real model described the command's result.
-* `WAKE` (Codex): "not supported" is unverified. No recording shows the app-server starting a turn by
-  itself, and nothing probed whether a background process could make it do so.
+* `WAKE` (Codex): verified (X15wake, X15wakeb): the app-server doesn't start a turn when a background command
+  finishes. `BACKGROUND n` models the one thing it does report then, the late `item/completed`. Its command is a
+  timer, not a process, so it has no output and always exits 0.
 * `FAKE_MCP`: statuses never change during a process. Claude entries always say `source:"project"`. The
   Codex `failed` / `needs-auth` error texts are assembled from strings in the 0.160.0 binary, not observed, and
   `cancelled` is never produced. The repeated `ready` notifications seen at turn start in X10 and X12 are not

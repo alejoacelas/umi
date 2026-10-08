@@ -185,3 +185,232 @@ doesn't prompt for the ad-hoc-signed app. **Evidence:** `test_never_offers_anoth
   files over 16 MB, and binaries (NUL bytes in the first 8 KB). A UTF-8 sample that ends inside a
   character still counts as text. Non-UTF-8 text opens as Latin-1 and is saved back in Latin-1,
   or the save is refused with a message if the text can't be represented.
+
+===================================================================================================
+
+# Architectural decisions (phase 2: managed agents)
+
+Same format: candidates, what each costs against SPEC.md (the core tier above all), the pick, the
+evidence. Tests are in `acceptance/tests/`; `test_tern_agents_extra.py` holds the tests added for
+this design's risks. The code is in `app/macos/Sources/Features/Tern/Agents/` and
+`app/macos/TernCLI/agent.swift`.
+
+## 9. Controlling a harness
+
+What it has to serve: MA-1 to MA-29 with both harnesses, and above all MA-23 ("a worker is the
+agent the user would get in their own terminal") and the rule that control rests on ids and events
+the harness reports, never on reading or typing into a screen.
+
+| Candidate | Cost |
+|---|---|
+| A. The worker is the real TUI in a terminal pane, driven by typing and reading the screen | Forbidden by the user's own reliability rule (REQUESTS, "no screen scraping or keystroke injection"). No message ids, no turn boundaries, no approvals as data. Fails MA-2, MA-4, MA-5, MA-14 outright. |
+| B. Claude through the Agent SDK libraries | By default they load neither `CLAUDE.md` nor the user's settings and use a minimal system prompt (brief, "facts found since"); matching the terminal means re-adding every setting source by hand and chasing each new one. A Node/Python runtime dependency. Fails MA-23 unless perfectly configured. |
+| C. Claude Code's own background agents (`claude --bg`, `claude agents`, `attach`, `logs`, new in 2.1.29x) | They run in the user's shared Claude daemon, so workers would mix with the user's own sessions (MA-21, IA-4). `claude --help` shows no programmatic follow-up or turn API: `attach` is a TUI and `logs` is "recent terminal output", which is screen reading again. |
+| D. **`claude -p --input-format stream-json --output-format stream-json --verbose --replay-user-messages --permission-prompt-tool stdio`**, and **one private `codex app-server --listen stdio://` per session** | It is the `claude` CLI itself, so it loads the terminal's configuration (CLAUDE.md, user/project/local settings, skills, MCP servers, plugins, hooks, subagents); Codex's app server loads `config.toml`, AGENTS.md, skills and MCP servers like `codex`. Both report ids: Claude echoes our message uuid (`command_lifecycle`, replay, `result.user_message_uuids`), Codex echoes our `clientUserMessageId` on the `userMessage` item. Costs: no native TUI in the pane (the app renders the session), and two protocols to own. |
+| E. A shared Codex app server for all sessions | One thread can be live in only one server (PROTOCOLS X5), every session would share one environment (`agent start --env` couldn't work) and one crash would take all Codex sessions down. Using the user's shared daemon (`codex app-server daemon`, `codex agents`) is excluded by MA-21. |
+
+**Pick: D.** Workers are not terminal programs; their pane renders the session (decision 13) and
+keeps a real shell underneath. Full access is `--dangerously-skip-permissions` (Claude) or
+`approvalPolicy: never` + `sandbox: danger-full-access` (Codex); otherwise the harness's own
+defaults apply, as when the user types `claude`. `--model`, `--effort`, `--permission-mode` go on
+Claude's command line; Codex gets `model`/`approvalPolicy`/`sandbox` in `thread/start` and
+`thread/resume`, effort as `-c model_reasoning_effort=E`, a profile as `-c profile=P`. Arguments
+after `--` go to the harness unchanged.
+
+**Checked against the real CLIs** (Claude Code 2.1.292, codex-cli 0.160.0):
+- `--permission-mode default` is still accepted (it isn't in the help's choices any more); `--effort`
+  exists; `--append-system-prompt` is recorded with the conversation (`--system-prompt-snapshot`).
+- `codex app-server` accepts `-c` overrides; `thread/start` and `thread/resume` take
+  `developerInstructions` (generated schema).
+- Real-agent tests: `ACCEPTANCE_REAL=1 uv run pytest -m real` (REPORT.md, phase 2) cover project
+  instructions, a project skill, project MCP server + hook + subagent in a never-opened folder and
+  after a resume, approvals, interrupts, cross-agent orchestration and cut-off turns.
+
+## 10. Message and turn tracking (exactly-once, truthful status)
+
+| Candidate | Cost |
+|---|---|
+| A. Hand every message to the harness at once and let it queue or steer (Claude injects queued messages at tool boundaries, Codex steers into the running turn) | The harness then holds messages the product can't take back: a redirect can't go ahead of them (MA-25), `--drop-queued` can't cancel them, Claude's `interrupt` has no turn id so it can hit a queued message's turn that just started (MA-25 "never the turn that carries TEXT"), and a crash loses track of which queued ones the model saw. |
+| B. Codex's experimental server-side queue (`thread/queue/*`) | Codex only, experimental, and it auto-drains: the same loss of control as A on the Codex side. |
+| C. **The product's own queue, one message in the harness at a time**: a message is handed over only when the harness is ready and no turn runs; delivery is what the harness confirms (Claude `command_lifecycle started` or the replay; Codex the `userMessage` item with our client id); a turn ends at Claude's single `result` / Codex's `turn/completed` | Gives up steering a running turn (negotiable in SPEC; COMPROMISES.md). In exchange a message is always in exactly one place: queued (ours, cancellable, re-orderable), written-but-unconfirmed, or delivered. |
+
+**Pick: C.** The rules that follow from it:
+- **Ids.** A message id is a UUID the product generates and the harness echoes (Claude's `uuid`,
+  Codex's `clientUserMessageId`); the session's `harness_id` is Claude's session id (passed with
+  `--session-id`) or Codex's thread id. `agent send` prints the id before delivery.
+- **Turns.** Claude: a turn for messages starts at `command_lifecycle started`; a `system/init`
+  with no turn running is a turn Claude started by itself (C11wake); `result.user_message_uuids`
+  lists what the turn answered, a result with `origin` and no uuids is a self-started turn. Codex:
+  the `turn/start` answer names the turn; a `turn/started` for an unknown turn while nothing is
+  being started would be a self-started turn (Codex doesn't make them: X15wake, below).
+- **Interrupts** name the turn (Codex `turnId`); Claude's interrupt can't, but nothing of ours is
+  queued inside Claude, so the only turn it can stop is the one running.
+- **Redirect** (MA-25): TEXT goes to the front of the product's queue (`--drop-queued` cancels the
+  others), the turn running at that moment is interrupted, and TEXT is handed over when that turn
+  ends; a turn still running 30 s after the interrupt gets its harness killed and resumed.
+- **Unconfirmed at the end of a process.** Every line a harness wrote is read before its end is
+  handled, so a message written but not confirmed was never delivered and is handed over again
+  after the resume. After a *product* crash (nothing read the last lines), Codex is asked: the
+  `thread/resume` answer lists each turn's `userMessage` with its client id, so a message is
+  re-sent only if the thread doesn't have it. Claude can't be asked; a message written to its
+  stdin is counted as delivered (it reads stdin before anything else) and continues with the note.
+- **Status** is derived, never stored: `needs_input` (pending requests), `starting` (launching or
+  resuming), `working` (a turn runs, or a message is unanswered), `idle`, `exited`, `error`.
+- **Codex background terminals.** A command still running when its turn completes is a background
+  task (`background_tasks`); its late `item/completed` (X15wake) updates the transcript and the
+  count, never a turn.
+
+**Evidence.** `test_chaos.py` (Hypothesis sequences of send/interrupt/stop/crash/start under
+`FAKE_CHAOS`, and bursts under 8 seeds per harness); `test_follow_ups_racing_the_end_of_a_turn_are_delivered_once`;
+`test_interrupt_before_the_harness_takes_the_message`; the MA-25 tests (`test_redirect_goes_next`,
+`test_a_redirect_as_the_turn_ends_never_interrupts_the_new_message`, `test_a_redirect_gets_through_a_hung_turn`);
+`test_turns_the_agent_starts_itself`; extra tests for the crash windows and Codex background tasks.
+
+**Codex never starts a turn by itself** (the brief's open question). Probed with the real CLI
+(`reference/agent-probes/probe_phase2b.py`, logs `X15wake`, `X15wakeb`): a background command
+finishing produced one `item/completed` for the finished turn and no `turn/started` in 60–75 s.
+The fake now models that (`BACKGROUND n`, with a self-test); MA-28 stays Claude-only, and the Codex
+side of the turn tracker still treats an unannounced `turn/started` as a self-started turn.
+
+## 11. Where sessions live, and resumption
+
+| Candidate | Cost |
+|---|---|
+| A. **The app owns the harness processes**; sessions stop when the app quits; everything a session needs is on disk, a message to a stopped session resumes it, and turns cut off by a quit, crash or update continue by themselves at the next launch | An app crash cuts running turns off (R-10 continues them with a note). One owner, one process to reason about. |
+| B. A daemon (from the bundle) owns all harnesses and outlives the app | Turns survive app crashes, but: a second long-lived process to keep in step with app updates (R-8: an old daemon would keep running old code), its own crash and orphan story, and "every process of the product is killed" kills it too (R-2's scenario), so resumption has to be just as good anyway. The user asked for effort on resumption instead. |
+| C. A small host process per session that keeps the harness and spools its output to disk | Survives an app-only crash, but the same update and orphan questions as B, per session. |
+
+**Pick: A** (the user's call in SPEC, "Not requirements"). What makes it hold:
+- **Send and it runs (MA-24).** A session that isn't running starts its harness on the next message
+  with `--resume ID` (Claude) or `thread/resume` (Codex), in the same folder, with the same model,
+  effort, access, environment overrides and harness arguments. A folder that's gone fails the
+  send at once; a conversation the harness no longer has (Claude's `No conversation found`, Codex's
+  `no rollout found`) fails the message with the reason and is never replaced by a fresh one. A
+  conversation that never received a message is started fresh under the same id.
+- **Cut-off turns (R-10).** At quit, running turns are interrupted cleanly and marked cut off; at
+  launch, messages still delivered-but-unanswered (or a self-started turn left open) mark their
+  session cut off. Its harness is resumed and gets a note first ("Your previous turn was cut off at
+  14:05 on Oct 8 because …; everything you had running was stopped; check the state of your work
+  before carrying on"); the note's turn is the cut-off message's reply. The message itself is never
+  sent again. Queued messages are delivered after the note.
+- **`agent wait` survives a restart**: the CLI reconnects and keeps waiting.
+
+**Evidence.** `test_every_resume_keeps_context_and_settings` (after stop, harness crash, product
+killed and app quit), `test_a_send_that_cannot_resume_fails_at_once_and_never_starts_fresh`,
+`test_cut_off_turns_continue_by_themselves` (killed and quit, both harnesses),
+`test_crash_recovery`, `test_restart_resumes_sessions`, `test_upgrading_keeps_sessions`, the real
+`test_a_turn_cut_off_mid_command_continues`.
+
+## 12. Stopping everything (MA-9, R-1)
+
+| Candidate | Cost |
+|---|---|
+| A. Kill the harness's process group | Misses anything that called `setsid` or double-forked (the fakes' `SPAWN_STUBBORN`, any daemonizing tool). |
+| B. Track descendants by parent links | Reparented processes (launchd) drop out of the tree. Misses everything after a product crash. |
+| C. **Tag by environment**: every harness gets `TERN_SESSION_ID` and `TERN_STATE_DIR`, which everything it starts inherits; the kernel's copy of each process's environment (KERN_PROCARGS2) finds them all, detached or not, even after the product was killed. Plus the process group and descendants. | A process that deliberately scrubs its environment escapes; reading every process's environment costs ~20–50 ms per sweep. |
+
+**Pick: C, with A and B on top.** Harnesses are spawned with `posix_spawn` as session leaders, with
+no inherited descriptor but their three pipes (`POSIX_SPAWN_CLOEXEC_DEFAULT`: an inherited instance
+lock would block the next launch). Stop: interrupt the running turn, close stdin, SIGTERM the group
+and every tagged process, SIGKILL whatever is left after 1.5 s, then sweep again. Harness exits are
+reaped (no zombies). After a crash of the harness, its leftovers are swept the same way before any
+resume. At launch, every process tagged with this instance's state directory (an earlier run's) is
+stopped before anything starts. Only this state directory's tags are touched (R-5).
+
+**Evidence.** `test_stop_ends_everything_the_agent_started` (a harness that ignores SIGTERM and a
+detached child that does too), `test_crash_is_an_error_and_a_follow_up_resumes`,
+`test_names_list_rename_remove` (no zombie), `test_no_zombies_accumulate`,
+`test_quitting_the_app_leaves_no_unowned_processes`, `test_killing_the_product_leaves_nothing_running_once_it_is_back`.
+
+## 13. Sessions in panes (AP-1, AP-2, AP-11, M-1–M-6)
+
+Built on phase 1's door (decision 1, candidate D): **a session is drawn over an ordinary terminal
+leaf**, keyed by the pane's id. The terminal underneath is a shell in the session's folder (a
+button, or Window → Toggle Agent Pane's Terminal, shows it). Because the leaf is still a terminal,
+split, move (CLI, menus, drag), swap, zoom, close and undo, persistence and `ls` work unchanged;
+`ls` reports the pane's `agent`. The attachment outlives a closed pane, so Undo brings the session's
+view back with it; closing never touches the session (AP-4). `layout.json` stores each pane's
+session, so agent panes come back after a restart (AP-11). One view per pane is cached and reused
+when the pane moves, so its scroll position and composer survive.
+
+Rejected: a TUI client (`tern agent attach`) running in the terminal. It would get every pane
+behavior for free, but a terminal view takes no text through accessibility (the AP tests type
+through it), cards with buttons and Markdown are poor in a terminal, and it would be a second
+renderer to keep in step.
+
+The view (AppKit): a header (name, harness, status and activity, Interrupt, Terminal, a drag
+grip), the transcript as one read-only text view (Markdown replies with code set apart, tool calls
+that expand to their output, requests and notices, all in order; accessibility reads it whole),
+cards for pending approvals and questions with buttons, the queued messages, and a composer
+(Enter sends, Shift+Enter adds a line, Esc interrupts; drafts kept per session).
+
+## 14. Focus for agent panes (AP-3, L-8)
+
+Phase 1's rule holds: a non-focusing open edits the model only (new tab or split created with
+`focus: false`, no first responder, no activation). Keyboard focus for an agent pane is its
+composer: when Ghostty makes the pane's surface first responder (pane focus, tab switch, a move),
+the surface hands it to the composer on the next turn of the run loop; when the composer takes
+focus (a click), the pane becomes its tab's and window's focused pane. `agent open` of a session
+already shown focuses that pane only with `--focus`; otherwise it returns the pane and changes
+nothing.
+
+**Evidence.** `test_opening_without_focus_never_moves_the_users_focus` (samples `ls` throughout),
+`test_open_focuses_an_existing_pane_and_reopens_a_closed_one`, `test_placements`; the UI tests
+(`test_follow_up_typed_into_the_pane`, `test_escape_in_the_pane_interrupts`) need an unlocked screen.
+
+## 15. Agent environment and awareness (MA-20, MA-21, MA-23, MA-27, MA-29)
+
+- **Environment.** The user's login shell environment, captured the way a new terminal starts
+  (`$SHELL -l -i`, from a clean slate, cached 5 minutes), never the app's or the caller's. Known
+  agent markers are dropped even if present; the app's `tern` is put first on PATH (an older `tern`
+  in `~/.local/bin` must not answer); `TERN_STATE_DIR`, `TERN_SESSION_ID` and `TERN_INSTANCE` are
+  added; `--env` overrides are applied last and kept for every resume.
+- **Awareness (MA-27), without being told by whoever started it.** Claude gets
+  `--append-system-prompt`, Codex `developerInstructions`: a few lines saying it is a managed
+  session nobody may be watching, its name, id, parent and folder, how to report
+  (`tern agent report done|blocked|failed "…"`), and that `tern agent …` reaches other sessions
+  (`tern agent info self` gives current details). Additive: the harness's own prompt, CLAUDE.md and
+  AGENTS.md all still load.
+- **What it loaded (MA-29).** Claude's `system/init` (model, MCP servers and their status, skills,
+  plugins, agents) and Codex's thread answer plus `mcpServer/startupStatus/updated` become the
+  session's `startup`, refreshed at every start or resume; failed and needs-auth servers become
+  `flags`, printed as one warning line by `agent wait` and `agent start --wait`. Codex reports its
+  servers after the thread opens, so `agent wait` holds its answer up to 5 s while servers are
+  still starting.
+- **The user's own agents are untouched** (MA-21, IA-4): nothing writes `~/.claude` or `~/.codex`;
+  "allow always" is sent with destination `session` (Claude) / `acceptForSession` (Codex) and
+  remembered by the product per session, never written to settings files.
+
+## 16. Persistence (R-2, R-3, R-8, R-9)
+
+| Candidate | Cost |
+|---|---|
+| A. SQLite | Transactions, but a single file shrinks only with VACUUM, and a second storage engine to own. |
+| B. **A folder per session**: `session.json` (settings, ids, report, startup; rewritten atomically) and `log.jsonl` (messages and transcript items, append-only, replayed at launch) | Removing a session deletes its folder, so disk follows what the user keeps. A crash can leave a partial last line, which is skipped. |
+
+**Pick: B**, in the state directory (`sessions/`), versioned (`"v": 1`) so a newer build reads an
+older build's sessions (R-8). Message states are logged as they change, so after `kill -9` the
+launch knows which messages were delivered and which turns were cut off. Tool output kept in the
+transcript is clipped to 16 KB (head and tail) so a long run's storage grows with what the user
+keeps, not with what tools print (R-9). Nothing is fsynced: the failure the product has to survive
+is being killed, and the kernel keeps what was written.
+
+**Evidence.** `test_crash_recovery` (transcript entries kept in order, none reused, nothing
+delivered twice), `test_long_runs_stay_fast_and_disk_follows_what_is_kept`,
+`test_upgrading_keeps_sessions`, `test_restart_resumes_sessions`.
+
+## 17. Smaller decisions
+
+- **Names** are unique among running sessions; starting one with the name of a finished session
+  renames the finished one to `name~<id prefix>` (MA-11 "a finished one gives up its name").
+- **`agent stop`** returns once everything is gone. Messages queued before it end `EXITED`; a message
+  sent while it stops waits and resumes the session afterwards (MA-3).
+- **A crashed harness** fails the message whose turn it was running (`ERROR`, with the reason);
+  messages queued behind it are delivered after an automatic resume; two failed starts in a row
+  stop the retries and fail what's queued.
+- **`agent watch`** is one-shot: one follow-up to OTHER when the watched message's turn ends (default:
+  the latest message), the session needs input, or it exits; if that already happened, at once.
+- **`agent wait --report`** counts a report made after the message (by order, not clock), never
+  returns early on idle, and always prints what the harness says (MA-26's "idle isn't done").
+- **Desktop notifications** (AP-7) when a session needs the user or finishes and its pane isn't in
+  front; clicking one shows the session. Off in isolated instances.

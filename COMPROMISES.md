@@ -25,3 +25,23 @@ macOS then hides every window's accessibility tree, so the suite's six UI tests 
 behaviors were checked through Tern's internal `debug.*` control methods
 (`app/macos/TernTests/verify_ui_paths.py`, 43/43 checks pass), but the UI tests themselves need an
 unlocked screen. See REPORT.md, "Questions for the user".
+
+===================================================================================================
+
+# Compromises (phase 2: managed agents)
+
+What phase 2 gives up, why, and which requirement that protects.
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **Steering.** A follow-up sent while the agent works waits for the running turn to end; it is never injected into the turn (Claude's mid-turn injection, Codex's `turn/steer`). | A message handed to the harness early sits in a queue the product can't take back: a redirect couldn't go ahead of it, `--drop-queued` couldn't cancel it, Claude's interrupt (which names no turn) could hit its turn, and after a crash nobody could say whether the model saw it. One message at a time keeps every message in exactly one known place. SPEC lists steering as negotiable and says it must not weaken MA-4. | MA-4 (exactly once), MA-25 (redirect goes first, never interrupts its own turn), MA-8, R-2. |
+| **A worker's pane shows the app's rendering of the session, not the harness's own TUI.** Slash-command pickers, Claude's spinner and Codex's diff viewer aren't there; the transcript, tool calls (expandable), approvals and questions (as cards), queued messages and a composer are. The real shell in the session's folder is one toggle away. | The TUI can only be driven by typing into and reading a screen, which the user ruled out for control, and its state has no ids. The harnesses' headless interfaces carry the same agent and configuration (MA-23). | MA-2, MA-4, MA-5, MA-7 (control on ids and events), MA-23 via the real CLIs. AP-10 (presentation) is negotiable. |
+| **Sessions stop when the app quits** (the user's choice). A turn running at a quit is interrupted cleanly and continues by itself at the next launch, with a note; a crash cuts it off and it continues the same way. | Keeping harnesses alive needs a daemon that outlives app updates (R-8) and has its own crash and orphan story. The user asked for the effort to go into resumption. | MA-24, R-1 (one owner for every process), R-8, R-10. |
+| **After a crash of the whole product, a message written to Claude in the instant before the crash counts as delivered** (it continues with the cut-off note, it isn't sent again). Codex is asked instead (`thread/resume` lists what the thread received). | Claude has no way to say which messages a conversation has; the window is the milliseconds between writing a message and Claude acknowledging it, and Claude reads stdin before anything else. Sending it again risks a double delivery. | MA-4 ("never twice"), R-2. |
+| **Codex: a "deny" carries no message to the agent.** | Codex's approval answer has no message field (`decline` only). Claude's does, and gets it. | MA-14 (negotiable). |
+| **MCP elicitation forms and links are Codex-only.** | Claude's stream-json mode was never seen asking for elicitation (no recording, no probe); nothing to surface. Codex's are shown and answered (link: open then confirm; form: fields, a plain answer fills a one-field form). | MA-16 (negotiable). |
+| **`agent wait` on Codex holds its answer up to 5 s after a (re)start** while MCP servers still report `starting`. | Codex reports server status after the thread opens; a fast first turn would otherwise end before the warning line could say what failed. | MA-29. |
+| **Tool output kept in the transcript is clipped** to its first 12 KB and last 4 KB (the agent itself got all of it). | Storage grows with what the user keeps, not with what tools print; the view and the CLI stay fast. | R-9. |
+| **`update --now` refuses while agent turns run** unless given `--force` (the "Install and Relaunch" dialog says how many turns it will interrupt; choosing it agrees). An update staged for "install on quit" installs at the next quit, which interrupts turns cleanly like any quit. | R-10: an update installs while turns run only if the user agrees. | R-10. |
+| **Desktop notifications for agents are off in isolated instances** (test runs). | A test instance must not post notifications on the user's desktop. | P-1, R-5. |
+| **Dragging an agent pane uses the grip in its header.** The terminal's own grab handle is under the session's view. | The session's view covers the terminal so keyboard and mouse go to it. | AP-1, AP-2. |

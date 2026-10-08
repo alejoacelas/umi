@@ -58,7 +58,10 @@ scanned for other triggers):
   STATE          reply is one line of JSON: harness, session, model, effort, full_access,
                  permission_mode, cwd, argv (what this harness was told)
   ECHO           reply == user text;  RECALL -> "history: <prior user texts>"
-  WAKE n [text]  reply "wake: not supported by codex" (Codex was never seen starting a turn by itself)
+  WAKE n [text]  reply "wake: not supported by codex" (Codex doesn't start a turn by itself: X15wake)
+  BACKGROUND n   a commandExecution `sleep n` that keeps running after the turn (a background terminal):
+                 reply "started"; turn/completed while the item is still open; n s later item/completed
+                 for it, with the finished turn's id and no new turn (X15wake)
   default        "ok: <text>"
 """
 import json
@@ -78,6 +81,7 @@ VERSION = "0.160.0"
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 RUN_RE = re.compile(r"\bRUN[ \t]+(.+)")
 WAKE_RE = re.compile(r"\bWAKE[ \t]+([0-9]*\.?[0-9]+)(?=\s|$)")
+BACKGROUND_RE = re.compile(r"\bBACKGROUND[ \t]+([0-9]*\.?[0-9]+)(?=\s|$)")
 MCP_STATUSES = ("connected", "pending", "failed", "needs-auth")
 MCP_FINAL_AFTER = 0.2      # "ready" came 0.2-1.5 s after "starting" in every X log
 KNOWN_METHODS = ["initialize", "thread/start", "thread/resume", "thread/unsubscribe",
@@ -1004,6 +1008,22 @@ class FakeCodex(object):
         self.item_completed(turn, done)
         self.usage_noise(th, turn)
 
+    def run_background(self, th, turn, secs, label):
+        """X15wake: the command runs as a background terminal. Its item stays open through the
+        turn's end; n seconds later item/completed arrives with the finished turn's id."""
+        item = self.cmd_item(th, "sleep %s" % label, "inProgress", "unifiedExecStartup", pid=str(os.getpid()))
+        self.item_started(turn, item)
+        started = time.time()
+
+        def finish():
+            time.sleep(secs)
+            done = dict(item)
+            done.update({"status": "completed", "exitCode": 0, "durationMs": int((time.time() - started) * 1000)})
+            self.notify("item/completed", {"item": done, "threadId": turn.thread_id, "turnId": turn.id,
+                                           "completedAtMs": now_ms()})
+
+        threading.Thread(target=finish, daemon=True).start()
+
     def run_huge(self, th, turn, out, size):
         self.maybe_commentary(turn)
         item = self.cmd_item(th, "yes 0123456789abcdef | head -c %d" % size, "inProgress", "unifiedExecStartup",
@@ -1262,6 +1282,11 @@ class FakeCodex(object):
                         self.run_sleep(th, turn, float(m.group(1)), m.group(1))
                     if wake is not None:
                         extra = "wake: not supported by codex"
+                    m = BACKGROUND_RE.search(trig)
+                    if m:
+                        used_tool = True
+                        self.run_background(th, turn, float(m.group(1)), m.group(1))
+                        extra = "started"
                     m = re.search(r"HUGE\s+([0-9]*\.?[0-9]+)", trig)
                     if m:
                         used_tool = True
