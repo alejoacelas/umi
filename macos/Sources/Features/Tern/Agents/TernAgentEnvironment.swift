@@ -160,7 +160,9 @@ enum TernAgentEnvironment {
         - When you finish a task, or are blocked, or fail, record your verdict with \
         `\(cli) agent report done|blocked|failed "<one-line summary>"` (the session that started you waits for it).
         - `\(cli)` is on your PATH. You can start and coordinate other agent sessions with `\(cli) agent start`, \
-        `send`, `wait`, `read` and `stop` (see `\(cli) agent --help`).
+        `send`, `wait`, `read` and `stop` (see `\(cli) agent --help`). Sessions you start run in the background, \
+        shown in no pane, unless you pass `--tab`, `--split` or `--new-window`; `\(cli) agent ls --parent self` \
+        lists them and `\(cli) agent open SESSION` shows one in a pane.
         """
     }
 }

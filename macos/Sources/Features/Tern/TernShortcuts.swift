@@ -95,6 +95,11 @@ enum TernShortcuts {
             menu.addItem(menuItem)
             handlers[menuItem] = item
         }
+        // Every session, shown in a pane or not, with its status (AP-3, AP-4).
+        if let windowMenu = mainMenu.items.first(where: { $0.submenu?.title == "Window" })?.submenu
+            ?? mainMenu.items.first(where: { $0.title == "Window" })?.submenu {
+            TernAgentMenu.shared.install(in: windowMenu)
+        }
     }
 
     private static func allItems(_ menu: NSMenu) -> [NSMenuItem] {
@@ -116,14 +121,13 @@ enum TernShortcuts {
                 item.action()
             }
         }
-        // Every managed session can be shown (again) from the palette (AP-4).
-        let sessions = TernAgents.queue.sync {
-            TernAgents.shared.sessions.map { ($0.record.id, $0.record.name, $0.status, $0.record.kind.rawValue) }
-        }
-        let agents = sessions.reversed().map { session in
-            CommandOption(title: "Show Agent: \(session.1)", description: "\(session.3) · \(session.2)", symbols: nil,
-                          leadingIcon: "bubble.left.and.text.bubble.right") {
-                _ = try? TernAgentUI.open(session.0, placement: .init(kind: .tab, focus: true), caller: TernCaller([:]))
+        // Every managed session can be shown (again) from the palette (AP-3, AP-4), the ones
+        // that need the user first.
+        let agents = TernAgentMenu.ordered().map { session in
+            CommandOption(title: "Show Agent: \(session.name)",
+                          description: "\(session.kind) · \(TernAgentMenu.describe(status: session.status, activity: session.activity))",
+                          symbols: nil, leadingIcon: TernAgentMenu.symbol(for: session.status)) {
+                _ = try? TernAgentUI.open(session.id, placement: .init(kind: .tab, focus: true), caller: TernCaller([:]))
             }
         }
         return fixed + agents

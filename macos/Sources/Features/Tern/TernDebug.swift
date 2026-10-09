@@ -20,7 +20,7 @@ enum TernDebug {
                 if key == String(UnicodeScalar(NSLeftArrowFunctionKey)!) { key = "left" }
                 if key == String(UnicodeScalar(NSRightArrowFunctionKey)!) { key = "right" }
                 out.append(["title": item.title, "menu": path.joined(separator: " > "), "key": key,
-                            "modifiers": mods, "enabled": item.isEnabled])
+                            "modifiers": mods, "enabled": item.isEnabled, "state": item.state == .on ? "on" : "off"])
                 if let submenu = item.submenu { walk(submenu, path: path + [item.title]) }
             }
         }

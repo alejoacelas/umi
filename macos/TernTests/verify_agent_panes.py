@@ -78,6 +78,41 @@ def main():
         inst.cli("window", "focus", win["window"])
         inst.cli("tab", "focus", win["tab"])
 
+        # AP-3: background sessions are listed in Window > Agent Sessions with their status, the
+        # ones that need the user first; the Dock badge counts those; choosing one shows it.
+        n = nonce()
+        idle_one = start(inst, "codex", "ECHO idle", name=f"bg-idle-{n}")
+        asking = start(inst, "claude", "ASK_QUESTIONS", name=f"bg-asking-{n}")
+        inst.wait(idle_one)
+        inst.wait(asking)
+
+        def session_items():
+            return [i for i in ctl.call("debug.menu")["items"] if i["menu"].endswith("Agent Sessions")]
+        def ours():
+            titles = [i["title"] for i in session_items() if n in i["title"]]
+            return (len(titles) == 2 and titles[0].startswith(f"bg-asking-{n} — needs input")
+                    and titles[1] == f"bg-idle-{n} — idle")
+        ok = soon(ours, 10)
+        check("Agent Sessions lists background sessions, the one that needs the user first",
+              ok, [i["title"] for i in session_items()])
+        check("the Dock badge counts the session that needs the user",
+              soon(lambda: ctl.call("debug.dock_badge")["badge"] == "1", 5), ctl.call("debug.dock_badge"))
+        check("neither is shown in a pane", not agent_pane(inst, idle_one) and not agent_pane(inst, asking))
+        ctl.call("debug.menu.perform", title=f"bg-idle-{n}")
+        shown = soon(lambda: agent_pane(inst, idle_one), 10)
+        check("choosing one shows it in a pane, focused",
+              shown and soon(lambda: inst.json("ls")["current_pane"] == agent_pane(inst, idle_one), 5))
+        check("the menu marks it as shown",
+              soon(lambda: any(i["title"].startswith(f"bg-idle-{n}") and i.get("state") == "on" for i in session_items()), 5),
+              session_items())
+        inst.cli("agent", "stop", asking, check=False)
+        check("the badge clears when nothing needs the user",
+              soon(lambda: ctl.call("debug.dock_badge")["badge"] == "", 10), ctl.call("debug.dock_badge"))
+        inst.cli("pane", "close", agent_pane(inst, idle_one), check=False)
+        inst.cli("agent", "stop", idle_one, check=False)
+        inst.cli("window", "focus", win["window"])
+        inst.cli("tab", "focus", win["tab"])
+
         # AP-1: a follow-up typed into the pane and Enter sends it (both harnesses).
         for kind in ("claude", "codex"):
             secret = "reply-" + nonce()

@@ -816,9 +816,18 @@ class AppDelegate: NSObject,
             .compactMap { $0.windowController as? BaseTerminalController }
             .reduce(0) { $0 + ($1.bell ? 1 : 0) }
         let wantsBadge = ghostty.config.bellFeatures.contains(.attention) && bellCount > 0
-        let label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
+        var label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
+        // Tern: managed sessions that need the user come first (most have no pane to show it).
+        let needingInput = MainActor.assumeIsolated { TernAgentMenu.shared.needingInput.count }
+        if needingInput > 0 { label = needingInput > 99 ? "99+" : String(needingInput) }
         NSApp.dockTile.badgeLabel = label
         NSApp.dockTile.display()
+    }
+
+    /// Tern: a managed session started or stopped needing the user. Isolated (test)
+    /// instances set the badge without asking for the badge permission.
+    func refreshDockBadge() {
+        if TernPaths.isIsolated { setDockBadge() } else { syncDockBadge() }
     }
 
     private func ghosttyConfigDidChange(config: Ghostty.Config) {
@@ -946,6 +955,14 @@ class AppDelegate: NSObject,
             withCompletionHandler()
             return
         }
+        if userInfo["tern_update"] != nil {
+            // The update question's notification: show the sidebar, where the question is.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { _ = TernUpdater.handleNotification(userInfo: ["tern_update": true]) }
+            }
+            withCompletionHandler()
+            return
+        }
         ghostty.handleUserNotification(response: didReceive)
         withCompletionHandler()
     }
@@ -957,6 +974,7 @@ class AppDelegate: NSObject,
     ) {
         // Managed sessions decide themselves whether to notify (not while their pane is in front).
         let shouldPresent = willPresent.request.content.userInfo["tern_agent_session"] != nil
+            || willPresent.request.content.userInfo["tern_update"] != nil
             || ghostty.shouldPresentNotification(notification: willPresent)
         let options: UNNotificationPresentationOptions = shouldPresent ? [.banner, .sound] : []
         withCompletionHandler(options)

@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import Foundation
+import UserNotifications
 
 /// Tern's updater (I-4, P-2). It replaces the updater Ghostty ships with, which points at
 /// Ghostty's own feed: Tern only ever looks at its own release feed and only installs builds
@@ -8,6 +9,11 @@ import Foundation
 ///
 /// - The feed is a small JSON file (`appcast.json`) published with each release. It names
 ///   the version, the zip's URL, its SHA-256 and an Ed25519 signature of the zip.
+/// - A background check that finds a newer version asks first (I-4): a notice at the bottom
+///   of every window's sidebar (Download, Later, Skip), never a dialog, and nothing is
+///   downloaded until the answer is yes. "Check for Updates…" and `tern update` are a yes.
+///   The answers are kept in the state directory (`update.json`), so a restart neither asks
+///   again early nor forgets a yes (DECISIONS.md §18).
 /// - A download is verified (signature, hash, bundle id, version, code signature) and
 ///   unpacked into the state directory. It installs when the app quits, or at once when
 ///   the user asks (`tern update --now`, or the prompt). The app never quits or closes
@@ -36,15 +42,58 @@ final class TernUpdater: ObservableObject {
         case failed(String)
     }
 
+    /// The user's answers to the update question, kept across restarts.
+    struct Answers: Codable, Equatable {
+        /// "Skip This Version": never ask about this version again.
+        var skipped: String?
+        /// "Later": don't ask again before this time.
+        var laterUntil: Date?
+        /// A yes (Download, "Check for Updates…", `tern update`): this version may be
+        /// downloaded and installed without asking again, even after a restart.
+        var consent: String?
+        /// The version a desktop notification was posted for (once per version).
+        var notified: String?
+    }
+
+    /// What the sidebar shows.
+    enum Notice: Equatable {
+        case asking(String)
+        case downloading(String)
+        case ready(String)
+        case failed(String, String)
+    }
+
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var latest: String?
+    /// The newer version the app is asking about (nil: not asking).
+    @Published private(set) var question: String?
+    @Published private(set) var answers: Answers
 
     /// A staged, verified update waiting for the app to quit.
     private(set) var staged: (version: String, app: URL)?
     private var installOnQuit = true
     private var relaunchAfterInstall = false
     private var downloadTask: Task<Release, Error>?
+    /// The version the current or last download was for.
+    private var downloadVersion: String?
     private var timer: Timer?
+
+    private init() {
+        answers = Self.loadAnswers()
+        // A yes or a skip for a version this build already is (or is newer than) is spent.
+        if let consent = answers.consent, Self.compare(consent, TernVersion.current) != .orderedDescending { answers.consent = nil }
+        if let skipped = answers.skipped, Self.compare(skipped, TernVersion.current) != .orderedDescending { answers.skipped = nil }
+    }
+
+    /// How often to check in the background, and how long "Later" lasts. Isolated instances
+    /// (tests) may shorten them.
+    private static func seconds(_ variable: String, default value: TimeInterval) -> TimeInterval {
+        guard TernPaths.isIsolated, let raw = ProcessInfo.processInfo.environment[variable],
+              let seconds = TimeInterval(raw), seconds > 0 else { return value }
+        return seconds
+    }
+    private static var checkInterval: TimeInterval { seconds("TERN_UPDATE_CHECK_SECONDS", default: 6 * 3600) }
+    private static var laterInterval: TimeInterval { seconds("TERN_UPDATE_LATER_SECONDS", default: 24 * 3600) }
 
     var feedURL: URL? {
         if let override = ProcessInfo.processInfo.environment["TERN_FEED_URL"], !override.isEmpty {
@@ -65,34 +114,196 @@ final class TernUpdater: ObservableObject {
 
     private var updatesDirectory: String { TernPaths.directory("updates") }
 
-    /// What the sidebar says when an update is waiting.
-    var sidebarNotice: String? {
-        if case .ready(let version) = phase {
-            return "\(TernPaths.productName) \(version) is ready. It installs when you quit (click to install now)."
+    /// What the sidebar shows: the question, a download the user agreed to, or a staged update.
+    var notice: Notice? {
+        switch phase {
+        case .ready(let version): return .ready(version)
+        case .downloading(let version): return .downloading(version)
+        case .installing: return staged.map { .ready($0.version) }
+        case .failed(let reason):
+            if let version = downloadVersion, version == answers.consent { return .failed(version, reason) }
+        default: break
         }
-        return nil
+        return question.map { .asking($0) }
+    }
+
+    // MARK: The question (I-4)
+
+    enum Answer: String { case download, later, skip }
+
+    /// The user answered the question (the sidebar's buttons, or `tern update --later/--skip`).
+    func answer(_ answer: Answer) async throws -> [String: Any] {
+        switch answer {
+        case .download:
+            return try await download()
+        case .later:
+            if downloadTask != nil || staged != nil {
+                throw TernError.failed("the update is already downloading or downloaded; it installs when \(TernPaths.productName) quits")
+            }
+            let newer = latest.map { Self.compare($0, TernVersion.current) == .orderedDescending } ?? false
+            guard question != nil || newer else {
+                throw TernError.failed("there's nothing to answer: no newer version is known (`\(TernPaths.cliName) update --check` looks)")
+            }
+            answers.laterUntil = Date().addingTimeInterval(Self.laterInterval)
+            // "Later" also withdraws a yes whose download failed: it isn't retried until asked again.
+            answers.consent = nil
+            if case .failed = phase { phase = .idle }
+            question = nil
+            saveAnswers()
+            TernEvents.shared.emit("update.answered", ["answer": "later", "version": latest ?? ""])
+        case .skip:
+            var version = question ?? latest.flatMap { Self.compare($0, TernVersion.current) == .orderedDescending ? $0 : nil }
+            if version == nil {
+                let result = try await check(userInitiated: true)
+                if result["update_available"] as? Bool == true { version = result["latest"] as? String }
+            }
+            guard let version else {
+                throw TernError.failed("\(TernPaths.productName) \(TernVersion.current) is up to date: there's no version to skip")
+            }
+            if downloadTask != nil || staged?.version == version {
+                throw TernError.failed("\(version) is already downloading or downloaded; it installs when \(TernPaths.productName) quits")
+            }
+            answers.skipped = version
+            if answers.consent == version { answers.consent = nil }
+            if case .failed = phase { phase = .idle }
+            question = nil
+            saveAnswers()
+            TernEvents.shared.emit("update.answered", ["answer": "skip", "version": version])
+        }
+        return status()
+    }
+
+    /// After a check found `version`: ask about it, unless the user already answered.
+    private func considerAsking(_ version: String) {
+        guard Self.compare(version, TernVersion.current) == .orderedDescending else {
+            question = nil
+            return
+        }
+        // A yes is under way or done: nothing to ask (a newer version is asked about after
+        // the staged one installs).
+        if downloadTask != nil || staged != nil { return }
+        if answers.consent == version {
+            // The user already said yes to this version (before a restart, or a download
+            // that failed): carry on without asking again.
+            question = nil
+            guard TernVersion.isRelease else { return }
+            Task { @MainActor in _ = try? await self.download() }
+            return
+        }
+        if answers.skipped == version || (answers.laterUntil.map { $0 > Date() } ?? false) {
+            question = nil
+            return
+        }
+        if question != version {
+            question = version
+            // A failed download of an older version gives way to the question about this one.
+            if case .failed = phase { phase = .idle }
+            TernEvents.shared.emit("update.asked", ["installed": TernVersion.current, "version": version])
+        }
+        notifyOnce(version)
+    }
+
+    /// One desktop notification per version, pointing at the question (never in test instances).
+    private func notifyOnce(_ version: String) {
+        guard answers.notified != version else { return }
+        answers.notified = version
+        saveAnswers()
+        guard !TernPaths.isIsolated || ProcessInfo.processInfo.environment["TERN_UPDATE_NOTIFICATIONS"] == "1" else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "\(TernPaths.productName) \(version) is available"
+        content.body = "Nothing is downloaded until you say so: Download in the sidebar, or run `\(TernPaths.cliName) update`."
+        content.userInfo = ["tern_update": version]
+        let request = UNNotificationRequest(identifier: "tern-update-\(version)", content: content, trigger: nil)
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert]) { granted, _ in
+            guard granted else { return }
+            center.add(request) { _ in }
+        }
+    }
+
+    /// The update notification was clicked: show the question.
+    static func handleNotification(userInfo: [AnyHashable: Any]) -> Bool {
+        guard userInfo["tern_update"] != nil else { return false }
+        TernState.shared.sidebarVisible = true
+        return true
+    }
+
+    /// What the app knows, without checking (`tern update --status`).
+    func status() -> [String: Any] {
+        var out: [String: Any] = ["installed": TernVersion.current, "latest": latest ?? NSNull(),
+                                  "update_available": latest.map { Self.compare($0, TernVersion.current) == .orderedDescending } ?? false,
+                                  "background_checks": backgroundChecks, "state": state]
+        if let question { out["question"] = question }
+        if let staged { out["ready"] = staged.version }
+        if case .downloading(let version) = phase { out["downloading"] = version }
+        if case .failed(let reason) = phase { out["error"] = reason }
+        if let skipped = answers.skipped { out["skipped"] = skipped }
+        if let until = answers.laterUntil, until > Date() { out["later_until"] = ISO8601DateFormatter().string(from: until) }
+        if let consent = answers.consent { out["consent"] = consent }
+        if let feedURL { out["feed"] = feedURL.absoluteString }
+        return out
+    }
+
+    /// One word for where the update stands.
+    var state: String {
+        switch phase {
+        case .installing: return "installing"
+        case .ready: return "ready"
+        case .downloading: return "downloading"
+        case .failed: if downloadVersion != nil && downloadVersion == answers.consent { return "failed" }
+        default: break
+        }
+        guard let latest else { return "unknown" }
+        guard Self.compare(latest, TernVersion.current) == .orderedDescending else { return "up_to_date" }
+        if question == latest { return "asking" }
+        if answers.consent == latest { return "agreed" }
+        if answers.skipped == latest { return "skipped" }
+        if let until = answers.laterUntil, until > Date() { return "later" }
+        return "available"
+    }
+
+    private static var answersPath: String { TernPaths.path("update.json") }
+
+    private static func loadAnswers() -> Answers {
+        guard let data = FileManager.default.contents(atPath: answersPath) else { return Answers() }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode(Answers.self, from: data)) ?? Answers()
+    }
+
+    private func saveAnswers() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(answers) else { return }
+        try? data.write(to: URL(fileURLWithPath: Self.answersPath), options: .atomic)
     }
 
     // MARK: Background checks
 
-    /// Check in the background now and then. Only release builds update themselves, and an
-    /// isolated instance only when pointed at a feed explicitly.
+    /// Whether this copy checks in the background: only release builds update themselves, and
+    /// an isolated instance only when pointed at a feed explicitly.
+    var backgroundChecks: Bool {
+        guard TernVersion.isRelease else { return false }
+        return !(TernPaths.isIsolated && ProcessInfo.processInfo.environment["TERN_FEED_URL"] == nil)
+    }
+
+    /// Check in the background now and then. A check that finds a newer version asks; it
+    /// never downloads by itself (unless the user already said yes to that version).
     func startBackgroundChecks() {
-        guard TernVersion.isRelease else { return }
-        if TernPaths.isIsolated && ProcessInfo.processInfo.environment["TERN_FEED_URL"] == nil { return }
+        guard backgroundChecks else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             Task { @MainActor in await self?.backgroundCheck() }
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.backgroundCheck() }
         }
     }
 
     private func backgroundCheck() async {
+        // A yes is being carried out or waits for the quit: nothing to ask meanwhile.
         guard staged == nil, downloadTask == nil else { return }
-        guard let result = try? await check(userInitiated: false),
-              result["update_available"] as? Bool == true else { return }
-        _ = try? await download()
+        _ = try? await check(userInitiated: false)
     }
 
     // MARK: Checking
@@ -140,8 +351,13 @@ final class TernUpdater: ObservableObject {
         let available = Self.compare(release.version, TernVersion.current) == .orderedDescending
         TernEvents.shared.emit("update.checked", ["installed": TernVersion.current, "latest": release.version,
                                                   "update_available": available])
-        return ["installed": TernVersion.current, "latest": release.version, "update_available": available,
-                "feed": feedURL?.absoluteString ?? "", "ready": staged?.version ?? ""]
+        // Any check that finds a newer version asks (the answers so far permitting).
+        if backgroundChecks && !userInitiated { considerAsking(release.version) }
+        var out = status()
+        out["latest"] = release.version
+        out["update_available"] = available
+        out["ready"] = staged?.version ?? ""
+        return out
     }
 
     // MARK: Downloading
@@ -160,9 +376,17 @@ final class TernUpdater: ObservableObject {
                 let release = try await self.fetchFeed()
                 self.latest = release.version
                 guard Self.compare(release.version, TernVersion.current) == .orderedDescending else {
+                    self.question = nil
                     return release
                 }
+                // Every way here is a yes to this version: remember it, and stop asking.
+                self.answers.consent = release.version
+                if self.answers.skipped == release.version { self.answers.skipped = nil }
+                self.answers.laterUntil = nil
+                self.question = nil
+                self.saveAnswers()
                 if let staged = self.staged, staged.version == release.version { return release }
+                self.downloadVersion = release.version
                 self.phase = .downloading(release.version)
                 do {
                     let app = try await self.fetchAndVerify(release)
@@ -170,7 +394,9 @@ final class TernUpdater: ObservableObject {
                     self.phase = .ready(release.version)
                     TernEvents.shared.emit("update.ready", ["version": release.version])
                 } catch {
-                    self.phase = .failed((error as? TernError)?.message ?? error.localizedDescription)
+                    // A staged older update still installs at quit.
+                    let reason = (error as? TernError)?.message ?? error.localizedDescription
+                    self.phase = self.staged.map { .ready($0.version) } ?? .failed(reason)
                     throw error
                 }
                 return release
@@ -230,6 +456,13 @@ final class TernUpdater: ObservableObject {
         _ = Self.run("/usr/bin/xattr", ["-cr", app.path])
         guard Self.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path]) == 0 else {
             throw TernError.failed("the update's code signature doesn't verify")
+        }
+        // Earlier downloads, this build's or an older build's, are never installed now: only
+        // the one just verified is. (No installer helper can still be using them: one runs
+        // only after the app that staged it has quit, which was before this app started.)
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: base)) ?? []
+        where name.hasPrefix("staged-") && name != "staged-\(release.version)" {
+            try? FileManager.default.removeItem(atPath: (base as NSString).appendingPathComponent(name))
         }
         return app
     }
@@ -326,31 +559,36 @@ final class TernUpdater: ObservableObject {
 
     // MARK: Prompts (Check for Updates…)
 
+    /// "Check for Updates…": the user asked, so a newer version is a yes (I-4). It downloads
+    /// in the background; the sidebar shows when it's ready.
     func checkFromMenu() {
         Task { @MainActor in
             do {
                 let result = try await check(userInitiated: true)
                 let latest = result["latest"] as? String ?? "?"
-                if result["update_available"] as? Bool == true {
-                    if case .ready = phase {
-                        presentReadyPrompt()
-                        return
-                    }
-                    let alert = NSAlert()
-                    alert.messageText = "\(TernPaths.productName) \(latest) is available"
-                    alert.informativeText = "You have \(TernVersion.current). The update downloads in the background and installs when you quit \(TernPaths.productName)."
-                    alert.addButton(withTitle: "Download")
-                    alert.addButton(withTitle: "Later")
-                    if alert.runModal() == .alertFirstButtonReturn {
-                        _ = try await download()
-                        presentReadyPrompt()
-                    }
-                } else {
+                guard result["update_available"] as? Bool == true else {
                     let alert = NSAlert()
                     alert.messageText = "\(TernPaths.productName) is up to date"
                     alert.informativeText = "Version \(TernVersion.current) is the newest version."
                     alert.runModal()
+                    return
                 }
+                if case .ready(let ready) = phase, ready == latest {
+                    presentReadyPrompt()
+                    return
+                }
+                let alert = NSAlert()
+                guard TernVersion.isRelease else {
+                    alert.messageText = "\(TernPaths.productName) \(latest) is available"
+                    alert.informativeText = "This is a development build of \(TernPaths.productName), which doesn't update itself. Install a release instead."
+                    alert.runModal()
+                    return
+                }
+                Task { @MainActor in _ = try? await self.download() }
+                alert.messageText = "Downloading \(TernPaths.productName) \(latest)"
+                alert.informativeText = "You have \(TernVersion.current). It installs when you quit \(TernPaths.productName); "
+                    + "the sidebar shows when it's ready, and lets you install it at once."
+                alert.runModal()
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "Couldn't check for updates"

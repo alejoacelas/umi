@@ -45,8 +45,8 @@ struct TernSidebar: View {
                 }
             }
 
-            if let notice = updater.sidebarNotice {
-                TernUpdateNotice(text: notice)
+            if let notice = updater.notice {
+                TernUpdateNotice(notice: notice)
                     .padding(.horizontal, 10)
                     .padding(.bottom, 10)
             }
@@ -391,31 +391,114 @@ struct TernSidebarTabRow: View {
     }
 }
 
-/// A quiet line at the bottom of the sidebar when an update is ready.
+/// A quiet notice at the bottom of the sidebar about updates (I-4): the question when a
+/// newer version is out (nothing downloads until Download), the download, and the staged
+/// update. It never takes focus or blocks anything; it stays until answered.
 private struct TernUpdateNotice: View {
-    let text: String
+    let notice: TernUpdater.Notice
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11))
+                    .padding(.top, 1)
+                Text(text)
+                    .font(.system(size: 11))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(TernTheme.textSecondary)
+            .accessibilityElement(children: .combine)
+            buttons
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 7).fill(TernTheme.hoverFill))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Update")
+    }
+
+    private var symbol: String {
+        switch notice {
+        case .asking: return "arrow.down.circle"
+        case .downloading: return "arrow.down.circle.dotted"
+        case .ready: return "checkmark.circle"
+        case .failed: return "exclamationmark.circle"
+        }
+    }
+
+    private var text: String {
+        let name = TernPaths.productName
+        switch notice {
+        case .asking(let version): return "\(name) \(version) is available (you have \(TernVersion.current))."
+        case .downloading(let version): return "Downloading \(name) \(version)…"
+        case .ready(let version): return "\(name) \(version) is ready. It installs when you quit."
+        case .failed(let version, let reason): return "Couldn't download \(name) \(version): \(reason)"
+        }
+    }
+
+    @ViewBuilder
+    private var buttons: some View {
+        switch notice {
+        case .asking:
+            HStack(spacing: 4) {
+                noticeButton("Download", prominent: true) { answer(.download) }
+                noticeButton("Later") { answer(.later) }
+                noticeButton("Skip", label: "Skip This Version") { answer(.skip) }
+            }
+        case .ready:
+            noticeButton("Install Now…", prominent: true) { TernUpdater.shared.presentReadyPrompt() }
+        case .failed:
+            HStack(spacing: 4) {
+                noticeButton("Try Again", prominent: true) { answer(.download) }
+                noticeButton("Later") { answer(.later) }
+            }
+        case .downloading:
+            EmptyView()
+        }
+    }
+
+    private func answer(_ answer: TernUpdater.Answer) {
+        Task { @MainActor in _ = try? await TernUpdater.shared.answer(answer) }
+    }
+
+    private func noticeButton(_ title: String, label: String? = nil, prominent: Bool = false,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: prominent ? .semibold : .regular))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(TernNoticeButtonStyle(prominent: prominent))
+        .focusable(false)
+        .accessibilityLabel(label ?? title)
+    }
+}
+
+private struct TernNoticeButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        TernNoticeButtonBody(configuration: configuration, prominent: prominent)
+    }
+}
+
+private struct TernNoticeButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let prominent: Bool
     @State private var hovering = false
 
     var body: some View {
-        Button {
-            TernUpdater.shared.presentReadyPrompt()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.system(size: 11))
-                Text(text)
-                    .font(.system(size: 11))
-                    .lineLimit(2)
-                Spacer(minLength: 0)
-            }
-            .foregroundColor(hovering ? TernTheme.textPrimary : TernTheme.textSecondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 7).fill(TernTheme.hoverFill))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityLabel(text)
+        configuration.label
+            .foregroundColor(prominent || hovering ? TernTheme.textPrimary : TernTheme.textSecondary)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(configuration.isPressed || hovering ? TernTheme.textPrimary.opacity(0.14)
+                          : (prominent ? TernTheme.textPrimary.opacity(0.09) : .clear))
+            )
+            .onHover { hovering = $0 }
     }
 }

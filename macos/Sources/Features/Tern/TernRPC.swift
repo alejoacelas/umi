@@ -313,6 +313,13 @@ enum TernRPC {
         // MARK: Updates
         case "update.check":
             return try await TernUpdater.shared.check(userInitiated: false)
+        case "update.status":
+            return TernUpdater.shared.status()
+        case "update.answer":
+            guard let answer = params.string("answer").flatMap(TernUpdater.Answer.init(rawValue:)) else {
+                throw TernError.badRequest("answer is download, later or skip")
+            }
+            return try await TernUpdater.shared.answer(answer)
         case "update.download":
             return try await TernUpdater.shared.download()
         case "update.install_now":
@@ -322,6 +329,8 @@ enum TernRPC {
         // paths that otherwise need the accessibility tree.
         case "debug.menu":
             return ["items": TernDebug.menuItems()]
+        case "debug.dock_badge":
+            return ["badge": NSApp.dockTile.badgeLabel ?? ""]
         case "debug.undo":
             guard let um = (NSApp.delegate as? AppDelegate)?.undoManager else { return [:] }
             return ["can_undo": um.canUndo, "can_redo": um.canRedo, "undo": um.undoActionName,

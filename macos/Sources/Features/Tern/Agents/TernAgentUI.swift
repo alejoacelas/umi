@@ -32,6 +32,8 @@ final class TernAgentUI: ObservableObject {
         ui.model(for: id).snapshot = snapshot
         if previous?.status != snapshot.status || previous?.activity != snapshot.activity || previous?.name != snapshot.name {
             TernState.shared.layoutDidChange(persistOnly: false)
+            TernAgentMenu.shared.setNeedsRebuild()
+            TernAgentMenu.shared.statusChanged(id, status: snapshot.status)
             if previous?.status != snapshot.status {
                 TernEvents.shared.emit("agent.status", ["session": id, "name": snapshot.name, "status": snapshot.status])
                 TernAgentNotifications.statusChanged(snapshot, from: previous?.status)
@@ -43,6 +45,8 @@ final class TernAgentUI: ObservableObject {
         let ui = shared
         ui.models[id]?.removed = true
         ui.drafts.removeValue(forKey: id)
+        TernAgentMenu.shared.setNeedsRebuild()
+        TernAgentMenu.shared.statusChanged(id, status: nil)
     }
 
     func model(for id: String) -> TernAgentViewModel {
@@ -67,12 +71,14 @@ final class TernAgentUI: ObservableObject {
         attachments[pane] = session
         showingTerminal.remove(pane)
         TernState.shared.layoutDidChange()
+        TernAgentMenu.shared.setNeedsRebuild()
     }
 
     func detach(_ pane: UUID) {
         attachments.removeValue(forKey: pane)
         showingTerminal.remove(pane)
         TernState.shared.layoutDidChange()
+        TernAgentMenu.shared.setNeedsRebuild()
     }
 
     /// Panes in a window (not closed ones) that show a session: session id → pane id.

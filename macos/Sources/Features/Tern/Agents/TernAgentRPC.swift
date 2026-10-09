@@ -17,7 +17,11 @@ enum TernAgentRPC {
             let liveOnly = params.bool("live") ?? false
             let panes = TernAgentUI.panesBySession()
             return try await agents.run {
-                ["sessions": agents.sessions.filter { !liveOnly || $0.live }.map { info($0, pane: panes[$0.record.id]) }]
+                // --parent S: only the sessions S started (an orchestrator's workers).
+                let parent = try params.string("parent").map { try agents.resolve($0, caller: caller).record.id }
+                return ["sessions": agents.sessions
+                    .filter { (!liveOnly || $0.live) && (parent == nil || $0.record.parent == parent) }
+                    .map { info($0, pane: panes[$0.record.id]) }]
             }
         case "agent.info":
             let panes = TernAgentUI.panesBySession()
@@ -516,9 +520,12 @@ enum TernAgentRPC {
             self.focus = focus
         }
 
-        /// nil: `--background`.
+        /// nil: `--background`, or no placement at all (`agent start`'s default, AP-3).
         init?(_ params: TernParams, caller: TernCaller) throws {
             if params.bool("background") ?? false { return nil }
+            if !params.has("placement") && !params.has("window") && !params.has("pane") && !(params.bool("focus") ?? false) {
+                return nil
+            }
             focus = params.bool("focus") ?? false
             switch params.string("placement") ?? "tab" {
             case "split": kind = .split

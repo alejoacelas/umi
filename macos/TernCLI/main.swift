@@ -643,11 +643,12 @@ Editor
   editor default [--dry-run]             make \(productName) the default app for Markdown
 
 Managed agents (see `\(cliName) agent --help`)
-  agent start claude|codex [PROMPT…] …   start a session; prints its id
+  agent start claude|codex [PROMPT…] …   start a session in the background; prints its id
   agent send SESSION TEXT…               a follow-up; prints the message id
   agent wait SESSION [--report]          wait for the turn (or the worker's report)
+  agent open SESSION                     show a session in a pane (a new tab by default)
   agent read | ls | info | interrupt | stop | resume | approve | deny | answer | watch
-        | open | rename | rm | report
+        | rename | rm | report
 
 Agents typed into a terminal
   claude [ARGS…] / codex [ARGS…]         a new tab running `claude ARGS…` as if typed
@@ -655,8 +656,12 @@ Agents typed into a terminal
          [--no-focus] -- [ARGS…]
 
 Other
-  update [--check | --now [--force]]     check for, download and install updates (--force: even while
+  update                                 download the newest version (it installs when \(productName) quits)
+  update --check | --status              look for a newer version | say what's known, without looking
+  update --now [--force]                 download and install now, then relaunch (--force: even while
                                          agent turns run; they continue after the relaunch)
+  update --later | --skip                answer \(productName)'s update question: ask again tomorrow |
+                                         don't ask about this version again
   doctor                                 check this machine for what \(productName) needs
   help
 
@@ -1222,20 +1227,19 @@ func interactiveAgentCommand(_ kind: String, _ argv: [String]) {
 // MARK: - Updates
 
 func updateCommand(_ argv: [String]) {
-    let args = parse(argv, ArgSpec(boolean: ["--check", "--now", "--force"]))
-    if args.has("--check") {
-        let result = callDict("update.check")
-        if jsonOutput {
-            printJSON(result)
+    let args = parse(argv, ArgSpec(boolean: ["--check", "--status", "--now", "--force", "--later", "--skip"]))
+    let modes = ["--check", "--status", "--now", "--later", "--skip"].filter { args.has($0) }
+    if modes.count > 1 { fail("update: choose one of \(modes.joined(separator: ", "))") }
+    if args.has("--check") || args.has("--status") || args.has("--later") || args.has("--skip") {
+        let result: [String: Any]
+        if args.has("--check") {
+            result = callDict("update.check")
+        } else if args.has("--status") {
+            result = callDict("update.status")
         } else {
-            let installed = result["installed"] as? String ?? "?"
-            let latest = result["latest"] as? String ?? "?"
-            if result["update_available"] as? Bool ?? false {
-                print("installed \(installed), latest \(latest): an update is available (`\(cliName) update`)")
-            } else {
-                print("installed \(installed), latest \(latest): up to date")
-            }
+            result = callDict("update.answer", ["answer": args.has("--later") ? "later" : "skip"])
         }
+        if jsonOutput { printJSON(result) } else { print(updateStatusLine(result)) }
         return
     }
     // --force: install now even while managed-agent turns run (they're interrupted and
@@ -1246,6 +1250,41 @@ func updateCommand(_ argv: [String]) {
     } else if let message = result["message"] as? String {
         print(message)
     }
+}
+
+/// One line on where the update stands (`update --check`, `--status`, `--later`, `--skip`).
+func updateStatusLine(_ result: [String: Any]) -> String {
+    let installed = result["installed"] as? String ?? "?"
+    let latest = result["latest"] as? String
+    var line = "installed \(installed), latest \(latest ?? "not checked yet")"
+    guard let latest, result["update_available"] as? Bool ?? false else {
+        return latest == nil ? line + " (`\(cliName) update --check` checks)" : line + ": up to date"
+    }
+    switch result["state"] as? String ?? "" {
+    case "asking":
+        line += ": an update is available. \(productName) is asking whether to download it (in the sidebar); "
+            + "nothing is downloaded until you say yes. `\(cliName) update` says yes."
+    case "later":
+        let until = (result["later_until"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+        let when = until.map { DateFormatter.localizedString(from: $0, dateStyle: .short, timeStyle: .short) } ?? "later"
+        line += ": an update is available; you chose Later, so \(productName) asks again after \(when). `\(cliName) update` downloads it now."
+    case "skipped":
+        line += ": an update is available; you skipped \(latest), so \(productName) asks again when a newer version is out. "
+            + "`\(cliName) update` downloads it anyway."
+    case "agreed":
+        line += ": an update is available; you said yes, so it downloads at the next check (or now with `\(cliName) update`)."
+    case "downloading":
+        line += ": downloading \(result["downloading"] as? String ?? latest)."
+    case "ready", "installing":
+        let ready = result["ready"] as? String ?? latest
+        line += ": \(ready) is downloaded and installs when \(productName) quits (`\(cliName) update --now` installs it now)."
+    case "failed":
+        line += ": the download failed (\(result["error"] as? String ?? "unknown error")); `\(cliName) update` tries again."
+    default:
+        line += ": an update is available (`\(cliName) update`)"
+        if result["background_checks"] as? Bool == false { line += "; this copy doesn't check by itself" }
+    }
+    return line
 }
 
 // MARK: - Doctor

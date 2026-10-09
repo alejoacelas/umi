@@ -14,8 +14,9 @@ let agentHelp = """
         [--model M] [--effort E] [--full-access] [--permission-mode M] [--profile P]
         [--env K=V]… [--tab [--window W] | --split [DIR] [--pane P] | --new-window] [--focus]
         [--background] [--wait [--timeout S]] [-- HARNESS ARGS]
-                                    start a session; prints its id (shown in a new tab unless
-                                    --background; --focus to switch to it)
+                                    start a session; prints its id. It runs in the background
+                                    (shown nowhere) unless given a placement: --tab, --split or
+                                    --new-window (--focus alone means a new tab, switched to)
   agent send SESSION TEXT… [--interrupt [--drop-queued]] [--wait [--timeout S]]
                                     a follow-up (queued while the agent works; a stopped session
                                     resumes); prints the message id. --interrupt: stop the running
@@ -27,18 +28,26 @@ let agentHelp = """
   agent report done|blocked|failed [SUMMARY…] [--session S]
                                     inside a session: record your verdict on your task
   agent read SESSION [--message ID] | --transcript [--last N]
-  agent ls [--live]                 agent info SESSION
+  agent ls [--live] [--parent S]    every session (or only S's workers) with its status,
+                                    activity, report and the pane showing it, if any
+  agent info SESSION
   agent interrupt SESSION           agent stop SESSION          agent resume SESSION [PROMPT…]
   agent approve SESSION [REQUEST] [--always] [--message TEXT]
   agent deny SESSION [REQUEST] [--message TEXT]
   agent answer SESSION [TEXT…] [--answer N=TEXT]… [--request R]
   agent watch SESSION --notify OTHER [--message ID] [--text T]
   agent open SESSION [--tab [--window W] | --split [DIR] [--pane P] | --new-window] [--focus]
+                                    show a session (default: a new tab, without switching to
+                                    it); one already shown keeps its pane (--focus goes there)
   agent rename SESSION NAME         agent rm SESSION [--force]
 
 SESSION is an id or unique id prefix, a name, the harness's own session or thread id, or
 `self` inside a managed agent. Text: words are joined; `-` reads stdin; text after `--` is text
 (for `agent start`, what follows `--` goes to the harness).
+
+Sessions in the background are listed by `agent ls`, in the command palette and in Window >
+Agent Sessions; ⌃⌘J shows the one that needs you. Everything about them (status, transcript,
+reports, requests) works the same whether or not a pane shows them.
 
 \(idleNote)
 """
@@ -143,6 +152,12 @@ func placementSpec(_ valued: Set<String>, _ boolean: Set<String>) -> ArgSpec {
     return spec
 }
 
+/// Whether any option says where to show the session.
+func hasPlacement(_ args: Args) -> Bool {
+    ["--tab", "--split", "--new-window", "--focus"].contains { args.has($0) }
+        || args.value("--window") != nil || args.value("--pane") != nil
+}
+
 func placementParams(_ args: Args) -> [String: Any] {
     var params: [String: Any] = [:]
     let choices = [args.has("--tab"), args.has("--split"), args.has("--new-window")].filter { $0 }.count
@@ -172,6 +187,9 @@ func agentStart(_ argv: [String]) {
     guard let kind = args.positional.first else { fail("agent start: claude or codex?") }
     guard kind == "claude" || kind == "codex" else { fail("agent start: unknown agent \"\(kind)\" (use claude or codex)") }
     var params = placementParams(args)
+    // AP-3: a session runs in the background (shown nowhere) unless a placement is given.
+    let background = args.has("--background") || !hasPlacement(args)
+    if background { params = ["background": true] }
     params["kind"] = kind
     let words = Array(args.positional.dropFirst())
     if words == ["-"] {
@@ -208,6 +226,11 @@ func agentStart(_ argv: [String]) {
     let session = result["session"] as? [String: Any] ?? [:]
     let id = session["id"] as? String ?? ""
     if let paneError = result["pane_error"] as? String { eprint("\(cliName): warning: \(paneError)") }
+    if background && !jsonOutput && isatty(STDERR_FILENO) == 1 && isatty(STDOUT_FILENO) == 1 {
+        // A person at a terminal: say where the session is (scripts and agents only see the id).
+        let name = session["name"] as? String ?? id
+        eprint(dim("running in the background; `\(cliName) agent open \(name)` shows it"))
+    }
     if args.has("--wait") {
         var waitParams: [String: Any] = ["session": id]
         if let message = (result["message"] as? [String: Any])?["id"] as? String { waitParams["message"] = message }
@@ -444,9 +467,10 @@ func printItem(_ item: [String: Any]) {
 // MARK: - ls, info
 
 func agentList(_ argv: [String]) {
-    let args = parse(argv, ArgSpec(boolean: ["--live"]))
+    let args = parse(argv, ArgSpec(valued: ["--parent"], boolean: ["--live"]))
     var params: [String: Any] = [:]
     if args.has("--live") { params["live"] = true }
+    if let parent = args.value("--parent") { params["parent"] = parent }
     let result = callDict("agent.ls", params)
     let sessions = result["sessions"] as? [[String: Any]] ?? []
     if jsonOutput {
@@ -466,6 +490,7 @@ func agentList(_ argv: [String]) {
         if let report = session["report"] as? [String: Any] {
             line += "  [report: \(report["verdict"] as? String ?? "?")]"
         }
+        if let pane = session["pane"] as? String { line += dim("  (pane \(shortID(pane)))") }
         print(line)
     }
 }
@@ -484,6 +509,7 @@ func agentInfo(_ argv: [String]) {
     print("  folder   \(abbreviateHome(info["cwd"] as? String ?? ""))")
     if let harness = info["harness_id"] as? String { print("  harness  \(harness)") }
     if let parent = info["parent"] as? String { print("  parent   \(parent)") }
+    print("  shown    \((info["pane"] as? String).map { "in pane \($0)" } ?? "nowhere (background; `\(cliName) agent open` shows it)")")
     if let error = info["error"] as? String { print("  error    \(error)") }
     if let report = info["report"] as? [String: Any] {
         print("  report   \(report["verdict"] as? String ?? "?"): \(report["summary"] as? String ?? "") (\(report["at"] as? String ?? ""))")
