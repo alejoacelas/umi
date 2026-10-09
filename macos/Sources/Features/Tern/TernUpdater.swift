@@ -135,7 +135,12 @@ final class TernUpdater: ObservableObject {
     func answer(_ answer: Answer) async throws -> [String: Any] {
         switch answer {
         case .download:
-            return try await download(expected: question)
+            // Download (the question) or Try Again (a failed download): a yes to that version.
+            var expected = question
+            if expected == nil, case .failed = phase, let version = downloadVersion, version == answers.consent {
+                expected = version
+            }
+            return try await download(expected: expected)
         case .later:
             if downloadTask != nil || staged != nil {
                 throw TernError.failed("the update is already downloading or downloaded; it installs when \(TernPaths.productName) quits")
