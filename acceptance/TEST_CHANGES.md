@@ -133,6 +133,16 @@ default broke none of them. Additions:
     default; "new tab" is gone from the note.
   - `test_background_sessions_are_in_the_window_menu` (UI): Window > Agent Sessions lists a
     background session with its status; choosing it shows and focuses it.
+- **Review regression tests** (`tests/test_tern_extra.py`):
+  - round 1: `test_a_yes_shows_its_failures_and_never_covers_another_version`: a yes whose feed
+    request fails shows as that version's failed download; after a restart with a newer version in
+    the feed, the remembered yes downloads nothing and the newer version is asked about; with the
+    feed back on the agreed version, exactly that zip is downloaded.
+  - round 2: `test_try_again_is_a_yes_to_the_failed_version_only`: the sidebar's Download fails,
+    the feed moves on, and Try Again (the same control method the buttons call) asks about the newer
+    version instead of downloading it.
+  - round 3: `test_the_latest_answer_counts`: Skip then Later means Later (asked again once its
+    time is up); Later then Skip means Skip (a newer version is asked about at once).
 - **`checks/tern_extra_evidence.py --only update`**: screenshots of the question and the staged
   update in the sidebar (`extra-I-4-update-question.png`, `extra-I-4-update-ready.png`).
 - **`app/macos/TernTests/verify_agent_panes.py`**: the Agent Sessions menu (order, ✓ for shown

@@ -664,6 +664,137 @@ def test_update_is_a_yes_even_after_skip_and_the_yes_outlives_a_restart(target, 
         _uninstall(installed, dest)
 
 
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_a_yes_shows_its_failures_and_never_covers_another_version(target, update_releases, tmp_path):
+    """Review round 1 (after phase 2): a yes whose feed request fails is shown as a failed
+    download of that version (not lost), and is retried for that version once the feed answers;
+    a remembered yes to one version never downloads another one: the newer one is asked about."""
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path)
+    feed = root / "feed" / "appcast.json"
+    try:
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        _serve_feed(root, "new")
+        wait_until(lambda: _update_status(installed)["state"] == "asking", 30, message="asked")
+
+        # The yes, while the feed doesn't answer.
+        feed.unlink()
+        proc = installed.cli("update", check=False, timeout=120)
+        assert proc.returncode != 0, proc.stdout
+        status = _update_status(installed)
+        assert status["state"] == "failed" and status.get("consent") == "999.0.0", status
+
+        # A newer version is out when the remembered yes is retried (after a restart): it is
+        # asked about, and nothing is downloaded.
+        installed.quit_gracefully()
+        _serve_feed(root, "999.1.0")
+        del log[:]
+        installed.start_app()
+        status = wait_until(lambda: (s := _update_status(installed))["state"] == "asking" and s, 30,
+                            message="the newer version is asked about")
+        assert status["question"] == "999.1.0", status
+        time.sleep(4)
+        assert not _zip_requests(log), log
+
+        # Back to the version the yes was for: it downloads without asking.
+        _serve_feed(root, "new")
+        status = wait_until(lambda: (s := _update_status(installed))["state"] == "ready" and s, 60,
+                            message="the remembered yes carried on")
+        assert status["ready"] == "999.0.0" and _zip_requests(log) == ["/new/Tern-999.0.0.zip"], (status, log)
+    finally:
+        _uninstall(installed, dest)
+
+
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_the_latest_answer_counts(target, update_releases, tmp_path):
+    """Review round 3 (after phase 2): Skip then Later for the same version means Later (it is
+    asked about again once Later's time is up); Later then Skip means Skip (a newer version is
+    asked about at once, not after Later's time)."""
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path, later_seconds=12)
+    try:
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        del log[:]
+        _serve_feed(root, "new")
+        wait_until(lambda: _update_status(installed)["state"] == "asking", 30, message="asked")
+        installed.json("update", "--skip")
+        later = installed.json("update", "--later")
+        assert later["state"] == "later" and "skipped" not in later, later
+        status = wait_until(lambda: (s := _update_status(installed))["state"] == "asking" and s, 40,
+                            message="asked again after Later, despite the earlier Skip")
+        assert status["question"] == "999.0.0", status
+
+        installed.json("update", "--later")
+        skip = installed.json("update", "--skip")
+        assert skip["state"] == "skipped" and "later_until" not in skip, skip
+        _serve_feed(root, "999.1.0")
+        status = wait_until(lambda: (s := _update_status(installed))["state"] == "asking" and s, 8,
+                            message="a newer version asked about at once after Skip")
+        assert status["question"] == "999.1.0", status
+        assert not _zip_requests(log), log
+    finally:
+        _uninstall(installed, dest)
+
+
+def _answer_from_the_sidebar(inst, answer):
+    """What the sidebar notice's buttons call (Download, Try Again, Later, Skip): the app's
+    `update.answer` control method, reached through the instance's socket."""
+    import socket as _socket
+
+    with open(os.path.join(inst.dir, "instance.json")) as f:
+        path = json.load(f)["socket"]
+    s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    s.settimeout(120)
+    s.connect(path)
+    s.sendall((json.dumps({"id": 1, "method": "update.answer", "params": {"answer": answer}}) + "\n").encode())
+    data = b""
+    while not data.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        data += chunk
+    s.close()
+    return json.loads(data)
+
+
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_try_again_is_a_yes_to_the_failed_version_only(target, update_releases, tmp_path):
+    """Review round 2 (after phase 2): the sidebar's Download fails; the feed moves on to a newer
+    version; Try Again doesn't download the newer one: it asks about it."""
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path)
+    zip_path = root / "new" / "Tern-999.0.0.zip"
+    hidden = root / "new" / "hidden-again.zip"
+    try:
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        _serve_feed(root, "new")
+        wait_until(lambda: _update_status(installed)["state"] == "asking", 30, message="asked")
+        zip_path.rename(hidden)
+        try:
+            reply = _answer_from_the_sidebar(installed, "download")
+            assert "error" in reply, reply
+            status = _update_status(installed)
+            assert status["state"] == "failed" and status.get("consent") == "999.0.0", status
+        finally:
+            hidden.rename(zip_path)
+        _serve_feed(root, "999.1.0")
+        del log[:]
+        reply = _answer_from_the_sidebar(installed, "download")   # Try Again
+        assert "error" in reply and "999.1.0" in reply["error"]["message"], reply
+        status = _update_status(installed)
+        assert status["state"] == "asking" and status["question"] == "999.1.0", status
+        assert "consent" not in status, status
+        assert not _zip_requests(log), log
+    finally:
+        _uninstall(installed, dest)
+
+
 @pytest.mark.req("I-4", "P-2")
 @pytest.mark.slow
 def test_the_update_question_in_the_sidebar(target, update_releases, tmp_path, ui):
