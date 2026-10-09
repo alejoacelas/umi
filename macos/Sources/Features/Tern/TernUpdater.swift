@@ -150,7 +150,9 @@ final class TernUpdater: ObservableObject {
                 throw TernError.failed("there's nothing to answer: no newer version is known (`\(TernPaths.cliName) update --check` looks)")
             }
             answers.laterUntil = Date().addingTimeInterval(Self.laterInterval)
-            // "Later" also withdraws a yes whose download failed: it isn't retried until asked again.
+            // The latest answer counts: "Later" replaces an earlier Skip, and withdraws a yes
+            // whose download failed (it isn't retried until asked again).
+            answers.skipped = nil
             answers.consent = nil
             if case .failed = phase { phase = .idle }
             question = nil
@@ -169,6 +171,9 @@ final class TernUpdater: ObservableObject {
                 throw TernError.failed("\(version) is already downloading or downloaded; it installs when \(TernPaths.productName) quits")
             }
             answers.skipped = version
+            // The latest answer counts: a Skip replaces an earlier Later (a newer version is
+            // asked about as soon as it's out).
+            answers.laterUntil = nil
             if answers.consent == version { answers.consent = nil }
             if case .failed = phase { phase = .idle }
             question = nil
@@ -193,8 +198,12 @@ final class TernUpdater: ObservableObject {
             // that failed): carry on without asking again.
             question = nil
             guard TernVersion.isRelease else { return }
-            // Exactly that release: a yes to it is no yes to whatever the feed says later.
-            Task { @MainActor in _ = try? await self.download(release: release) }
+            // Exactly that release: a yes to it is no yes to whatever the feed says later. An
+            // answer given before this runs (Later, Skip) wins over the remembered yes.
+            Task { @MainActor in
+                guard self.answers.consent == version, self.downloadTask == nil, self.staged == nil else { return }
+                _ = try? await self.download(release: release)
+            }
             return
         }
         if answers.skipped == version || (answers.laterUntil.map { $0 > Date() } ?? false) {
