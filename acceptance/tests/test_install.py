@@ -161,8 +161,13 @@ def test_never_offers_another_products_updates(target):
 
 
 def bundle_version(app):
-    with open(os.path.join(app, "Contents", "Info.plist"), "rb") as f:
-        return plistlib.load(f).get("CFBundleShortVersionString")
+    """The installed app's version, or None while there's no app at that path (an update swaps the
+    bundle in two renames, so a poll can land between them)."""
+    try:
+        with open(os.path.join(app, "Contents", "Info.plist"), "rb") as f:
+            return plistlib.load(f).get("CFBundleShortVersionString")
+    except FileNotFoundError:
+        return None
 
 
 @pytest.fixture

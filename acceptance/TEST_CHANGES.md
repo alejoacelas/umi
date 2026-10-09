@@ -100,9 +100,23 @@ No existing test was changed or weakened in phase 2. Additions:
 
 ## After the user's answers (updates ask first; workers start in the background)
 
-No existing test was changed or weakened; the supervisor added `test_start_shows_nothing_by_default`
-(AP-3) with the brief. Every existing test that needed a pane already passed a placement, so the new
-default broke none of them. Additions:
+The supervisor added `test_start_shows_nothing_by_default` (AP-3) with the brief. Every existing
+test that needed a pane already passed a placement, so the new default broke none of them. One
+existing helper was fixed:
+
+- **`bundle_version` in `tests/test_install.py`** (used by `test_an_older_build_updates_itself` and
+  `test_update_now_relaunches_the_same_instance` to wait for the update to land). **What was
+  wrong:** it opened the installed app's `Info.plist` and raised if it was missing. The installer
+  helper swaps the bundle with two renames (the old app aside, the new one in place), so for a few
+  milliseconds there's no app at that path; a poll that lands there crashed the wait instead of
+  polling again. It happened once, in the definitive run (it passed in every earlier run), and the log shows
+  the update downloaded and the swap under way. **Change:** a missing `Info.plist` reads as "no
+  version yet" (`None`), so the wait keeps polling; a failed install still fails the test after
+  180 s, and the assertions that the old version is still in place still require "0.0.1". **Requirement:**
+  I-4, "it verifies what it downloads, then installs it when the app quits"; nothing in SPEC asks
+  for the swap to be atomic.
+
+Additions:
 
 - **`tests/test_tern_extra.py`, I-4's question** (a module fixture builds a release-stamped 0.0.1
   and a 999.0.0 once, behind a local server that logs requests; the instance checks every 2 s through
