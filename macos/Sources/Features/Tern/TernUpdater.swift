@@ -135,7 +135,7 @@ final class TernUpdater: ObservableObject {
     func answer(_ answer: Answer) async throws -> [String: Any] {
         switch answer {
         case .download:
-            return try await download()
+            return try await download(expected: question)
         case .later:
             if downloadTask != nil || staged != nil {
                 throw TernError.failed("the update is already downloading or downloaded; it installs when \(TernPaths.productName) quits")
@@ -173,8 +173,9 @@ final class TernUpdater: ObservableObject {
         return status()
     }
 
-    /// After a check found `version`: ask about it, unless the user already answered.
-    private func considerAsking(_ version: String) {
+    /// After a check found `release`: ask about it, unless the user already answered.
+    private func considerAsking(_ release: Release) {
+        let version = release.version
         guard Self.compare(version, TernVersion.current) == .orderedDescending else {
             question = nil
             return
@@ -187,7 +188,8 @@ final class TernUpdater: ObservableObject {
             // that failed): carry on without asking again.
             question = nil
             guard TernVersion.isRelease else { return }
-            Task { @MainActor in _ = try? await self.download() }
+            // Exactly that release: a yes to it is no yes to whatever the feed says later.
+            Task { @MainActor in _ = try? await self.download(release: release) }
             return
         }
         if answers.skipped == version || (answers.laterUntil.map { $0 > Date() } ?? false) {
@@ -224,6 +226,10 @@ final class TernUpdater: ObservableObject {
     /// The update notification was clicked: show the question.
     static func handleNotification(userInfo: [AnyHashable: Any]) -> Bool {
         guard userInfo["tern_update"] != nil else { return false }
+        // The question is in every window's sidebar: open a window if none is left.
+        if TerminalController.all.isEmpty {
+            _ = try? TernLayout.newWindow(.init(), tabName: nil, focus: true)
+        }
         TernState.shared.sidebarVisible = true
         return true
     }
@@ -352,7 +358,7 @@ final class TernUpdater: ObservableObject {
         TernEvents.shared.emit("update.checked", ["installed": TernVersion.current, "latest": release.version,
                                                   "update_available": available])
         // Any check that finds a newer version asks (the answers so far permitting).
-        if backgroundChecks && !userInitiated { considerAsking(release.version) }
+        if backgroundChecks && !userInitiated { considerAsking(release) }
         var out = status()
         out["latest"] = release.version
         out["update_available"] = available
@@ -362,48 +368,79 @@ final class TernUpdater: ObservableObject {
 
     // MARK: Downloading
 
-    /// Download and verify the newest version and stage it to install at quit.
-    func download() async throws -> [String: Any] {
+    /// The feed moved on to another version than the one the user said yes to.
+    private struct FeedMoved: Error { let release: Release }
+
+    /// Download and verify a version and stage it to install at quit. Every caller is a yes:
+    /// `release` is a version already fetched (a yes remembered from before), `expected` the
+    /// version the user said yes to (the sidebar's Download); with neither, the newest
+    /// version (`tern update`, "Check for Updates…"). A yes to one version never downloads
+    /// another: if the feed moved on, the newer version is asked about instead.
+    func download(release given: Release? = nil, expected: String? = nil) async throws -> [String: Any] {
         // A development build would replace itself (the build folder's app) with a release.
         guard TernVersion.isRelease else {
             throw TernError.failed("this is a development build of \(TernPaths.productName); it doesn't update itself (install a release instead)")
         }
         let release: Release
-        if let downloadTask {
-            release = try await downloadTask.value
-        } else {
-            let task = Task { @MainActor () throws -> Release in
-                let release = try await self.fetchFeed()
-                self.latest = release.version
-                guard Self.compare(release.version, TernVersion.current) == .orderedDescending else {
-                    self.question = nil
+        do {
+            if let downloadTask {
+                release = try await downloadTask.value
+            } else {
+                let task = Task { @MainActor () throws -> Release in
+                    // The yes is remembered before anything can fail, so a failure shows (and is
+                    // retried) as that version's.
+                    let target = given?.version ?? expected
+                        ?? self.latest.flatMap { Self.compare($0, TernVersion.current) == .orderedDescending ? $0 : nil }
+                    if let target { self.agree(to: target) }
+                    let release: Release
+                    if let given {
+                        release = given
+                    } else {
+                        do {
+                            release = try await self.fetchFeed()
+                        } catch {
+                            if let target {
+                                self.downloadVersion = target
+                                if self.staged == nil { self.phase = .failed(Self.reason(error)) }
+                            }
+                            throw error
+                        }
+                    }
+                    self.latest = release.version
+                    guard Self.compare(release.version, TernVersion.current) == .orderedDescending else {
+                        self.question = nil
+                        return release
+                    }
+                    if let expected, release.version != expected { throw FeedMoved(release: release) }
+                    // `tern update` and the menu item are a yes to the newest version.
+                    if release.version != target { self.agree(to: release.version) }
+                    if let staged = self.staged, staged.version == release.version { return release }
+                    self.downloadVersion = release.version
+                    self.phase = .downloading(release.version)
+                    do {
+                        let app = try await self.fetchAndVerify(release)
+                        self.staged = (release.version, app)
+                        self.phase = .ready(release.version)
+                        TernEvents.shared.emit("update.ready", ["version": release.version])
+                    } catch {
+                        // A staged older update still installs at quit.
+                        self.phase = self.staged.map { .ready($0.version) } ?? .failed(Self.reason(error))
+                        throw error
+                    }
                     return release
                 }
-                // Every way here is a yes to this version: remember it, and stop asking.
-                self.answers.consent = release.version
-                if self.answers.skipped == release.version { self.answers.skipped = nil }
-                self.answers.laterUntil = nil
-                self.question = nil
-                self.saveAnswers()
-                if let staged = self.staged, staged.version == release.version { return release }
-                self.downloadVersion = release.version
-                self.phase = .downloading(release.version)
-                do {
-                    let app = try await self.fetchAndVerify(release)
-                    self.staged = (release.version, app)
-                    self.phase = .ready(release.version)
-                    TernEvents.shared.emit("update.ready", ["version": release.version])
-                } catch {
-                    // A staged older update still installs at quit.
-                    let reason = (error as? TernError)?.message ?? error.localizedDescription
-                    self.phase = self.staged.map { .ready($0.version) } ?? .failed(reason)
-                    throw error
-                }
-                return release
+                downloadTask = task
+                defer { downloadTask = nil }
+                release = try await task.value
             }
-            downloadTask = task
-            defer { downloadTask = nil }
-            release = try await task.value
+        } catch let moved as FeedMoved {
+            // Withdraw the yes to the old version and ask about the new one.
+            if answers.consent == expected { answers.consent = nil }
+            if case .failed = phase { phase = .idle }
+            saveAnswers()
+            considerAsking(moved.release)
+            throw TernError.failed("\(TernPaths.productName) \(moved.release.version) is out now, not \(expected ?? "the version you said yes to"); "
+                + "\(TernPaths.productName) asks about it instead")
         }
         if Self.compare(release.version, TernVersion.current) != .orderedDescending {
             return ["installed": TernVersion.current, "latest": release.version, "update_available": false,
@@ -411,6 +448,19 @@ final class TernUpdater: ObservableObject {
         }
         return ["installed": TernVersion.current, "latest": release.version, "ready": release.version,
                 "message": "Downloaded \(TernPaths.productName) \(release.version). It installs when \(TernPaths.productName) quits (or run `\(TernPaths.cliName) update --now`)."]
+    }
+
+    /// A yes to `version`: remember it, and stop asking.
+    private func agree(to version: String) {
+        answers.consent = version
+        if answers.skipped == version { answers.skipped = nil }
+        answers.laterUntil = nil
+        question = nil
+        saveAnswers()
+    }
+
+    private static func reason(_ error: Error) -> String {
+        (error as? TernError)?.message ?? error.localizedDescription
     }
 
     private func fetchAndVerify(_ release: Release) async throws -> URL {
@@ -584,7 +634,17 @@ final class TernUpdater: ObservableObject {
                     alert.runModal()
                     return
                 }
-                Task { @MainActor in _ = try? await self.download() }
+                Task { @MainActor in
+                    do {
+                        _ = try await self.download()
+                    } catch {
+                        // The user just asked: say so (the sidebar also shows it, with Try Again).
+                        let failed = NSAlert()
+                        failed.messageText = "Couldn't download \(TernPaths.productName) \(latest)"
+                        failed.informativeText = Self.reason(error)
+                        failed.runModal()
+                    }
+                }
                 alert.messageText = "Downloading \(TernPaths.productName) \(latest)"
                 alert.informativeText = "You have \(TernVersion.current). It installs when you quit \(TernPaths.productName); "
                     + "the sidebar shows when it's ready, and lets you install it at once."
