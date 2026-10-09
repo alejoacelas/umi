@@ -46,15 +46,33 @@ Details, candidates and evidence: DECISIONS.md §18–§19.
 
 ## Test changes
 
-No existing test was changed or weakened (TEST_CHANGES.md, last part). Every existing test that
-needed a pane already passed a placement. Added: 7 update tests in `tests/test_tern_extra.py` (one
+No test was weakened (TEST_CHANGES.md, last part). Every existing test that needed a pane already
+passed a placement, so the new default broke none. One helper of the suite's update tests was fixed:
+`bundle_version` crashed when it polled at the instant the installer swaps the bundle (two renames);
+it now reads that instant as "not there yet" and keeps waiting. Added: 7 update tests in `tests/test_tern_extra.py` (one
 UI) and 4 background-session tests in `tests/test_tern_agents_extra.py` (one UI), the update
 evidence in `checks/tern_extra_evidence.py --only update`, and menu and badge checks in
 `verify_agent_panes.py`.
 
 ## Status
 
-STATUS_PLACEHOLDER
+The definitive run, on the build that was published, with the screen unlocked
+(`ACCEPTANCE_REAL=1 uv run pytest --target targets/tern.json`, under `caffeinate -d -i`): **244
+passed, 0 failed, 0 skipped** (`logs/a-suite-final2.log`, `acceptance/results/traceability.md`).
+That includes:
+
+- the **16 real-agent tests** (Claude haiku, Codex gpt-6-luna at low effort);
+- all **17 UI tests**: phase 2's 15 (none ran in phase 2's report, the screen was locked; they
+  passed on phase 2's build too, per the brief) and the 2 new ones. They were also run on their own
+  (`-m ui`) before each review round: 17/17 every time;
+- the **58 extra tests** (`test_tern_extra.py`, `test_tern_agents_extra.py`), 11 of them new.
+
+Every requirement with automated tests passes (87); the other 13 are written checks only. The run
+before it had one failure, a race in a test helper (TEST_CHANGES.md); the helper was fixed and the
+whole run repeated. Also: `verify_agent_panes.py` 42/42 (with the new menu and badge checks).
+
+Phase 2's table below still describes every requirement; what changed: I-4 and AP-3 have the new
+tests, and the "UI tests skipped (locked screen)" column no longer applies: none was skipped.
 
 ## Written checks
 
@@ -87,7 +105,20 @@ Nothing is left open from the reviews.
 
 ## Release and update
 
-RELEASE_PLACEHOLDER
+- **Release v0.3.0** (a new minor version) published with `app/dist/release.sh --version 0.3.0`
+  from the reviewed, tested build (built with `--build --no-publish` first, then the definitive run,
+  then published): https://github.com/alejoacelas/tern/releases/tag/v0.3.0 with `Tern-0.3.0.zip`
+  (22.3 MB, ad-hoc signed), `appcast.json` (SHA-256 and Ed25519 signature) and `install.sh`. Nothing
+  else: no source, `acceptance/`, logs or keys. The one-line install command now installs 0.3.0.
+  The repository's README now says updates ask first (committed with your GitHub noreply address).
+- **The copy installed on this Mac updated itself**, with the old (0.2.0) update behavior:
+  `tern update --check` on /Applications/Tern.app 0.2.0 found 0.3.0; `tern update --now` downloaded
+  and verified it, installed it and relaunched (only an idle shell was running in it, and it had no
+  sessions). Now: bundle 0.3.0 running, `tern --version` → 0.3.0, `tern update --check` → "installed
+  0.3.0, latest 0.3.0: up to date", `update --status` shows background checks on the public feed, no
+  quarantine attribute, the signature verifies, its window came back. From now on it asks before
+  downloading the next version.
+- Untouched: /Applications/Shade.app, your other `~/.local/bin` entries, `~/.claude` and `~/.codex`.
 
 ## Questions for the user
 
