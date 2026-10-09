@@ -150,3 +150,10 @@ after:
 > this
 
 ("The editor" here means the whole app without managed agents: SPEC.md's phase 1.)
+
+## Answers after phase 2
+
+Asked whether quits requested by scripts should confirm, whether updates should keep downloading
+without asking, whether the MIT license in the user's name is right, and whether `agent start` should
+show workers by default:
+> script quits should not ask, updates should ask. license is good. default workers to backgroudn

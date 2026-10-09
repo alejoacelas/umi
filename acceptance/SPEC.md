@@ -154,6 +154,9 @@ and agents reaching the app from their own processes (MA-18).
 - **I-3 [W]** `open README.md` (or double-clicking a `.md` file) opens it in the app's editor.
 - **I-4 [A]** Updates. An installed copy updates itself from the product's own public release feed:
   - it checks in the background, from a "Check for Updates…" menu item and from `<cli> update`;
+  - when a background check finds a newer version, it asks the user before downloading or
+    installing anything. The question never takes focus or blocks work, and it stays available
+    until answered. Choosing the menu item or running `<cli> update` counts as a yes;
   - it verifies what it downloads, then installs it when the app quits, or at once when the user
     asks (`<cli> update --now`, or the update prompt);
   - it never quits the app or closes terminals by itself to install;
@@ -463,9 +466,10 @@ through the CLI, so agents can orchestrate other agents, and shows the session i
 - **AP-2 [A]** That pane behaves like any other pane. You can split next to it, move it to another
   tab or window, swap, zoom, close and undo the close, and drag it. A shell in the session's folder
   is available from the pane.
-- **AP-3 [A]** `agent start` and `agent open` show a session as a new tab (default), a split next to a
-  pane, or a new window, with or without focus. Showing a session that is already open focuses its
-  pane instead of opening another. A non-focusing open follows L-8.
+- **AP-3 [A]** `agent start` runs a session in the background by default: it shows nothing until
+  asked. With a placement, `agent start` and `agent open` show a session as a new tab (`agent open`'s
+  default), a split next to a pane, or a new window, with or without focus. Showing a session that is
+  already open focuses its pane instead of opening another. A non-focusing open follows L-8.
 - **AP-4 [A]** Closing the pane leaves the session running. It can be shown again later from the CLI
   or the command palette.
 - **AP-5 [A+W]** What the pane shows is complete and in order, including after the app reconnects to

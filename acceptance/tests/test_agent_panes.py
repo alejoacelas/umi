@@ -169,6 +169,21 @@ def test_placements(inst, win, started):
     assert not agent_panes(inst, d)
 
 
+@pytest.mark.req("AP-3")
+@pytest.mark.parametrize("kind", ["claude", "codex"])
+def test_start_shows_nothing_by_default(inst, win, started, kind):
+    """`agent start` with no placement runs the session in the background; `agent open` shows it."""
+    def layout():
+        return {(w["id"], t["id"], p["id"]) for w in inst.tree()["windows"] for t in w["tabs"] for p in t["panes"]}
+    before = layout()
+    sid = started(kind, "ECHO quiet")
+    assert inst.wait(sid)[1]["status"] == "DONE"
+    assert not agent_panes(inst, sid) and layout() == before
+    inst.json("agent", "open", sid, "--window", win["window"])
+    w, t, _ = shown_in(inst, sid)
+    assert w["id"] == win["window"] and t["id"] != win["tab"]
+
+
 @pytest.mark.req("AP-3", "L-8")
 def test_opening_without_focus_never_moves_the_users_focus(inst, win, started):
     inst.cli("pane", "focus", win["pane"])

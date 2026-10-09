@@ -91,7 +91,7 @@ options, put them before `--`: `claude [--tab | --split [DIR] | --window] [--cwd
 | Command | Notes |
 |---|---|
 | `agent start claude\|codex [PROMPT…] [--name N] [--cwd D] [--worktree W [--base REF]] [--model M] [--effort E] [--full-access] [--permission-mode M] [--profile P] [--env K=V]… [PLACEMENT] [--background] [--wait [--timeout S]] [-- HARNESS ARGS]` | prints the session id; JSON `{"session": Session, "message"?: Message}`; with `--wait`, behaves like `agent wait` |
-| PLACEMENT | `--tab [--window W]` (default), `--split [DIR] [--pane P]`, `--new-window`, `--focus`; `--background` shows nothing |
+| PLACEMENT | `--tab [--window W]`, `--split [DIR] [--pane P]`, `--new-window`, `--focus`; `--background` shows nothing. `agent start` defaults to `--background`, `agent open` to `--tab` |
 | `agent send SESSION TEXT… [--interrupt [--drop-queued]] [--wait [--timeout S]]` | prints the message id; JSON `{"message": Message, "session": Session}`. `--interrupt`: see SPEC MA-25 |
 | `agent wait SESSION [--message ID] [--timeout S]` | prints STATUS, then the reply (or the pending requests); JSON `{"status", "reply"?, "message"?: Message, "session": Session, "requests"?: [Request], "error"?}` |
 | `agent wait SESSION --report [--message ID] [--timeout S]` | waits for the worker's report (SPEC MA-26); prints the verdict and summary, then what the harness says; JSON `{"report": Report, "session": Session}` |
