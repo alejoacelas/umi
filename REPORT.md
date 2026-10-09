@@ -1,3 +1,115 @@
+# Tern: after phase 2 (the user's answers)
+
+Phase 2's report and phase 1's follow this part. They're unchanged, except phase 2's orchestrator
+guide, which now describes the new default.
+
+Your answers to phase 2's questions (`acceptance/REQUESTS.md`, "Answers after phase 2"): "script
+quits should not ask, updates should ask. license is good. default workers to background".
+
+## What changed
+
+- **Updates ask first (I-4).** When a background check finds a newer version, a notice appears at
+  the bottom of every window's sidebar: "Tern X is available (you have Y)." with **Download**,
+  **Later** and **Skip**. It's never a dialog, takes no focus, blocks nothing, and stays until you
+  answer; nothing is downloaded until you say yes. One desktop notification per version points at
+  it (clicking it shows the sidebar, opening a window if none is left). "Check for Updates…" and
+  `tern update` count as a yes. After a yes the notice shows the download, then "Tern X is ready.
+  It installs when you quit." with **Install Now…**; a failed download shows with **Try Again**.
+  From a terminal: `tern update --status` (where things stand, no network), `--check` (looks),
+  `--later`, `--skip`. Screenshots: `acceptance/results/checks/extra-I-4-update-question.png`,
+  `extra-I-4-update-ready.png`.
+- **Workers run in the background (AP-3).** `tern agent start` shows nothing unless given a
+  placement (`--tab`, `--split`, `--new-window`, `--focus`, `--window W`, `--pane P`); `agent open`
+  still defaults to a new tab without focus. You find sessions with no pane in **Window > Agent
+  Sessions** (every session with its status and activity, the ones that need you first, ✓ for
+  shown ones; choose one to show it), the **command palette** (same order), **⌃⌘J**, **desktop
+  notifications** (as before) and the **Dock badge**, which counts the sessions waiting for you. An
+  orchestrator finds its workers with `tern agent ls --parent self`; `agent ls` and `agent info`
+  say which pane shows a session, if any. The CLI help, the note workers get about their situation,
+  and the orchestrator guide (phase 2's part below) say all this.
+- **Confirmed as they are:** a quit requested by another process doesn't ask (now your decision,
+  no longer a compromise), and the MIT license in your name.
+
+Code: `TernUpdater.swift` and `TernSidebar.swift` (the question), `TernCLI/main.swift` (`update`),
+`Agents/TernAgentMenu.swift` (the menu, palette order, badge), `TernCLI/agent.swift` (the default,
+`ls --parent`), `Agents/TernAgentEnvironment.swift` (the note). App commits `28615e3f0` to
+`2fa4d48ed`.
+
+## Decisions
+
+Details, candidates and evidence: DECISIONS.md §18–§19.
+
+| # | Decision | Pick | Evidence |
+|---|---|---|---|
+| 18 | The update question | A notice at the bottom of every window's sidebar (Download / Later / Skip), one notification per version pointing at it, `update --status/--check` saying it waits. Not a dialog or sheet (they take focus and block), not only a notification (it doesn't stay). Answers kept in `<state dir>/update.json`: a yes is remembered for exactly that version (a failed or interrupted download is retried, never extended to a newer version, which is asked about); Later = 24 h, across restarts; Skip = never this version, a newer one asks; the latest answer counts. An update an older build downloaded is never installed by this build: it's downloaded again after a yes and verified. | `test_a_background_check_asks_and_downloads_nothing_until_yes` (Finder stays in front, the user's pane unchanged, no zip requested over checks, `--check`, a restart and a quit), `test_later_asks_again_later_and_skip_waits_for_a_newer_version`, `test_update_is_a_yes_even_after_skip_and_the_yes_outlives_a_restart`, three review regressions, the UI test of the notice and the menu's yes, `test_an_older_build_updates_itself` |
+| 19 | Sessions with no pane | No pane at all; found through Window > Agent Sessions, the palette, ⌃⌘J, notifications and the Dock badge (the sidebar may have no agents section, S-2), and by the orchestrator through `agent ls --parent self`, `agent info` (its pane, if any) and `agent open` | `test_start_shows_nothing_by_default`, `test_workers_run_in_the_background_and_their_orchestrator_finds_them`, `test_any_placement_option_shows_the_session`, `test_agents_and_people_are_told_workers_start_in_the_background`, the menu UI test, `verify_agent_panes.py` (menu order, ✓, badge) |
+
+## Test changes
+
+No existing test was changed or weakened (TEST_CHANGES.md, last part). Every existing test that
+needed a pane already passed a placement. Added: 7 update tests in `tests/test_tern_extra.py` (one
+UI) and 4 background-session tests in `tests/test_tern_agents_extra.py` (one UI), the update
+evidence in `checks/tern_extra_evidence.py --only update`, and menu and badge checks in
+`verify_agent_panes.py`.
+
+## Status
+
+STATUS_PLACEHOLDER
+
+## Written checks
+
+The checks these changes touch were run again (`checks/run_checks.py`, then
+`checks/tern_extra_evidence.py --only update`) and their screenshots judged; the others keep phase
+2's verdicts (their screenshots, regenerated, show the same). Verdicts in
+`acceptance/results/checks/REPORT.md`.
+
+| Check | Verdict | Left for a person |
+|---|---|---|
+| P-2 | PASS: "Check for Updates…" is a yes (its dialog says it's downloading; the notice then offers Install Now…), checked through the accessibility tree with the screen unlocked; the question itself is the sidebar notice, not a dialog | Seeing the dialogs yourself, and the "up to date" one |
+| S-1 | PASS: the notice is a faintly tinted block with plain text buttons, no border | |
+| S-2 | PASS: still no agents section; background sessions are listed in the Window menu | |
+| AP-7 | NOT JUDGED (unchanged; steps updated: a session started in the background notifies and badges the Dock) | all of it |
+
+## Codex review
+
+`codex review --base 68a15e8c7 -c model_reasoning_effort="high"` in `app/` (logs:
+`logs/a-review1.log` … `a-review4.log`). After each round the findings were fixed, the app rebuilt,
+the UI tests and the full suite rerun, and a regression test added.
+
+| Round | Findings | What was fixed |
+|---|---|---|
+| 1 | 0 P1, 3 P2 | A remembered yes downloads exactly the release it was for (the retry no longer refetches the feed, so a newer version can't ride on it); a yes whose feed request fails shows as that version's failed download (the menu also says so in a dialog) instead of vanishing; clicking the update notification opens a window when none is left. |
+| 2 | 0 P1, 1 P2 | Try Again on a failed download is a yes to that version only: if the feed moved on, the newer version is asked about. |
+| 3 | 0 P1, 2 P2 | The latest answer counts (Later replaces an earlier Skip and vice versa); a queued retry of a remembered yes yields to a Later or Skip given meanwhile. |
+| 4 | none | |
+
+Nothing is left open from the reviews.
+
+## Release and update
+
+RELEASE_PLACEHOLDER
+
+## Questions for the user
+
+1. **"Finished" notifications for background workers.** AP-7's rule is unchanged: a session that
+   needs you, or finishes while you aren't looking at it, notifies. A background worker is never
+   looked at, so each of its turns that ends notifies (as a worker in an unseen tab did). With
+   dozens of workers, would you rather get "finished" only for sessions you started yourself (an
+   orchestrator), and "needs you" for all?
+2. **Your own orchestrator** started with `tern agent start` is in the background too (the spec says
+   so for every `agent start`); add `--tab --focus`, or `tern agent open NAME` later. Should a
+   session started from outside any agent (no parent) default to a tab instead?
+3. **"Later" is 24 hours**, and there's one notification per version. Different interval, or no
+   notification at all (the sidebar notice only)?
+4. **The Dock badge** counts sessions that need you, and replaces Ghostty's bell count while any do.
+   Keep?
+5. Still open from phase 2 (unanswered): steering a running turn (question 2), keeping sessions
+   alive across quits with a daemon (4), a Tern track in `supervise-workers` (5), and "allow always"
+   writing a project rule (6).
+
+
+---------------------------------------------------------------------------------------------------
+
 # Tern: phase 2 report (managed agents)
 
 Phase 1's report follows this part, unchanged.

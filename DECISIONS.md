@@ -458,9 +458,18 @@ restart doesn't ask again early or forget a yes. Conventions follow Sparkle's, w
   a yes to the newest version V. V is downloaded, verified and staged; it installs when the app quits
   (or at once with "Install Now…" / `--now`, which still asks before cutting agent turns off, R-10).
   The yes is remembered for V: if the app quits or crashes before V is staged, or the download fails,
-  the next check downloads V again without asking. A yes overrides an earlier Later or Skip. It is a
-  yes to V only: a newer W is asked about after V installs (background checks pause while V waits
-  for the quit; `tern update` downloads W at once).
+  the next check downloads exactly V again (the release that check found, not whatever the feed says
+  a moment later) without asking. A yes overrides an earlier Later or Skip. It is a yes to V only: if
+  the feed has moved on to W when the remembered yes, the notice's Download or its Try Again runs, W
+  is asked about instead; a newer W is also asked about after V installs (background checks pause
+  while V waits for the quit). `tern update` and the menu item are a yes to the newest version.
+- **The latest answer counts**: Later replaces an earlier Skip, Skip replaces an earlier Later, and
+  either withdraws a remembered yes whose download hasn't finished; a retry of a remembered yes
+  that was queued before such an answer yields to it. While a download runs or one is staged, Later
+  and Skip are refused (it installs at quit; nothing is left to decline).
+- **A failed download** after a yes (the feed or the zip doesn't answer, or verification fails) shows
+  in the notice ("Couldn't download Tern V: …", Try Again / Later) and in `update --status`; the
+  menu item also says so in a dialog, since the user just asked.
 - **Later**: the question goes away for 24 hours, across restarts; the first check after that asks
   again (about whatever is newest then).
 - **Skip** ("Skip This Version"): never ask about V again; a newer version is asked about. `tern
@@ -510,7 +519,9 @@ can still be using them: one only runs after the app that staged it quit, before
 - `test_an_older_build_updates_itself` (the suite's own, unchanged) still passes: `tern update` is the
   yes, the install happens at quit.
 - The sidebar notice: UI test `test_the_update_question_in_the_sidebar` (buttons, Later, the menu's
-  yes) and the I-4 evidence screenshot (written checks).
+  yes) and the I-4 evidence screenshots (written checks).
+- Review regressions: `test_a_yes_shows_its_failures_and_never_covers_another_version`,
+  `test_try_again_is_a_yes_to_the_failed_version_only`, `test_the_latest_answer_counts`.
 
 ## 19. Sessions with no pane (AP-3)
 
