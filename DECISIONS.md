@@ -418,3 +418,149 @@ delivered twice), `test_long_runs_stay_fast_and_disk_follows_what_is_kept`,
   returns early on idle, and always prints what the harness says (MA-26's "idle isn't done").
 - **Desktop notifications** (AP-7) when a session needs the user or finishes and its pane isn't in
   front; clicking one shows the session. Off in isolated instances.
+
+===================================================================================================
+
+# Decisions after phase 2 (the user's answers)
+
+The user answered phase 2's questions (REQUESTS.md, "Answers after phase 2"): "script quits should
+not ask, updates should ask. license is good. default workers to background". SPEC I-4 and AP-3
+changed accordingly. Same format as above.
+
+## 18. The update question (I-4)
+
+What it has to serve: "when a background check finds a newer version, it asks the user before
+downloading or installing anything. The question never takes focus or blocks work, and it stays
+available until answered. Choosing the menu item or running `<cli> update` counts as a yes." Also
+P-2's written check, I-4's "never quits the app by itself", and R-10 (an update installs while
+turns run only if the user agrees).
+
+### How and where it asks
+
+| Candidate | Cost |
+|---|---|
+| A. A dialog (`NSAlert`) when a background check finds a version (what "Check for Updates…" used to show) | Takes focus and blocks the app (and every terminal's input) until answered: exactly what I-4 now forbids. |
+| B. A sheet on the front window | Doesn't activate the app, but blocks that window's work and grabs its keyboard focus. |
+| C. Only a desktop notification with Download / Later buttons | Doesn't take focus, but it isn't "available until answered": banners go away, Notification Center gets cleared, Focus modes and a denied permission hide it, and test instances post none. |
+| D. A badge or icon in the window chrome (titlebar) | S-1 forbids titlebar icons on the upper right; a badge says nothing about what to do. |
+| E. **A notice at the bottom of every window's sidebar** with Download / Later / Skip, plus **one desktop notification per version** pointing at it, plus `tern update --check/--status` saying it's waiting | The notice is a view update (no first responder, no activation), sits where phase 1's "update ready" notice already was, and stays until answered. If the sidebar is hidden (⌘B), the notification says where the question is and clicking it shows the sidebar. Costs a small persisted file for the answers. |
+
+**Pick: E.** The notice's buttons are not focusable (clicking one is the user's own action); its
+text says the version and the installed one. The notification is posted once per version (never in
+isolated test instances) and says nothing is downloaded until the user says so.
+
+### What each answer does, over time
+
+The answers live in `<state dir>/update.json` (`skipped`, `laterUntil`, `consent`, `notified`), so a
+restart doesn't ask again early or forget a yes. Conventions follow Sparkle's, which macOS users know.
+
+- **Download** (the notice), **"Check for Updates…"**, **`tern update`**, **`tern update --now`**:
+  a yes to the newest version V. V is downloaded, verified and staged; it installs when the app quits
+  (or at once with "Install Now…" / `--now`, which still asks before cutting agent turns off, R-10).
+  The yes is remembered for V: if the app quits or crashes before V is staged, or the download fails,
+  the next check downloads V again without asking. A yes overrides an earlier Later or Skip. It is a
+  yes to V only: a newer W is asked about after V installs (background checks pause while V waits
+  for the quit; `tern update` downloads W at once).
+- **Later**: the question goes away for 24 hours, across restarts; the first check after that asks
+  again (about whatever is newest then).
+- **Skip** ("Skip This Version"): never ask about V again; a newer version is asked about. `tern
+  update` or the menu item still download V if the user wants it after all.
+- **No answer**: the question stays (and comes back after a restart, at the first check), and the
+  quit installs nothing.
+- Explicit checks (`tern update --check`) apply the same rules (they can raise the question, never
+  answer it). The menu item and `tern update` don't ask: they are the answer.
+
+### An update downloaded or staged by an older build
+
+Builds up to 0.2.0 download without asking and stage the update in `<state dir>/updates/staged-V/`,
+installing it at quit. Phase 2's installed copy runs that code, so it updates to this release as
+before (the brief's release check). This build never installs anything it didn't stage itself after
+a yes: a staged folder left by an older build (or by a run that crashed) isn't adopted, because its
+zip and signature are gone (it can't be verified again) and nobody agreed to it under the new rule.
+The question is asked as for any version, a yes downloads a fresh copy and checks its signature, and
+leftover staged folders are deleted when a verified download is staged (by then no installer helper
+can still be using them: one only runs after the app that staged it quit, before this app started).
+
+### What `update --check`, `--status` and the menu show meanwhile
+
+- `tern update --check` (looks) and `tern update --status` (no network) print the installed and
+  newest version and where things stand: "asking (in the sidebar; nothing is downloaded until you
+  say yes; `tern update` says yes)", "you chose Later; asks again after …", "you skipped V …",
+  "downloading V", "V is downloaded and installs when Tern quits", or the download's error. JSON
+  adds `state` (`unknown`, `up_to_date`, `asking`, `later`, `skipped`, `agreed`, `downloading`,
+  `ready`, `failed`, `installing`), `question`, `ready`, `later_until`, `skipped`, `consent`.
+- `tern update --later` / `--skip` answer from a terminal.
+- "Check for Updates…" says "up to date", or starts the download at once and says so (it installs
+  when Tern quits; the sidebar shows when it's ready and offers Install Now…), or, when V is already
+  staged, offers Install and Relaunch / Install on Quit as before. These dialogs answer the user's
+  own menu choice at that moment; nothing pops up later by itself.
+
+### Evidence
+
+- `test_a_background_check_asks_and_downloads_nothing_until_yes` (test_tern_extra.py): an installed
+  release-stamped 0.0.1 build, Finder in front; the feed switches to 999.0.0; the background check
+  asks (`state: asking`), Finder stays in front, the user's tab and pane don't change, a terminal keeps
+  working, no `.zip` is requested over several checks, `update --check` or a restart, and a quit
+  installs nothing; then `tern update` downloads and stages it.
+- `test_later_asks_again_later_and_skip_waits_for_a_newer_version`: Later holds across a restart
+  and the question returns once its time is up; Skip holds across checks and a restart; 999.1.0 is
+  asked about; nothing is downloaded.
+- `test_update_is_a_yes_even_after_skip_and_the_yes_outlives_a_restart`: `tern update` after Skip is
+  a yes; its failed download is retried after a restart without asking, and stages.
+- `test_an_older_build_updates_itself` (the suite's own, unchanged) still passes: `tern update` is the
+  yes, the install happens at quit.
+- The sidebar notice: UI test `test_the_update_question_in_the_sidebar` (buttons, Later, the menu's
+  yes) and the I-4 evidence screenshot (written checks).
+
+## 19. Sessions with no pane (AP-3)
+
+What it has to serve: AP-3 ("`agent start` runs a session in the background by default: it shows
+nothing until asked"); S-2 (the sidebar has no agents section); AP-4 (a session can be shown again
+from the CLI or the command palette); "needs input is never silently stuck" (core); and the brief's
+rule that everything the user and the orchestrator could see about workers before stays reachable.
+
+Before, a worker had a tab: its sidebar row showed its status and activity, the tab showed it live,
+⌃⌘J and notifications led to it, `ls` showed its pane, and `agent info`/`ls` showed everything else.
+
+| Candidate | Cost |
+|---|---|
+| A. A sidebar section or list of background sessions | S-2 forbids an agents section (fixed tier). |
+| B. Keep one hidden tab per worker | Hidden tabs still count as tabs (`ls`, ⌘-numbers, the window's tab list) and are what the user asked to avoid. |
+| C. One "Workers" tab that collects all background sessions as splits | Dozens of splits in one tab are unusable, and a pane would exist for every session: not "shows nothing". |
+| D. **No pane at all; find them through the app's list surfaces and the CLI**: Window > Agent Sessions (every session with status and activity, the ones that need the user first; ✓ when a pane shows it; choosing one shows it), the command palette (same order and text), ⌃⌘J (the one that needs you, opened in a new tab), desktop notifications as before (clicking one shows the session), and the Dock badge counting sessions that need the user | Nothing new in the window chrome; a background session needing the user is visible at a glance (badge), in the menu and in a notification. Costs a submenu kept current as sessions change (accessibility reads menus without opening them). |
+
+**Pick: D.** Details:
+- **Showing one**: `agent open SESSION` (a new tab without focus, as before; `--focus`, `--split`,
+  `--new-window`), the menu, the palette, ⌃⌘J or a notification (those four show it in a new tab of
+  the current window and focus it, since the user asked for it). Closing that pane leaves the session
+  running, as before (AP-4).
+- **`agent start` with any placement option** (`--tab`, `--split`, `--new-window`, `--focus`,
+  `--window W`, `--pane P`) shows the session as before; with none, or `--background`, it shows
+  nothing. A person at a terminal gets one line on stderr saying how to show it (scripts and agents,
+  whose stderr isn't a terminal, only see the id).
+- **The orchestrator** (an agent, or the user's own orchestrator session started in the background):
+  `agent ls --parent self` lists the sessions it started (`--parent S` for any session); `agent ls`
+  and `agent info` show status, activity, report, background tasks and the pane showing a session,
+  if any (`info` says "shown nowhere (background; `tern agent open` shows it)"); `agent wait`,
+  `read`, `watch --notify` work the same whether or not a pane shows it. An orchestrator the user
+  started in the background is found the same way as any session (menu, palette, `agent ls`).
+- **What workers are told** (the awareness note): sessions they start run in the background unless
+  they pass a placement; `agent ls --parent self` lists them; `agent open` shows one.
+- **Notifications** keep AP-7's rule (needs you, or finished while not looked at). A background
+  session is never looked at, so each of its turns that ends notifies, as a worker in an unseen tab
+  did before (Questions for the user: limiting "finished" notifications for workers).
+
+### Evidence
+
+- `test_start_shows_nothing_by_default` (the suite's, both harnesses) and `test_placements`.
+- `test_workers_run_in_the_background_and_their_orchestrator_finds_them`: a Claude session starts a
+  Codex and a Claude worker with no placement; none gets a pane; `agent ls --parent self` from inside
+  lists exactly them with their status; `agent open` shows one in a new tab without moving the
+  user's focus, and `agent info` then reports its pane.
+- `test_any_placement_option_shows_the_session`: `--focus` alone and `--window W` alone show the
+  session; nothing and `--background` don't.
+- `test_agents_and_people_are_told_workers_start_in_the_background`: the CLI help and the note Claude
+  gets (reported by the fake's STATE) say so; "new tab" is gone from the note.
+- `verify_agent_panes.py`: Window > Agent Sessions lists background sessions, the one needing input
+  first; the Dock badge counts it and clears; choosing an item shows the session focused and marks it.
+- The UI tests (`-m ui`) for the menu items.

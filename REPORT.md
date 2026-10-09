@@ -36,8 +36,8 @@ Managed Claude Code and Codex sessions, controlled from `tern agent …` and sho
   and comes back after a restart like any pane. The view shows both sides (Markdown replies, code
   set apart), tool calls that expand to their output, cards for approvals and questions, queued
   messages, and a composer (Enter sends, Shift+Enter adds a line, Esc interrupts; drafts are kept).
-  `agent start` opens a new tab by default without taking focus; `--focus`, `--split`,
-  `--new-window`, `--background`. The sidebar's second line shows a session's status and activity;
+  `agent start` opened a new tab by default without taking focus; `--focus`, `--split`,
+  `--new-window`, `--background` (after phase 2: the background is the default, see the top). The sidebar's second line shows a session's status and activity;
   ⌃⌘J jumps to the session that needs you; the command palette lists every session. Desktop
   notifications when a session needs you or finishes out of sight.
 - **Phase 1's open item** fixed: every editor tab, the active one included, stays readable in a
@@ -61,7 +61,8 @@ names make good slugs.
 
 ```sh
 # Start (prints the session id). Full access, its own worktree, a model and effort; the pointer is
-# the first message. Shown in a new tab without taking focus; --background shows nothing.
+# the first message. It runs in the background: no tab, no pane. To show it as well, add --tab,
+# --split [DIR] or --new-window (--focus switches to it).
 tern agent start claude --name fix-login --worktree fix-login --full-access --model opus --effort high \
   "Do the task in .supervise/fix-login/task.md"
 tern agent start codex --name review-api --full-access --model gpt-6-luna --effort low \
@@ -94,6 +95,10 @@ tern agent answer fix-login --answer 1=blue --answer 2=L
 tern agent watch fix-login --notify self     # from inside a managed session
 # Claude Code orchestrator in a pane: run `tern agent wait …` with run_in_background.
 
+# Your workers: list them, and show one to the user when it helps.
+tern agent ls --parent self                   # the sessions you started: status, activity, report, pane if shown
+tern agent open fix-login                     # a new tab, without taking focus (--focus, --split, --new-window)
+
 # Status, stop, list, resume after a restart.
 tern agent ls                                 # every session, status, latest report
 tern agent interrupt fix-login                # stop the turn, keep the session
@@ -109,7 +114,13 @@ working again by itself when a background command it started finishes; `agent wa
 For the `supervise-workers` skill, the Tern track is: write the task file, `tern agent start … "Do
 the task in .supervise/<slug>/task.md"`, `tern agent wait <slug>` (or `--report`), read the report,
 check the evidence, `tern agent send <slug> …` to follow up, `tern agent stop <slug>` when accepted,
-`tern agent ls` to rebuild state after a restart. A managed orchestrator can replace the watcher
+`tern agent ls --parent self` to rebuild state after a restart.
+
+You (the user) find workers that no pane shows in Window > Agent Sessions (status and activity, the
+ones that need you first; choose one to show it), in the command palette ("Show Agent: …"), with ⌃⌘J
+(the one that needs you), through desktop notifications, and by the Dock badge, which counts the
+sessions waiting for you. An orchestrator you start yourself with `tern agent start` is in the
+background too: add `--tab --focus` to see it at once, or `tern agent open NAME` later. A managed orchestrator can replace the watcher
 scripts with `tern agent watch <slug> --notify self`.
 
 

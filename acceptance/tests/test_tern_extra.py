@@ -440,3 +440,264 @@ def test_the_installer_downloads_a_release_in_a_bare_shell(target, tmp_path):
             assert bundle_version(str(dest)) == "0.0.7"
     finally:
         server.shutdown()
+
+
+# ---- I-4: the update question --------------------------------------------------------------------
+#
+# A background check that finds a newer version asks; nothing is downloaded until the answer is
+# yes. These install a release-stamped old build (0.0.1) and point it at a local feed whose
+# contents the test switches. Checks run every 2 s in these instances (TERN_UPDATE_CHECK_SECONDS,
+# honored only with an explicit state directory).
+
+class _LoggingHandler(SimpleHTTPRequestHandler):
+    log = None
+
+    def do_GET(self):  # noqa: N802
+        self.log.append(self.path)
+        super().do_GET()
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture(scope="module")
+def update_releases(target, tmp_path_factory):
+    """An old (0.0.1) and a new (999.0.0) release behind a local web server that logs requests.
+    Yields (root, base URL, request log)."""
+    if not (target.release and target.installer and target.env_names.get("feed_url")):
+        pytest.skip("the target file has no release command, installer or feed_url variable")
+    from test_install import make_release
+
+    root = tmp_path_factory.mktemp("update-releases")
+    log = []
+    handler = type("Handler", (_LoggingHandler,), {"log": log})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(handler, directory=str(root)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}/"
+    make_release(target, "0.0.1", root / "old", base + "old/")
+    make_release(target, "999.0.0", root / "new", base + "new/")
+    (root / "feed").mkdir()
+    yield root, base, log
+    server.shutdown()
+
+
+def _serve_feed(root, which):
+    """Point the instance's feed at a version: "old" (up to date), "new" (999.0.0) or a newer
+    999.1.0 whose download would fail (it must never be requested)."""
+    if which in ("old", "new"):
+        shutil.copy(root / which / "appcast.json", root / "feed" / "appcast.json")
+    else:
+        (root / "feed" / "appcast.json").write_text(json.dumps({
+            "product": "Tern", "version": which, "url": f"never/Tern-{which}.zip", "size": 1,
+            "sha256": "00" * 32, "signature": "AAAA"}))
+
+
+def _install_old(target, update_releases, tmp_path, later_seconds=None):
+    from test_install import bundle_version, run_installer
+
+    root, base, _ = update_releases
+    _serve_feed(root, "old")
+    env = {target.env_names["feed_url"]: base + "feed/appcast.json", "TERN_UPDATE_CHECK_SECONDS": "2"}
+    if later_seconds:
+        env["TERN_UPDATE_LATER_SECONDS"] = str(later_seconds)
+    holder = Instance(target, prefix="acc-ask-", env=env)
+    dest = str(tmp_path / "Applications" / os.path.basename(target.app))
+    proc = run_installer(target, str(root / "old" / target.release["app"]), dest, str(tmp_path / "bin"), holder.env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert bundle_version(dest) == "0.0.1"
+    return Instance(Target.from_installed(target, dest), state_dir=holder.dir, env=env), dest
+
+
+def _update_status(inst):
+    return inst.json("update", "--status")
+
+
+def _zip_requests(log):
+    return [p for p in log if p.endswith(".zip")]
+
+
+def _uninstall(installed, dest):
+    subprocess.run(["pkill", "-TERM", "-f", f"{dest}/Contents/MacOS/"], capture_output=True)
+    time.sleep(1)
+    installed.cleanup()
+
+
+@pytest.mark.req("I-4", "L-8")
+@pytest.mark.slow
+def test_a_background_check_asks_and_downloads_nothing_until_yes(target, update_releases, tmp_path):
+    """I-4: "when a background check finds a newer version, it asks the user before downloading or
+    installing anything. The question never takes focus or blocks work, and it stays available
+    until answered." Then `<cli> update` counts as a yes."""
+    from test_install import bundle_version
+
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path)
+    try:
+        installed.start_app()
+        pane = installed.json("window", "new")["pane"]
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check (up to date)")
+        before = installed.json("ls")
+        activate_finder()
+        front = frontmost_pid()
+        if front is None or front == installed.app_pid:
+            pytest.skip("couldn't put another app in front")
+        del log[:]
+        _serve_feed(root, "new")
+        status = wait_until(lambda: (s := _update_status(installed))["state"] == "asking" and s, 30,
+                            message="the background check asks")
+        assert status.get("question") == "999.0.0" and status["latest"] == "999.0.0", status
+        # It took no focus: the app that was in front stays there, and the user's pane too.
+        time.sleep(1)
+        assert frontmost_pid() == front, "the question brought the app to the front"
+        after = installed.json("ls")
+        assert (after["current_tab"], after["current_pane"]) == (before["current_tab"], before["current_pane"])
+        # Work goes on, and nothing is downloaded however many checks run.
+        installed.cli("send", "--pane", pane, "-e", "echo still-working")
+        installed.cli("wait", "--pane", pane, "--pattern", "^still-working$", "--timeout", "10")
+        time.sleep(8)
+        assert not _zip_requests(log), log
+        assert _update_status(installed)["state"] == "asking"
+        check = installed.json("update", "--check")
+        assert (check["installed"], check["latest"], check["update_available"]) == ("0.0.1", "999.0.0", True), check
+        assert not _zip_requests(log), "`update --check` downloaded something"
+
+        # Unanswered, the question survives a restart, and a quit installs nothing.
+        installed.quit_gracefully()
+        time.sleep(3)
+        assert bundle_version(dest) == "0.0.1", "an update installed without a yes"
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] == "asking", 30, message="asked again after the restart")
+        time.sleep(4)
+        assert not _zip_requests(log), log
+
+        # `<cli> update` is a yes.
+        installed.cli("update", timeout=600)
+        assert _zip_requests(log), "the yes downloaded nothing"
+        status = _update_status(installed)
+        assert status["state"] == "ready" and status.get("ready") == "999.0.0", status
+    finally:
+        _uninstall(installed, dest)
+
+
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_later_asks_again_later_and_skip_waits_for_a_newer_version(target, update_releases, tmp_path):
+    """What a "no" or "later" means for later checks: Later hides the question for a while (also
+    across a restart), then it's asked again; Skip This Version never asks about that version again,
+    but a newer one is asked about. Neither downloads anything."""
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path, later_seconds=25)
+    try:
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        del log[:]
+        _serve_feed(root, "new")
+        wait_until(lambda: _update_status(installed)["state"] == "asking", 30, message="asked")
+
+        later = installed.json("update", "--later")
+        answered = time.time()
+        assert later["state"] == "later" and "question" not in later and later.get("later_until"), later
+        time.sleep(6)
+        assert _update_status(installed)["state"] == "later", "asked again right after Later"
+        installed.quit_gracefully()
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] != "unknown", 30, message="a check after the restart")
+        time.sleep(2)
+        status = _update_status(installed)
+        assert status["state"] == "later" and "question" not in status, f"a restart asked again early: {status}"
+        wait_until(lambda: _update_status(installed)["state"] == "asking", 25 - (time.time() - answered) + 20,
+                   message="asked again once Later's time was up")
+        assert time.time() - answered >= 24, "asked again before Later's time was up"
+
+        skip = installed.json("update", "--skip")
+        assert skip["state"] == "skipped" and skip.get("skipped") == "999.0.0", skip
+        time.sleep(6)
+        assert _update_status(installed)["state"] == "skipped"
+        installed.quit_gracefully()
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] != "unknown", 30, message="a check after the restart")
+        time.sleep(4)
+        status = _update_status(installed)
+        assert status["state"] == "skipped" and "question" not in status, f"a skipped version was asked about: {status}"
+
+        _serve_feed(root, "999.1.0")
+        status = wait_until(lambda: (s := _update_status(installed))["state"] == "asking" and s, 30,
+                            message="a newer version is asked about")
+        assert status["question"] == "999.1.0", status
+        assert not _zip_requests(log), log
+    finally:
+        _uninstall(installed, dest)
+
+
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_update_is_a_yes_even_after_skip_and_the_yes_outlives_a_restart(target, update_releases, tmp_path):
+    """`<cli> update` counts as a yes, whatever was answered before. A yes is kept: after a
+    restart the same version downloads again without asking (here the first download fails)."""
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path)
+    try:
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        _serve_feed(root, "new")
+        wait_until(lambda: _update_status(installed)["state"] == "asking", 30, message="asked")
+        installed.json("update", "--skip")
+
+        # The yes, with the download made to fail (the zip moved away for a moment).
+        zip_path = root / "new" / "Tern-999.0.0.zip"
+        hidden = root / "new" / "hidden.zip"
+        zip_path.rename(hidden)
+        try:
+            proc = installed.cli("update", check=False, timeout=600)
+            assert proc.returncode != 0, proc.stdout
+            status = _update_status(installed)
+            assert status["state"] == "failed" and status.get("consent") == "999.0.0", status
+        finally:
+            hidden.rename(zip_path)
+        installed.quit_gracefully()
+        del log[:]
+        installed.start_app()
+        status = wait_until(lambda: (s := _update_status(installed))["state"] == "ready" and s, 60,
+                            message="the yes carried on after the restart, without asking")
+        assert status["ready"] == "999.0.0" and len(_zip_requests(log)) == 1, (status, log)
+    finally:
+        _uninstall(installed, dest)
+
+
+@pytest.mark.req("I-4", "P-2")
+@pytest.mark.slow
+def test_the_update_question_in_the_sidebar(target, update_releases, tmp_path, ui):
+    """The question as a person sees it: a notice in the sidebar with Download, Later and Skip
+    This Version (no dialog). Later takes it away; "Check for Updates…" is then a yes: it downloads,
+    says so, and the notice offers to install the staged update."""
+    from harness import UI
+
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path)
+    try:
+        installed.start_app()
+        installed.json("window", "new")
+        installed.cli("sidebar", "on")
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        del log[:]
+        _serve_feed(root, "new")
+        wait_until(lambda: _update_status(installed)["state"] == "asking", 30, message="asked")
+        view = UI(installed.app_pid)
+        for label in ("Download", "Later", "Skip This Version"):
+            wait_until(lambda: view.button(label), 10, message=f"the notice's {label} button")
+        assert "999.0.0 is available" in view.all_text()
+        assert not [w for w in view.windows() if view.attr(w, "AXSubrole") in ("AXDialog", "AXSystemDialog")], \
+            "the question is a dialog"
+        view.press(view.button("Later"))
+        wait_until(lambda: _update_status(installed)["state"] == "later", 10, message="Later answered")
+        wait_until(lambda: view.button("Download") is None, 10, message="the notice gone")
+
+        view.choose(view.menu_item("Check for Updates"))
+        ok = wait_until(lambda: view.button("OK"), 15, message="the menu item's dialog")
+        assert "Downloading Tern 999.0.0" in view.all_text(), view.all_text()
+        view.press(ok)
+        wait_until(lambda: _update_status(installed)["state"] == "ready", 120, message="downloaded and staged")
+        assert _zip_requests(log)
+        wait_until(lambda: view.button("Install Now…"), 10, message="the notice offers to install")
+    finally:
+        _uninstall(installed, dest)

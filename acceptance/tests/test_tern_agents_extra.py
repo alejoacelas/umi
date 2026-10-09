@@ -425,3 +425,103 @@ def test_session_settings_are_private_to_the_user(inst, started):
                 continue
             mode = stat.S_IMODE(os.stat(path).st_mode)
             assert mode & 0o077 == 0, f"{path} is readable by others ({oct(mode)})"
+
+
+# ---- AP-3: sessions run in the background by default ----------------------------------------------
+
+def _agent_panes(inst, sid):
+    return [p for w in inst.tree()["windows"] for t in w["tabs"] for p in t["panes"] if p.get("agent") == sid]
+
+
+@pytest.mark.req("AP-3", "MA-12", "MA-18", "L-8")
+def test_workers_run_in_the_background_and_their_orchestrator_finds_them(inst, win, started):
+    """AP-3: `agent start` shows nothing by default, also when an agent starts its own workers.
+    What the orchestrator could see about a worker shown in a tab stays reachable: it lists its
+    workers (`agent ls --parent self`), sees their state and replies, and shows one in a pane
+    (`agent open`, a new tab that takes no focus)."""
+    cli = inst.target.cli_name
+    n = nonce()
+    w1, w2 = f"bg-one-{n}", f"bg-two-{n}"
+    boss = started("claude", "ECHO boss", name=f"boss-{n}", background=False)
+    assert inst.wait(boss)[1]["status"] == "DONE"
+    script = (f"{cli} agent start codex --name {w1} 'ECHO one {n}' >/dev/null && "
+              f"{cli} agent start claude --name {w2} 'ECHO two {n}' >/dev/null && "
+              f"{cli} agent wait {w1} --timeout 60 >/dev/null && {cli} agent wait {w2} --timeout 60 >/dev/null && "
+              f"{cli} --json agent ls --parent self")
+    inst.send(boss, f"RUN {script}")
+    code, out = inst.wait(boss, timeout=150)
+    try:
+        assert out["status"] == "DONE" and out["reply"].startswith("exit=0"), out
+        listed = json.loads(out["reply"].split("\n", 1)[1])["sessions"]
+        assert sorted(s["name"] for s in listed) == sorted([w1, w2]), listed
+        assert all(s["status"] == "idle" and "pane" not in s for s in listed), listed
+        ids = {s["name"]: s["id"] for s in listed}
+        assert not _agent_panes(inst, boss) and not _agent_panes(inst, ids[w1]) and not _agent_panes(inst, ids[w2])
+        assert f"ECHO one {n}" in inst.cli("agent", "read", w1).stdout
+
+        inst.cli("pane", "focus", win["pane"])
+        before = inst.json("ls")
+        opened = inst.json("agent", "open", w1, "--window", win["window"])
+        after = inst.json("ls")
+        assert (after["current_tab"], after["current_pane"]) == (before["current_tab"], before["current_pane"])
+        panes = _agent_panes(inst, ids[w1])
+        assert [p["id"] for p in panes] == [opened["pane"]], panes
+        info = inst.info(w1)
+        assert info.get("pane") == opened["pane"], info
+        assert "pane" not in inst.info(w2)
+    finally:
+        for name in (w1, w2):
+            inst.cli("agent", "stop", name, check=False, timeout=60)
+
+
+@pytest.mark.req("AP-3")
+def test_any_placement_option_shows_the_session(inst, win, started):
+    """`--focus` alone or `--window W` alone asks for the session to be shown (a new tab), as the
+    old default did; `--background` and no option at all show nothing."""
+    inst.cli("pane", "focus", win["pane"])
+    focused = started("codex", "ECHO focused", "--focus", background=False)
+    assert inst.wait(focused)[1]["status"] == "DONE"
+    pane = wait_until(lambda: _agent_panes(inst, focused), 10, message="shown")[0]
+    assert inst.json("ls")["current_pane"] == pane["id"], "--focus didn't switch to it"
+    inst.cli("pane", "focus", win["pane"])
+    placed = started("codex", "ECHO placed", "--window", win["window"], background=False)
+    assert inst.wait(placed)[1]["status"] == "DONE"
+    assert _agent_panes(inst, placed)
+    assert inst.json("ls")["current_pane"] == win["pane"]
+    for options in ([], ["--background"]):
+        hidden = started("codex", "ECHO hidden", *options, background=False)
+        assert inst.wait(hidden)[1]["status"] == "DONE"
+        assert not _agent_panes(inst, hidden)
+
+
+@pytest.mark.req("AP-3", "MA-27")
+def test_agents_and_people_are_told_workers_start_in_the_background(inst, started):
+    """The old default (a new tab) is gone everywhere it was described: the CLI's help and the
+    note a worker gets about its situation (Claude's appended system prompt, which the fake
+    reports in STATE)."""
+    help_text = inst.cli("agent", "--help").stdout
+    assert "background" in help_text and "agent open" in help_text, help_text
+    assert "--parent" in help_text
+    sid = started("claude", "STATE", background=False)
+    code, out = inst.wait(sid)
+    assert out["status"] == "DONE", out
+    argv = json.loads(out["reply"])["argv"]
+    note = argv[argv.index("--append-system-prompt") + 1]
+    assert "background" in note and "agent open" in note and "--parent self" in note, note
+    assert "new tab" not in note
+
+
+@pytest.mark.req("AP-3", "AP-4")
+def test_background_sessions_are_in_the_window_menu(inst, win, started, ui):
+    """Window > Agent Sessions lists sessions no pane shows, with their status; choosing one shows
+    it in a pane and focuses it."""
+    name = f"menu-{nonce()}"
+    sid = started("codex", "ECHO listed", name=name, background=False)
+    assert inst.wait(sid)[1]["status"] == "DONE"
+    assert not _agent_panes(inst, sid)
+    item = wait_until(lambda: ui.menu_item(f"{name} — "), 10, message="the session in Window > Agent Sessions")
+    assert ui.label(item) == f"{name} — idle", ui.label(item)
+    ui.choose(item)
+    pane = wait_until(lambda: _agent_panes(inst, sid), 10, message="shown")[0]
+    wait_until(lambda: inst.json("ls")["current_pane"] == pane["id"], 5, message="and focused")
+    inst.cli("pane", "close", pane["id"], check=False)

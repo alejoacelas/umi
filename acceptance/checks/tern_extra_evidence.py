@@ -1,9 +1,10 @@
 """Extra evidence for the written checks (Tern, phase 1), where run_checks.py's setup can't show a
 criterion: Files mode on a repository with nested folders (S-2), Markdown images and the E-7 page
 rules (E-1, E-7), and the "changed on disk" notice on an edited document (E-4, which run_checks
-only reaches through the accessibility tree).
+only reaches through the accessibility tree). After phase 2: the update question in the sidebar
+(I-4, P-2), on an installed release-stamped old build pointed at a local feed.
 
-    uv run python checks/tern_extra_evidence.py
+    uv run python checks/tern_extra_evidence.py [--only update]
 
 Writes results/checks/extra-*.png. Uses an isolated instance and Tern's `screenshot` command.
 """
@@ -116,5 +117,56 @@ def main():
         inst.cleanup()
 
 
+def update_evidence():
+    """I-4: the question a background check raises (nothing downloaded), then the staged update."""
+    import shutil
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    from test_install import make_release, run_installer
+
+    target = Target(os.path.join(HERE, "..", "targets", "tern.json"))
+    base = os.path.realpath(tempfile.mkdtemp(prefix="tern-evidence-update-"))
+    root = os.path.join(base, "www")
+    os.makedirs(os.path.join(root, "feed"))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=root))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    make_release(target, "0.0.1", os.path.join(root, "old"), url + "old/")
+    make_release(target, "999.0.0", os.path.join(root, "new"), url + "new/")
+    shutil.copy(os.path.join(root, "new", "appcast.json"), os.path.join(root, "feed", "appcast.json"))
+    env = {"TERN_FEED_URL": url + "feed/appcast.json", "TERN_UPDATE_CHECK_SECONDS": "2"}
+    holder = Instance(target, prefix="acc-extra-update-", env=env)
+    dest = os.path.join(base, "Applications", "Tern.app")
+    proc = run_installer(target, os.path.join(root, "old", "Tern.app"), dest, os.path.join(base, "bin"), holder.env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    inst = Instance(Target.from_installed(target, dest), state_dir=holder.dir, env=env)
+    try:
+        inst.start_app()
+        w = inst.json("window", "new", "--name", "work")
+        inst.cli("tab", "new", "--window", w["window"], "--name", "notes")
+        inst.cli("sidebar", "on")
+        wait_until(lambda: inst.json("update", "--status")["state"] == "asking", 30, message="the question")
+        time.sleep(1.5)
+        shot(inst, w["window"], "I-4-update-question")
+        print(inst.cli("update", "--status").stdout.strip())
+        inst.cli("update", timeout=600)
+        wait_until(lambda: inst.json("update", "--status")["state"] == "ready", 60, message="staged")
+        time.sleep(1.5)
+        shot(inst, w["window"], "I-4-update-ready")
+        print(inst.cli("update", "--status").stdout.strip())
+    finally:
+        subprocess.run(["pkill", "-TERM", "-f", f"{dest}/Contents/MacOS/"], capture_output=True)
+        time.sleep(1)
+        inst.cleanup()
+        server.shutdown()
+        shutil.rmtree(base, ignore_errors=True)
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--only", "update"]:
+        update_evidence()
+    else:
+        main()
+        update_evidence()

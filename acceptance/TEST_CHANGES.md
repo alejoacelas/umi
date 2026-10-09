@@ -97,3 +97,43 @@ No existing test was changed or weakened in phase 2. Additions:
   `CODEX_HOME`; read-only writes nothing). The test now uses a never-opened folder and allows only
   that entry; SPEC MA-21 says so. A module fixture removes the trust entries the module's throwaway
   folders caused, and nothing else, so test runs stop adding to the user's Codex config.
+
+## After the user's answers (updates ask first; workers start in the background)
+
+No existing test was changed or weakened; the supervisor added `test_start_shows_nothing_by_default`
+(AP-3) with the brief. Every existing test that needed a pane already passed a placement, so the new
+default broke none of them. Additions:
+
+- **`tests/test_tern_extra.py`, I-4's question** (a module fixture builds a release-stamped 0.0.1
+  and a 999.0.0 once, behind a local server that logs requests; the instance checks every 2 s through
+  `TERN_UPDATE_CHECK_SECONDS`, which only isolated instances honor):
+  - `test_a_background_check_asks_and_downloads_nothing_until_yes`: with Finder in front, the feed
+    turns newer; the background check asks (`update --status`: `asking`), Finder stays in front, the
+    user's tab and pane are unchanged, a terminal keeps working; no `.zip` is requested over several
+    checks, an `update --check` and a restart; a quit installs nothing; `tern update` (a yes) downloads
+    and stages it.
+  - `test_later_asks_again_later_and_skip_waits_for_a_newer_version`: Later holds across checks and a
+    restart, then the question returns once its time (25 s here, through `TERN_UPDATE_LATER_SECONDS`)
+    is up; Skip holds across checks and a restart; a newer version is asked about; nothing is
+    downloaded.
+  - `test_update_is_a_yes_even_after_skip_and_the_yes_outlives_a_restart`: `tern update` after Skip
+    is a yes; its download fails (the zip hidden for a moment), and after a restart the same version
+    downloads once, without asking, and stages.
+  - `test_the_update_question_in_the_sidebar` (UI): the notice's Download / Later / Skip This Version
+    buttons, no dialog; Later takes it away; "Check for Updates…" is a yes (its dialog says it's
+    downloading), and the notice then offers Install Now….
+- **`tests/test_tern_agents_extra.py`, AP-3's default**:
+  - `test_workers_run_in_the_background_and_their_orchestrator_finds_them`: a session starts two
+    workers with no placement; no pane; `agent ls --parent self` lists exactly them with their status;
+    `agent open` shows one without moving the user's focus; `agent info` reports its pane.
+  - `test_any_placement_option_shows_the_session`: `--focus` alone and `--window W` alone show the
+    session; no option and `--background` don't.
+  - `test_agents_and_people_are_told_workers_start_in_the_background`: `agent --help` and the note a
+    worker gets (Claude's appended system prompt, reported by the fake's STATE) describe the new
+    default; "new tab" is gone from the note.
+  - `test_background_sessions_are_in_the_window_menu` (UI): Window > Agent Sessions lists a
+    background session with its status; choosing it shows and focuses it.
+- **`checks/tern_extra_evidence.py --only update`**: screenshots of the question and the staged
+  update in the sidebar (`extra-I-4-update-question.png`, `extra-I-4-update-ready.png`).
+- **`app/macos/TernTests/verify_agent_panes.py`**: the Agent Sessions menu (order, ✓ for shown
+  sessions, choosing one) and the Dock badge, through `debug.menu` and `debug.dock_badge`.
