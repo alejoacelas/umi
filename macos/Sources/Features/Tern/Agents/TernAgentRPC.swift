@@ -1,6 +1,6 @@
 import Foundation
 
-/// The control socket's `agent.*` methods (CLI.md, "Managed").
+/// The control socket's `agent.*` methods (CLI.md, "Agents").
 @MainActor
 enum TernAgentRPC {
     static let agents = TernAgents.shared
@@ -60,6 +60,16 @@ enum TernAgentRPC {
             }
         case "agent.rm":
             return try await remove(params, caller: caller)
+        case "agent.attach":
+            return try await attach(params, caller: caller)
+        case "agent.hook":
+            return try await hook(params, caller: caller)
+        case "agent.hide":
+            let id = try await agents.run { try agents.resolve(params.string("session"), caller: caller).record.id }
+            try TernAgentUI.hide(sessionID: id)
+            return try await agents.run { ["session": info(agents.session(id: id)!, pane: nil), "hidden": true] }
+        case "agent.plugins":
+            return try await plugins(params)
         default:
             throw TernError.badRequest("unknown method \(method)")
         }
@@ -104,6 +114,14 @@ enum TernAgentRPC {
                 harnessID: kind == .claude ? UUID().uuidString.lowercased() : nil,
                 parent: parent, createdAt: Date())
             let session = TernAgentSession(record: record)
+            session.record.origin = "started"
+            // The session's title (the sidebar's second line): its name when given, else its
+            // first message.
+            session.record.title = params.string("name").flatMap { $0.isEmpty ? nil : $0 }
+                ?? prompt.map { TernAgentText.oneLine($0, max: 60) }
+            // With a placement it's a session the user will interact with: headless until its
+            // first turn finishes, then live in that place (AG-2).
+            if placement != nil && prompt != nil { session.record.goLiveWhenSettled = true }
             session.saveRecord()
             agents.add(session)
             session.notice("Started \(kind.rawValue) in \(record.cwd).")
@@ -118,6 +136,11 @@ enum TernAgentRPC {
         if let placement {
             do {
                 pane = try TernAgentUI.open(session.record.id, placement: placement, caller: caller)
+                if result.1 == nil, let pane {
+                    // No prompt: nothing to run headless first, so it opens live at once.
+                    let paneID = pane
+                    await agents.runQuietly { session.record.pane = paneID; session.goLiveAfterStart() }
+                }
             } catch {
                 paneError = (error as? TernError)?.message ?? "\(error)"
             }
@@ -140,7 +163,8 @@ enum TernAgentRPC {
         return try await agents.run {
             let session = try agents.resolve(params.string("session"), caller: caller)
             var isDir = ObjCBool(false)
-            if !session.live, !(FileManager.default.fileExists(atPath: session.record.cwd, isDirectory: &isDir) && isDir.boolValue) {
+            if !session.live, session.record.live != true,
+               !(FileManager.default.fileExists(atPath: session.record.cwd, isDirectory: &isDir) && isDir.boolValue) {
                 throw TernError.failed("can't resume \(session.record.name): its folder \(session.record.cwd) no longer exists")
             }
             let from = caller.session.flatMap { agents.session(id: $0) != nil ? $0 : nil }
@@ -152,7 +176,12 @@ enum TernAgentRPC {
                 message = session.enqueue(text: text, from: from)
                 session.pump()
             }
-            return ["message": messageJSON(message), "session": info(session, pane: nil)]
+            var out: [String: Any] = ["message": messageJSON(message), "session": info(session, pane: nil)]
+            if session.exclusiveLive {
+                out["note"] = "\(session.record.name) is open in its own interface in a pane; the message is delivered "
+                    + "when that interface is idle and nothing is typed in it (`\(TernPaths.cliName) agent info \(session.record.name)` says what it waits for)"
+            }
+            return out
         }
     }
 
@@ -236,29 +265,45 @@ enum TernAgentRPC {
         if let warning = startupWarning(session) { out["warning"] = warning }
         guard let message = target else {
             // Nothing was ever sent: the current state, at once.
+            // A live session the user drives: wait for its turn to end.
+            if session.record.live == true, !session.settled, session.status != "needs_input" { return nil }
             let status: String
             switch session.status {
-            case "exited": status = "EXITED"
+            case "stopped": status = "STOPPED"
             case "error": status = "ERROR"
             case "needs_input": status = "NEEDS_INPUT"
             default: status = "DONE"
             }
+            if status == "DONE", let reply = session.lastReply { out["reply"] = reply }
             out["status"] = status
-            if status == "NEEDS_INPUT" { out["requests"] = session.requests.map(\.json) }
+            if status == "NEEDS_INPUT" {
+                out["requests"] = session.requests.map(\.json)
+                if session.requests.isEmpty { out["waiting_on"] = session.activityText }
+            }
             if status == "ERROR", let error = session.record.lastError { out["error"] = error }
             return out
         }
         out["message"] = messageJSON(message)
-        if message.state.isFinal {
-            if session.startupSettling { return nil }
-            out["status"] = message.state.waitStatus
-            if let reply = message.reply { out["reply"] = reply }
-            if let error = message.error { out["error"] = error }
-            return out
-        }
-        if session.live, !session.requests.isEmpty {
+        let latest = message.id == session.lastMessage?.id
+        if session.status == "needs_input", !(message.state.isFinal && !latest) {
             out["status"] = "NEEDS_INPUT"
             out["requests"] = session.requests.map(\.json)
+            if session.requests.isEmpty { out["waiting_on"] = session.activityText }
+            return out
+        }
+        if message.state.isFinal {
+            if session.startupSettling { return nil }
+            // The latest message's wait also waits for the session to settle: background work
+            // it started that will wake it, or turns it runs by itself after (AG-12).
+            if latest, message.state == .done, !session.settled { return nil }
+            out["status"] = message.state.waitStatus
+            var reply = message.reply
+            if latest, message.state == .done, let last = session.lastReply, !last.isEmpty, last != reply {
+                // Turns after it (woken by its background work) have the newest word.
+                reply = last
+            }
+            if let reply { out["reply"] = reply }
+            if let error = message.error { out["error"] = error }
             return out
         }
         return nil
@@ -272,7 +317,8 @@ enum TernAgentRPC {
     }
 
     nonisolated static func timeoutResult(_ session: TernAgentSession, report: Bool, target: String?) -> [String: Any] {
-        var out: [String: Any] = ["status": "TIMEOUT", "session": info(session, pane: nil)]
+        var out: [String: Any] = ["status": "TIMEOUT", "session": info(session, pane: nil),
+                                  "still": "\(session.status): \(session.activityText)"]
         if !report, let message = target.flatMap({ session.message($0) }) { out["message"] = messageJSON(message) }
         return out
     }
@@ -452,7 +498,7 @@ enum TernAgentRPC {
             // Already finished (or nothing pending): say so now rather than never.
             if let messageID, let message = session.message(messageID), message.state.isFinal {
                 session.checkWatches()
-            } else if messageID == nil, session.status == "idle" || session.status == "exited" || session.status == "error" {
+            } else if messageID == nil, session.status == "idle" || session.status == "stopped" || session.status == "error" {
                 session.checkWatches(turnEnded: true)
             } else if session.live, !session.requests.isEmpty {
                 session.checkWatches(needsInput: true)
@@ -466,15 +512,125 @@ enum TernAgentRPC {
     static func open(_ params: TernParams, caller: TernCaller) async throws -> [String: Any] {
         let session = try await agents.run { try agents.resolve(params.string("session"), caller: caller) }
         let placement = try Placement(params, caller: caller) ?? Placement(kind: .tab, focus: params.bool("focus") ?? false)
+        // A live interface removed from its pane and still finishing: back in a tab.
+        if let surface = try TernAgentUI.unpark(session.record.id, placement: placement) {
+            return try await agents.run { ["session": info(session, pane: surface.ternID), "pane": surface.ternID] }
+        }
         let pane = try TernAgentUI.open(session.record.id, placement: placement, caller: caller)
+        if params.bool("live") ?? false, let surface = TernAgentUI.surface(ternID: pane) {
+            let live = await agents.runQuietly { session.record.live == true }
+            if live != true { TernAgentUI.shared.takeOver(surface, session: session.record.id) }
+        }
         return try await agents.run { ["session": info(session, pane: pane), "pane": pane] }
+    }
+
+    // MARK: attach (the agent's own interface in a pane)
+
+    /// `agent attach SESSION`, run in a pane (Take Over types it): free the conversation for the
+    /// agent's interface and say how to run it there.
+    static func attach(_ params: TernParams, caller: TernCaller) async throws -> [String: Any] {
+        guard let paneID = caller.pane, let surface = TernAgentUI.surface(ternID: paneID) else {
+            throw TernError.badRequest("`agent attach` runs in one of \(TernPaths.productName)'s panes (it shows the session there); "
+                + "elsewhere use `\(TernPaths.cliName) agent open SESSION --live`")
+        }
+        let session = try await agents.run { try agents.resolve(params.string("session"), caller: caller) }
+        TernAgentUI.shared.attachments[surface.id] = session.record.id
+        TernAgentUI.shared.livePanes.insert(surface.id)
+        let spec: [String: Any]
+        do {
+            spec = try await withCheckedThrowingContinuation { continuation in
+                TernAgents.queue.async {
+                    session.prepareLive(pane: paneID) { result in continuation.resume(with: result) }
+                }
+            }
+        } catch {
+            TernAgentUI.shared.livePanes.remove(surface.id)
+            throw error
+        }
+        TernState.shared.layoutDidChange()
+        return spec
+    }
+
+    // MARK: hooks (Tern's plugin for Claude Code and Codex, AG-18)
+
+    static func hook(_ params: TernParams, caller: TernCaller) async throws -> [String: Any] {
+        guard let event = params.string("event"), !event.isEmpty else { throw TernError.badRequest("no event") }
+        let payload = params.raw["payload"] as? [String: Any] ?? [:]
+        let pid = params.int("pid").map { Int32($0) }
+        let kind = TernAgentKind(rawValue: params.string("agent") ?? "claude") ?? .claude
+        // A pane of this instance (a stale or foreign pane is no caller at all).
+        let paneID = caller.pane.flatMap { TernAgentUI.surface(ternID: $0) != nil ? $0 : nil }
+        let adopted: String? = try await agents.run {
+            let harnessID = payload["session_id"] as? String
+            var session: TernAgentSession?
+            if let id = caller.session { session = agents.session(id: id) }
+            if session == nil, let harnessID, !harnessID.isEmpty {
+                session = agents.sessions.first { $0.record.harnessID == harnessID }
+            }
+            if session == nil {
+                // `claude`/`codex` typed in a pane: a session Tern knows from now on (AG-18).
+                guard let paneID, event != "SessionEnd", let harnessID, !harnessID.isEmpty else { return nil }
+                let cwd = payload["cwd"] as? String ?? NSHomeDirectory()
+                let id = UUID().uuidString.lowercased()
+                var name = "\(kind.rawValue)-\(id.prefix(6))"
+                if (try? agents.claim(name: name, for: nil)) == nil { name = id }
+                var record = TernSessionRecord(
+                    id: id, name: name, kind: kind, cwd: cwd, model: payload["model"] as? String, effort: nil,
+                    permissionMode: payload["permission_mode"] as? String,
+                    fullAccess: payload["permission_mode"] as? String == "bypassPermissions",
+                    profile: nil, env: [:], harnessArgs: [], harnessID: harnessID, parent: nil, createdAt: Date())
+                record.origin = "typed"
+                record.conversation = true
+                record.live = true
+                record.liveAttached = false
+                record.pane = paneID
+                let created = TernAgentSession(record: record)
+                created.liveState = .idle
+                created.saveRecord()
+                agents.add(created)
+                created.notice("Found \(kind.rawValue) typed in a pane.")
+                session = created
+            }
+            guard let session else { return nil }
+            session.hook(event, payload, pane: paneID, pid: pid)
+            return session.record.id
+        }
+        if let adopted, let paneID, let surface = TernAgentUI.surface(ternID: paneID) {
+            // The pane shows this session live (no read-only view over it).
+            if TernAgentUI.shared.attachments[surface.id] == nil || TernAgentUI.shared.attachments[surface.id] == adopted {
+                if event != "SessionEnd" {
+                    TernAgentUI.shared.attachments[surface.id] = adopted
+                    TernAgentUI.shared.livePanes.insert(surface.id)
+                }
+            }
+        }
+        return ["session": adopted as Any]
+    }
+
+    // MARK: plugins
+
+    static func plugins(_ params: TernParams) async throws -> [String: Any] {
+        let action = params.string("action") ?? "status"
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var out: [String: Any]
+                switch action {
+                case "install": out = TernAgentPlugins.install(force: params.bool("force") ?? false)
+                case "remove": out = TernAgentPlugins.remove()
+                default:
+                    out = ["claude": TernAgentPlugins.status(.claude).json, "codex": TernAgentPlugins.status(.codex).json]
+                }
+                if let root = TernAgentPlugins.bundledRoot { out["bundled"] = root }
+                continuation.resume(returning: out)
+            }
+        }
     }
 
     // MARK: JSON
 
     nonisolated static func messageJSON(_ message: TernAgentMessage) -> [String: Any] {
         var out: [String: Any] = ["id": message.id, "text": message.text, "status": message.state.waitStatus,
-                                  "state": message.state.rawValue, "at": TernAgentTime.iso(message.createdAt)]
+                                  "state": message.state.shown, "at": TernAgentTime.iso(message.createdAt)]
         if let reply = message.reply { out["reply"] = reply }
         if let error = message.error { out["error"] = error }
         if let from = message.from { out["from"] = from }
@@ -496,12 +652,23 @@ enum TernAgentRPC {
         if let message = session.lastMessage { out["last_message"] = messageJSON(message) }
         if session.status == "error", let error = record.lastError { out["error"] = error }
         if let report = record.report { out["report"] = report.json }
-        if let tasks = session.backgroundTasks { out["background_tasks"] = tasks }
+        if let tasks = session.backgroundTasks, tasks > 0 { out["background_tasks"] = tasks }
         if let startup = record.startup { out["startup"] = startup.json }
         if let model = record.model { out["model"] = model }
         if let effort = record.effort { out["effort"] = effort }
         if let mode = record.permissionMode { out["permission_mode"] = mode }
-        if let pane { out["pane"] = pane }
+        out["location"] = session.location
+        out["title"] = record.title ?? record.name
+        out["origin"] = record.origin ?? "started"
+        if let pane = pane ?? record.pane { out["pane"] = pane }
+        let waiting = session.queue.compactMap { session.message($0) }.filter { $0.note != true }
+        if !waiting.isEmpty {
+            out["waiting"] = waiting.map(messageJSON)
+            out["waiting_reason"] = session.activityText
+        }
+        if session.pendingBackground > 0 || session.liveBackground > 0 {
+            out["background_tasks"] = max(session.pendingBackground, session.liveBackground)
+        }
         return out
     }
 

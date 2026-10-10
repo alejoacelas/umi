@@ -2,12 +2,14 @@ import Foundation
 
 /// Codex through its app server, one private server per session:
 ///
-///     codex app-server --listen stdio:// [-c model_reasoning_effort=E] [-c profile=P] [harness arguments]
+///     codex app-server --listen unix://SOCKET [-c model_reasoning_effort=E] [-c profile=P] [harness arguments]
 ///
-/// A private server (never the user's shared daemon, MA-21) that loads the user's
-/// config.toml, AGENTS.md, skills and MCP servers like `codex` does. One per session,
-/// because a thread can be live in only one server at a time (PROTOCOLS X5) and each session
-/// has its own environment.
+/// A private server (never the user's shared daemon) that loads the user's config.toml,
+/// AGENTS.md, skills and MCP servers like `codex` does. One per session, because a thread can
+/// be live in only one server at a time (PROTOCOLS X5) and each session has its own
+/// environment. It listens on a Unix socket (WebSocket frames), so Codex's own interface can
+/// attach to the same server and thread (`codex resume THREAD --remote unix://SOCKET`, AG-6):
+/// the user sees and drives the session live while Tern keeps driving it too.
 ///
 /// Turn tracking: `turn/start` carries our message id as `clientUserMessageId`; its answer
 /// names the turn; the `userMessage` item with that client id is the delivery receipt; the
@@ -29,14 +31,23 @@ final class TernCodexDriver: TernHarnessDriver {
     private var runningCommands: Set<String> = []
     private var mcp: [String: [String: String]] = [:]
     private var mcpOrder: [String] = []
+    private var socket: TernUnixWebSocket?
+    /// The server's socket (short: Unix socket paths are limited to 104 bytes).
+    let socketPath: String
+    /// Messages handed over with `turn/steer` whose `userMessage` hasn't come back yet.
+    private var steered: [String] = []
 
     init(session: TernAgentSession) {
         self.session = session
+        socketPath = TernPaths.userTempDirectory + "tern-cx-\(session.record.id.prefix(12)).sock"
     }
+
+    var canSteer: Bool { ready && startingMessage == nil && session.currentTurnID != nil }
 
     func arguments(resume: Bool) -> [String] {
         let record = session.record
-        var args = ["app-server", "--listen", "stdio://"]
+        unlink(socketPath)
+        var args = ["app-server", "--listen", "unix://\(socketPath)"]
         if let effort = record.effort { args += ["-c", "model_reasoning_effort=\(effort)"] }
         if let profile = record.profile { args += ["-c", "profile=\(profile)"] }
         args += record.harnessArgs
@@ -45,6 +56,60 @@ final class TernCodexDriver: TernHarnessDriver {
 
     func begin(process: TernHarnessProcess, resume: Bool) {
         self.process = process
+        let path = socketPath
+        DispatchQueue.global(qos: .userInitiated).async { [weak self, weak process] in
+            do {
+                let ws = try TernUnixWebSocket(path: path, timeout: 30, onMessage: { [weak self] data in
+                    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                    process?.trace("out", data)
+                    TernAgents.queue.async {
+                        guard let self, self.process === process, process != nil else { return }
+                        self.handleMessage(object)
+                    }
+                }, onClose: { [weak self] in
+                    TernAgents.queue.async {
+                        // The server went away (or closed the connection): the process's end
+                        // says why; make sure it ends.
+                        guard let self, let process, self.process === process else { return }
+                        self.socket = nil
+                        kill(process.pid, SIGTERM)
+                    }
+                })
+                TernAgents.queue.async {
+                    guard let self, let process, self.process === process else {
+                        ws.close()
+                        return
+                    }
+                    self.socket = ws
+                    self.initialize(resume: resume)
+                }
+            } catch {
+                TernAgents.queue.async {
+                    guard let self, let process, self.process === process else { return }
+                    self.session.startFailed("Codex's server didn't open its socket: \(error)")
+                }
+            }
+        }
+        TernAgents.queue.asyncAfter(deadline: .now() + 90) { [weak self, weak process] in
+            guard let self, let process, !self.ready, self.process === process else { return }
+            self.session.startFailed("Codex didn't answer within 90 seconds of starting")
+        }
+    }
+
+    deinit {
+        socket?.close()
+        unlink(socketPath)
+    }
+
+    /// One JSON-RPC message to the server.
+    @discardableResult
+    private func write(_ object: [String: Any]) -> Bool {
+        guard let socket, let data = try? JSONSerialization.data(withJSONObject: TernJSON.sanitize(object)) else { return false }
+        process?.trace("in", data)
+        return socket.send(data)
+    }
+
+    private func initialize(resume: Bool) {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         request("initialize", ["clientInfo": ["name": "tern", "title": TernPaths.productName, "version": version],
                                "capabilities": ["experimentalApi": true]]) { [weak self] _, error in
@@ -53,12 +118,8 @@ final class TernCodexDriver: TernHarnessDriver {
                 self.session.startFailed("Codex refused to start: \(error)")
                 return
             }
-            _ = self.process?.writeJSON(["method": "initialized"])
+            self.write(["method": "initialized"])
             self.openThread(resume: resume)
-        }
-        TernAgents.queue.asyncAfter(deadline: .now() + 90) { [weak self, weak process] in
-            guard let self, let process, !self.ready, self.process === process else { return }
-            self.session.startFailed("Codex didn't answer within 90 seconds of starting")
         }
     }
 
@@ -132,7 +193,7 @@ final class TernCodexDriver: TernHarnessDriver {
     }
 
     func send(_ message: TernAgentMessage) -> Bool {
-        guard let process, let thread = threadID else { return false }
+        guard socket != nil, let thread = threadID else { return false }
         startingMessage = message.id
         let id = nextID
         nextID += 1
@@ -147,17 +208,40 @@ final class TernCodexDriver: TernHarnessDriver {
                 self.session.beginTurn(id: turnID, messages: [message.id], selfStarted: false)
             }
         }
-        return process.writeJSON(["id": id, "method": "turn/start", "params": [
+        return write(["id": id, "method": "turn/start", "params": [
             "threadId": thread, "clientUserMessageId": message.id,
             "input": [["type": "text", "text": message.text, "text_elements": [Any]()]],
         ]])
     }
 
-    func interrupt(turnID: String?) {
+    /// Into the running turn (X4: `turn/steer` names the turn; with no turn running any more it
+    /// starts one instead).
+    func steer(_ message: TernAgentMessage) -> Bool {
+        guard socket != nil, let thread = threadID, let turn = session.currentTurnID else { return send(message) }
+        steered.append(message.id)
+        steerTo(turn, message: message, thread: thread, retried: false)
+        return true
+    }
+
+    private func steerTo(_ turn: String, message: TernAgentMessage, thread: String, retried: Bool) {
+        request("turn/steer", ["threadId": thread, "expectedTurnId": turn, "clientUserMessageId": message.id,
+                               "input": [["type": "text", "text": message.text, "text_elements": [Any]()]]]) { [weak self] _, error in
+            guard let self, let error else { return }
+            if error.contains("no active turn") {
+                self.steered.removeAll { $0 == message.id }
+                if !self.send(message) { self.session.dispatchFailed(message.id, reason: "couldn't write to Codex") }
+            } else if !retried, let range = error.range(of: "but found `"), let end = error[range.upperBound...].firstIndex(of: "`") {
+                self.steerTo(String(error[range.upperBound..<end]), message: message, thread: thread, retried: true)
+            } else {
+                self.steered.removeAll { $0 == message.id }
+                self.session.dispatchFailed(message.id, reason: "Codex refused the message: \(error)")
+            }
+        }
+    }
+
+    func interrupt(turnID: String?, cancelQueued: Bool) {
         guard let thread = threadID else { return }
-        if let turnID, session.currentTurnID == turnID {
-            request("turn/interrupt", ["threadId": thread, "turnId": turnID]) { _, _ in }
-        } else if let turnID = session.currentTurnID {
+        if let turnID = session.currentTurnID ?? turnID {
             request("turn/interrupt", ["threadId": thread, "turnId": turnID]) { _, _ in }
         }
     }
@@ -165,20 +249,23 @@ final class TernCodexDriver: TernHarnessDriver {
     // MARK: JSON-RPC
 
     private func request(_ method: String, _ params: [String: Any], _ done: @escaping (Any?, String?) -> Void) {
-        guard let process else {
+        guard socket != nil else {
             done(nil, "the harness isn't running")
             return
         }
         let id = nextID
         nextID += 1
         pending[id] = done
-        if !process.writeJSON(["id": id, "method": method, "params": params]) {
+        if !write(["id": id, "method": method, "params": params]) {
             pending.removeValue(forKey: id)
             done(nil, "couldn't write to the harness")
         }
     }
 
-    func handle(_ frame: [String: Any]) {
+    /// The server's stdout carries nothing of the protocol in socket mode.
+    func handle(_ frame: [String: Any]) {}
+
+    private func handleMessage(_ frame: [String: Any]) {
         if let method = frame["method"] as? String {
             if frame["id"] != nil {
                 handleServerRequest(method, id: frame["id"]!, params: frame["params"] as? [String: Any] ?? [:])
@@ -203,7 +290,9 @@ final class TernCodexDriver: TernHarnessDriver {
             if let starting = startingMessage {
                 session.beginTurn(id: id, messages: [starting], selfStarted: false)
             } else if !session.turnIsRunning {
-                session.beginTurn(id: id, messages: [], selfStarted: true)
+                // Nothing of ours was starting: the user started it in Codex's own interface
+                // (attached to this server), or Codex started it by itself.
+                session.beginTurn(id: id, messages: [], selfStarted: true, fromInterface: session.record.live == true)
             }
         case "item/started":
             guard let item = params["item"] as? [String: Any] else { return }
@@ -256,7 +345,11 @@ final class TernCodexDriver: TernHarnessDriver {
                 if !session.hasItem(ref: ref) {
                     session.addItem(kind: "user", text: Self.userText(item), message: client, ref: ref)
                 }
+                steered.removeAll { $0 == client }
                 session.delivered(client)
+            } else if !session.hasItem(ref: ref) {
+                // Typed in Codex's own interface.
+                session.addItem(kind: "user", text: Self.userText(item), ref: ref)
             }
         case "commandExecution":
             let command = Self.command(item)
@@ -293,7 +386,10 @@ final class TernCodexDriver: TernHarnessDriver {
                 if !session.hasItem(ref: ref) {
                     session.addItem(kind: "user", text: Self.userText(item), message: client, ref: ref)
                 }
+                steered.removeAll { $0 == client }
                 session.delivered(client)
+            } else if !session.hasItem(ref: ref) {
+                session.addItem(kind: "user", text: Self.userText(item), ref: ref)
             }
         case "agentMessage":
             let text = item["text"] as? String ?? ""
@@ -349,6 +445,12 @@ final class TernCodexDriver: TernHarnessDriver {
             runningCommands.removeAll()
         }
         let error = (turn["error"] as? [String: Any])?["message"] as? String
+        if status != "completed", !steered.isEmpty {
+            // Steered into a turn that ended before taking them in: they go back to the queue.
+            let back = steered
+            steered.removeAll()
+            session.steeringCancelled(back)
+        }
         switch status {
         case "completed":
             var reply = session.turnLastFinal
@@ -434,13 +536,13 @@ final class TernCodexDriver: TernHarnessDriver {
             }
         default:
             // Dynamic tools, auth refresh and the like aren't something a session can answer.
-            _ = process?.writeJSON(["id": id, "error": ["code": -32601,
-                                                        "message": "\(TernPaths.productName) doesn't handle \(method)"]])
+            write(["id": id, "error": ["code": -32601,
+                                       "message": "\(TernPaths.productName) doesn't handle \(method)"]])
         }
     }
 
     func answer(_ request: TernAgentRequest, _ answer: TernAgentAnswer) -> String? {
-        guard let process else { return "the harness isn't running" }
+        guard socket != nil else { return "the harness isn't running" }
         let params = (request.input?.any as? [String: Any]) ?? [:]
         let id = request.harnessID.any
         var result: [String: Any]
@@ -512,7 +614,7 @@ final class TernCodexDriver: TernHarnessDriver {
         default:
             return "can't answer \(request.method) that way"
         }
-        _ = process.writeJSON(["id": id, "result": result])
+        write(["id": id, "result": result])
         return nil
     }
 

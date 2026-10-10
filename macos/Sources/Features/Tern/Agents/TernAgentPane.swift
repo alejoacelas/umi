@@ -2,11 +2,12 @@ import AppKit
 import Combine
 import SwiftUI
 
-// A managed session's view, drawn over its pane's terminal (AP-1, AP-10).
+// A session's read-only view, drawn over its pane's terminal (AG-5).
 //
-// AppKit text views throughout: the transcript is one read-only text view (selectable,
-// copyable, and read whole by accessibility), the composer is a text view that takes
-// Enter to send, Shift+Enter for a newline and Esc to interrupt.
+// It shows what was said on both sides, tool activity (expandable), the status, and what the
+// agent waits on (approval and question cards), with a Take Over button that runs the agent's
+// own interface in this pane on the same conversation (AG-6). While the session is live the
+// view steps aside and the terminal underneath shows the agent's interface.
 
 /// What the split tree draws over a leaf.
 struct TernAgentPaneOverlay: View {
@@ -14,7 +15,7 @@ struct TernAgentPaneOverlay: View {
     @ObservedObject private var ui = TernAgentUI.shared
 
     var body: some View {
-        if let session = ui.attachments[surfaceView.id] {
+        if let session = ui.attachments[surfaceView.id], !ui.livePanes.contains(surfaceView.id) {
             if ui.showingTerminal.contains(surfaceView.id) {
                 VStack {
                     HStack {
@@ -22,7 +23,7 @@ struct TernAgentPaneOverlay: View {
                         Button {
                             ui.toggleTerminal(surfaceView)
                         } label: {
-                            Label("Show agent", systemImage: "bubble.left.and.text.bubble.right")
+                            Label("Show session", systemImage: "bubble.left.and.text.bubble.right")
                                 .font(.system(size: 11, weight: .medium))
                         }
                         .buttonStyle(.borderless)
@@ -30,7 +31,7 @@ struct TernAgentPaneOverlay: View {
                         .padding(.vertical, 4)
                         .background(RoundedRectangle(cornerRadius: 6).fill(TernTheme.chromeFill))
                         .padding(6)
-                        .help("Show the managed session in this pane again")
+                        .help("Show the session's read-only view in this pane again")
                     }
                     Spacer()
                 }
@@ -105,16 +106,15 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
     private let requestsStack = NSStackView()
     private let queuedLabel = NSTextField(wrappingLabelWithString: "")
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
-    private let composerScroll = NSScrollView()
-    let composer = TernComposerView()
-    private let placeholder = NSTextField(labelWithString: "")
-    private var composerHeight: NSLayoutConstraint?
+    private let takeOverButton = NSButton(title: "Take Over", target: nil, action: nil)
+    private let hintLabel = NSTextField(wrappingLabelWithString: "")
+    private let footer = NSStackView()
 
     private var lastItemsVersion = -1
     private var renderedRequests: [String] = []
 
     /// One view per pane, reused when the pane moves (the split tree rebuilds its views), so
-    /// the scroll position and composer survive.
+    /// the scroll position survives.
     private static var cache: [UUID: TernAgentPaneView] = [:]
 
     static func view(for surface: Ghostty.SurfaceView, sessionID: String) -> TernAgentPaneView {
@@ -146,7 +146,7 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
             guard let self, removed else { return }
             MainActor.assumeIsolated {
                 self.statusLabel.stringValue = "this session was removed"
-                self.composer.isEditable = false
+                self.takeOverButton.isEnabled = false
             }
         }.store(in: &cancellables)
         model.$expanded.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] _ in
@@ -157,9 +157,7 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
             }
         }.store(in: &cancellables)
         if let snapshot = model.snapshot { render(snapshot) }
-        TernAgentUI.shared.registerComposer(composer, for: surface.id)
-        composer.string = TernAgentUI.shared.drafts[sessionID] ?? ""
-        updatePlaceholder()
+        TernAgentUI.shared.registerFocusTarget(transcript, for: surface.id)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -247,44 +245,30 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         errorLabel.textColor = .systemRed
         errorLabel.isHidden = true
 
-        composer.isRichText = false
-        composer.allowsUndo = true
-        composer.font = .systemFont(ofSize: 13)
-        composer.drawsBackground = false
-        composer.textContainerInset = NSSize(width: 6, height: 6)
-        composer.isVerticallyResizable = true
-        composer.autoresizingMask = [.width]
-        composer.textContainer?.widthTracksTextView = true
-        composer.minSize = .zero
-        composer.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        composer.delegate = self
-        composer.unregisterDraggedTypes()
-        composer.owner = self
-        composer.setAccessibilityLabel("Message the agent")
-        composerScroll.documentView = composer
-        composerScroll.hasVerticalScroller = true
-        composerScroll.autohidesScrollers = true
-        composerScroll.drawsBackground = false
-        composerScroll.borderType = .noBorder
-        composerScroll.wantsLayer = true
-        composerScroll.layer?.cornerRadius = 8
-
-        placeholder.font = .systemFont(ofSize: 13)
-        placeholder.lineBreakMode = .byTruncatingTail
-        placeholder.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        takeOverButton.bezelStyle = .rounded
+        takeOverButton.controlSize = .regular
+        takeOverButton.font = .systemFont(ofSize: 12, weight: .medium)
+        takeOverButton.target = self
+        takeOverButton.action = #selector(takeOverPressed)
+        takeOverButton.keyEquivalent = ""
+        takeOverButton.setAccessibilityLabel("Take Over")
+        takeOverButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        hintLabel.font = .systemFont(ofSize: 11)
+        hintLabel.maximumNumberOfLines = 2
+        hintLabel.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        footer.orientation = .horizontal
+        footer.spacing = 10
+        footer.alignment = .centerY
+        footer.addArrangedSubview(takeOverButton)
+        footer.addArrangedSubview(hintLabel)
         for label in [queuedLabel, errorLabel] {
             label.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         }
-        placeholder.isEditable = false
-        placeholder.isSelectable = false
-        placeholder.setAccessibilityElement(false)
 
-        for view in [headerStack, statusLabel, transcriptScroll, requestsStack, queuedLabel, errorLabel, composerScroll, placeholder] {
+        for view in [headerStack, statusLabel, transcriptScroll, requestsStack, queuedLabel, errorLabel, footer] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
-        let height = composerScroll.heightAnchor.constraint(equalToConstant: 34)
-        composerHeight = height
         NSLayoutConstraint.activate([
             headerStack.topAnchor.constraint(equalTo: topAnchor),
             headerStack.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -310,15 +294,10 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
             errorLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             errorLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
 
-            composerScroll.topAnchor.constraint(equalTo: errorLabel.bottomAnchor, constant: 4),
-            composerScroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            composerScroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            composerScroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
-            height,
-
-            placeholder.leadingAnchor.constraint(equalTo: composerScroll.leadingAnchor, constant: 11),
-            placeholder.centerYAnchor.constraint(equalTo: composerScroll.topAnchor, constant: 17),
-            placeholder.trailingAnchor.constraint(lessThanOrEqualTo: composerScroll.trailingAnchor, constant: -8),
+            footer.topAnchor.constraint(equalTo: errorLabel.bottomAnchor, constant: 6),
+            footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            footer.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+            footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
         ])
         applyColors()
     }
@@ -326,7 +305,7 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
     override func layout() {
         super.layout()
         // Text views wrap at their scroll view's width.
-        for (scroll, text) in [(transcriptScroll, transcript as NSTextView), (composerScroll, composer as NSTextView)] {
+        for (scroll, text) in [(transcriptScroll, transcript as NSTextView)] {
             let width = scroll.contentSize.width
             if abs(text.frame.width - width) > 0.5 {
                 text.setFrameSize(NSSize(width: width, height: max(text.frame.height, scroll.contentSize.height)))
@@ -350,12 +329,9 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         titleLabel.textColor = ink
         statusLabel.textColor = ink.withAlphaComponent(0.55)
         queuedLabel.textColor = ink.withAlphaComponent(0.5)
-        placeholder.textColor = ink.withAlphaComponent(0.35)
-        composer.textColor = ink
-        composer.insertionPointColor = TernTheme.accentNSColor
+        hintLabel.textColor = ink.withAlphaComponent(0.45)
         interruptButton.contentTintColor = ink.withAlphaComponent(0.7)
         terminalButton.contentTintColor = ink.withAlphaComponent(0.7)
-        composerScroll.layer?.backgroundColor = ink.withAlphaComponent(TernTheme.isLight ? 0.05 : 0.06).cgColor
         layer?.backgroundColor = TernAgentPaneView.background.cgColor
     }
 
@@ -390,9 +366,15 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
             queuedLabel.isHidden = true
         } else {
             queuedLabel.isHidden = false
-            queuedLabel.stringValue = "Queued (\(snapshot.queued.count)): "
+            queuedLabel.stringValue = "Waiting (\(snapshot.queued.count)): "
                 + snapshot.queued.map { TernAgentText.oneLine($0, max: 80) }.joined(separator: " · ")
         }
+        let agent = snapshot.kind == .claude ? "Claude Code" : "Codex"
+        let running = snapshot.status == "working" || snapshot.status == "needs_input"
+        hintLabel.stringValue = snapshot.kind == .claude && running
+            ? "Read-only. Take Over opens \(agent) here now; it interrupts the running turn."
+            : "Read-only. Take Over opens \(agent) here, on this conversation."
+        takeOverButton.isEnabled = snapshot.status != "starting" || snapshot.live
     }
 
     static func color(for status: String) -> NSColor {
@@ -462,54 +444,15 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
         TernAgentUI.shared.toggleTerminal(surface)
     }
 
-    func sendComposer() {
-        let text = composer.string.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        let session = sessionID
-        TernAgentActions.send(session, text: text) { [weak self] error in
-            guard let self else { return }
-            if let error {
-                // The text stays (AP-6).
-                self.errorLabel.stringValue = "Not sent: \(error)"
-                self.errorLabel.isHidden = false
-            } else {
-                self.errorLabel.isHidden = true
-                if self.composer.string.trimmingCharacters(in: .whitespacesAndNewlines) == text {
-                    self.composer.string = ""
-                    TernAgentUI.shared.drafts[session] = nil
-                    self.updatePlaceholder()
-                    self.resizeComposer()
-                }
-            }
-        }
-    }
-
-    func interruptFromComposer() {
-        TernAgentActions.interrupt(sessionID)
-    }
-
-    func composerBecameFirstResponder() {
+    /// Run the agent's own interface in this pane, at once (AG-6).
+    @objc func takeOverPressed() {
         guard let surface else { return }
-        TernAgentUI.shared.composerFocused(pane: surface)
+        TernAgentUI.shared.takeOver(surface, session: sessionID)
     }
 
-    func textDidChange(_ notification: Notification) {
-        guard (notification.object as? NSTextView) === composer else { return }
-        TernAgentUI.shared.drafts[sessionID] = composer.string
-        updatePlaceholder()
-        resizeComposer()
-    }
-
-    private func updatePlaceholder() {
-        placeholder.isHidden = !composer.string.isEmpty
-        placeholder.stringValue = "Message \(model.snapshot?.name ?? "the agent") — Enter sends, Shift+Enter adds a line, Esc interrupts"
-    }
-
-    private func resizeComposer() {
-        guard let layout = composer.layoutManager, let container = composer.textContainer else { return }
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container).height + composer.textContainerInset.height * 2
-        composerHeight?.constant = min(max(34, used), 160)
+    func focusTargetBecameFirstResponder() {
+        guard let surface else { return }
+        TernAgentUI.shared.agentViewFocused(pane: surface)
     }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
@@ -527,43 +470,26 @@ final class TernAgentPaneView: NSView, NSTextViewDelegate {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil, let surface else { return }
-        TernAgentUI.shared.registerComposer(composer, for: surface.id)
+        TernAgentUI.shared.registerFocusTarget(transcript, for: surface.id)
+        transcript.owner = self
         // A pane that was focused when it moved keeps its keyboard focus.
         if let location = TernTopology.locate(surface), location.window.focusedSurface === surface,
            location.window.window?.firstResponder === surface {
-            DispatchQueue.main.async { TernAgentUI.shared.focusComposer(of: surface) }
+            DispatchQueue.main.async { TernAgentUI.shared.focusAgentView(of: surface) }
         }
     }
 }
 
-/// The transcript: read-only, selectable, links clickable.
+/// The transcript: read-only, selectable, links clickable. It is the pane's keyboard focus
+/// while the read-only view shows (so the pane's shortcuts and selection work there).
 final class TernTranscriptView: NSTextView {
-    override func accessibilityRole() -> NSAccessibility.Role? { .textArea }
-}
-
-/// The composer: Enter sends, Shift+Enter adds a line, Esc interrupts.
-final class TernComposerView: NSTextView {
     weak var owner: TernAgentPaneView?
 
-    override func doCommand(by selector: Selector) {
-        if selector == #selector(insertNewline(_:)) {
-            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
-                insertNewlineIgnoringFieldEditor(nil)
-            } else {
-                MainActor.assumeIsolated { owner?.sendComposer() }
-            }
-            return
-        }
-        if selector == #selector(cancelOperation(_:)) {
-            MainActor.assumeIsolated { owner?.interruptFromComposer() }
-            return
-        }
-        super.doCommand(by: selector)
-    }
+    override func accessibilityRole() -> NSAccessibility.Role? { .textArea }
 
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
-        if ok { MainActor.assumeIsolated { owner?.composerBecameFirstResponder() } }
+        if ok { MainActor.assumeIsolated { owner?.focusTargetBecameFirstResponder() } }
         return ok
     }
 }

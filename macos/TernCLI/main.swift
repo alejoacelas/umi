@@ -642,18 +642,13 @@ Editor
   editor mode [preview|source]
   editor default [--dry-run]             make \(productName) the default app for Markdown
 
-Managed agents (see `\(cliName) agent --help`)
-  agent start claude|codex [PROMPT…] …   start a session in the background; prints its id
-  agent send SESSION TEXT…               a follow-up; prints the message id
-  agent wait SESSION [--report]          wait for the turn (or the worker's report)
-  agent open SESSION                     show a session in a pane (a new tab by default)
-  agent read | ls | info | interrupt | stop | resume | approve | deny | answer | watch
-        | rename | rm | report
-
-Agents typed into a terminal
-  claude [ARGS…] / codex [ARGS…]         a new tab running `claude ARGS…` as if typed
-  claude [--tab | --split [DIR] | --window] [--cwd D] [--worktree W] [--name N] [--pane P]
-         [--no-focus] -- [ARGS…]
+Agents (Claude Code and Codex sessions; `\(cliName) agent --help` explains them)
+  agent start claude|codex "TASK" …      start a session (headless, in the background); prints its id
+  agent wait SESSION                     wait until it finishes; prints its reply
+  agent send SESSION "TEXT"              steer it, or give it its next task; prints the message id
+  agent read | ls | info | open | hide | interrupt | stop | watch | report | rm
+  claude ["TASK"] / codex ["TASK"]       a session for you in a new tab: it does TASK headless, then
+                                         opens live there (`agent start … --tab --focus`)
 
 Other
   update                                 download the newest version (it installs when \(productName) quits)
@@ -1355,7 +1350,7 @@ func main() {
     case "editor":
         editorCommand(rest)
     case "claude", "codex":
-        interactiveAgentCommand(command, rest)
+        agentShortcut(command, rest)
     case "update":
         updateCommand(rest)
     case "doctor":

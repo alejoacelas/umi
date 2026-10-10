@@ -1,0 +1,6 @@
+{
+  "name": "tern",
+  "description": "Reports a Codex session's state to Tern when it runs inside Tern. Silent anywhere else.",
+  "version": "1.0.0",
+  "author": { "name": "Tern" }
+}

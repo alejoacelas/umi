@@ -169,6 +169,9 @@ enum TernEnvironment {
             "TERN_PANE_ID": paneID.uuidString.lowercased(),
             "TERN_INSTANCE": TernPaths.instanceID,
             "TERN_STATE_DIR": TernPaths.stateDirectory,
+            // Tern's plugins for Claude Code and Codex report through this CLI; they stay
+            // silent where it isn't set (outside Tern, AG-18).
+            "TERN_CLI": TernPaths.cliPath,
         ]
     }
 }

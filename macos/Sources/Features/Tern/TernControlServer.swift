@@ -348,6 +348,12 @@ struct TernCaller {
     /// the parent of sessions it starts (MA-12).
     let session: String?
 
+    init(pane: String?, instance: String?, session: String?) {
+        self.pane = pane
+        self.instance = instance
+        self.session = session
+    }
+
     init(_ raw: [String: Any]) {
         pane = (raw["pane"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         instance = (raw["instance"] as? String).flatMap { $0.isEmpty ? nil : $0 }

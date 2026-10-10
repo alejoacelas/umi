@@ -209,8 +209,16 @@ class AppDelegate: NSObject,
         // Tern: the control socket comes up before any window exists, so panes created
         // during restoration can already be reached.
         TernControlServer.shared.start()
-        // Managed sessions: load them, clean up after an earlier run, continue cut-off turns.
+        // Agent sessions: load them, clean up after an earlier run, continue cut-off turns.
         TernAgents.shared.bootstrap()
+        MainActor.assumeIsolated {
+            // "Next session that needs you" reaching a session no pane shows: show it.
+            TernAttention.shared.showSession = { id in
+                _ = try? TernAgentUI.open(id, placement: .init(kind: .tab, focus: true), caller: TernCaller([:]))
+            }
+        }
+        // Tern's plugins for Claude Code and Codex, installed and kept current (AG-18).
+        TernAgentPlugins.ensureInstalledAtLaunch()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -947,14 +955,6 @@ class AppDelegate: NSObject,
         withCompletionHandler: () -> Void
     ) {
         let userInfo = didReceive.notification.request.content.userInfo
-        if let session = userInfo["tern_agent_session"] as? String {
-            // A managed session's notification: show the session (on the main thread).
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { _ = TernAgentNotifications.handle(userInfo: ["tern_agent_session": session]) }
-            }
-            withCompletionHandler()
-            return
-        }
         if userInfo["tern_update"] != nil {
             // The update question's notification: show the sidebar, where the question is.
             DispatchQueue.main.async {

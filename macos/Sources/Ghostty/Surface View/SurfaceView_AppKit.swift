@@ -836,12 +836,12 @@ extension Ghostty {
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result { focusDidChange(true) }
-            // Tern: while a pane shows a managed session, its keyboard focus is the
-            // session's composer.
+            // Tern: while a pane shows a session's read-only view, its keyboard focus is
+            // that view.
             if result, TernAgentUI.shared.isShowingAgent(id) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
-                    TernAgentUI.shared.focusComposer(of: self)
+                    TernAgentUI.shared.focusAgentView(of: self)
                 }
             }
             return result
@@ -1122,6 +1122,12 @@ extension Ghostty {
 
             // On any keyDown event we unset our bell state
             bell = false
+
+            // Tern: typing into a session's live interface (a draft there holds back
+            // messages for it; Esc/Ctrl-C may interrupt its turn, which fires no hook).
+            if TernAgentUI.shared.livePanes.contains(id) {
+                TernAgentUI.shared.keyTyped(pane: self, event: event)
+            }
 
             // We need to translate the mods (maybe) to handle configs such as option-as-alt
             let translationModsGhostty = Ghostty.eventModifierFlags(

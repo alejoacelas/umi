@@ -1,12 +1,14 @@
 import AppKit
 
-/// Finding sessions that no pane shows (AP-3: `agent start` runs in the background by
-/// default). The sidebar has no agents section (S-2), so background sessions are found in:
+/// Finding sessions that no pane shows (`agent start` runs in the background). The sidebar has
+/// no agents section (S-2), so background sessions are found in:
 /// - Window > Agent Sessions: every session with its status and activity, the ones that need
-///   the user first; choosing one shows it (DECISIONS.md §19);
+///   the user first; choosing one shows it (read-only, AG-5);
 /// - the command palette ("Show Agent: …", the same order);
-/// - ⌃⌘J, desktop notifications (AP-7) and the Dock badge, which counts the sessions that
-///   need the user.
+/// - "next session that needs you" and the Dock badge, which counts the sessions that need the
+///   user (TernAttention).
+/// Window > Take Over Session (⌃⌘O) and Remove Session from Pane (⌃⌘W) act on the focused
+/// pane's session (AG-6, AG-8).
 @MainActor
 final class TernAgentMenu: NSObject, NSMenuDelegate {
     static let shared = TernAgentMenu()
@@ -20,6 +22,16 @@ final class TernAgentMenu: NSObject, NSMenuDelegate {
     /// Add the submenu to the Window menu (after Tern's own items).
     func install(in windowMenu: NSMenu) {
         guard menu == nil else { return }
+        let takeOver = NSMenuItem(title: "Take Over Session", action: #selector(takeOverFocused(_:)), keyEquivalent: "o")
+        takeOver.keyEquivalentModifierMask = [.command, .control]
+        takeOver.target = self
+        takeOver.toolTip = "Run the agent's own interface in this pane, on the session's conversation"
+        windowMenu.addItem(takeOver)
+        let remove = NSMenuItem(title: "Remove Session from Pane", action: #selector(removeFocused(_:)), keyEquivalent: "w")
+        remove.keyEquivalentModifierMask = [.command, .control]
+        remove.target = self
+        remove.toolTip = "Take the session out of this pane; it keeps running until it finishes"
+        windowMenu.addItem(remove)
         let item = NSMenuItem(title: Self.title, action: nil, keyEquivalent: "")
         if #available(macOS 26.0, *) {
             item.image = NSImage(systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: nil)
@@ -55,7 +67,7 @@ final class TernAgentMenu: NSObject, NSMenuDelegate {
         let sessions = TernAgents.queue.sync {
             TernAgents.shared.sessions.map { ($0.record.id, $0.record.name, $0.record.kind.rawValue, $0.status, $0.activityText) }
         }
-        let rank = ["needs_input": 0, "working": 1, "starting": 1, "idle": 2, "error": 3, "exited": 4]
+        let rank = ["needs_input": 0, "working": 1, "starting": 1, "idle": 2, "error": 3, "stopped": 4]
         return sessions.enumerated()
             .sorted { a, b in
                 let ra = rank[a.element.3] ?? 5, rb = rank[b.element.3] ?? 5
@@ -69,7 +81,7 @@ final class TernAgentMenu: NSObject, NSMenuDelegate {
         case "needs_input": return "exclamationmark.bubble"
         case "working", "starting": return "ellipsis.bubble"
         case "error": return "xmark.octagon"
-        case "exited": return "stop.circle"
+        case "stopped": return "stop.circle"
         default: return "bubble.left"
         }
     }
@@ -110,6 +122,48 @@ final class TernAgentMenu: NSObject, NSMenuDelegate {
                                   action: nil, keyEquivalent: "")
             more.isEnabled = false
             menu.addItem(more)
+        }
+    }
+
+    /// The focused pane of the key window (or of Tern's current window), wherever focus is.
+    private func focusedPane() -> Ghostty.SurfaceView? {
+        let controller = (NSApp.keyWindow?.windowController as? TerminalController) ?? TernTopology.currentWindow
+        return controller?.focusedSurface
+    }
+
+    private func sessionInFocusedPane() -> (Ghostty.SurfaceView, String)? {
+        guard let pane = focusedPane() else { return nil }
+        if let session = TernAgentUI.shared.session(forPane: pane.id) ?? TernAgentUI.sessionLive(in: pane.id) {
+            return (pane, session)
+        }
+        return nil
+    }
+
+    @objc private func takeOverFocused(_ sender: NSMenuItem) {
+        guard let (pane, session) = sessionInFocusedPane(), !TernAgentUI.shared.livePanes.contains(pane.id) else {
+            NSSound.beep()
+            return
+        }
+        TernAgentUI.shared.takeOver(pane, session: session)
+    }
+
+    @objc private func removeFocused(_ sender: NSMenuItem) {
+        guard let (pane, _) = sessionInFocusedPane() else {
+            NSSound.beep()
+            return
+        }
+        TernAgentUI.shared.removeFromPane(pane)
+    }
+
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(takeOverFocused(_:)):
+            guard let (pane, _) = sessionInFocusedPane() else { return false }
+            return !TernAgentUI.shared.livePanes.contains(pane.id)
+        case #selector(removeFocused(_:)):
+            return sessionInFocusedPane() != nil
+        default:
+            return true
         }
     }
 

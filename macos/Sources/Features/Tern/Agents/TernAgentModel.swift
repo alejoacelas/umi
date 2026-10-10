@@ -15,6 +15,9 @@ enum TernAgentKind: String, Codable {
 enum TernMessageState: String, Codable {
     case queued, sent, delivered, done, interrupted, failed, error, exited, cancelled
 
+    /// The state as `--json` shows it (`exited` is stored as such, shown as `stopped`).
+    var shown: String { self == .exited ? "stopped" : rawValue }
+
     var isFinal: Bool {
         switch self {
         case .queued, .sent, .delivered: return false
@@ -30,7 +33,7 @@ enum TernMessageState: String, Codable {
         case .interrupted: return "INTERRUPTED"
         case .failed: return "FAILED"
         case .error: return "ERROR"
-        case .exited: return "EXITED"
+        case .exited: return "STOPPED"
         case .cancelled: return "CANCELLED"
         }
     }
@@ -237,6 +240,24 @@ struct TernSessionRecord: Codable {
     /// When and why a self-started turn was cut off (no message records it).
     var cutOffAt: Date?
     var cutOffReason: String?
+
+    // Headless and live (SPEC AG). The product controls a session headless; the agent's own
+    // interface can run in a pane on the same conversation ("live").
+    /// The agent's own interface runs (or was running when the app last stopped) in `livePane`.
+    var live: Bool?
+    /// The pane showing the session (read-only view or live interface), as a Tern pane id.
+    var pane: String?
+    /// The live interface's process (from its hooks), to end it when the session is taken back.
+    var livePID: Int32?
+    /// Go live in `pane` once the session settles (a launch with a placement, or after a
+    /// message to a live Claude session ran headless).
+    var goLiveWhenSettled: Bool?
+    /// started: by `agent start`; typed: the user typed `claude`/`codex` in a pane.
+    var origin: String?
+    /// The session's title as its agent reports it (live Claude sets the terminal title).
+    var title: String?
+    /// The live interface is a client of the session's own Codex server (not its owner).
+    var liveAttached: Bool?
 }
 
 /// A JSON value that survives Codable round trips (tool inputs, Codex request params).

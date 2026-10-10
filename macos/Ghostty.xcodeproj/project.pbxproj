@@ -434,16 +434,25 @@
 				"$(PROJECT_DIR)/TernCLI/main.swift",
 				"$(PROJECT_DIR)/TernCLI/agent.swift",
 				"$(PROJECT_DIR)/TernCLI/build.sh",
+				"$(PROJECT_DIR)/TernPlugins/.claude-plugin/marketplace.json",
+				"$(PROJECT_DIR)/TernPlugins/.agents/plugins/marketplace.json",
+				"$(PROJECT_DIR)/TernPlugins/claude/.claude-plugin/plugin.json",
+				"$(PROJECT_DIR)/TernPlugins/claude/hooks/hooks.json",
+				"$(PROJECT_DIR)/TernPlugins/claude/hooks/tern-hook.sh",
+				"$(PROJECT_DIR)/TernPlugins/codex/.codex-plugin/plugin.json",
+				"$(PROJECT_DIR)/TernPlugins/codex/hooks/hooks.json",
+				"$(PROJECT_DIR)/TernPlugins/codex/hooks/tern-hook.sh",
 			);
 			name = "Build Tern CLI";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/tern",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/agent-plugins/.claude-plugin/marketplace.json",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "exec \"${PROJECT_DIR}/TernCLI/build.sh\" --out \"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/tern\"\n";
+			shellScript = "set -e\n\"${PROJECT_DIR}/TernCLI/build.sh\" --out \"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/tern\"\n# Tern's plugins for Claude Code and Codex (agent observability).\nplugins=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/agent-plugins\"\nrm -rf \"$plugins\"\nmkdir -p \"$(dirname \"$plugins\")\"\ncp -R \"${PROJECT_DIR}/TernPlugins\" \"$plugins\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */

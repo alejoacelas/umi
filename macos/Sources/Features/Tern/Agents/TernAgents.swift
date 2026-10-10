@@ -33,6 +33,15 @@ final class TernAgents: @unchecked Sendable {
             for entry in loaded {
                 let session = TernAgentSession(record: entry.record)
                 session.manager = self
+                if session.record.live == true {
+                    // Its interface ended with the app: it comes back live in its pane once the
+                    // pane is restored (AG-7), headless until then.
+                    session.record.live = nil
+                    session.record.livePID = nil
+                    session.record.liveAttached = nil
+                    if session.record.pane != nil { session.record.goLiveWhenSettled = true }
+                    session.saveRecord()
+                }
                 session.adopt(messages: entry.messages, items: entry.items)
                 session.resetForRecovery()
                 session.restoreQueue()
@@ -68,10 +77,30 @@ final class TernAgents: @unchecked Sendable {
                     session.launch()
                 }
             }
+            watchLiveInterfaces()
+        }
+    }
+
+    /// A live interface that died without saying so (killed, crashed): the session is headless
+    /// again (AG-7). Checked every few seconds.
+    private func watchLiveInterfaces() {
+        Self.queue.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self else { return }
+            for session in sessions where session.record.live == true {
+                guard let pid = session.record.livePID else { continue }
+                if kill(pid, 0) != 0 && errno == ESRCH { session.liveEnded() }
+            }
+            watchLiveInterfaces()
         }
     }
 
     // MARK: Running requests on the queue
+
+    func runQuietly<T>(_ body: @escaping () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            Self.queue.async { continuation.resume(returning: body()) }
+        }
+    }
 
     func run<T>(_ body: @escaping () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in

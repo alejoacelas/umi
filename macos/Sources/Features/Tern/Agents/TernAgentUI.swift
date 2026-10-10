@@ -2,26 +2,29 @@ import AppKit
 import Combine
 import GhosttyKit
 
-/// Managed sessions in the app's windows (AP).
+/// Sessions in the app's windows (AG-5 to AG-9).
 ///
-/// A session is shown in an ordinary pane: a terminal leaf with the session's view drawn
-/// over it (DECISIONS.md §1, phase 1). The pane is a terminal in the session's folder, so it
-/// splits, moves, swaps, zooms, closes and undoes, drags and is saved like any other pane,
-/// and the shell underneath is one click away (AP-2). The pane only shows the session:
-/// closing it never touches the session (AP-4).
+/// A session is shown in an ordinary pane: a terminal leaf with the session's read-only view
+/// drawn over it (DECISIONS.md §1). The pane is a terminal in the session's folder, so it
+/// splits, moves, swaps, zooms, closes and undoes, drags and is saved like any other pane.
+/// Take Over types `tern agent attach` into that terminal and the view steps aside: the
+/// agent's own interface runs there, live. Closing a read-only pane never touches the
+/// session.
 @MainActor
 final class TernAgentUI: ObservableObject {
     static let shared = TernAgentUI()
 
     /// Pane id → session id. Kept for closed panes too, so undoing a close brings the
     /// session's view back with the pane.
-    @Published private(set) var attachments: [UUID: String] = [:]
+    @Published var attachments: [UUID: String] = [:]
     /// Agent panes currently showing their terminal instead of the session.
     @Published var showingTerminal: Set<UUID> = []
+    /// Panes where the session's own interface runs (or is starting): the view steps aside.
+    @Published var livePanes: Set<UUID> = []
+    /// Live interfaces removed from their panes (AG-8): out of sight, finishing their turn.
+    var parked: [String: Ghostty.SurfaceView] = [:]
 
     private var models: [String: TernAgentViewModel] = [:]
-    /// Text typed but not sent, per session (AP-6): survives moves, toggles and failed sends.
-    var drafts: [String: String] = [:]
 
     // MARK: Session updates from the agent queue
 
@@ -30,21 +33,22 @@ final class TernAgentUI: ObservableObject {
         let ui = shared
         let previous = ui.models[id]?.snapshot
         ui.model(for: id).snapshot = snapshot
-        if previous?.status != snapshot.status || previous?.activity != snapshot.activity || previous?.name != snapshot.name {
+        if previous?.status != snapshot.status || previous?.activity != snapshot.activity || previous?.name != snapshot.name
+            || previous?.location != snapshot.location || previous?.pane != snapshot.pane || previous?.title != snapshot.title {
             TernState.shared.layoutDidChange(persistOnly: false)
             TernAgentMenu.shared.setNeedsRebuild()
-            TernAgentMenu.shared.statusChanged(id, status: snapshot.status)
             if previous?.status != snapshot.status {
                 TernEvents.shared.emit("agent.status", ["session": id, "name": snapshot.name, "status": snapshot.status])
-                TernAgentNotifications.statusChanged(snapshot, from: previous?.status)
             }
         }
+        // The sidebar's marks, ordering and the Dock badge (no desktop notifications).
+        publishAttention(snapshot, previous: previous)
     }
 
     static func sessionRemoved(_ id: String) {
         let ui = shared
         ui.models[id]?.removed = true
-        ui.drafts.removeValue(forKey: id)
+        attentionRemoved(id)
         TernAgentMenu.shared.setNeedsRebuild()
         TernAgentMenu.shared.statusChanged(id, status: nil)
     }
@@ -72,6 +76,15 @@ final class TernAgentUI: ObservableObject {
         showingTerminal.remove(pane)
         TernState.shared.layoutDidChange()
         TernAgentMenu.shared.setNeedsRebuild()
+        // The session's pane is this one (a restored pane has a new id).
+        let ternID = pane.uuidString.lowercased()
+        TernAgents.queue.async {
+            guard let s = TernAgents.shared.session(id: session), s.record.pane != ternID else { return }
+            s.record.pane = ternID
+            s.saveRecord()
+            s.changed()
+            s.checkSettled()
+        }
     }
 
     func detach(_ pane: UUID) {
@@ -95,13 +108,13 @@ final class TernAgentUI: ObservableObject {
     }
 
     func isShowingAgent(_ pane: UUID) -> Bool {
-        attachments[pane] != nil && !showingTerminal.contains(pane)
+        attachments[pane] != nil && !showingTerminal.contains(pane) && !livePanes.contains(pane)
     }
 
     func toggleTerminal(_ pane: Ghostty.SurfaceView) {
         if showingTerminal.contains(pane.id) {
             showingTerminal.remove(pane.id)
-            focusComposer(of: pane)
+            focusAgentView(of: pane)
         } else {
             showingTerminal.insert(pane.id)
             DispatchQueue.main.async { Ghostty.moveFocus(to: pane) }
@@ -118,7 +131,7 @@ final class TernAgentUI: ObservableObject {
             shared.showingTerminal.remove(existing.id)
             if placement.focus {
                 TernLayout.focusPane(existing, activate: true)
-                DispatchQueue.main.async { shared.focusComposer(of: existing) }
+                DispatchQueue.main.async { shared.focusAgentView(of: existing) }
             }
             return existing.ternID
         }
@@ -156,32 +169,40 @@ final class TernAgentUI: ObservableObject {
             throw TernError.failed("couldn't make a pane for the session")
         }
         shared.attach(pane.id, session: sessionID)
+        let paneTernID = pane.ternID
+        TernAgents.queue.async {
+            guard let session = TernAgents.shared.session(id: sessionID) else { return }
+            session.record.pane = paneTernID
+            session.saveRecord()
+            session.changed()
+        }
         if placement.focus {
-            DispatchQueue.main.async { shared.focusComposer(of: pane) }
+            DispatchQueue.main.async { shared.focusAgentView(of: pane) }
         }
         TernEvents.shared.emit("agent.opened", ["session": sessionID, "pane": paneID])
         return paneID
     }
 
-    // MARK: Focus (AP-3, L-8)
+    // MARK: Focus (L-8)
 
-    /// The composers of agent views, by pane.
-    private var composers: [UUID: WeakBox<NSView>] = [:]
+    /// What takes keyboard focus in each read-only view (its transcript), by pane.
+    private var focusTargets: [UUID: WeakBox<NSView>] = [:]
 
-    func registerComposer(_ view: NSView, for pane: UUID) {
-        composers[pane] = WeakBox(view)
+    func registerFocusTarget(_ view: NSView, for pane: UUID) {
+        focusTargets[pane] = WeakBox(view)
     }
 
-    func composer(for pane: UUID) -> NSView? { composers[pane]?.value }
+    func focusTarget(for pane: UUID) -> NSView? { focusTargets[pane]?.value }
 
-    /// Keyboard focus for an agent pane goes to its composer while the session is showing.
-    func focusComposer(of pane: Ghostty.SurfaceView) {
-        guard isShowingAgent(pane.id), let composer = composer(for: pane.id), let window = composer.window else { return }
-        if window.firstResponder !== composer { window.makeFirstResponder(composer) }
+    /// Keyboard focus for an agent pane goes to its read-only view while that shows.
+    func focusAgentView(of pane: Ghostty.SurfaceView) {
+        guard isShowingAgent(pane.id), !livePanes.contains(pane.id), let target = focusTarget(for: pane.id),
+              let window = target.window else { return }
+        if window.firstResponder !== target { window.makeFirstResponder(target) }
     }
 
-    /// The composer took keyboard focus: the pane is the focused pane of its tab and window.
-    func composerFocused(pane: Ghostty.SurfaceView) {
+    /// The read-only view took keyboard focus: the pane is the focused pane of its tab and window.
+    func agentViewFocused(pane: Ghostty.SurfaceView) {
         guard let location = TernTopology.locate(pane) else { return }
         location.tab.focusedSurface = pane
         if location.window.surfaceTree.contains(pane), location.window.focusedSurface !== pane {

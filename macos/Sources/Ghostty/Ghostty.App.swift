@@ -1650,6 +1650,8 @@ extension Ghostty {
                 let exitCode = Int(v.exit_code)
                 DispatchQueue.main.async {
                     TernInteractive.commandFinished(surfaceView, exitCode: exitCode >= 0 ? exitCode : nil)
+                    // A session's own interface (`tern agent attach`) ended in this pane.
+                    TernAgentUI.shared.commandFinished(in: surfaceView)
                     TernState.shared.layoutDidChange()
                 }
 

@@ -8,10 +8,17 @@ protocol TernHarnessDriver: AnyObject {
     func begin(process: TernHarnessProcess, resume: Bool)
     /// A line of the harness's stdout, already parsed.
     func handle(_ frame: [String: Any])
-    /// Hand a message to the harness. False if it couldn't be written.
+    /// Hand a message to the harness to start a turn. False if it couldn't be written.
     func send(_ message: TernAgentMessage) -> Bool
-    /// Interrupt the running turn (Codex: exactly this turn).
-    func interrupt(turnID: String?)
+    /// Hand a message to the harness for the turn now running (steering): the agent sees it at
+    /// its next step. False if it couldn't be written.
+    func steer(_ message: TernAgentMessage) -> Bool
+    /// Whether a message can be steered into the running turn now (Codex needs the turn's id).
+    var canSteer: Bool { get }
+    /// Interrupt the running turn (Codex: exactly this turn). `cancelQueued`: messages handed
+    /// over for steering that the agent hasn't taken in yet are given back
+    /// (`TernAgentSession.steeringCancelled`) instead of running after the interrupt.
+    func interrupt(turnID: String?, cancelQueued: Bool)
     /// Answer a pending request. Returns an error message if the answer doesn't fit.
     func answer(_ request: TernAgentRequest, _ answer: TernAgentAnswer) -> String?
 }
@@ -25,11 +32,18 @@ enum TernAgentAnswer {
 /// One managed session: its stored state, its harness process, its queue of messages and
 /// the turn in progress. Every method runs on `TernAgents.queue`.
 ///
-/// Delivery rule: messages wait in the session's own queue and are handed to the harness
-/// one at a time, only when the harness is ready and no turn is running. So a message is
-/// in exactly one place (queued here, written and unconfirmed, delivered), an interrupt
-/// can only hit the turn that was running, and a redirect can go ahead of everything
-/// queued (MA-4, MA-8, MA-25). Steering a running turn (negotiable) is given up for this.
+/// Delivery rule: a message waits in the session's own queue until the harness can take it,
+/// then is handed over: to start a turn when none runs, or into the running turn (steering,
+/// AG-10), where the agent sees it at its next step. A message is always in exactly one place
+/// (queued here, handed over and unconfirmed, delivered); the harness's own receipt says when
+/// it was delivered. A redirect interrupts the running turn and takes back what was handed
+/// over but not yet taken in, so its text goes first (AG-11).
+///
+/// Headless and live (AG-5 to AG-9): the agent's own interface can run in a pane on the same
+/// conversation. Claude Code's interface owns the conversation while it runs, so the headless
+/// process is stopped first and messages wait until the interface is idle, then run headless
+/// and the interface comes back. Codex's interface attaches to the session's own app server,
+/// so everything keeps going through it.
 final class TernAgentSession {
     var record: TernSessionRecord
     private(set) var messages: [TernAgentMessage] = []
@@ -46,8 +60,8 @@ final class TernAgentSession {
     private(set) var process: TernHarnessProcess?
     private var driver: TernHarnessDriver?
     private var generation = 0
-    /// A message written to the harness whose delivery isn't confirmed yet.
-    private(set) var inFlight: String?
+    /// Messages written to the harness whose delivery isn't confirmed yet, in order.
+    private(set) var inFlight: [String] = []
 
     struct Turn {
         var id: String?
@@ -71,9 +85,9 @@ final class TernAgentSession {
     private var startFlags: [String] = []
 
     /// `agent stop` (or shutdown) in progress.
-    private struct Stop {
+    struct Stop {
         let kind: Kind
-        enum Kind { case user, shutdown, restart, remove }
+        enum Kind { case user, shutdown, restart, remove, handoff }
         var completions: [() -> Void]
     }
     private var stop: Stop?
@@ -94,6 +108,32 @@ final class TernAgentSession {
 
     private var waiters: [UUID: () -> Bool] = [:]
     private(set) var version = 0
+
+    // MARK: Live state (TernAgentLive.swift)
+
+    enum LiveState: String { case starting, idle, working, needsInput }
+    /// Set while the agent's own interface runs in a pane (from its hooks; nil otherwise).
+    var liveState: LiveState?
+    /// The user typed into the live interface since their last prompt: a message waiting for
+    /// the session doesn't take it back from them (AG-9).
+    var liveDraft = false
+    var lastLiveKey: Date?
+    /// Background work the live interface reported at its last Stop.
+    var liveBackground = 0
+    var liveActivity = ""
+    /// Ending the live interface to deliver waiting messages headless (then going back live).
+    var reclaiming = false
+    /// Asked to show the agent's own interface in its pane (the attach command is on its way).
+    var goingLive = false
+    /// Removed from its pane while live: end the interface once the session settles (AG-8).
+    var endLiveWhenSettled = false
+    /// The last time a hook reported anything (an interrupt in the interface fires none).
+    var lastHookAt: Date?
+    /// Waiters for the headless process to stop (taking the session over).
+    var stoppedHandlers: [() -> Void] = []
+    /// When a turn last ended (or it last asked for input): the sidebar orders tabs by it.
+    var lastStopAt: Date?
+    var driverForLive: TernHarnessDriver? { driver }
     private var uiPosted = false
 
     weak var manager: TernAgents?
@@ -177,38 +217,84 @@ final class TernAgentSession {
 
     // MARK: Status
 
+    /// The headless harness process is running.
     var live: Bool { process != nil }
 
+    /// Background work of its own that will wake the agent (Claude Code's background tasks,
+    /// monitors, subagents): a session with some pending hasn't finished (AG-13). Codex never
+    /// starts a turn by itself (X15wake), so its background terminals don't count.
+    var pendingBackground: Int {
+        record.kind == .claude ? (backgroundTasks ?? 0) : 0
+    }
+
     var status: String {
+        if let state = liveState, exclusiveLive {
+            switch state {
+            case .starting: return "starting"
+            case .working: return "working"
+            case .needsInput: return "needs_input"
+            case .idle:
+                if !queue.isEmpty { return liveDraft ? "needs_input" : "working" }
+                return liveBackground > 0 ? "working" : "idle"
+            }
+        }
         if live, !requests.isEmpty { return "needs_input" }
+        if let state = liveState, state == .needsInput { return "needs_input" }
         switch phase {
         case .launching, .starting:
             return "starting"
         case .ready:
-            return (turn != nil || inFlight != nil || !queue.isEmpty) ? "working" : "idle"
+            return (turn != nil || !inFlight.isEmpty || !queue.isEmpty || pendingBackground > 0) ? "working" : "idle"
         case .stopping:
-            return turn != nil ? "working" : "exited"
+            return turn != nil ? "working" : "stopped"
         case .stopped, .cleaning:
             if !queue.isEmpty && canRelaunch { return "starting" }
-            return record.ended == "error" ? "error" : "exited"
+            if goingLive { return "starting" }
+            return record.ended == "error" ? "error" : "stopped"
         }
     }
 
     var activityText: String {
+        if let state = liveState, exclusiveLive {
+            switch state {
+            case .starting: return "opening its own interface"
+            case .needsInput: return liveActivity.isEmpty ? "waiting for you in its interface" : liveActivity
+            case .working: return liveActivity.isEmpty ? "working" : liveActivity
+            case .idle:
+                if !queue.isEmpty {
+                    return liveDraft
+                        ? "\(queue.count) message(s) wait until you send or clear what you typed in its interface"
+                        : "taking it back to deliver \(queue.count) message(s)"
+                }
+                if liveBackground > 0 { return "waiting for \(liveBackground) background task(s)" }
+                return "idle"
+            }
+        }
         if live, let request = requests.first { return "waiting: \(request.title)" }
         switch phase {
         case .launching, .starting: return everReady || record.conversation == true ? "resuming" : "starting"
         case .stopping: return "stopping"
         case .stopped, .cleaning:
             if !queue.isEmpty && canRelaunch { return "resuming" }
+            if goingLive { return "opening its own interface" }
             if record.ended == "error" { return record.lastError.map { TernAgentText.oneLine($0, max: 120) } ?? "error" }
-            return record.ended == "stopped" ? "stopped" : "exited"
+            return "stopped"
         case .ready:
-            if turn == nil && inFlight == nil && queue.isEmpty { return "idle" }
+            if turn == nil && inFlight.isEmpty && queue.isEmpty {
+                return pendingBackground > 0 ? "waiting for \(pendingBackground) background task(s)" : "idle"
+            }
             if let tool = runningTools.values.first { return tool }
             if !activity.isEmpty { return activity }
             return turn?.selfStarted == true ? "working (on its own)" : "working"
         }
+    }
+
+    /// Nothing runs, nothing waits, and no background work will wake it: the session is done
+    /// for now (what `agent wait` and "finished" mean, AG-12).
+    var settled: Bool {
+        if exclusiveLive { return liveState == .idle && queue.isEmpty && liveBackground == 0 }
+        return turn == nil && inFlight.isEmpty && queue.isEmpty && pendingBackground == 0
+            && phase != .launching && phase != .starting && !goingLive
     }
 
     /// The latest message someone sent (not a product note).
@@ -243,7 +329,9 @@ final class TernAgentSession {
         TernAgentSnapshot(id: record.id, name: record.name, kind: record.kind, status: status, activity: activityText,
                           cwd: record.cwd, live: live, items: items, requests: requests,
                           queued: queue.compactMap { message($0) }.filter { $0.note != true }.map(\.text),
-                          version: version, error: record.lastError, model: record.startup?.model ?? record.model)
+                          version: version, error: record.lastError, model: record.startup?.model ?? record.model,
+                          location: location, pane: record.pane, title: record.title ?? record.name,
+                          lastStopAt: lastStopAt)
     }
 
     // MARK: Waiters
@@ -309,6 +397,13 @@ final class TernAgentSession {
     /// running.
     func pump() {
         guard !shuttingDown else { return }
+        if exclusiveLive {
+            // The agent's own interface owns the conversation now: waiting messages are
+            // delivered by taking it back when it's idle (AG-9).
+            considerReclaim()
+            return
+        }
+        if goingLive { return }
         switch phase {
         case .stopped:
             // Messages wait, or a turn cut off before a restart waits to continue.
@@ -321,8 +416,17 @@ final class TernAgentSession {
             }
             launch()
         case .ready:
-            guard turn == nil, inFlight == nil, redirect == nil, let next = queue.first else { return }
-            dispatch(next)
+            guard redirect == nil else { return }
+            if turn == nil {
+                guard inFlight.isEmpty, let next = queue.first else { return }
+                dispatch(next, steer: false)
+            } else if turn?.interruptRequested != true, driver?.canSteer == true {
+                // The agent sees these during the turn it's running (AG-10). A product note
+                // (a cut-off turn's continuation) only ever starts a turn.
+                while let next = queue.first, message(next)?.note != true {
+                    if !dispatch(next, steer: true) { break }
+                }
+            }
         default:
             return
         }
@@ -435,21 +539,39 @@ final class TernAgentSession {
         terminateProcess(grace: 0.5)
     }
 
-    private func dispatch(_ id: String) {
+    @discardableResult
+    private func dispatch(_ id: String, steer: Bool) -> Bool {
         guard let driver, var message = message(id) else {
             queue.removeAll { $0 == id }
-            return
+            return false
         }
         queue.removeFirst()
+        redirectFront.remove(id)
         saveQueue()
         message.state = .sent
         store(message)
-        inFlight = id
+        inFlight.append(id)
         changed()
-        if !driver.send(message) {
-            // The process is going away; its end puts the message back in the queue.
-            return
+        // A failed write means the process is going away; its end puts the message back.
+        return steer ? driver.steer(message) : driver.send(message)
+    }
+
+    /// The harness gave back messages it had queued for steering but not taken in (an
+    /// interrupt that cancels what's queued, for a redirect): they go back to the queue, after
+    /// the redirect's text and in their order.
+    func steeringCancelled(_ ids: [String]) {
+        var back: [String] = []
+        for id in ids where inFlight.contains(id) {
+            guard let m = message(id), m.state == .sent else { continue }
+            inFlight.removeAll { $0 == id }
+            update(id) { $0.state = .queued }
+            back.append(id)
         }
+        guard !back.isEmpty else { return }
+        let at = queue.firstIndex { message($0)?.note != true && !redirectFront.contains($0) } ?? queue.count
+        queue.insert(contentsOf: back, at: at)
+        saveQueue()
+        changed()
     }
 
     // MARK: Recovery
@@ -460,7 +582,7 @@ final class TernAgentSession {
 
     /// After a Codex resume: which unconfirmed messages the thread really received.
     func reconcileDelivery(received: Set<String>, known: Bool) {
-        for m in messages where m.state == .sent && m.id != inFlight && !queue.contains(m.id) {
+        for m in messages where m.state == .sent && !inFlight.contains(m.id) && !queue.contains(m.id) {
             if received.contains(m.id) {
                 update(m.id) { $0.state = .delivered; $0.cutOff = true; $0.cutOffAt = $0.cutOffAt ?? Date() }
             } else if known {
@@ -473,7 +595,7 @@ final class TernAgentSession {
 
     /// The harness refused a message outright.
     func dispatchFailed(_ id: String, reason: String) {
-        if inFlight == id { inFlight = nil }
+        inFlight.removeAll { $0 == id }
         if let current = turn, current.messages == [id] { turn = nil }
         finish(id, .error, error: reason)
         changed()
@@ -491,7 +613,14 @@ final class TernAgentSession {
         // written to its stdin, which it reads before anything else, so count it delivered.
         // (Codex says: its thread's history settled each one in reconcileDelivery.)
         if record.kind == .claude {
-            for m in messages where m.state == .sent && m.id != inFlight && !queue.contains(m.id) {
+            for m in messages where m.state == .sent && !inFlight.contains(m.id) && !queue.contains(m.id) {
+                if let delivered = claudeTranscriptHas(m.id), !delivered {
+                    // The conversation's own record says it never arrived: send it again.
+                    update(m.id) { $0.state = .queued; $0.cutOff = nil; $0.cutOffAt = nil; $0.cutOffReason = nil }
+                    queue.insert(m.id, at: 0)
+                    saveQueue()
+                    continue
+                }
                 update(m.id) { $0.state = .delivered; $0.cutOff = true; $0.cutOffAt = $0.cutOffAt ?? Date() }
             }
         }
@@ -536,7 +665,7 @@ final class TernAgentSession {
     /// The harness confirmed the model received a message.
     func delivered(_ id: String) {
         guard let current = message(id), !current.state.isFinal, current.state != .delivered else {
-            if inFlight == id { inFlight = nil }
+            inFlight.removeAll { $0 == id }
             return
         }
         update(id) {
@@ -548,7 +677,7 @@ final class TernAgentSession {
             saveRecord()
         }
         failedLaunches = 0
-        if inFlight == id { inFlight = nil }
+        inFlight.removeAll { $0 == id }
         if turn == nil {
             beginTurn(id: nil, messages: [id], selfStarted: false)
         } else if turn?.messages.contains(id) == false {
@@ -558,7 +687,7 @@ final class TernAgentSession {
     }
 
     /// A turn began: for messages, or by itself (MA-28).
-    func beginTurn(id: String?, messages ids: [String], selfStarted: Bool) {
+    func beginTurn(id: String?, messages ids: [String], selfStarted: Bool, fromInterface: Bool = false) {
         if turn != nil {
             if let id, turn?.id == nil { turn?.id = id }
             for m in ids where turn?.messages.contains(m) == false { turn?.messages.append(m) }
@@ -573,7 +702,9 @@ final class TernAgentSession {
             saveRecord()
         }
         activity = ""
-        if selfStarted {
+        if fromInterface {
+            // The user started it in the agent's own interface: theirs to finish.
+        } else if selfStarted {
             record.openSelfTurn = true
             saveRecord()
             notice("The agent started a turn by itself.")
@@ -584,7 +715,7 @@ final class TernAgentSession {
         } else if interruptPending {
             interruptPending = false
             turn?.interruptRequested = true
-            driver?.interrupt(turnID: turn?.id)
+            driver?.interrupt(turnID: turn?.id, cancelQueued: false)
         }
         changed()
     }
@@ -603,7 +734,9 @@ final class TernAgentSession {
         redirect?.deadline.cancel()
         redirect = Redirect(turnID: current.id, turnStartedAt: turnStartedAt, deadline: work)
         TernAgents.queue.asyncAfter(deadline: .now() + 30, execute: work)
-        driver?.interrupt(turnID: current.id)
+        // What was handed over for steering and not taken in comes back, to go after the
+        // redirect's text.
+        driver?.interrupt(turnID: current.id, cancelQueued: true)
     }
 
     func setTurnID(_ id: String) {
@@ -630,6 +763,7 @@ final class TernAgentSession {
     /// The running turn ended. `answered` lists the messages the harness says this turn
     /// answered (Claude's user_message_uuids); the session knows the rest.
     func endTurn(_ outcome: Outcome, answered: [String] = []) {
+        lastStopAt = Date()
         var current = turn ?? Turn(id: nil, messages: [], selfStarted: answered.isEmpty, startedAt: Date())
         for m in answered where !current.messages.contains(m) { current.messages.append(m) }
         turn = nil
@@ -698,7 +832,7 @@ final class TernAgentSession {
         } else if case .interrupted = outcome {
             notice("Turn interrupted.")
         }
-        if let pending = inFlight, current.messages.contains(pending) { inFlight = nil }
+        inFlight.removeAll { current.messages.contains($0) }
         if redirect != nil {
             redirect?.deadline.cancel()
             redirect = nil
@@ -706,6 +840,7 @@ final class TernAgentSession {
         checkWatches(turnEnded: true)
         changed()
         pump()
+        checkSettled()
     }
 
     private func finish(_ id: String, _ state: TernMessageState, reply: String? = nil, error: String? = nil) {
@@ -723,8 +858,8 @@ final class TernAgentSession {
     /// reason, queued messages and turns cut off before a restart alike (never pending forever).
     private func failOutstanding(_ reason: String) {
         failQueued(.error, reason)
-        if let inFlight { finish(inFlight, .error, error: reason) }
-        inFlight = nil
+        for id in inFlight { finish(id, .error, error: reason) }
+        inFlight.removeAll()
         recovering = false
         for m in messages where !m.state.isFinal && (m.cutOff == true || m.state == .sent || m.state == .delivered) {
             finish(m.id, .error, error: reason)
@@ -752,6 +887,7 @@ final class TernAgentSession {
     }
 
     func openRequest(_ request: TernAgentRequest) {
+        lastStopAt = Date()
         // Allowed always, earlier in this session: answer it now.
         if request.kind == "approval", let tool = request.ruleTool,
            record.alwaysRules.contains(TernAlwaysRule(tool: tool, content: request.ruleContent)),
@@ -806,20 +942,26 @@ final class TernAgentSession {
 
     // MARK: Interrupt, redirect, stop
 
-    /// Stop the running turn; the session stays. Returns whether a turn was running.
+    /// Stop the running turn; the session stays. Messages handed over for steering and not yet
+    /// taken in still reach the agent afterwards. Returns whether a turn was running.
     @discardableResult
     func interrupt() -> Bool {
+        if exclusiveLive {
+            // The agent's own interface runs this turn: interrupting it there is the user's
+            // (Esc in the interface). Tern can't reach into it.
+            return false
+        }
         guard live, let driver else { return false }
         if turn != nil {
             turn?.interruptRequested = true
-            driver.interrupt(turnID: turn?.id)
+            driver.interrupt(turnID: turn?.id, cancelQueued: false)
             return true
         }
-        if inFlight != nil {
+        if !inFlight.isEmpty {
             // Written but its turn not started yet: interrupt that turn as soon as it exists.
             // (Claude reads stdin in order, so an interrupt sent now lands after the message.)
             if record.kind == .claude {
-                driver.interrupt(turnID: nil)
+                driver.interrupt(turnID: nil, cancelQueued: false)
             } else {
                 interruptPending = true
             }
@@ -827,6 +969,9 @@ final class TernAgentSession {
         }
         return false
     }
+
+    /// Redirect texts at the front of the queue (they go before messages a cancel gives back).
+    private var redirectFront: Set<String> = []
 
     /// `agent interrupt` arrived while a message was written but its turn not yet named.
     private var interruptPending = false
@@ -840,7 +985,8 @@ final class TernAgentSession {
             for id in dropped { finish(id, .cancelled, error: "dropped by a redirect") }
         }
         let message = enqueue(text: text, from: from, front: true)
-        if turn == nil, inFlight != nil, live {
+        redirectFront.insert(message.id)
+        if turn == nil, !inFlight.isEmpty, live {
             interruptWhenInFlightStarts = true
         }
         if turn != nil, live {
@@ -876,9 +1022,14 @@ final class TernAgentSession {
             record.cutOffReason = nil
             saveRecord()
         }
-        if let inFlight, message(inFlight)?.state == .sent {
-            finish(inFlight, .exited, error: "the session was stopped before this message was delivered")
-            self.inFlight = nil
+        for id in inFlight where message(id)?.state == .sent {
+            finish(id, .exited, error: "the session was stopped before this message was delivered")
+        }
+        inFlight.removeAll()
+        record.goLiveWhenSettled = nil
+        if exclusiveLive {
+            // Its own interface closes too (AG-15).
+            endLiveInterface(reason: "stop")
         }
         stopProcess(kind: remove ? .remove : .user, completion: completion)
     }
@@ -902,7 +1053,7 @@ final class TernAgentSession {
                 record.cutOffReason = reason
                 saveRecord()
             }
-            driver?.interrupt(turnID: current.id)
+            driver?.interrupt(turnID: current.id, cancelQueued: true)
         }
     }
 
@@ -910,7 +1061,7 @@ final class TernAgentSession {
         stopProcess(kind: .shutdown, completion: completion)
     }
 
-    private func stopProcess(kind: Stop.Kind, completion: (() -> Void)?) {
+    func stopProcess(kind: Stop.Kind, completion: (() -> Void)?) {
         if phase == .launching {
             // Still preparing to spawn: cancel that.
             generation += 1
@@ -942,7 +1093,7 @@ final class TernAgentSession {
         let gen = generation
         if turn != nil, kind != .restart {
             turn?.interruptRequested = true
-            driver?.interrupt(turnID: turn?.id)
+            driver?.interrupt(turnID: turn?.id, cancelQueued: true)
         }
         // Give an interrupt a moment to land, then close stdin (both harnesses exit), then
         // signal the process group, then kill everything that's left.
@@ -1012,8 +1163,13 @@ final class TernAgentSession {
                     continue
                 }
                 if stopping != nil {
-                    finish(m, .interrupted, error: stopping?.kind == .restart
-                           ? "stopped: the turn didn't stop within 30 seconds of an interrupt" : "the session was stopped")
+                    let why: String
+                    switch stopping?.kind {
+                    case .restart: why = "stopped: the turn didn't stop within 30 seconds of an interrupt"
+                    case .handoff: why = "interrupted: the session was taken over in its own interface"
+                    default: why = "the session was stopped"
+                    }
+                    finish(m, .interrupted, error: why)
                 } else if msg.state == .delivered || msg.note == true {
                     finish(m, .error, error: reason ?? "\(record.kind.rawValue) \(described)")
                 } else {
@@ -1036,7 +1192,7 @@ final class TernAgentSession {
         if shuttingDown {
             record.ended = "stopped"
         } else if let stopping {
-            record.ended = stopping.kind == .restart ? "exited" : "stopped"
+            record.ended = stopping.kind == .restart ? "exited" : (stopping.kind == .handoff ? nil : "stopped")
             if stopping.kind == .user { record.lastError = nil }
         } else if let reason {
             record.ended = "error"
@@ -1066,7 +1222,11 @@ final class TernAgentSession {
                 self.stop = nil
                 self.changed()
                 for completion in stopping?.completions ?? [] { completion() }
-                if !self.shuttingDown && stopping?.kind != .remove { self.pump() }
+                let handlers = self.stoppedHandlers
+                self.stoppedHandlers.removeAll()
+                for handler in handlers { handler() }
+                if !self.shuttingDown && stopping?.kind != .remove && stopping?.kind != .handoff { self.pump() }
+                self.checkSettled()
             }
         }
     }
@@ -1075,16 +1235,22 @@ final class TernAgentSession {
     /// (every line the harness wrote has been read): it goes back to the front of the queue,
     /// unless the session was stopped.
     private func inFlightCheck(stopping: Stop?) {
-        guard let id = inFlight else { return }
-        inFlight = nil
-        guard let msg = message(id), msg.state == .sent else { return }
-        if turn?.messages.contains(id) == true { return }
-        if let stopping, stopping.kind == .user || stopping.kind == .remove {
-            finish(id, .exited, error: "the session was stopped before this message was delivered")
-        } else {
-            update(id) { $0.state = .queued }
-            // Behind a redirect that was waiting for it, ahead of everything else.
-            queue.insert(id, at: interruptWhenInFlightStarts ? min(1, queue.count) : 0)
+        let ids = inFlight
+        inFlight.removeAll()
+        var back: [String] = []
+        for id in ids {
+            guard let msg = message(id), msg.state == .sent else { continue }
+            if turn?.messages.contains(id) == true { continue }
+            if let stopping, stopping.kind == .user || stopping.kind == .remove {
+                finish(id, .exited, error: "the session was stopped before this message was delivered")
+            } else {
+                update(id) { $0.state = .queued }
+                back.append(id)
+            }
+        }
+        // Behind a redirect that was waiting for them, ahead of everything else.
+        if !back.isEmpty {
+            queue.insert(contentsOf: back, at: interruptWhenInFlightStarts ? min(1, queue.count) : 0)
         }
         interruptWhenInFlightStarts = false
     }
@@ -1190,4 +1356,9 @@ struct TernAgentSnapshot {
     let version: Int
     let error: String?
     let model: String?
+    /// background, pane (read-only view) or live.
+    let location: String
+    let pane: String?
+    let title: String
+    let lastStopAt: Date?
 }

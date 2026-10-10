@@ -110,7 +110,8 @@ enum TernAgentEnvironment {
                                   "CLAUDE_AGENT_SDK_VERSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID",
                                   "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "TERN_PANE_ID",
                                   "TERN_TAB_ID", "TERN_WINDOW_ID", "TERN_SESSION_ID", "TERN_INSTANCE",
-                                  "TERN_STATE_DIR", "TERN_SESSION_NAME", "TERM_SESSION_ID", "ITERM_SESSION_ID"]
+                                  "TERN_STATE_DIR", "TERN_SESSION_NAME", "TERM_SESSION_ID", "ITERM_SESSION_ID",
+                                  "TERN_HEADLESS", "TERN_PLUGIN_ROOT", "TERN_CLI"]
         return exact.contains(key)
     }
 
@@ -126,6 +127,9 @@ enum TernAgentEnvironment {
         env["TERN_STATE_DIR"] = TernPaths.stateDirectory
         env["TERN_SESSION_ID"] = session.id
         env["TERN_INSTANCE"] = TernPaths.instanceID
+        env["TERN_CLI"] = TernPaths.cliPath
+        // Headless, Tern reads the agent's own stream: Tern's hook plugin stays quiet here.
+        env["TERN_HEADLESS"] = "1"
         env["PWD"] = session.cwd
         for (key, value) in session.env { env[key] = value }
         return (env, flags)

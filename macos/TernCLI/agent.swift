@@ -8,70 +8,62 @@ import Darwin
 import Foundation
 
 let agentHelp = """
-\(cliName) agent: managed Claude Code and Codex sessions.
+\(cliName) agent: run Claude Code and Codex sessions, and supervise them.
 
-  agent start claude|codex [PROMPT…] [--name N] [--cwd D] [--worktree W [--base REF]]
-        [--model M] [--effort E] [--full-access] [--permission-mode M] [--profile P]
-        [--env K=V]… [--tab [--window W] | --split [DIR] [--pane P] | --new-window] [--focus]
-        [--background] [--wait [--timeout S]] [-- HARNESS ARGS]
-                                    start a session; prints its id. It runs in the background
-                                    (shown nowhere) unless given a placement: --tab, --split or
-                                    --new-window (--focus alone means a new tab, switched to)
-  agent send SESSION TEXT… [--interrupt [--drop-queued]] [--wait [--timeout S]]
-                                    a follow-up (queued while the agent works; a stopped session
-                                    resumes); prints the message id. --interrupt: stop the running
-                                    turn and make TEXT the next thing the agent sees
-  agent wait SESSION [--message ID] [--timeout S]
-                                    wait for the turn answering the latest (or given) message
-  agent wait SESSION --report [--message ID] [--timeout S]
-                                    wait for the worker's own report (see `agent report`)
-  agent report done|blocked|failed [SUMMARY…] [--session S]
-                                    inside a session: record your verdict on your task
-  agent read SESSION [--message ID] | --transcript [--last N]
-  agent ls [--live] [--parent S]    every session (or only S's workers) with its status,
-                                    activity, report and the pane showing it, if any
-  agent info SESSION
-  agent interrupt SESSION           agent stop SESSION          agent resume SESSION [PROMPT…]
-  agent approve SESSION [REQUEST] [--always] [--message TEXT]
-  agent deny SESSION [REQUEST] [--message TEXT]
-  agent answer SESSION [TEXT…] [--answer N=TEXT]… [--request R]
-  agent watch SESSION --notify OTHER [--message ID] [--text T]
-  agent open SESSION [--tab [--window W] | --split [DIR] [--pane P] | --new-window] [--focus]
-                                    show a session (default: a new tab, without switching to
-                                    it); one already shown keeps its pane (--focus goes there)
-  agent rename SESSION NAME         agent rm SESSION [--force]
+Start (runs headless in the background and prints the session id):
+  \(cliName) agent start claude|codex "TASK" [--name N] [--cwd DIR | --worktree NAME] [--model M]
+        [--effort E] [--full-access] [--env K=V]… [--wait [--timeout S]] [-- AGENT ARGS…]
+    With --tab, --split [right|down|left|up] or --new-window it also gets a pane there: it runs
+    headless until this first turn finishes, then opens live in that pane for you to use
+    (--focus switches to it).
 
-SESSION is an id or unique id prefix, a name, the harness's own session or thread id, or
-`self` inside a managed agent. Text: words are joined; `-` reads stdin; text after `--` is text
-(for `agent start`, what follows `--` goes to the harness).
+Supervise:
+  \(cliName) agent wait SESSION [--timeout S]    wait until it has finished (or needs input); prints
+                                     STATUS, then its reply
+  \(cliName) agent send SESSION "TEXT"           a message: it steers the turn the agent is working on, or
+                                     starts a new turn; a stopped session resumes. Prints the
+                                     message id. --interrupt stops the current turn first
+  \(cliName) agent read SESSION [--transcript]   its last reply (or everything, in order)
+  \(cliName) agent ls [--parent self]            sessions: status, what they're doing, where they are
+  \(cliName) agent info SESSION                  one session in detail
+  \(cliName) agent interrupt SESSION             stop the current turn; the session stays
+  \(cliName) agent stop SESSION                  stop it and everything it started (a message resumes it)
+  \(cliName) agent watch SESSION --notify OTHER  OTHER gets a message when SESSION finishes or needs input
+  \(cliName) agent report done|blocked|failed "SUMMARY"
+                                     inside a session: your verdict on your task
+                                     (`agent wait SESSION --report` waits for it)
 
-Sessions in the background are listed by `agent ls`, in the command palette and in Window >
-Agent Sessions; ⌃⌘J shows the one that needs you. Everything about them (status, transcript,
-reports, requests) works the same whether or not a pane shows them.
+Show:
+  \(cliName) agent open SESSION [--tab|--split|--new-window] [--live]
+                                     show it in a pane, read-only (--live: take it over there)
+  \(cliName) agent hide SESSION                  take it out of its pane; it keeps running until it finishes
+  \(cliName) agent attach SESSION                run its own interface in this terminal (what Take Over does)
 
-\(idleNote)
+Also: approve/deny/answer SESSION (approvals and questions, for sessions without --full-access),
+rename SESSION NAME, rm SESSION [--force], plugins [status|install|remove].
+
+SESSION is a name, an id (or its first characters), the agent's own session id, or `self` inside a
+session. `wait` exits 0 DONE, 2 NEEDS_INPUT, 3 STOPPED/ERROR/FAILED/INTERRUPTED/CANCELLED, 124 TIMEOUT.
 """
 
 let idleNote = """
-Note: an idle harness only means nothing is running right now, not that the task is done.
-A worker can also start working again by itself (for example when a background command it
-started finishes). Workers record their verdict with `\(cliName) agent report`; wait for it with
-`\(cliName) agent wait SESSION --report`, whose output also says what the harness reports.
+A session isn't finished while background work it started (that will wake it) is still running:
+`agent wait` waits for that too, and its reply is the newest one. Workers record their own verdict
+with `\(cliName) agent report`; `\(cliName) agent wait SESSION --report` waits for it.
 """
 
 let waitHelp = """
 \(cliName) agent wait SESSION [--message ID] [--timeout S]
 \(cliName) agent wait SESSION --report [--message ID] [--timeout S]
 
-Waits for the turn that answers the latest message to SESSION (or message ID) and prints a
-status, then the reply (or the pending requests):
+Waits until the turn answering the latest message to SESSION (or message ID) has ended and the
+session has settled, or until it needs input, then prints a status and the reply (or what it
+waits on):
 
-  DONE 0 · NEEDS_INPUT 2 · INTERRUPTED, FAILED, EXITED, ERROR, CANCELLED 3 · TIMEOUT 124
+  DONE 0 · NEEDS_INPUT 2 · STOPPED, ERROR, FAILED, INTERRUPTED, CANCELLED 3 · TIMEOUT 124
 
-With nothing pending it returns the session's current state at once; an old message's wait
-returns that message's own reply. With --report it waits for a report the worker made (with
-`agent report`) after that message: done 0, blocked 2, failed 3, timeout 124, followed by what
-the harness says (its status and background tasks).
+On a timeout it says what is still running. With --report it waits for the worker's own report
+(`agent report`) made after that message: done 0, blocked 2, failed 3, timeout 124.
 
 \(idleNote)
 """
@@ -79,9 +71,9 @@ the harness says (its status and background tasks).
 let reportHelp = """
 \(cliName) agent report done|blocked|failed [SUMMARY…] [--session S]
 
-Inside a managed session, records your own verdict on your task (S defaults to `self`).
-Whoever started you sees it in `agent info` and `agent ls`, and `agent wait SESSION --report`
-returns when you report. Report when your task is done, when you're blocked, or when it failed.
+Inside a session, records your own verdict on your task (S defaults to `self`). Whoever started
+you sees it in `agent info` and `agent ls`, and `agent wait SESSION --report` returns when you
+report. Report when your task is done, when you're blocked, or when it failed.
 
 \(idleNote)
 """
@@ -127,6 +119,10 @@ func agentCommand(_ argv: [String]) {
     case "info", "show": agentInfo(rest)
     case "interrupt": agentSimple("agent.interrupt", rest, usage: "agent interrupt SESSION")
     case "stop", "kill": agentSimple("agent.stop", rest, usage: "agent stop SESSION")
+    case "hide": agentSimple("agent.hide", rest, usage: "agent hide SESSION")
+    case "attach": agentAttach(rest)
+    case "hook": agentHook(rest)
+    case "plugins", "plugin": agentPlugins(rest)
     case "resume": agentResume(rest)
     case "approve", "allow": agentApprove(rest, deny: false)
     case "deny": agentApprove(rest, deny: true)
@@ -135,7 +131,7 @@ func agentCommand(_ argv: [String]) {
     case "open", "show-pane": agentOpen(rest)
     case "rename": agentRename(rest)
     case "rm", "remove": agentRemove(rest)
-    default: fail("agent: unknown subcommand \(sub) (see `\(cliName) agent --help`)")
+    default: fail("agent: unknown command \(sub) (`\(cliName) agent --help` lists them)")
     }
 }
 
@@ -226,10 +222,15 @@ func agentStart(_ argv: [String]) {
     let session = result["session"] as? [String: Any] ?? [:]
     let id = session["id"] as? String ?? ""
     if let paneError = result["pane_error"] as? String { eprint("\(cliName): warning: \(paneError)") }
-    if background && !jsonOutput && isatty(STDERR_FILENO) == 1 && isatty(STDOUT_FILENO) == 1 {
-        // A person at a terminal: say where the session is (scripts and agents only see the id).
+    if !jsonOutput && !args.has("--wait") {
+        // Say what happened and what's next (on stderr: stdout is just the id, for scripts).
         let name = session["name"] as? String ?? id
-        eprint(dim("running in the background; `\(cliName) agent open \(name)` shows it"))
+        let quoted = name.contains(" ") ? "'\(name)'" : name
+        if background {
+            eprint(dim("started \(kind) session \(quoted) in the background; `\(cliName) agent wait \(quoted)` waits for its reply"))
+        } else {
+            eprint(dim("started \(kind) session \(quoted): its pane shows it now, and it opens live there when this turn ends"))
+        }
     }
     if args.has("--wait") {
         var waitParams: [String: Any] = ["session": id]
@@ -261,6 +262,7 @@ func agentSend(_ argv: [String]) {
     let timeout = parseTimeout(args)
     let result = callDict("agent.send", params)
     let message = result["message"] as? [String: Any] ?? [:]
+    if let note = result["note"] as? String, !jsonOutput { eprint("\(cliName): \(note)") }
     if args.has("--wait") {
         var waitParams: [String: Any] = ["session": session, "message": message["id"] as? String ?? ""]
         if let timeout { waitParams["timeout"] = timeout }
@@ -584,11 +586,12 @@ func agentWatch(_ argv: [String]) {
 }
 
 func agentOpen(_ argv: [String]) {
-    let args = parse(argv, placementSpec([], []))
-    guard let session = args.positional.first else { fail("agent open SESSION [PLACEMENT]") }
+    let args = parse(argv, placementSpec([], ["--live"]))
+    guard let session = args.positional.first else { fail("agent open SESSION [--tab|--split|--new-window] [--live]") }
     var params = placementParams(args)
     params["session"] = session
     params.removeValue(forKey: "background")
+    if args.has("--live") { params["live"] = true }
     let result = callDict("agent.open", params)
     if jsonOutput { printJSON(result) } else { print(result["pane"] as? String ?? "") }
 }
@@ -605,4 +608,117 @@ func agentRemove(_ argv: [String]) {
     var params: [String: Any] = ["session": session]
     if args.has("--force") { params["force"] = true }
     printOK(callDict("agent.rm", params))
+}
+
+// MARK: - attach: the session's own interface, here
+
+/// Run the session's own interface (Claude Code's or Codex's) in this terminal, on its
+/// conversation: what the Take Over button types into a session's pane (SPEC AG-6). The app
+/// frees the conversation first (a running headless turn is taken over at once), then this
+/// process becomes the agent's interface.
+func agentAttach(_ argv: [String]) {
+    let args = parse(argv, ArgSpec())
+    guard let session = args.positional.first, args.positional.count == 1 else { fail("agent attach SESSION") }
+    let spec = callDict("agent.attach", ["session": session])
+    guard let binary = spec["binary"] as? String else { fail("agent attach: the app sent no command") }
+    let arguments = spec["args"] as? [String] ?? []
+    for (key, value) in spec["env"] as? [String: String] ?? [:] { setenv(key, value, 1) }
+    unsetenv("TERN_HEADLESS")
+    if let cwd = spec["cwd"] as? String, !cwd.isEmpty {
+        if chdir(cwd) != 0 { fail("agent attach: can't enter \(cwd)") }
+        setenv("PWD", cwd, 1)
+    }
+    let argvC = ([binary] + arguments).map { strdup($0) } + [nil]
+    execv(binary, argvC)
+    fail("agent attach: couldn't run \(binary): \(String(cString: strerror(errno)))")
+}
+
+// MARK: - hook: what Tern's plugins call
+
+/// `agent hook EVENT --agent claude|codex --pid PID`, run by Tern's plugin inside Claude Code or
+/// Codex with the hook's input on stdin. It tells the app and prints nothing; it never makes the
+/// agent wait long or fail (SPEC AG-18).
+func agentHook(_ argv: [String]) -> Never {
+    let args = parse(argv, ArgSpec(valued: ["--agent", "--pid"]))
+    guard let event = args.positional.first else { exit(0) }
+    var input = Data()
+    var chunk = [UInt8](repeating: 0, count: 65536)
+    while input.count < 8 * 1024 * 1024 {
+        let n = read(STDIN_FILENO, &chunk, chunk.count)
+        if n < 0 && errno == EINTR { continue }
+        if n <= 0 { break }
+        input.append(contentsOf: chunk[0..<n])
+    }
+    var params: [String: Any] = ["event": event, "agent": args.value("--agent") ?? "claude"]
+    if let pid = args.value("--pid").flatMap({ Int($0) }) { params["pid"] = pid }
+    if let object = try? JSONSerialization.jsonObject(with: input) as? [String: Any] {
+        // Tool output can be large; the app keeps what it needs.
+        var payload = object
+        if let response = payload["tool_response"], let data = try? JSONSerialization.data(withJSONObject: ["v": response]),
+           data.count > 64 * 1024 {
+            payload["tool_response"] = String(decoding: data.prefix(64 * 1024), as: UTF8.self)
+        }
+        params["payload"] = payload
+    }
+    guard let client = Client(path: socketPath(for: stateDirectory())) else { exit(0) }
+    var timeout = timeval(tv_sec: 3, tv_usec: 0)
+    setsockopt(client.fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    setsockopt(client.fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    _ = try? client.call("agent.hook", params)
+    exit(0)
+}
+
+// MARK: - plugins
+
+func agentPlugins(_ argv: [String]) {
+    let args = parse(argv, ArgSpec(boolean: ["--force"]))
+    let action = args.positional.first ?? "status"
+    guard ["status", "install", "remove"].contains(action) else { fail("agent plugins [status|install|remove]") }
+    var params: [String: Any] = ["action": action]
+    if args.has("--force") { params["force"] = true }
+    let result = callDict("agent.plugins", params)
+    if jsonOutput {
+        printJSON(result)
+        return
+    }
+    for kind in ["claude", "codex"] {
+        guard let info = result[kind] as? [String: Any] else { continue }
+        let name = kind == "claude" ? "Claude Code" : "Codex"
+        if let skipped = info["skipped"] as? String {
+            print("\(name): \(skipped)")
+            continue
+        }
+        if let error = info["error"] as? String {
+            print("\(name): \(error)")
+            continue
+        }
+        let installed = info["installed"] as? Bool ?? false
+        var line = "\(name): " + (installed ? "Tern's plugin \(info["version"] as? String ?? "?") installed" : "Tern's plugin not installed")
+        if let bundled = info["bundled_version"] as? String, installed, info["current"] as? Bool != true {
+            line += " (this app has \(bundled); `\(cliName) agent plugins install` updates it)"
+        }
+        if info["hooks_trusted"] as? Bool == false { line += ", its hooks not trusted yet" }
+        if info["agent_installed"] as? Bool == false { line += " (\(kind) isn't installed)" }
+        print(line)
+        for step in info["steps"] as? [String] ?? [] { print(dim("  \(step)")) }
+    }
+    if action == "status", !(result["claude"].flatMap { ($0 as? [String: Any])?["installed"] as? Bool } ?? false) {
+        print(dim("They tell \(productName) what claude/codex typed in its panes are doing; outside \(productName) they do nothing."))
+    }
+}
+
+// MARK: - claude / codex: a session you'll use
+
+/// `tern claude [TASK…] [options]` / `tern codex …`: a session for you, in a new tab (or
+/// --split/--new-window), switched to. With a task it runs headless until that turn ends, then
+/// opens live; without one it opens live at once. Shorthand for `agent start … --tab --focus`.
+func agentShortcut(_ kind: String, _ argv: [String]) {
+    let probe = parse(argv, placementSpec(["--name", "--cwd", "--worktree", "--base", "--model", "--effort",
+                                           "--permission-mode", "--profile", "--env", "--timeout"],
+                                          ["--full-access", "--wait", "--no-focus"]))
+    let separator = argv.firstIndex(of: "--") ?? argv.count
+    var options = Array(argv[..<separator]).filter { $0 != "--no-focus" }
+    if !hasPlacement(probe) { options.append("--tab") }
+    if !probe.has("--no-focus") && !probe.has("--focus") { options.append("--focus") }
+    agentStart([kind] + options + Array(argv[separator...]))
 }

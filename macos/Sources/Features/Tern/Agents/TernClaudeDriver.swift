@@ -24,6 +24,10 @@ final class TernClaudeDriver: TernHarnessDriver {
     private var sawInitThisProcess = false
     private var controlCounter = 0
     private var ourControlRequests: Set<String> = []
+    /// Interrupts that asked to give back what was queued for steering.
+    private var cancellingInterrupts: Set<String> = []
+    /// Claude advertises interrupts that cancel queued messages (`interrupt_cancel_queued_v1`).
+    private var canCancelQueued = false
 
     init(session: TernAgentSession) {
         self.session = session
@@ -63,6 +67,12 @@ final class TernClaudeDriver: TernHarnessDriver {
         }
     }
 
+    var canSteer: Bool { ready && process != nil }
+
+    /// Claude takes a message written while a turn runs at the turn's next step (PROTOCOLS
+    /// "Mid-turn injection"): the replay and `command_lifecycle started` say when.
+    func steer(_ message: TernAgentMessage) -> Bool { send(message) }
+
     func send(_ message: TernAgentMessage) -> Bool {
         guard let process else { return false }
         return process.writeJSON([
@@ -74,12 +84,19 @@ final class TernClaudeDriver: TernHarnessDriver {
         ])
     }
 
-    func interrupt(turnID: String?) {
+    func interrupt(turnID: String?, cancelQueued: Bool) {
         guard let process else { return }
         controlCounter += 1
         let id = "tern-int-\(controlCounter)"
         ourControlRequests.insert(id)
-        _ = process.writeJSON(["type": "control_request", "request_id": id, "request": ["subtype": "interrupt"]])
+        var request: [String: Any] = ["subtype": "interrupt"]
+        if cancelQueued && canCancelQueued {
+            // Messages handed over for steering and not taken in are given back (their ids in
+            // the answer's `cancelled`), so a redirect's text goes first (probe C15cancelq).
+            request["cancel_queued"] = true
+            cancellingInterrupts.insert(id)
+        }
+        _ = process.writeJSON(["type": "control_request", "request_id": id, "request": request])
     }
 
     // MARK: Frames
@@ -114,6 +131,13 @@ final class TernClaudeDriver: TernHarnessDriver {
             return   // Claude echoes our answers to its requests; those aren't ours to handle.
         }
         ourControlRequests.remove(id)
+        if cancellingInterrupts.remove(id) != nil {
+            let inner = response["response"] as? [String: Any]
+            if let cancelled = inner?["cancelled"] as? [String], !cancelled.isEmpty {
+                session.steeringCancelled(cancelled)
+            }
+            return
+        }
         if id == initID {
             if response["subtype"] as? String == "success" {
                 ready = true
@@ -132,6 +156,9 @@ final class TernClaudeDriver: TernHarnessDriver {
             }
             let fresh = !sawInitThisProcess
             sawInitThisProcess = true
+            if let capabilities = frame["capabilities"] as? [String] {
+                canCancelQueued = capabilities.contains("interrupt_cancel_queued_v1")
+            }
             session.updateStartup({ startup in
                 if let model = frame["model"] as? String { startup.model = model }
                 if let servers = frame["mcp_servers"] as? [[String: Any]] {
