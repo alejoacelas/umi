@@ -549,8 +549,15 @@ def test_move_tab_up_and_down_stay_in_their_pin_group(inst, win):
     menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t3)["items"]}
     assert not menu["Move Tab Up"]["enabled"], "the first tab can't move up"
     inst.cli("tab", "pin", t2)
-    menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t3)["items"]}
+    # Pinning re-sorts the unpinned tabs (S-7); whichever unpinned tab is now first sits right
+    # below the pinned group and can't move up into it.
+    order = tab_ids(inst, win["window"])
+    assert order[0] == t2
+    first_unpinned = order[1]
+    menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=first_unpinned)["items"]}
     assert not menu["Move Tab Up"]["enabled"], "an unpinned tab can't move into the pinned group"
+    menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t2)["items"]}
+    assert not menu["Move Tab Down"]["enabled"], "a pinned tab can't move out of the pinned group"
     inst.cli("tab", "unpin", t2)
 
 
