@@ -38,8 +38,8 @@ def criteria():
     """{check id: its text in CHECKS.md}"""
     text = open(os.path.join(ROOT, "CHECKS.md")).read()
     found = {}
-    for block in re.split(r"\n(?=\*\*[A-Z]+-\d+: )", text):
-        m = re.match(r"\*\*([A-Z]+-\d+): ", block)
+    for block in re.split(r"\n(?=\*\*[A-Z]+-\d+(?:, [A-Z]+-\d+)*: )", text):
+        m = re.match(r"\*\*([A-Z]+-\d+(?:, [A-Z]+-\d+)*): ", block)
         if m:
             found[m.group(1)] = block.split("\n## ")[0].strip()
     return found

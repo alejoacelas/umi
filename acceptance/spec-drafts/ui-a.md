@@ -100,6 +100,21 @@ the list below.)
   ⌃Tab or ⌘1–9 the order stays as the user saw it until a moment (about a second) after the last
   press, so repeated presses walk the list instead of bouncing between the top two tabs.
 
+### CHECKS.md (proposed written checks for the [W] parts)
+
+- **L-9/L-10 (by hand).** Window with three tabs, one split, a Markdown file open. With focus in a
+  terminal, the editor source, the preview, the sidebar's rename field (double-click a row), the
+  file tree (click a file), the palette (⌘P) and Settings (⌘,): press ⇧⌘], ⇧⌘[, ⌃Tab, ⌘2,
+  ⌃⇧→. Each changes or moves the tab; none types into the focused field or terminal.
+- **L-14–L-16.** Screenshot of ⌘P with "tab" typed (CLI entries with their `tern …` line, menu
+  actions with shortcuts), of a command asking for a value (Set Tab Color…), of ⇧⌘P (pane titles,
+  Current marker) and of ⌘O in a repository (recent and changed files first).
+- **L-17.** Screenshot of Settings: both sections, a changed shortcut with Reset, the note saying
+  the Ghostty config file isn't changed.
+- **S-7.** Four tabs, two of them with agents that stopped at different times: the current tab is
+  at the top, then the most recent stop. Press ⇧⌘] three times quickly: the selection walks down
+  the list, which reorders about a second after the last press.
+
 ---------------------------------------------------------------------------------------------------
 
 ## 2. CLI.md text
@@ -302,3 +317,13 @@ Through the CLI and `debug.*` methods (run with `-m "not ui"`):
   `keybind = clear` in an included file loaded in a different order) can show a slightly different
   list than libghostty uses. Keys are matched as typed (US layout names in the CLI).
 - The two `NSEvent` Sendable warnings (key monitors) are Swift 6 warnings only.
+- The worktree has an untracked `zig-out` symlink to the main checkout's `zig-out` (the Xcode build
+  copies its shell-integration resources from there); not committed.
+
+## Results (last runs, build `b4425946c`)
+
+- `test_tern_nav.py -m "not ui"`: 23 passed. The 6 AX tests collect (`-m ui`), not run.
+- Regressions, `--phase 1 -m "not ui and not real"`: `test_layout.py`, `test_tern_extra.py`,
+  `test_editor.py`, `test_interactive.py`, `test_tern_nav.py`: 82 passed; `test_robustness.py`,
+  `test_install.py`, `test_chaos.py`: 11 passed. (An earlier run died when the lead's `pkill` took
+  the instance down; rerun clean.)

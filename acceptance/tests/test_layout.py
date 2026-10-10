@@ -339,7 +339,7 @@ def test_send_read_wait_keys(inst, win):
     assert timeout.returncode == 124
 
 
-@pytest.mark.req("T-1", "MA-13")
+@pytest.mark.req("T-1")
 def test_send_text_from_stdin_and_after_separator(inst, win):
     marker = "STDIN-" + uuid.uuid4().hex[:8]
     inst.cli("send", "--pane", win["pane"], "-e", stdin=f"echo {marker}\n")

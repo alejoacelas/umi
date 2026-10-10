@@ -117,6 +117,88 @@ def main():
         inst.cleanup()
 
 
+def agents_and_ui_evidence():
+    """After the agent-sessions run: sidebar rows with agent marks and their order (S-3, S-7), a
+    wider sidebar (S-8), the palettes (L-14, L-15, L-16), and a session live in one pane next to
+    another's read-only view (AG-5, AG-6)."""
+    inst = Instance(Target(os.path.join(HERE, "..", "targets", "tern.json")), prefix="acc-extra-ui-")
+    inst.start_app()
+    base = os.path.realpath(tempfile.mkdtemp(prefix="tern-evidence-ui-"))
+    try:
+        ctl = Control(inst)
+        repo = os.path.join(base, "web-app")
+        os.makedirs(os.path.join(repo, "src"))
+        for rel in ("README.md", "src/server.py", "src/routes.py", "notes.md"):
+            with open(os.path.join(repo, rel), "w") as f:
+                f.write("# " + rel + "\n")
+        subprocess.run(["git", "init", "-q", "-b", "main", repo], check=True)
+        subprocess.run(["git", "-C", repo, "add", "."], check=True)
+        subprocess.run(["git", "-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"], check=True)
+        w = inst.json("window", "new", "--name", "evidence", "--cwd", repo)
+        wait_until(lambda: inst.cli("read", "--pane", w["pane"], check=False).stdout.strip() != "", 20)
+        inst.cli("tab", "pin", w["tab"])
+        inst.cli("send", "--pane", w["pane"], "-e", "git log --oneline | head -3")
+        env = ["--env", "FAKE_AGENT_DIR=" + inst.fake_dir, "--env", "CLAUDE_CONFIG_DIR=" + inst.claude_config]
+        done = inst.json("agent", "start", "claude", "--cwd", repo, *env, "--name", "fix-login-test",
+                         "--tab", "--window", w["window"], "ECHO fixed the login test")["session"]["id"]
+        asks = inst.json("agent", "start", "claude", "--cwd", repo, *env, "--name", "add-rate-limits",
+                         "--tab", "--window", w["window"], "ASK_PERMISSION")["session"]["id"]
+        busy = inst.json("agent", "start", "codex", "--cwd", repo, *env, "--name", "review-api",
+                         "--tab", "--window", w["window"], "--full-access", "SLEEP 60")["session"]["id"]
+        inst.json("tab", "new", "--window", w["window"], "--cwd", base, "--no-focus")
+        inst.cli("tab", "focus", w["tab"])
+        inst.wait(done)
+        inst.wait(asks)
+        time.sleep(3)
+        shot(inst, w["window"], "S-3-S-7-agent-rows")
+        inst.cli("sidebar", "width", "340", "--window", w["window"])
+        time.sleep(1)
+        shot(inst, w["window"], "S-8-wider-sidebar")
+        inst.cli("sidebar", "width", "252", "--window", w["window"])
+        inst.cli("window", "focus", w["window"])
+        for title, name, mode in (("Command Palette…", "L-14-command-palette", "commands"),
+                                  ("Go to Pane…", "L-15-pane-palette", "panes"),
+                                  ("Open Quickly…", "L-16-quick-open", "files")):
+            try:
+                ctl.call("debug.menu.perform", title=title)
+                time.sleep(1.5)
+                state = ctl.call("debug.palette", window=w["window"], mode=mode)
+                print(name, "presented:", state.get("presented"), "entries:", len(state.get("entries", [])))
+                shot(inst, w["window"], name)
+            except Exception as e:  # noqa: BLE001
+                print("couldn't open", title, e)
+            try:
+                ctl.call("debug.palette.close", window=w["window"])
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(0.5)
+        # L-14 again, typed into: the CLI's own entries, each with its `tern …` line.
+        try:
+            state = ctl.call("debug.palette", window=w["window"], mode="commands", query="agent")
+            print("L-14-command-palette-cli entries:", [e.get("title") for e in state.get("entries", [])][:8])
+            time.sleep(1)
+            shot(inst, w["window"], "L-14-command-palette-cli")
+            ctl.call("debug.palette.close", window=w["window"])
+        except Exception as e:  # noqa: BLE001
+            print("couldn't type into the command palette", e)
+        # AG-5 / AG-6: one session live in a pane, another read-only beside it.
+        lw = inst.json("window", "new", "--name", "live-and-read-only", "--cwd", repo)
+        wait_until(lambda: inst.cli("read", "--pane", lw["pane"], check=False).stdout.strip() != "", 20)
+        # Out of their tabs first (a session already shown would just be focused there).
+        inst.cli("agent", "hide", done, check=False)
+        inst.cli("agent", "hide", asks, check=False)
+        time.sleep(1)
+        inst.json("agent", "open", done, "--split", "right", "--pane", lw["pane"])
+        live_pane = inst.json("agent", "open", asks, "--split", "down", "--pane", lw["pane"], "--live")["pane"]
+        wait_until(lambda: inst.json("agent", "info", asks)["location"] == "live", 30, message="live")
+        time.sleep(3)
+        shot(inst, lw["window"], "AG-5-AG-6-live-and-read-only")
+        for sid in (done, asks, busy):
+            inst.cli("agent", "stop", sid, check=False)
+    finally:
+        inst.cleanup()
+
+
 def update_evidence():
     """I-4: the question a background check raises (nothing downloaded), then the staged update."""
     import shutil
@@ -165,6 +247,9 @@ def update_evidence():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--only", "ui"]:
+        agents_and_ui_evidence()
+        sys.exit(0)
     if sys.argv[1:] == ["--only", "update"]:
         update_evidence()
     else:
