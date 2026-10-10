@@ -575,3 +575,181 @@ Before, a worker had a tab: its sidebar row showed its status and activity, the 
 - `verify_agent_panes.py`: Window > Agent Sessions lists background sessions, the one needing input
   first; the Dock badge counts it and clears; choosing an item shows the session focused and marks it.
 - The UI tests (`-m ui`) for the menu items.
+
+===================================================================================================
+
+# Decisions for agent sessions, redone (BRIEF-agents.md)
+
+The user replaced phase 2's design (§9–§17, §19) with their own instructions (BRIEF-agents.md §1).
+Where those sections conflict with what follows, this part wins. Phase 2's engine (its queue,
+turn tracking, process cleanup, storage and both headless drivers) was kept where it still fits;
+its pane view, composer, notifications and "two kinds of agent" were not. Requirements: SPEC.md, AG.
+Probes: `acceptance/reference/agent-probes/probe_phase3.py`, recorded in PROTOCOLS.md Part 4.
+
+## 20. How sessions are controlled: always headless
+
+The user: "always use headless to launch sessions and control them. sessions can be resumed from
+headless to live and back".
+
+| Candidate | Cost |
+|---|---|
+| A. **Each agent's own headless mode**: `claude -p --input-format stream-json …` (as phase 2), and a private `codex app-server` per session, now listening on a Unix socket | Two protocols to own (already owned). Gives ids, turn boundaries, approvals as data, and steering (below). The live interface can attach to Codex's server (X16). |
+| B. The agent's interface in a terminal, driven by typing and reading the screen (Warp drives its local and cloud agents this way, per the study of its client) | No message ids or turn boundaries; a draft in the input box is corrupted by typed text; the user ruled out screen control from the start. |
+| C. Claude Code's background agents (`claude --bg`, `claude attach`) | Live ↔ background is native, but there's no programmatic turn or message API, and they run in the user's shared daemon with their own sessions. |
+| D. Codex's shared daemon (`codex queue`, `codex agents`) | Mixes with the user's own Codex sessions; one environment for all. |
+
+**Pick: A.** Codex's server moved from stdio to `--listen unix://SOCKET` (a short path in the
+per-user temp folder, one per session), which speaks WebSocket (X16): Tern connects with a small
+WebSocket client (`TernUnixWebSocket.swift`), and Codex's own interface can attach to the same
+server. Evidence: X16, the fakes' and real tests (AG-1, AG-10–AG-15), the hand checks below.
+
+## 21. Headless ↔ live
+
+| Agent | How it goes live | How it comes back |
+|---|---|---|
+| Claude Code | The headless process stops (it owns the conversation file; two processes would fork it), then the pane's shell runs `"$TERN_CLI" agent attach S`, which execs `claude --resume ID` (`--session-id` for a conversation that never ran) with the session's model, effort, access and arguments, plus `--plugin-dir` (Tern's hook plugin). | The interface exits (`SessionEnd` hook, the attach command finishing in the pane, or its pid gone): the session is headless and idle; the pane shows the read-only view again. |
+| Codex | The pane's shell runs `"$TERN_CLI" agent attach S`, which execs `codex resume THREAD --remote unix://SOCKET`: a client of the session's own server. Nothing stops; Tern keeps driving the thread. | The interface exits; the server and thread carry on. |
+
+Why `tern agent attach` and not the agent command itself: one short line is typed (the only text
+Tern ever types into a pane), it's the same in every pane and for both agents, and the app does the
+handoff when it arrives (stopping Claude's headless process, starting Codex's server if needed),
+so the timing can't race. It's a public command too, so a person can attach a session in any Tern
+terminal. `$TERN_CLI` is the app's own CLI (another `tern` on PATH must not answer).
+
+**Interactive launch (AG-2):** `agent start … --tab|--split|--new-window` makes the pane at once
+with the read-only view, runs the first turn headless, and goes live there when the session
+settles. Waiting for "settled" (not just the turn's end) follows Warp's own fix (below): a Claude
+turn that ends with background work pending would otherwise lose that work when the headless process
+stops.
+
+**Take over (AG-6) is immediate:** for Claude the running headless turn is interrupted (the user's
+"taking over is immediate"; Claude can't share a running turn), and messages handed over for
+steering but not yet taken in come back to Tern's queue (`cancel_queued`, C15). For Codex the turn
+keeps running and shows in the interface.
+
+**The trust dialog:** in a folder Claude Code was never opened in, its interface asks "Is this a
+project you … trust?" (C14), even though the session already ran there headless (`-p` skips it).
+Tern leaves it to the user: answering it writes to `~/.claude.json`, which isn't Tern's to change
+(BRIEF-agents.md §4). Warp writes `hasTrustDialogAccepted` for its harness runs. (Questions for the
+user.)
+
+Evidence: C14, X16; hand checks on this Mac on 2026-10-10 with the real CLIs in an isolated
+instance: a Claude session started with `--tab` went live after its turn (the trust prompt, then
+Claude's interface; hooks reported a typed prompt and its reply into Tern's transcript); a Codex
+session went live attached (its history showed, and a message sent with `tern agent send` ran in
+the interface); `agent hide` ended an idle Claude interface and closed its pane; `agent open --live`
+brought it back live in a new tab; no process was left over. Tests: `test_live.py`,
+`test_sessions_real.py`.
+
+## 22. Messages to a live session (AG-9)
+
+| Candidate | Cost |
+|---|---|
+| A. Type the message into the interface | A draft in the input box is mixed with it; no delivery receipt (the user's reliability rule). |
+| B. Warp's mailbox: hooks hand queued messages to the model as `additionalContext` (PostToolUse) or keep it going (Stop `block`) | The brief says it loses messages and isn't to be copied; nothing fires while the interface is idle. |
+| C. Wait until the user hands the session back | An orchestrator could wait forever on a worker the user left open in a pane. |
+| D. Claude Code's "channels" (an MCP server pushing messages into a running session) | Needs `--dangerously-load-development-channels` for a plugin not on Anthropic's allowlist (`claude` binary strings), and a confirmation at start. |
+| E. **Codex: through the session's own server (the interface is only a client). Claude: when its interface is idle and the user has typed nothing there since their last prompt, Tern ends the interface, runs the waiting messages headless (the pane shows the read-only view), and goes live again in the same pane.** | A short flip of the pane for Claude. A message waits while the user has text typed in the interface (`agent info`/`ls` say so; status `needs_input`, since it waits on the user). |
+
+**Pick: E.** "Typed nothing" is known exactly: Tern sees every key that reaches the pane; the
+`UserPromptSubmit` hook says the text was sent; Ctrl-C at the prompt clears it. A message is never
+delivered within 3 s of a keystroke. Evidence: the hand check above (a message to a live idle Claude
+went headless, replied "AGAIN" once, and the interface came back), `test_live.py`.
+
+## 23. Steering and exactly-once (AG-10, AG-11)
+
+The user wants agents to "supervise and steer other agents". Phase 2 gave steering up to keep one
+message in the harness at a time.
+
+**Pick: steer by default, keeping every message in exactly one known place.**
+- A message sent while a turn runs is handed over at once (Claude: written to its stdin, injected at
+  its next step; Codex: `turn/steer` naming the turn, falling back to `turn/start` when the turn just
+  ended). Several can be in flight; each is delivered when the agent's own receipt says so (Claude's
+  replay / `command_lifecycle started`; Codex's `userMessage` with our client id), and the turn's
+  reply answers all the messages it took in (`result.user_message_uuids`).
+- `--interrupt` (a redirect) uses `cancel_queued` (C15): Claude gives back what it hadn't taken in,
+  and those messages go back to Tern's queue behind the redirect's text, which goes first. Codex
+  records a steered message even in an interrupted turn (X17), so it counts as delivered.
+- After a crash of the whole product, a Claude message that was written but not confirmed is looked
+  up in Claude's own transcript (its `uuid`, or the `source_uuid` of the `queued_command` attachment,
+  C14): there → delivered (the turn continues with the cut-off note); not there → sent again. This
+  removes phase 2's compromise ("a message written in the instant before a crash counts as
+  delivered") whenever the transcript can be read.
+
+Evidence: the fakes' exactly-once and chaos tests (`test_chaos.py`, `test_sessions.py`), the steering
+hand check (one reply covered both messages), C15, X17.
+
+## 24. "Finished" means settled (AG-12, AG-13, AG-19)
+
+Warp's bug (claude-code-warp #92, warp #16367): every Claude stop counted as done, although Claude
+starts turns by itself when background work it started finishes. Tern's rule: a session is `working`
+while a turn runs, a message waits, or background work of its own that will wake it is pending
+(Claude's `background_tasks_changed` headless, `background_tasks` + `session_crons` on a live Stop);
+`idle` means settled. `agent wait` on the latest message waits for that and prints the newest reply;
+a timeout says what's still running. Codex doesn't start turns by itself (phase 2's X15wake), so its
+background terminals don't hold it. Interrupts in a live interface fire no hook (Warp's comment, and
+none in Claude's hook list): Esc or Ctrl-C typed in the pane followed by two seconds without a hook
+counts as an interrupted turn.
+
+## 25. Observability: Tern's plugins (AG-18)
+
+The user: "use the paths warp illustrates for observability of running agents"; "Warp's plugins stay
+silent outside Warp; Tern's should stay silent outside Tern".
+
+Warp's path: a plugin per agent whose hooks send structured events to the terminal. Tern takes the
+same path, with three changes learnt from Warp's failures:
+- **Transport:** Warp writes OSC 777 to the terminal (Claude's `terminalSequence` output, or for Codex
+  ≥ 0.155, whose hooks run detached, the terminal found through the process tree), and status broke
+  when Claude 2.1.139 and Codex 0.155 changed how hooks reach the terminal. Tern's hook runs Tern's
+  own CLI (`$TERN_CLI agent hook EVENT`), which talks to the app over its socket; it needs no
+  terminal, so detached hooks and headless sessions are the same case.
+- **Silence:** the hook script does nothing unless `TERN_CLI` and `TERN_STATE_DIR` are set (only
+  Tern's terminals and sessions have them), and nothing in headless sessions (`TERN_HEADLESS`; Tern
+  reads the stream there). It prints nothing and never fails the agent.
+- **Done vs paused:** Stop carries `background_tasks`/`session_crons` (§24).
+
+Install: the plugins ship in the app (`Contents/Resources/agent-plugins`, a directory marketplace
+for each agent) and are installed with the agents' own commands at launch of the user's copy
+(never by an isolated test instance), and updated when the app's version differs. Codex runs no
+plugin hook until it's trusted: Tern trusts its own plugin's hooks (and nothing else) through Codex's
+app server (`hooks/list`, `config/batchWrite` of `hooks.state.<key>.trusted_hash`). Sessions Tern
+shows live load the bundled plugin with `--plugin-dir` and set `TERN_PLUGIN_ROOT`, so an installed
+copy stays quiet and nothing reports twice. `tern agent plugins status|install|remove`.
+
+`claude`/`codex` typed by the user in a pane report through the installed plugin and become sessions
+Tern knows (`origin: typed`): in `agent ls`, the sidebar and the Dock badge, and supervisable like any
+other (a message takes the session back as in §22, with the permission mode its hooks reported).
+
+## 26. Removing a session from its pane (AG-8)
+
+| What the pane shows | What the shortcut (⌃⌘W, Window > Remove Session from Pane, `agent hide`) does |
+|---|---|
+| The read-only view | Closes the pane; the session carries on headless. |
+| Codex's interface | Closes the pane (the interface is a client); the server carries the turn on. |
+| Claude's interface, idle | Ends the interface and closes the pane; the session is headless and idle. |
+| Claude's interface, mid-turn | Takes the pane out of the layout without closing its terminal ("parked"); when the session settles, the interface is ended and the terminal closed. `agent open` before then puts the parked terminal back in a tab. |
+
+## 27. The CLI for agents with no instructions (AG-20)
+
+The help an agent sees first (`tern --help`, `tern agent --help`) says in one screen what each command
+does, in a "command, then one line" layout, with a worked example; every command prints what a script
+needs on stdout (the id) and, on stderr, one line saying what happened and what to do next (`agent
+start`: "…; `tern agent wait NAME` waits for its reply"); errors say what to do instead ("no session
+matches X (`tern agent ls` lists them)"). Names are what agents use: `start` takes `--name`, and every
+command takes a name. The live tests in `test_sessions_real.py` give real agents only a task and the
+CLI's name.
+
+## 28. Smaller decisions
+
+- **No desktop notifications** (BRIEF-agents.md §2): phase 2's agent notifications are gone; the
+  sidebar marks and the Dock badge (TernAttention) replace them.
+- **`tern claude [TASK]` / `tern codex [TASK]`** are kept as the short way to start a session for
+  yourself: `agent start … --tab --focus`. They no longer type the agent into a shell (that would
+  launch outside headless control).
+- **Status words:** `stopped` replaces `exited` (a session with no process, resumable by a message);
+  `agent wait` prints `STOPPED`.
+- **The read-only view** keeps phase 2's transcript rendering and approval/question cards (answering
+  an agent's request isn't composing a message), drops the composer, and adds Take Over. Its
+  keyboard focus is the transcript, so shortcuts and copying work there.
+- **Restart:** sessions that were live come back live in their restored pane; read-only panes come
+  back read-only (AG-7).

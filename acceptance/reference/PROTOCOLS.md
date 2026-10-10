@@ -316,3 +316,64 @@ together with `thread/status/changed {"type":"idle"}` (X5c_b). Only `starting` a
   * Codex always emits a commentary agentMessage before `SLEEP`, a single delta per message, and no reasoning items or token-usage notifications.
   * `turn/interrupt` / `set_model` / `set_permission_mode` are accepted, but the latter two only update what `system/init` reports.
   * The queue's periodic 10s `thread/queue/changed` is not emulated.
+
+---------------------------------------------------------------------------------------------------
+
+## Part 4: recordings of 2026-10-10 (Claude Code 2.1.296 haiku, codex-cli 0.162.1), for headless ↔ live
+
+Script: `agent-probes/probe_phase3.py` (logs in `logs/X16*`, `C14*`, `C15*`, `X17*`).
+
+### X16. Codex: one private app server, Tern's client and Codex's own interface together
+* `codex app-server --listen unix://PATH` (exactly one `--listen` is accepted) creates PATH as a
+  **symlink** to a socket in `/private/tmp/codex-daemon-<uid>/<hash>` and speaks **WebSocket** on it
+  (`HTTP/1.1 101 Switching Protocols`, header `x-codex-websocket-max-unfragmented-message-bytes`), one
+  JSON-RPC message per text frame. `codex app-server proxy --sock` does *not* speak it (raw bytes; broken
+  pipe). A second server on the same PATH fails at once: `app-server control socket is already in use`.
+* Client A (WebSocket) started a thread and a turn; then `codex resume THREAD --remote unix://PATH` (the
+  TUI) attached and **showed the history**. A's next `turn/start` appeared live in the TUI; a prompt typed
+  in the TUI reached A as `turn/started` + a `userMessage` item (with a `clientId` of the TUI's) +
+  `agentMessage` + `turn/completed`; A's `turn/steer` into the TUI's turn worked (the TUI showed it); after
+  the TUI exited, A kept using the thread.
+
+### C14. Claude: hooks, and headless → live → headless
+* In `-p` mode Claude runs plugin hooks (`--plugin-dir`): SessionStart (`source: startup`),
+  UserPromptSubmit (also for a message injected mid-turn), PreToolUse, PostToolUse, Stop, SessionEnd
+  (`reason: other` at stdin EOF). Hooks have no tty; their `$PPID` is the claude process.
+* Stop input keys: `session_id, transcript_path, cwd, prompt_id, permission_mode, effort,
+  hook_event_name, stop_hook_active, last_assistant_message, background_tasks, session_crons`.
+* `claude --resume ID` (the TUI) in a folder never trusted shows **"Quick safety check … ❯ No, exit /
+  Yes, I trust this folder"** first (default No); `-p` skips it. Trust is per project folder, not
+  inherited from a trusted parent that isn't the project root.
+* After the TUI is ended with SIGTERM while idle, `claude -p --resume ID` continues the conversation.
+* Transcript (`~/.claude/projects/<cwd with / and . as ->/<id>.jsonl`): a message that starts a turn is a
+  `user` entry whose `uuid` is the stream-json message's `uuid`; a message injected mid-turn is a
+  `queue-operation enqueue`, then an `attachment` `{"type":"queued_command","prompt",…,"source_uuid": <its
+  uuid>}`, then `queue-operation remove`. So after a crash, whether a message reached the conversation is
+  answered by the transcript.
+
+### C15. Claude: an interrupt that gives back what was queued
+* `system/init.capabilities` lists `interrupt_receipt_v1`, `interrupt_cancel_queued_v1`,
+  `interrupt_send_now_v1`, `msg_lifecycle_v1`, ….
+* A message written during a long Bash call (lifecycle `queued`), then
+  `{"subtype":"interrupt","cancel_queued":true}` → `{"still_queued":[],"cancelled":["<its uuid>"]}`; the
+  message never runs. (A plain interrupt keeps C2's behaviour: `still_queued` lists it and it runs next.)
+
+### X17. Codex: a steered message, then an interrupt before the next tool step
+* `turn/steer` during `sleep 12` → `{"turnId": …}`; `turn/interrupt` a second later → the turn completes
+  `interrupted`, and **its items include the steered `userMessage` with our clientId**; the next turn's
+  model sees it (it's in `thread/read`). So a steered message is delivered (recorded) even when the turn is
+  interrupted before acting on it: count it delivered, never send it again.
+
+### Plugins (2026-10-10)
+* Claude: `claude plugin marketplace add <dir>` (a directory marketplace: `.claude-plugin/marketplace.json`)
+  and `claude plugin install tern@tern` write `settings.json` (`extraKnownMarketplaces`,
+  `enabledPlugins`) and `plugins/installed_plugins.json` (`plugins["tern@tern"][0].version`) under
+  `$CLAUDE_CONFIG_DIR` (default `~/.claude`); an update is `plugin marketplace update tern` +
+  `plugin update tern@tern` ("restart to apply").
+* Codex: `codex plugin marketplace add <dir>` (`.agents/plugins/marketplace.json`) and
+  `codex plugin add tern@tern` write `config.toml` (`[marketplaces.tern]`, `[plugins."tern@tern"]`) and
+  copy to `plugins/cache/tern/tern/<version>`. **Plugin hooks don't run until trusted**: app server
+  `hooks/list {cwds}` lists them (`key` like `tern@tern:hooks/hooks.json:stop:0:0`, `currentHash`,
+  `trustStatus: untrusted`, `pluginId`); `config/batchWrite` with
+  `{"keyPath":"hooks.state","mergeStrategy":"upsert","value":{<key>:{"trusted_hash":<hash>}}}` makes them
+  `trusted` (`[hooks.state."<key>"] trusted_hash = "sha256:…"` in config.toml).

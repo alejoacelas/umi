@@ -23,21 +23,21 @@ doubt, they win.
 This is what the requirements serve, and what decides between them when they compete.
 
 - **The orchestrator.** The user keeps an orchestrator agent running all day, usually Claude Code
-  and sometimes Codex, in one of the app's panes or as a managed session.
+  and sometimes Codex, in one of the app's panes (live) or as a headless session.
   - It runs in full-access (bypass permissions) mode.
   - Otherwise it uses its harness's full feature set: the user's skills (notably
     `supervise-workers`), MCP servers, subagents, background tasks, plan mode and questions to the
     user.
 - **The workers.** The orchestrator starts Claude Code and Codex workers through `<cli>`, usually with
-  full access, in a folder or a fresh git worktree, on a chosen model and effort. Workers also use
-  their harness's full feature set.
-  - The `supervise-workers` loop: write a task file, start a worker pointing at it, wait for its turn
-    to end, read the report, check the evidence, follow up.
-  - Follow-ups come seconds or hours later. Sometimes the orchestrator interrupts or stops a worker,
-    starts more, or has workers start their own workers.
+  full access, in a folder or a fresh git worktree, on a chosen model and effort. Workers run
+  headless, and use their harness's full feature set.
+  - The `supervise-workers` loop: write a task file, start a worker pointing at it, wait for it to
+    finish, read the report, check the evidence, follow up or steer.
+  - Follow-ups come seconds or hours later. Sometimes the orchestrator steers, interrupts or stops a
+    worker, starts more, or has workers start their own workers.
 - **The user.** The user watches all of this in the app. They arrange panes, tabs and windows
-  Warp-style, move live terminals and workers around, read files in the editor, and now and then step
-  in: type a follow-up, answer a question, interrupt.
+  Warp-style, move live terminals and sessions around, read files in the editor, and now and then step
+  in: locate a session in a pane, take it over in the agent's own interface, hand it back.
 - **Long runs.** The app, the orchestrator and the workers run for days. Over that time the machine
   sleeps, the app quits or crashes, and new builds get installed.
 
@@ -50,60 +50,48 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-9, M-1 to M-6, T-1 to T-7, S-1 to S-6, E-1 to E-9,
-AP-2, AP-3, AP-9.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-8, E-1 to E-10.
 
-### Core: the orchestration loop
-These outcomes must hold every time, with both harnesses. How they are achieved is open. If something
-in the third tier makes any of these less reliable, the third-tier item gives way.
-- **Control:** start, message ids, follow-ups at any time, exactly-once delivery, wait/read, truthful
-  status, interrupt, redirect, stop, list, resume.
-- **Resumption:** a message sent to a session in any state gets it working again, with everything it
-  had; turns cut off by a quit, crash or update continue by themselves.
-- **Composition:** orchestration from inside agents, watch/notify, and workers' own reports.
-- **Fidelity:** a worker is the agent the user would get in their own terminal, with everything it
-  loads and the environment it gets, and it knows its situation; the user's own agents are left
-  unaffected.
-- **No hidden states:** turns an agent starts by itself are tracked, and what a worker failed to
-  load is shown.
-- **Needs input:** a session that needs input is never silently stuck.
-- **Watching and stepping in:** the user can see each worker live in a pane, and step in there.
-- **Robustness:** crashes, restarts, upgrades, isolation, long runs.
+### Core: agent sessions
+These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
+order: first, launching sessions that run reliably and that the user can interact with in the pane,
+tab or window they choose; second, agents supervising and steering other agents.
+- **Launch:** headless start, sessions the user will use going live in their chosen place, fidelity
+  to the agent the user would get in their own terminal.
+- **Headless and live:** a read-only view only where the user asks for one, taking over at once,
+  handing back, removing a session from its pane without stopping it, messages that reach live
+  sessions.
+- **Supervision:** message ids, steering, exactly-once delivery, wait/read, truthful status,
+  interrupt, stop, list, resume, watch, reports, orchestration from inside agents.
+- **Observability:** the agents' own hooks report their state, Warp-style, for sessions the product
+  started and agents the user typed.
+- **A CLI agents can use with no instructions.**
+- **Robustness:** crashes, restarts, upgrades, isolation, long runs, no orphans.
 
-Requirements: MA-1 to MA-13, MA-15, MA-17 to MA-29, IA-1, IA-3, IA-4, AP-1, AP-4, AP-5, R-1 to
-R-10.
+Requirements: AG-1 to AG-23, R-3 to R-7.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
 the tiers above. Record every such compromise in `COMPROMISES.md`: what, why, and which requirement it
-protects. A documented compromise turns its failing tests into known, accepted failures.
-- Approval flows for sessions that don't have full access, beyond surfacing them (MA-14).
-- MCP elicitation forms and links beyond surfacing them (MA-16).
-- `--permission-mode` and `--profile` (part of MA-1).
-- Tracking interactive agents in the sidebar and `ls` (IA-2).
-- How a worker's pane presents it, beyond AP-1 (AP-10).
-- Composer drafts (AP-6), desktop notifications (AP-7), copy-reply (AP-8), agent panes reopening by
-  themselves after a restart (AP-11).
-- Steering: showing a follow-up to the agent while its turn is still running, rather than when the
-  turn ends (MA-3 only asks for the latter). If offered, it must not weaken MA-4.
-
-Requirements: MA-14, MA-16, IA-2, AP-6, AP-7, AP-8, AP-10, AP-11.
+protects.
+- How the read-only view presents a session, beyond AG-5.
+- Approval flows for sessions that don't have full access, beyond surfacing and answering them
+  (part of AG-17).
 
 ### Not requirements
 These are open design decisions, not requirements. Make them on the merits and validate them with the
 tests:
-- whether "interactive" and "managed" agents are different kinds of session at all;
-- whether a worker runs inside a terminal;
-- how a worker's pane presents it;
+- how the read-only view presents a session;
 - what process owns agents and sessions, and how the CLI finds the app;
 - whether agents keep running while the app isn't. The user's call: sessions may stop when the app
-  quits, as long as MA-24 and R-10 hold. They would rather the effort go into making resumption
+  quits, as long as AG-10 and AG-22 hold. They would rather the effort go into making resumption
   reliable than into keeping agents alive across app restarts.
 
-`REQUESTS.md`'s "two launch modes" section was the user's first guess at simplifying the problem by
-giving up something non-core. The user later said it isn't meant to be baked in (see the end of
-`REQUESTS.md`). Its reliability rules still stand: control rests on identifiers and events the
-harness itself reports, not on reading or typing into a screen.
+The user's instructions for agent sessions (BRIEF-agents.md §1, "Agent sessions") replace
+`REQUESTS.md`'s "two launch modes": the product always launches and controls sessions headless;
+sessions move from headless to live (the agent's own interface in a pane) and back. Control still
+rests on identifiers and events the harness itself reports, never on reading or typing into a
+screen; the one thing typed into a pane is the command that starts the agent's own interface there.
 
 ## Delivery phases
 
@@ -120,11 +108,14 @@ phase.
 Tests that need managed agents carry the `harness` marker. `--phase 1` leaves them out, and the
 traceability report marks requirements that only they cover as deferred.
 
-Phase 2 requirements: MA-1 to MA-29, AP-1 to AP-11, R-1, R-2, R-8 to R-10.
+Phase 2 requirements (since replaced by AG): MA-1 to MA-29, AP-1 to AP-11, R-1, R-2, R-8 to R-10.
+
+A third run redid agent sessions (AG, replacing phase 2's MA, AP, IA, R-1, R-2 and R-8 to R-10)
+and made the app changes the user decided after phase 2.
 
 Phase 1 must not close doors on phase 2. Its decisions about panes, the CLI, control endpoints,
-stored state and identity leave room for sessions shown in panes (AP-2), agent commands in the CLI,
-and agents reaching the app from their own processes (MA-18).
+stored state and identity leave room for sessions shown in panes, agent commands in the CLI,
+and agents reaching the app from their own processes.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -286,228 +277,147 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **E-9 [A]** `<cli> edit FILE` opens a file in the calling pane's tab, or a given tab. An explicitly
   named pane or tab that doesn't exist is an error, never a fallback to another tab.
 
-## IA. Agents launched as typed
+## AG. Agent sessions
 
-Plain `claude` / `codex` in a terminal, launched for the user exactly as if typed.
+A **session** is one Claude Code or Codex conversation the product knows. It runs in one of two ways:
 
-- **IA-1 [A+W]** `<cli> claude [ARGS…]` / `<cli> codex [ARGS…]` open a new tab (or a split, or a
-  window) whose shell runs `claude ARGS…` exactly as if the user had typed it into a fresh terminal.
-  That means the same shell, environment, config, MCP servers and shared daemons. Nothing the product
-  does afterwards changes how that session behaves.
-- **IA-2 [A]** When the agent exits, the pane is an ordinary shell again. The product notes that the
-  agent exited (shown in the sidebar and `ls`); other programs run later in that pane are not
-  mistaken for the agent.
-- **IA-3 [A]** Placement options (tab, split with a direction, new window, don't-focus) work and never
-  swallow the agent's own arguments.
-- **IA-4 [A]** Launching an interactive agent never changes how the user's own `claude`/`codex`
-  behave elsewhere.
-
-## MA. Managed agents (the product is the agent's control plane)
-
-A managed session is a Claude Code or Codex session that the product controls. It exposes full control
-through the CLI, so agents can orchestrate other agents, and shows the session in the app.
-
-### Lifecycle and messages
-- **MA-1 [A]** `agent start claude|codex [PROMPT]` starts a session and prints its id. It takes:
-  - a name, cwd, worktree, model and effort;
-  - a permission mode, or full access with no approvals;
-  - extra harness arguments;
-  - environment variables.
-- **MA-2 [A]** Every message sent gets an id, printed by `agent send`. Message ids and session ids
-  are the identifiers the harness itself reports or echoes back, not ones derived from text or timing.
-  The harness's own session or thread id also selects the session.
-- **MA-3 [A]** Follow-ups can be sent at any time:
-  - while the agent is busy: accepted at once and delivered when the agent can take it, in order;
-  - right after it finishes;
-  - after its process exited, was stopped, crashed, or after the app restarted: the same
-    conversation is resumed, with its context.
-
-  A follow-up sent while the session is stopping is not lost.
-- **MA-4 [A]** Each message is delivered to the agent exactly once, never zero times and never
-  twice, under any timing. Messages the agent never received end in a failure state the caller can
-  see, never "pending forever".
-- **MA-5 [A]** `agent wait SESSION [--message ID] [--timeout S]` waits for the turn that answers the
-  latest (or given) message and prints a status, then the reply.
-
-  | Status | Exit |
-  |---|---|
-  | `DONE` | 0 |
-  | `NEEDS_INPUT` (pending approvals and questions listed) | 2 |
-  | `INTERRUPTED`, `FAILED`, `EXITED`, `ERROR`, `CANCELLED` | 3 |
-  | `TIMEOUT` | 124 |
-
-  `wait` on a session with nothing pending returns its current state immediately. An old message's
-  wait returns that message's own reply.
-- **MA-6 [A]** `agent read` prints the last reply, or a given message's reply, or the transcript
-  (messages, tool activity, notices) in order.
-- **MA-7 [A]** Status is always one of `starting`, `working`, `idle`, `needs_input`, `exited`, `error`
-  and reflects reality: not "working" while the agent is idle, and not "idle" while a message is
-  still unanswered.
-- **MA-8 [A]** `agent interrupt` stops the current turn; the session stays alive. Messages already
-  queued behind it still get delivered. A message sent right after an interrupt needs no waiting in
-  between: it's delivered once the interrupted turn has ended.
-- **MA-9 [A]** `agent stop` ends the session's work completely: its harness process and every process
-  it started, including detached ones and ones that ignore polite termination. Nothing is left
-  running. The conversation stays resumable.
-- **MA-10 [A]** If the harness crashes or exits on its own, the session shows `error` (or `exited`)
-  with the reason, everything it started is cleaned up, and a follow-up resumes the conversation.
-- **MA-11 [A]** `agent ls` lists sessions, `agent info` shows one, `agent rename` renames, and
-  `agent rm` removes. Names are unique among sessions: starting a session with the name of a running
-  one fails, and a finished one gives up its name. Removing a running session requires force and
-  stops it fully, leaving no zombie or orphan process.
-- **MA-12 [A]** Inside a managed agent, `self` names its own session, and sessions it starts record it
-  as their parent.
-- **MA-13 [A]** Text can come from arguments, from stdin with `-`, or after `--` (text that starts
-  with dashes). A command never waits on stdin unless asked to with `-`. Placement options never
-  swallow the prompt.
-
-### Approvals and questions
-- **MA-14 [A]** Without full access, actions the agent needs approved show up as pending requests
-  (status `needs_input`) that say exactly what would be allowed: the command, the file, or the
-  concrete paths and network access. Each can be:
-  - allowed once;
-  - allowed always: this exact kind of action, for the session only;
-  - denied, optionally with a message.
-
-  The agent then continues.
-- **MA-15 [A]** Questions from the agent, including several questions in one request, show every
-  question and its options and take a separate answer for each. A single answer is never silently
-  copied to several questions.
-- **MA-16 [A]** MCP servers' requests for input show their link (open it, then confirm) or their form
-  fields. A plain answer fills a single-field form.
-- **MA-17 [A]** Requests that the agent withdraws (for example on interrupt) disappear from the
-  pending list.
-
-### Orchestration
-- **MA-18 [A]** Agents can orchestrate agents through `<cli>`: a session can start another session,
-  of either kind, send it messages, wait for it and read it. The CLI is on the agent's PATH and talks
-  to the right app instance.
-- **MA-19 [A]** `agent watch SESSION --notify OTHER`: when SESSION's turn ends (or it needs input or
-  exits), OTHER receives a follow-up message saying so. A supervisor can sleep until its workers
-  report back, without anything typing into a terminal.
-- **MA-20 [A]** Managed agents run with the environment a new terminal would give them (the user's
-  login shell environment). They never inherit markers of the process that launched them, such as
-  another agent's session variables.
-- **MA-21 [A]** Managed agents use the user's own logins and subscriptions, and never the user's
-  shared Codex daemon. Running a managed Codex session doesn't change how the user's own `codex`
-  behaves. The one exception is a change Codex makes itself whenever it runs: with a writable sandbox
-  in a git project, it marks that project as trusted in the user's config, exactly as it does when
-  run in a terminal.
-
-### Real harness fidelity
-- **MA-22 [A]** All of the above holds with the real Claude Code and Codex CLIs, as tested with cheap
-  models, and with the fake harnesses under any legal event ordering and timing (see `fakes/README.md`).
-- **MA-23 [A]** A managed worker has the features it would have if the user typed the same harness
-  command in their own terminal, in that folder:
-  - the user's and the project's instructions (`CLAUDE.md`, `AGENTS.md`);
-  - skills, MCP servers (the user's and the project's), plugins, hooks and subagents;
-  - slash commands that make sense without a UI;
-  - background tasks, and long conversations that compact.
-
-  This holds in a folder or worktree the user has never opened before, and after every resume
-  (MA-24).
-
-### Resumption, reports and awareness
-- **MA-24 [A]** Send and it runs. A message sent to a session in any state gets the agent working on
-  it as soon as the agent can take it. "Any state" means working, idle, stopped, crashed, or after
-  the app quit, crashed or was updated, or the machine restarted. The agent works on it:
-  - in the same conversation, with its context;
-  - with the folder, model, effort, access level, environment and harness arguments the session was
-    started with;
-  - within seconds, when nothing else is queued.
-
-  If that's impossible, for example because the folder is gone or the harness no longer has the
-  conversation, the send fails at once with the reason. It never silently starts a fresh
+- **Headless:** the product runs the agent without its interface (Claude Code's own headless mode,
+  Codex's own app server) and controls it from events and ids the agent reports.
+- **Live:** the agent's own interface (Claude Code's or Codex's) runs in a pane, on the same
   conversation.
-- **MA-25 [A]** Redirect. `agent send SESSION --interrupt TEXT` interrupts the turn running when the
-  command is given (if any) and makes TEXT the next thing the agent sees, ahead of messages already
-  queued. With `--drop-queued`, messages queued before it are dropped and end `CANCELLED`.
-  - The interrupt only ever stops the turn that was running when the command was given: never the
-    turn that carries TEXT, and never a later one.
-  - If that turn doesn't stop within 30 seconds (a hung command or harness), the session is stopped
-    and resumed, and TEXT is still delivered.
-- **MA-26 [A]** Worker reports. Inside a session, `agent report done|blocked|failed [SUMMARY…]`
-  records the worker's own verdict on its task.
-  - `agent info` and `agent ls` show the latest report (verdict, summary, time) next to what the
-    harness says: its status, and how many background tasks are still running when the harness
-    reports that.
-  - `agent wait SESSION --report` waits for a report made after the latest message to the session
-    (or after the given one). It exits 0 for done, 2 for blocked, 3 for failed, and 124 on timeout,
-    and its output includes what the harness says.
-  - The help for `agent wait` and `agent report` says, in a sentence or two, that an idle harness
-    means nothing is running right now, not that the task is done, and that a worker can resume by
-    itself (MA-28).
-- **MA-27 [A]** Workers know their situation. Without being told by whoever started it, a managed
-  worker can find out:
-  - its session name and id, and its parent session;
-  - its folder or worktree;
-  - that it is a managed session that no person may be watching;
-  - how to report (MA-26) and how to reach other sessions through `<cli>`.
-- **MA-28 [A]** Turns the agent starts itself. A harness can start a turn without a message, for
-  example when a background command finishes or a scheduled check fires (Claude Code does this).
-  - The session shows `working` during that turn and `idle` after it.
-  - The turn and its reply appear in the transcript as their own turn. They are never taken as the
-    turn or reply of a message.
-  - Messages sent meanwhile are delivered after it, in order, exactly once.
-- **MA-29 [A]** What a worker loaded. `agent info` shows what the harness reported when the session
-  last started or resumed, for example its model, its MCP servers and their state, its skills,
-  plugins and subagents. It flags anything that failed or needs the user, such as an MCP server that
-  needs authentication. `agent wait` and `agent start --wait` print a one-line warning when something
-  is flagged.
 
-## AP. Managed agents in the app
+The product always launches and controls sessions headless. A session moves from headless to live
+when the user takes it over in a pane, and back to headless when its interface closes. Wherever it
+runs, it is the same session: same id, conversation, folder and settings.
 
-- **AP-1 [A+W]** A managed session is shown in a pane, live.
-  - The user sees what was said on both sides, what the agent is doing (tool activity), its status,
-    and anything it is waiting on.
-  - Typing text in the pane and pressing Enter sends it as a follow-up (MA-3). Esc interrupts the
-    turn (MA-8).
-  - Pending approvals and questions can be answered from the pane.
-- **AP-2 [A]** That pane behaves like any other pane. You can split next to it, move it to another
-  tab or window, swap, zoom, close and undo the close, and drag it. A shell in the session's folder
-  is available from the pane.
-- **AP-3 [A]** `agent start` runs a session in the background by default: it shows nothing until
-  asked. With a placement, `agent start` and `agent open` show a session as a new tab (`agent open`'s
-  default), a split next to a pane, or a new window, with or without focus. Showing a session that is
-  already open focuses its pane instead of opening another. A non-focusing open follows L-8.
-- **AP-4 [A]** Closing the pane leaves the session running. It can be shown again later from the CLI
-  or the command palette.
-- **AP-5 [A+W]** What the pane shows is complete and in order, including after the app reconnects to
-  sessions that progressed while it wasn't looking.
-- **AP-6 [W]** Text typed in the pane but not yet sent is not lost:
-  - when the message can't be sent: it's kept;
-  - when switching the pane to its terminal and back;
-  - when the pane moves.
-- **AP-7 [W]** When an agent needs the user or finishes while the user isn't looking at it, a desktop
-  notification appears. Clicking it shows the agent.
-- **AP-8 [W]** Copy-reply actions copy the full reply, not a truncated one.
-- **AP-9 [A]** There is no in-app "new agent" form. Sessions start from the CLI.
-- **AP-10 [W]** Presentation:
-  - assistant text is rendered as Markdown, with code blocks set apart;
-  - tool calls can be expanded to their output;
-  - approvals and questions appear as actionable cards;
-  - Shift+Enter adds a newline;
-  - queued messages are visible.
-- **AP-11 [A]** Agent panes come back after the app restarts.
+### Launching
+- **AG-1 [A]** `agent start claude|codex PROMPT` starts a session headless and prints its id. It
+  takes a name, a folder or a git worktree, a model and effort, full access (no approvals),
+  environment variables and extra arguments for the agent. Without a placement nothing appears on
+  screen. Text comes from arguments, from stdin with `-`, or after `--` where it isn't harness
+  arguments; no command waits on stdin unless asked to with `-`.
+- **AG-2 [A]** Sessions the user will interact with: with a placement (`--tab`, `--split [DIR]`,
+  `--window`, `--pane P`), the session runs headless until its first turn finishes, and is then
+  resumed live in that place, on the same conversation. Meanwhile the place shows the read-only
+  view (AG-5). The user's focus doesn't move unless asked (`--focus`), as in L-8.
+- **AG-3 [A]** Launches are reliable. A session's first turn starts within seconds. A session that
+  can't start (the agent isn't installed, the folder is gone, the conversation no longer exists)
+  fails at once, with the reason, in `agent start`/`send`/`wait`/`info`; it never silently starts a
+  fresh conversation in its place.
+- **AG-4 [A]** Fidelity. A session, headless or live, is the agent the user would get by typing the
+  same command in their own terminal in that folder: their and the project's instructions
+  (`CLAUDE.md`, `AGENTS.md`), skills, MCP servers, plugins, hooks and subagents; the login shell's
+  environment, never the launching process's agent variables; their own logins. Running sessions
+  never changes the user's own `claude`/`codex` configuration, except installing Tern's plugins
+  (AG-18).
+
+### Headless and live
+- **AG-5 [A+W]** Read-only view. A headless session appears in a pane only when the user asks to
+  locate it (`agent open`, the Window menu, the palette, the "next session that needs you"
+  shortcut). The pane shows the session read-only: what was said on both sides, tool activity, its
+  status and anything it waits on, and a **Take Over** button. Showing a session that is already
+  shown focuses its pane.
+- **AG-6 [A]** Take over. The button (or `agent open --live`) immediately replaces the read-only view
+  with the agent's own interface on the same conversation, in that pane. A turn running at that
+  moment continues in the live interface (Codex) or is interrupted (Claude Code, which can't share a
+  running turn); either way nothing waits for the turn to end.
+- **AG-7 [A]** Back to headless. When the live interface closes (the user quits it), the session is
+  headless again with its whole conversation, and the pane shows the read-only view. A session cut
+  off by a quit of the app comes back in the same place after a restart: live panes live, read-only
+  panes read-only.
+- **AG-8 [A]** Remove from a pane. A keyboard shortcut (and `agent hide`) removes the session from
+  its pane without stopping it: the pane goes away (the user doesn't see it) and the session keeps
+  running until it finishes. A live interface keeps running out of sight until its turn and any
+  background work end; then the session is headless and idle.
+- **AG-9 [A]** Messages reach live sessions. A message sent to a live session is delivered exactly
+  once:
+  - Codex: at once, through the conversation the live interface shows (steering a running turn, or
+    starting one).
+  - Claude Code: when its interface is idle and the user has nothing typed in it. The session runs
+    the message headless (the pane shows the read-only view meanwhile) and then returns live to the
+    same pane. Until then the message waits, and `agent info`/`ls` say why.
+
+### Supervising and steering
+- **AG-10 [A]** `agent send SESSION TEXT` prints a message id at once. While the session works, the
+  agent sees TEXT during its current turn (steering, at its next step). Otherwise TEXT starts a turn.
+  A session that is stopped, crashed, or from before an app restart or update resumes its
+  conversation with the folder, model, effort, access, environment and arguments it was started
+  with. `--interrupt` stops the running turn first, and TEXT is the next thing the agent sees.
+  Message and session ids are the ones the agent itself reports or echoes; the agent's own session or
+  thread id also selects the session.
+- **AG-11 [A]** Exactly once. Every message is delivered to the agent exactly once, under any timing,
+  including steering, interrupts, crashes and restarts. A message that can't be delivered ends in a
+  failure state the caller sees; nothing is pending forever.
+- **AG-12 [A]** `agent wait SESSION [--message ID] [--timeout S]` waits until the turn answering the
+  latest (or given) message has ended and the session has settled (no background work of its own
+  still pending), or until it needs input, and prints a status, then the reply. `DONE` 0;
+  `NEEDS_INPUT` 2 (with what it waits on); `INTERRUPTED`, `FAILED`, `STOPPED`, `ERROR`,
+  `CANCELLED` 3; `TIMEOUT` 124 (with what is still running). An old message's wait returns that
+  message's own reply. `--report` waits for the worker's own report instead (AG-16).
+- **AG-13 [A]** Truthful status: `starting`, `working`, `idle`, `needs_input`, `stopped` or `error`,
+  for headless and live sessions alike. A session isn't `idle` while a turn runs, a message waits,
+  or background work it started (that will wake it) is pending; it isn't `working` when it's done.
+  Turns the agent starts by itself (a background task finished, a scheduled wake-up) show as
+  `working`, appear in the transcript as their own turns, and are never taken as the reply to a
+  message.
+- **AG-14 [A]** `agent read` prints the last reply, a given message's reply, or the transcript in
+  order. `agent ls` and `agent info` show each session's status and activity, where it is
+  (`background`, a pane's read-only view, or live in a pane), its parent, its latest report, what it
+  loaded when it last started (model, MCP servers and their state, flags for anything that failed or
+  needs the user), and messages waiting.
+- **AG-15 [A]** `agent interrupt` stops the running turn and keeps the session. `agent stop` ends the
+  session's work completely: its agent process and everything it started, including detached
+  processes and ones that ignore SIGTERM; a live interface closes; the conversation stays resumable.
+  `agent rm` forgets a session (`--force` stops it first). `agent rename` renames; names are unique
+  among running sessions.
+- **AG-16 [A]** Agents supervise agents. Inside any session (headless or live), `<cli>` is on PATH
+  and reaches the right instance; `self` names the session; sessions it starts record it as their
+  parent (`agent ls --parent self`). `agent watch SESSION --notify OTHER` sends OTHER a message when
+  SESSION finishes, needs input or stops. `agent report done|blocked|failed SUMMARY` records a
+  worker's verdict, shown in `info`/`ls` and awaited by `agent wait --report` (done 0, blocked 2,
+  failed 3). A session knows its situation without being told: its name and id, parent, folder, that
+  nobody may be watching, and how to report and reach other sessions.
+- **AG-17 [A]** Approvals and questions. Without full access, what the agent asks for (approvals,
+  questions, several questions in one request) shows as pending requests that say exactly what
+  would be allowed, answerable with `agent approve`/`deny`/`answer` and from the read-only view.
+  Requests the agent withdraws disappear. In a live session the agent's own interface asks.
+
+### Observability
+- **AG-18 [A]** The product observes agents the way Warp does: Tern's plugins for Claude Code and
+  Codex report each session's state from the agents' own hooks to the app. That covers sessions the
+  product started, while live, and `claude`/`codex` the user starts by typing them in a pane, which
+  then become sessions the product knows. The plugins are installed into the user's Claude Code and
+  Codex and kept up to date (`agent plugins` shows their state). Outside the product (another
+  terminal, or no app running) they're silent: no output and no effect.
+- **AG-19 [A]** Live status is truthful through agent updates: a turn's end with background work
+  still pending isn't "finished", an interrupted turn doesn't stay "working", and a session waiting
+  on a permission prompt or a question is `needs_input`.
+
+### CLI for agents
+- **AG-20 [A]** An agent with no instructions about the product can use it: given only a task that
+  needs other agents (and that `<cli>` exists), real Claude Code and Codex agents start sessions,
+  wait for them, read their replies, steer them and stop them through `<cli>`, guided only by its
+  help and its messages. The help is short and plain; errors say what to do instead.
+
+### Robustness
+- **AG-21 [A]** No orphans. Every process started for a session belongs to a session listed as
+  running, or is gone: after `agent stop`, `agent rm --force`, a crash of the agent, a quit of the
+  app, and after every process of the product is killed and the app started again. No zombies
+  accumulate.
+- **AG-22 [A]** Crash and restart. After the app quits, crashes (`kill -9` of every product process)
+  or is updated, all sessions are listed; each resumes on its next message; no message is delivered
+  twice or lost; transcripts keep every entry once. A turn cut off by the quit, crash or update
+  continues by itself once the app runs again, with a short note saying when and why it was cut off
+  and that what it had running was stopped; `agent wait` on the cut-off message returns the
+  continued turn's reply. A normal quit or an update never cuts turns off silently: it interrupts
+  them cleanly, and an update installs while turns run only if the user agrees.
+- **AG-23 [A]** Long runs. Many sessions, long transcripts, large tool outputs and days of uptime don't
+  make the CLI or the app slow. Disk use grows only with what the user keeps.
 
 ## R. Robustness
 
-- **R-1 [A]** No orphans. Every process started for a session either belongs to a session that
-  `agent ls` lists as live (and that `agent stop` can stop), or is gone. This includes detached
-  processes and ones that ignore SIGTERM, and no zombie processes accumulate. In particular:
-  - after `agent stop`, `agent rm --force` or a harness crash, nothing started for that session keeps
-    running;
-  - when the app quits, sessions either keep running as listed live sessions or stop completely;
-  - after every process of the product is killed, nothing started before keeps running once the app
-    is started again.
-- **R-2 [A]** Crash recovery. If every process of the product is killed (`kill -9`) and the app is
-  started again:
-  - all sessions are listed;
-  - each resumes on its next message;
-  - no session reuses or skips transcript entries;
-  - no message is delivered twice.
-- **R-3 [A]** Restart. After the app quits and restarts, sessions resume as in MA-3, and pins and tab
-  names come back. Agent panes coming back is AP-11.
+- **R-3 [A]** Restart. After the app quits and restarts, pins and tab names come back. Sessions come
+  back as AG-22 says, and their panes as AG-7 says.
 - **R-4 [A]** Paths. Everything works with a state directory or working directory containing spaces,
   and with a long state-directory path (Unix socket paths are limited to 104 bytes). The product
   builds from a checkout path containing spaces.
@@ -518,18 +428,3 @@ through the CLI, so agents can orchestrate other agents, and shows the session i
 - **R-7 [A]** Stale environments. A CLI run with stale pane, socket or agent variables (for example
   from a terminal that outlived its app) either reaches the right instance or fails clearly. It
   never acts on the wrong one.
-- **R-8 [A]** Upgrades. Installing a new build while sessions from the old build exist loses no
-  sessions. They resume with the new build.
-- **R-9 [A]** Long runs. Many sessions, long transcripts, large tool outputs and days of uptime don't
-  make the CLI or the app slow or unresponsive. The product's disk usage grows only with what the user
-  keeps.
-- **R-10 [A]** Cut-off turns continue. If a turn is running when the app quits, crashes or is
-  updated, or the machine restarts, that session continues by itself once the app is running again.
-  - It receives a short note saying when its turn was cut off, that anything it had running
-    (commands, background tasks, subagents) was stopped, and that it should check the state of its
-    work before carrying on.
-  - `agent wait` on the cut-off message returns the reply of the continued turn.
-  - The cut-off message is not delivered again (MA-4).
-
-  A normal quit or an update never cuts turns off silently. It either waits until they end or
-  interrupts them cleanly. An update installs while turns are running only if the user agrees.

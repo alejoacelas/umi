@@ -63,3 +63,20 @@ license in the user's name.
 | **The update notification can't be answered from Notification Center**; it says nothing downloads until the user says so and clicking it shows the sidebar's question. Isolated (test) instances post none. | The question lives in one place that stays until answered (the sidebar notice, plus `tern update`); notification buttons would be a second, less reliable place. | I-4 ("stays available until answered", "never takes focus"). |
 | **While a managed session needs the user, the Dock badge counts those sessions** instead of Ghostty's bell count (`bell-features = attention`). | Background sessions have no tab to show "needs input"; the badge is the one place visible without opening anything. Bells show again when nothing needs the user. | Core: "a session that needs input is never silently stuck"; AP-3. |
 | **Background sessions are found through the Window menu, the command palette, ⌃⌘J, notifications, the Dock badge and the CLI, not the sidebar.** | S-2 forbids an agents section in the sidebar, and the user asked for workers out of the sidebar. | S-2, AP-3. |
+
+===================================================================================================
+
+# Compromises (agent sessions, redone)
+
+Phase 2's agent compromises above no longer apply where this part differs (BRIEF-agents.md: "None of
+it is guidance"). What this design gives up:
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **Taking over a running Claude turn interrupts it.** The user's "taking over is immediate" can't continue a Claude turn in its interface: Claude Code can't share a running turn between two processes. Codex's turn carries on in the interface. | Two processes on one Claude conversation would fork it; waiting for the turn would make taking over not immediate. | AG-6 ("immediate"), AG-11 (one process per conversation). |
+| **A message to a live Claude session waits while the user has text typed in its interface**, and it's delivered by briefly taking the session back (the pane shows the read-only view while it runs headless, then the interface returns). | Tern never types into an agent's interface, and Warp's hook mailbox loses messages; ending the interface while the user has a draft would lose the draft. | AG-9, AG-11, the user's own typing. |
+| **Claude's "trust this folder" prompt appears when a session goes live in a folder Claude never opened**, although it already ran there headless. | Answering it writes the user's `~/.claude.json`; only installing Tern's plugins was approved. | BRIEF-agents.md §4 (the user's configuration). |
+| **Status of a live interface is as good as its hooks**: an interrupt fires no hook, so Esc or Ctrl-C typed in the pane plus two quiet seconds counts as an interrupt; a live interface that hangs without hooks shows its last state. | Hooks are the only signal a live interface gives without screen reading (the user's rule). | AG-13, AG-19. |
+| **Codex hooks are trusted for Tern's own plugin by Tern**, not by the user through `/hooks`. | Codex runs no plugin hook until trusted, so the plugin would do nothing; the user approved installing Tern's plugins for observing agents. Only `tern@tern`'s hooks are touched. | AG-18. |
+| **Sessions still stop when Tern quits** (the user's earlier choice): a running turn is interrupted cleanly and continues by itself at the next launch; a live interface closes with the app and comes back live in its restored pane. | As before: a daemon that outlives app updates is a project of its own. | AG-22. |
+| **Approvals and questions in a live session are answered in the agent's own interface**, not from Tern; Tern shows that the session needs the user. | The interface owns its prompts. | AG-17. |
