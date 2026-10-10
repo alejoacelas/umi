@@ -143,8 +143,10 @@ enum TernAgentPlugins {
         switch kind {
         case .claude:
             if !before.installed {
-                _ = run(["plugin", "marketplace", "remove", "tern"])
-                _ = run(["plugin", "marketplace", "add", root])
+                if claudeMarketplaceKnown(env: env) && !claudeMarketplacePoints(at: root, env: env) {
+                    _ = run(["plugin", "marketplace", "remove", "tern"])
+                }
+                if !claudeMarketplacePoints(at: root, env: env) { _ = run(["plugin", "marketplace", "add", root]) }
                 _ = run(["plugin", "install", pluginID])
             } else {
                 // Point the marketplace at this app (it may have moved), then update.
@@ -160,7 +162,7 @@ enum TernAgentPlugins {
         case .codex:
             let config = (try? String(contentsOfFile: codexHome(env) + "/config.toml", encoding: .utf8)) ?? ""
             if !config.contains("source = \"\(root)\"") {
-                _ = run(["plugin", "marketplace", "remove", "tern"])
+                if config.contains("[marketplaces.tern]") { _ = run(["plugin", "marketplace", "remove", "tern"]) }
                 _ = run(["plugin", "marketplace", "add", root])
             }
             _ = run(["plugin", "add", pluginID])
@@ -169,6 +171,13 @@ enum TernAgentPlugins {
         var json = status(kind, env: env).json
         json["steps"] = steps
         return json
+    }
+
+    private static func claudeMarketplaceKnown(env: [String: String]) -> Bool {
+        let path = claudeConfigDir(env) + "/plugins/known_marketplaces.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return object["tern"] != nil
     }
 
     private static func claudeMarketplacePoints(at root: String, env: [String: String]) -> Bool {
