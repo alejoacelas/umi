@@ -4,9 +4,16 @@
 Python 3.9, stdlib only. Each test drives a fake through a scripted conversation
 and asserts the protocol behaviours that a driver relies on.
 """
+import base64
+import hashlib
 import json
 import os
+import pty
+import re
 import shutil
+import signal
+import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -19,17 +26,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FAKE_CLAUDE = os.path.join(HERE, "fake_claude.py")
 FAKE_CODEX = os.path.join(HERE, "fake_codex.py")
 VERBOSE = "-v" in sys.argv
-TMP = tempfile.mkdtemp(prefix="fake-agent-test-")
+TMP = os.path.realpath(tempfile.mkdtemp(prefix="fake-agent-test-"))
+EXPECTED_VIOLATIONS = set()     # sessions that tests put under two processes on purpose
+SCRATCH = []                    # extra directories to remove at the end (short socket paths under /tmp)
+
+
+def fake_env(extra=None):
+    env = dict(os.environ)
+    env["FAKE_AGENT_DIR"] = TMP
+    env["CLAUDE_CODE_SDK_READS_SESSION_STATE"] = "1"
+    for k in ("FAKE_CHAOS", "FAKE_SLOW_START", "FAKE_INPUT_DELAY", "FAKE_MCP", "FAKE_WAKE_TURN_SECS",
+              "FAKE_CLAUDE_PLUGIN_DIRS", "FAKE_CODEX_PLUGIN_DIRS", "FAKE_CLAUDE_IDLE_SECS", "CLAUDE_CONFIG_DIR"):
+        env.pop(k, None)
+    env.update(extra or {})
+    return env
 
 
 class Proc(object):
     def __init__(self, argv, env_extra=None, cwd=None):
-        env = dict(os.environ)
-        env["FAKE_AGENT_DIR"] = TMP
-        env["CLAUDE_CODE_SDK_READS_SESSION_STATE"] = "1"
-        for k in ("FAKE_CHAOS", "FAKE_SLOW_START", "FAKE_INPUT_DELAY", "FAKE_MCP", "FAKE_WAKE_TURN_SECS"):
-            env.pop(k, None)
-        env.update(env_extra or {})
+        env = fake_env(env_extra)
         self.t_spawn = time.time()
         self.p = subprocess.Popen([sys.executable] + argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, text=True, env=env, cwd=cwd or TMP, bufsize=1)
@@ -648,8 +663,10 @@ def t_codex_resume_and_lock():
     a.completed()
     b = FX()
     b.init()
+    EXPECTED_VIOLATIONS.add(tid)
     e = b.call("thread/resume", {"threadId": tid})["error"]["message"]
     assert e == "thread %s already has an active writer" % tid, e
+    assert "two processes on codex session %s: pids %d and %d" % (tid, a.p.pid, b.p.pid) in violations()
     assert b.call("turn/start", {"threadId": tid, "input": []})["error"]["message"] == "thread not found: %s" % tid
     a.close()
     assert a.exit_code() == 0
@@ -1890,6 +1907,1062 @@ def t_codex_mcp():
     assert any("FAKE_MCP" in l for l in x.stderr), x.stderr
 
 
+# ============================================================ helpers: terminals, WebSockets, hooks
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>]")
+
+
+class PtyProc(object):
+    """A fake in a pseudo-terminal, the way a pane runs it. text() is everything it printed, escape
+    sequences and carriage returns removed (a stream, not a screen: typed characters echo too)."""
+
+    def __init__(self, argv, env_extra=None, cwd=None, rows=40, cols=160):
+        env = fake_env(env_extra)
+        env["TERM"] = "xterm-256color"
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                os.chdir(cwd or TMP)
+                os.execve(sys.executable, [sys.executable] + argv, env)
+            finally:
+                os._exit(127)
+        import fcntl
+        import termios
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        self.pid, self.fd = pid, fd
+        self.raw = bytearray()
+        self.cv = threading.Condition()
+        self.status = None
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        while True:
+            try:
+                data = os.read(self.fd, 65536)
+            except OSError:
+                break
+            if not data:
+                break
+            if VERBOSE:
+                print("   pty<", repr(data[:300]))
+            with self.cv:
+                self.raw += data
+                self.cv.notify_all()
+
+    def rawtext(self):
+        with self.cv:
+            return bytes(self.raw).decode("utf-8", "replace")
+
+    def text(self):
+        return ANSI_RE.sub("", self.rawtext()).replace("\r", "")
+
+    def titles(self):
+        return re.findall(r"\x1b\]2;([^\x07]*)\x07", self.rawtext())
+
+    def type(self, s, enter=True):
+        os.write(self.fd, s.encode("utf-8") + (b"\r" if enter else b""))
+
+    def wait_text(self, needle, timeout=10, after=0):
+        """Position just after the first `needle` past `after`."""
+        end = time.time() + timeout
+        while True:
+            t = self.text()
+            i = t.find(needle, after)
+            if i >= 0:
+                return i + len(needle)
+            if time.time() > end:
+                raise AssertionError("timed out waiting for %r on the terminal; tail:\n%s" % (needle, t[-1500:]))
+            with self.cv:
+                self.cv.wait(0.05)
+
+    def mark(self):
+        return len(self.text())
+
+    def poll(self):
+        if self.status is None:
+            pid, st = os.waitpid(self.pid, os.WNOHANG)
+            if pid:
+                self.status = -os.WTERMSIG(st) if os.WIFSIGNALED(st) else os.WEXITSTATUS(st)
+        return self.status
+
+    def exit_code(self, timeout=10):
+        end = time.time() + timeout
+        while self.poll() is None:
+            if time.time() > end:
+                raise AssertionError("pty process %d did not exit; tail:\n%s" % (self.pid, self.text()[-800:]))
+            time.sleep(0.05)
+        return self.status
+
+    def kill(self, sig=signal.SIGTERM):
+        try:
+            os.kill(self.pid, sig)
+        except OSError:
+            pass
+
+    def close(self):
+        if self.poll() is None:
+            self.kill(signal.SIGKILL)
+            self.exit_code(5)
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+
+
+class WSC(object):
+    """A minimal WebSocket client over a unix socket, written independently of the fake: masked frames,
+    optional fragmentation, ping/pong, close codes."""
+
+    def __init__(self, path, handshake=True):
+        self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.s.connect(path)
+        self.msgs, self.pongs, self.closed_code, self.frames = [], [], None, []
+        self.cv = threading.Condition()
+        self.nid = 0
+        self.buf = b""
+        if not handshake:
+            return
+        key = base64.b64encode(os.urandom(16)).decode()
+        self.s.sendall(("GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                        "Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n" % key).encode())
+        while b"\r\n\r\n" not in self.buf:
+            self.buf += self.s.recv(4096)
+        head, self.buf = self.buf.split(b"\r\n\r\n", 1)
+        lines = head.decode().split("\r\n")
+        self.status = lines[0]
+        self.headers = dict((l.split(":", 1)[0].strip().lower(), l.split(":", 1)[1].strip()) for l in lines[1:])
+        expect = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest())
+        assert self.headers.get("sec-websocket-accept") == expect.decode(), self.headers
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _need(self, n):
+        while len(self.buf) < n:
+            d = self.s.recv(1 << 20)
+            if not d:
+                raise EOFError
+            self.buf += d
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def _read(self):
+        parts = []
+        try:
+            while True:
+                b0, b1 = self._need(2)
+                assert not b1 & 0x80, "server frames must not be masked"
+                n = b1 & 0x7F
+                if n == 126:
+                    n = struct.unpack(">H", self._need(2))[0]
+                elif n == 127:
+                    n = struct.unpack(">Q", self._need(8))[0]
+                data = self._need(n)
+                op, fin = b0 & 0x0F, b0 & 0x80
+                with self.cv:
+                    self.frames.append((op, bool(fin), n))
+                if op == 9:
+                    self.frame(10, data)
+                    continue
+                if op == 10:
+                    with self.cv:
+                        self.pongs.append(data)
+                        self.cv.notify_all()
+                    continue
+                if op == 8:
+                    with self.cv:
+                        self.closed_code = struct.unpack(">H", data[:2])[0] if len(data) >= 2 else 1005
+                        self.cv.notify_all()
+                    return
+                parts.append(data)
+                if fin:
+                    raw, parts = b"".join(parts), []
+                    try:
+                        m = json.loads(raw.decode())
+                    except ValueError:
+                        m = {"_garbage": raw.decode("utf-8", "replace")}
+                    if VERBOSE:
+                        print("   ws<", json.dumps(m)[:240])
+                    with self.cv:
+                        self.msgs.append(m)
+                        self.cv.notify_all()
+        except (EOFError, OSError):
+            with self.cv:
+                if self.closed_code is None:
+                    self.closed_code = -1
+                self.cv.notify_all()
+
+    def frame(self, op, payload, fin=True, masked=True):
+        b0 = (0x80 if fin else 0) | op
+        n = len(payload)
+        m = 0x80 if masked else 0
+        head = struct.pack(">BB", b0, m | n) if n < 126 else (
+            struct.pack(">BBH", b0, m | 126, n) if n < 65536 else struct.pack(">BBQ", b0, m | 127, n))
+        if masked:
+            key = os.urandom(4)
+            payload = bytes(c ^ key[i % 4] for i, c in enumerate(payload))
+            head += key
+        self.s.sendall(head + payload)
+
+    def send(self, obj, pieces=1, ping=False):
+        data = json.dumps(obj).encode()
+        if VERBOSE:
+            print("   ws>", data[:240])
+        if pieces == 1:
+            self.frame(1, data)
+            return
+        step = len(data) // pieces + 1
+        chunks = [data[i:i + step] for i in range(0, len(data), step)]
+        for i, c in enumerate(chunks):
+            self.frame(1 if i == 0 else 0, c, fin=i == len(chunks) - 1)
+            if ping and i == 0:
+                self.frame(9, b"hello")    # a control frame between fragments is legal
+
+    def req(self, method, params=None, **kw):
+        self.nid += 1
+        self.send({"id": self.nid, "method": method, "params": params or {}}, **kw)
+        return self.nid
+
+    def wait_for(self, pred, timeout=10, start=0, what="message"):
+        end = time.time() + timeout
+        with self.cv:
+            while True:
+                for i in range(start, len(self.msgs)):
+                    if pred(self.msgs[i]):
+                        return i, self.msgs[i]
+                if time.time() > end:
+                    raise AssertionError("timed out waiting for %s; tail %s" % (what, json.dumps(self.msgs[-5:])[:1500]))
+                self.cv.wait(0.05)
+
+    def call(self, method, params=None, **kw):
+        rid = self.req(method, params, **kw)
+        return self.wait_for(lambda m: m.get("id") == rid and "method" not in m, what="response " + method)[1]
+
+    def init(self):
+        r = self.call("initialize", {"clientInfo": {"name": "t", "title": None, "version": "0"},
+                                     "capabilities": {"experimentalApi": True}})
+        self.send({"method": "initialized"})
+        return r
+
+    def n(self):
+        with self.cv:
+            return len(self.msgs)
+
+    def note(self, method, start=0, pred=None, timeout=10):
+        return self.wait_for(lambda m: m.get("method") == method and "id" not in m and (pred is None or pred(m)),
+                             start=start, timeout=timeout, what=method)
+
+    def turn(self, tid, text, cmid=None):
+        cmid = cmid or str(uuid.uuid4())
+        r = self.call("turn/start", {"threadId": tid, "clientUserMessageId": cmid,
+                                     "input": [{"type": "text", "text": text, "text_elements": []}]})
+        return r["result"]["turn"]["id"], cmid
+
+    def completed(self, turn_id, start=0, timeout=10):
+        return self.note("turn/completed", start, lambda m: m["params"]["turn"]["id"] == turn_id, timeout)[1]
+
+    def close(self):
+        try:
+            self.s.close()
+        except OSError:
+            pass
+
+
+def ws_server(env=None):
+    """fake_codex app-server on a short unix socket path (macOS caps sun_path at 104 bytes)."""
+    d = tempfile.mkdtemp(prefix="fx", dir="/tmp")
+    SCRATCH.append(d)
+    sock = os.path.join(d, "cx.sock")
+    p = Proc([FAKE_CODEX, "app-server", "--listen", "unix://" + sock], env)
+    end = time.time() + 10
+    while not os.path.exists(sock):
+        assert time.time() < end and p.alive(), "no socket; stderr %s" % p.stderr
+        time.sleep(0.02)
+    return p, sock
+
+
+HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Notification",
+               "Stop", "StopFailure", "SessionEnd"]
+
+
+def make_plugin(name, harness, matchers=None):
+    """A plugin whose hooks append {ev, ppid, tty, roots, pwd, in} to <plugin>/hooks.log."""
+    root = tempfile.mkdtemp(prefix="plugin-%s-" % name, dir=TMP)
+    log = os.path.join(root, "hooks.log")
+    manifest = ".claude-plugin" if harness == "claude" else ".codex-plugin"
+    os.makedirs(os.path.join(root, manifest))
+    os.makedirs(os.path.join(root, "hooks"))
+    with open(os.path.join(root, manifest, "plugin.json"), "w") as f:
+        json.dump({"name": name, "version": "1.2.3"}, f)
+    with open(os.path.join(root, "hook.sh"), "w") as f:
+        f.write('#!/bin/sh\nin=$(cat)\nif (exec 3>/dev/tty) 2>/dev/null; then tty=yes; else tty=no; fi\n'
+                'printf \'{"ev":"%s","ppid":%s,"tty":"%s","croot":"%s","proot":"%s","pwd":"%s","in":%s}\\n\' '
+                '"$1" "$PPID" "$tty" "$CLAUDE_PLUGIN_ROOT" "$PLUGIN_ROOT" "$(pwd -P)" "$in" >> "' + log + '"\n')
+    os.chmod(os.path.join(root, "hook.sh"), 0o755)
+    var = "${CLAUDE_PLUGIN_ROOT}" if harness == "claude" else "${PLUGIN_ROOT}"
+    hooks = {}
+    for ev in HOOK_EVENTS:
+        group = {"hooks": [{"type": "command", "command": "%s/hook.sh %s" % (var, ev)}]}
+        if matchers and ev in matchers:
+            group["matcher"] = matchers[ev]
+        hooks[ev] = [group]
+    with open(os.path.join(root, "hooks", "hooks.json"), "w") as f:
+        json.dump({"hooks": hooks}, f)
+    return root
+
+
+def hook_log(root):
+    try:
+        return [json.loads(l) for l in open(os.path.join(root, "hooks.log"))]
+    except IOError:
+        return []
+
+
+def wait_hooks(root, pred, timeout=10, what="hook"):
+    end = time.time() + timeout
+    while True:
+        hs = hook_log(root)
+        found = [h for h in hs if pred(h)]
+        if found:
+            return found
+        if time.time() > end:
+            raise AssertionError("no %s; log: %s" % (what, [h["ev"] for h in hs]))
+        time.sleep(0.05)
+
+
+def violations(root=None):
+    try:
+        return open(os.path.join(root or TMP, "violations.log")).read().splitlines()
+    except IOError:
+        return []
+
+
+# ============================================================ Codex: app-server over a unix socket (X16)
+
+def t_codex_ws_server():
+    srv, sock = ws_server()
+    a = WSC(sock)
+    assert a.status.startswith("HTTP/1.1 101"), a.status
+    assert a.headers.get("x-codex-websocket-max-unfragmented-message-bytes") == "16777216", a.headers
+    assert "Not initialized" in a.call("thread/start", {})["error"]["message"]
+    a.init()
+    assert a.call("initialize", {})["error"]["message"] == "Already initialized"
+    tid = a.call("thread/start", {"cwd": TMP, "approvalPolicy": "never"})["result"]["thread"]["id"]
+    a.note("thread/started")
+    T, c1 = a.turn(tid, "hello over ws")
+    assert final_text(a.completed(T)["params"]["turn"]) == "ok: hello over ws"
+    # a request split over three frames with a ping between the fragments
+    n = a.n()
+    rid = a.req("turn/start", {"threadId": tid, "clientUserMessageId": "frag",
+                               "input": [{"type": "text", "text": "fragmented", "text_elements": []}]},
+                pieces=3, ping=True)
+    T2 = a.wait_for(lambda m: m.get("id") == rid, start=n)[1]["result"]["turn"]["id"]
+    assert final_text(a.completed(T2, n)["params"]["turn"]) == "ok: fragmented"
+    assert a.pongs == [b"hello"], a.pongs
+    # a second client resumes the thread: both see each other's turns (X16)
+    b = WSC(sock)
+    b.init()
+    r = b.call("thread/resume", {"threadId": tid})["result"]
+    assert len(r["thread"]["turns"]) == 2
+    na, nb = a.n(), b.n()
+    T3, ca = a.turn(tid, "from A")
+    b.note("turn/started", nb, lambda m: m["params"]["turn"]["id"] == T3)
+    b.note("item/completed", nb, lambda m: m["params"]["item"].get("clientId") == ca)
+    assert final_text(b.completed(T3, nb)["params"]["turn"]) == "ok: from A"
+    na, nb = a.n(), b.n()
+    T4, cb = b.turn(tid, "SLEEP 1.5 from B")
+    a.note("item/started", na, lambda m: m["params"]["item"]["type"] == "commandExecution")
+    steer = a.call("turn/steer", {"threadId": tid, "expectedTurnId": T4, "clientUserMessageId": "steerA",
+                                  "input": [{"type": "text", "text": "KIWI", "text_elements": []}]})
+    assert steer["result"] == {"turnId": T4}, steer
+    done = b.completed(T4, nb, timeout=15)["params"]["turn"]
+    assert final_text(done) == "ok: SLEEP 1.5 from B\nok: KIWI", done
+    for c, start in ((a, na), (b, nb)):
+        users = [m["params"]["item"]["clientId"] for m in c.msgs[start:] if m.get("method") == "item/completed"
+                 and m["params"]["item"]["type"] == "userMessage"]
+        assert users == [cb, "steerA"], users
+    # approvals reach every subscriber; the first answer wins; both get serverRequest/resolved
+    t2 = a.call("thread/start", {"cwd": TMP, "approvalPolicy": "untrusted", "sandbox": "read-only"})
+    t2 = t2["result"]["thread"]["id"]
+    b.call("thread/resume", {"threadId": t2})
+    na, nb = a.n(), b.n()
+    T5, _ = a.turn(t2, "ASK_APPROVAL:ws1")
+    ia, ra = a.wait_for(lambda m: m.get("method") == "item/commandExecution/requestApproval", start=na)
+    ib, rb = b.wait_for(lambda m: m.get("method") == "item/commandExecution/requestApproval", start=nb)
+    assert ra["id"] == rb["id"] and ra["params"] == rb["params"]
+    b.send({"id": rb["id"], "result": {"decision": "accept"}})
+    a.note("serverRequest/resolved", ia, lambda m: m["params"]["requestId"] == ra["id"])
+    b.note("serverRequest/resolved", ib, lambda m: m["params"]["requestId"] == ra["id"])
+    a.send({"id": ra["id"], "result": {"decision": "decline"}})        # too late: ignored
+    assert final_text(a.completed(T5, na)["params"]["turn"]) == "approval accepted"
+    # a client that subscribes while a request is pending gets it too (inferred)
+    na = a.n()
+    T6, _ = a.turn(t2, "ASK_APPROVAL:ws2")
+    i, req = a.wait_for(lambda m: m.get("method") == "item/commandExecution/requestApproval", start=na)
+    c = WSC(sock)
+    c.init()
+    c.call("thread/resume", {"threadId": t2})
+    i, rc = c.wait_for(lambda m: m.get("method") == "item/commandExecution/requestApproval")
+    assert rc["id"] == req["id"]
+    c.send({"id": rc["id"], "result": {"decision": "decline"}})
+    assert final_text(a.completed(T6, na)["params"]["turn"]) == "approval declined"
+    c.close()
+    # unsubscribe stops notifications for that client only
+    assert b.call("thread/unsubscribe", {"threadId": t2})["result"] == {"status": "unsubscribed"}
+    nb, na = b.n(), a.n()
+    T7, _ = a.turn(t2, "after unsubscribe")
+    a.completed(T7, na)
+    time.sleep(0.2)
+    assert not [m for m in b.msgs[nb:] if (m.get("params") or {}).get("threadId") == t2], b.msgs[nb:]
+    # B goes away without a close frame; A carries on
+    b.close()
+    time.sleep(0.2)
+    na = a.n()
+    T8, _ = a.turn(tid, "after B left")
+    assert final_text(a.completed(T8, na)["params"]["turn"]) == "ok: after B left"
+    # messages above 16 MiB arrive fragmented
+    na = a.n()
+    T9, _ = a.turn(tid, "HUGE 17")
+    a.completed(T9, na, timeout=60)
+    big = [m for m in a.msgs[na:] if m.get("method") == "item/completed"
+           and m["params"]["item"]["type"] == "commandExecution"]
+    assert len(big[0]["params"]["item"]["aggregatedOutput"]) == 17 * 1024 * 1024
+    assert any(op == 0 for op, fin, n in a.frames), "expected continuation frames"
+    assert max(n for op, fin, n in a.frames) <= 16777216
+    # protocol errors: an unmasked frame is closed with 1002; a plain HTTP request gets 400
+    d = WSC(sock)
+    d.frame(1, b'{"id":1,"method":"initialize","params":{}}', masked=False)
+    with d.cv:
+        end = time.time() + 5
+        while d.closed_code is None and time.time() < end:
+            d.cv.wait(0.05)
+    assert d.closed_code == 1002, d.closed_code
+    e = WSC(sock, handshake=False)
+    e.s.sendall(b"GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert e.s.recv(100).startswith(b"HTTP/1.1 400"), "plain HTTP must not be upgraded"
+    # every client may disconnect: the server keeps running until SIGTERM, then removes its socket
+    a.close()
+    time.sleep(0.3)
+    assert srv.alive() and os.path.exists(sock)
+    f = WSC(sock)
+    f.init()
+    assert "result" in f.call("thread/resume", {"threadId": tid})
+    srv.p.terminate()
+    srv.exit_code()
+    assert not os.path.exists(sock), "the socket file must go away with the server"
+    # exactly one --listen
+    bad = Proc([FAKE_CODEX, "app-server", "--listen", "stdio://", "--listen", "unix:///tmp/x.sock"])
+    assert bad.exit_code() == 2
+
+
+def t_codex_ws_chaos():
+    """Chaos over the socket (delayed and split frames): the stream each client sees stays legal."""
+    for seed in CHAOS_SEEDS:
+        srv, sock = ws_server({"FAKE_CHAOS": str(seed)})
+        try:
+            a, b = WSC(sock), WSC(sock)
+            a.init()
+            b.init()
+            tid = a.call("thread/start", {"cwd": TMP, "approvalPolicy": "never"})["result"]["thread"]["id"]
+            b.call("thread/resume", {"threadId": tid})
+            na, nb = a.n(), b.n()
+            sent = []
+            for text in ("one", "SLEEP 0.4 two", "RUN echo three"):
+                T, cmid = (a if len(sent) % 2 == 0 else b).turn(tid, text)
+                sent.append(cmid)
+                if text.startswith("SLEEP"):
+                    time.sleep(0.15)
+                    T2, c2 = b.turn(tid, "steered four")      # joins the running turn
+                    sent.append(c2)
+                a.completed(T, na, timeout=15)
+            time.sleep(0.3)
+            for c, start in ((a, na), (b, nb)):
+                users = [m["params"]["item"]["clientId"] for m in c.msgs[start:] if m.get("method") == "item/completed"
+                         and m["params"]["item"]["type"] == "userMessage"]
+                assert sorted(users) == sorted(sent), (seed, users, sent)
+                check_codex_sequence(c.msgs[start:], tid, sent)
+        finally:
+            srv.p.terminate()
+            srv.exit_code()
+
+
+# ============================================================ Codex: the TUI (remote and local)
+
+def t_codex_tui_remote():
+    srv, sock = ws_server()
+    a = WSC(sock)
+    a.init()
+    tid = a.call("thread/start", {"cwd": TMP, "approvalPolicy": "untrusted", "sandbox": "read-only"})
+    tid = tid["result"]["thread"]["id"]
+    T, _ = a.turn(tid, "remember APRICOT")
+    a.completed(T)
+    tui = PtyProc([FAKE_CODEX, "resume", tid, "--remote", "unix://" + sock])
+    try:
+        tui.wait_text("thread: " + tid)
+        pos = tui.wait_text("› remember APRICOT\n")       # the history
+        tui.wait_text("• ok: remember APRICOT\n", after=pos - 30)
+        # A's turn shows in the TUI
+        n = a.n()
+        T, _ = a.turn(tid, "PINEAPPLE from A")
+        a.completed(T, n)
+        tui.wait_text("• ok: PINEAPPLE from A\n")
+        # a line typed in the TUI is a turn A sees, with a clientId
+        n = a.n()
+        tui.type("MANGO typed")
+        i, st = a.note("turn/started", n)
+        i, um = a.note("item/completed", n, lambda m: m["params"]["item"]["type"] == "userMessage")
+        assert um["params"]["item"]["clientId"], um
+        assert final_text(a.completed(st["params"]["turn"]["id"], n)["params"]["turn"]) == "ok: MANGO typed"
+        tui.wait_text("─ Worked for")
+        assert [r["text"] for r in receipts_for(tid)].count("MANGO typed") == 1
+        # A steers a turn the TUI started
+        n = a.n()
+        tui.type("SLEEP 1.5 from the tui")
+        i, st = a.note("turn/started", n)
+        Tt = st["params"]["turn"]["id"]
+        a.note("item/started", n, lambda m: m["params"]["item"]["type"] == "commandExecution")
+        r = a.call("turn/steer", {"threadId": tid, "expectedTurnId": Tt, "clientUserMessageId": "kiwi",
+                                  "input": [{"type": "text", "text": "KIWI", "text_elements": []}]})
+        assert r["result"]["turnId"] == Tt
+        assert final_text(a.completed(Tt, n, timeout=15)["params"]["turn"]) == "ok: SLEEP 1.5 from the tui\nok: KIWI"
+        tui.wait_text("› KIWI\n")
+        tui.wait_text("  ok: KIWI\n")
+        # an approval asked in the TUI, answered there
+        n = a.n()
+        mark = tui.mark()
+        tui.type("ASK_APPROVAL:tui1")
+        tui.wait_text("Allow command?", after=mark)
+        i, req = a.wait_for(lambda m: m.get("method") == "item/commandExecution/requestApproval", start=n)
+        tui.type("y")
+        a.note("serverRequest/resolved", n, lambda m: m["params"]["requestId"] == req["id"])
+        tui.wait_text("• approval accepted\n", after=mark)
+        # answered by A while the TUI asks
+        n = a.n()
+        mark = tui.mark()
+        tui.type("ASK_APPROVAL:tui2")
+        i, req = a.wait_for(lambda m: m.get("method") == "item/commandExecution/requestApproval", start=n)
+        tui.wait_text("Allow command?", after=mark)
+        a.send({"id": req["id"], "result": {"decision": "decline"}})
+        tui.wait_text("(answered elsewhere)", after=mark)
+        tui.wait_text("• approval declined\n", after=mark)
+        # Ctrl-C interrupts the running turn
+        n = a.n()
+        mark = tui.mark()
+        tui.type("SLEEP 10")
+        i, st = a.note("turn/started", n)
+        a.note("item/started", n, lambda m: m["params"]["item"]["type"] == "commandExecution")
+        tui.type("\x03", enter=False)
+        assert a.completed(st["params"]["turn"]["id"], n)["params"]["turn"]["status"] == "interrupted"
+        tui.wait_text("Conversation interrupted", after=mark)
+        # the TUI leaves; the server and the thread stay usable for A
+        tui.kill(signal.SIGTERM)
+        assert tui.exit_code() == -signal.SIGTERM
+        n = a.n()
+        T, _ = a.turn(tid, "LYCHEE after the tui")
+        assert final_text(a.completed(T, n)["params"]["turn"]) == "ok: LYCHEE after the tui"
+        assert srv.alive()
+    finally:
+        tui.close()
+        srv.p.terminate()
+        srv.exit_code()
+
+
+def t_codex_tui_local():
+    plugin = make_plugin("ternx", "codex")
+    env = {"FAKE_CODEX_PLUGIN_DIRS": plugin}
+    tui = PtyProc([FAKE_CODEX, "-m", "gpt-test", "hello local tui"], env)
+    try:
+        tui.wait_text("• ok: hello local tui\n")
+        tid = re.search(r"thread: (\S+)", tui.text()).group(1)
+        tui.wait_text("─ Worked for")
+        mark = tui.mark()
+        tui.type("RUN echo hi-from-run")
+        tui.wait_text("• Ran echo hi-from-run\n", after=mark)
+        tui.wait_text("• exit=0\n  hi-from-run\n", after=mark)
+        # approvals (default policy on-request) wait for a typed answer
+        mark = tui.mark()
+        tui.type("ASK_APPROVAL:loc1")
+        tui.wait_text("Allow command?", after=mark)
+        tui.type("y")
+        tui.wait_text("• approval accepted\n", after=mark)
+        # Ctrl-C interrupts; no Stop hook for that turn
+        mark = tui.mark()
+        tui.type("SLEEP 10 interrupted-one")
+        tui.wait_text("› SLEEP 10 interrupted-one\n", after=mark)
+        time.sleep(0.3)
+        tui.type("\x03", enter=False)
+        tui.wait_text("Conversation interrupted", after=mark)
+        tui.type("/exit")
+        assert tui.exit_code() == 0
+    finally:
+        tui.close()
+    hs = hook_log(plugin)
+    evs = [h["ev"] for h in hs]
+    assert evs[0] == "SessionStart" and hs[0]["in"]["source"] == "startup", evs
+    assert evs[-1] == "SessionEnd" and hs[-1]["in"]["reason"] == "exit", evs
+    for h in hs:
+        assert h["ppid"] == tui.pid, ("hooks are children of the fake", h["ppid"], tui.pid)
+        assert h["tty"] == "no", "Codex runs hooks detached from the terminal"
+        assert h["proot"] == plugin and h["croot"] == plugin, h
+        assert h["pwd"] == TMP, h["pwd"]
+        i = h["in"]
+        assert i["session_id"] == tid and i["cwd"] == TMP and i["hook_event_name"] == h["ev"], i
+        assert i["model"] == "gpt-test" and i["transcript_path"].endswith(tid + ".json"), i
+    ups = [h["in"] for h in hs if h["ev"] == "UserPromptSubmit"]
+    assert [u["prompt"] for u in ups] == ["hello local tui", "RUN echo hi-from-run", "ASK_APPROVAL:loc1",
+                                          "SLEEP 10 interrupted-one"], ups
+    stops = [h["in"] for h in hs if h["ev"] == "Stop"]
+    assert [s["last_assistant_message"] for s in stops] == ["ok: hello local tui", "exit=0\nhi-from-run",
+                                                            "approval accepted"], stops
+    assert all(s["stop_hook_active"] is False and s["turn_id"] for s in stops)
+    pre = [h["in"] for h in hs if h["ev"] == "PreToolUse"]
+    post = [h["in"] for h in hs if h["ev"] == "PostToolUse"]
+    assert pre[0]["tool_name"] == "Bash" and pre[0]["tool_input"] == {"command": "echo hi-from-run"}, pre
+    assert post[0]["tool_use_id"] == pre[0]["tool_use_id"] and "hi-from-run" in post[0]["tool_response"], post
+    perm = [h["in"] for h in hs if h["ev"] == "PermissionRequest"]
+    assert len(perm) == 1 and perm[0]["tool_input"] == {"command": "touch loc1"}, perm
+    # resume in a new local TUI: history, RECALL, SessionStart resume; SIGTERM -> SessionEnd other
+    before = len(hs)
+    tui = PtyProc([FAKE_CODEX, "resume", tid, "RECALL"], env)
+    try:
+        tui.wait_text("› hello local tui\n")
+        tui.wait_text("• history: hello local tui | RUN echo hi-from-run | ASK_APPROVAL:loc1 | "
+                      "SLEEP 10 interrupted-one\n")
+        tui.wait_text("─ Worked for")          # the Stop hook has run
+        tui.kill(signal.SIGTERM)
+        assert tui.exit_code() == -signal.SIGTERM
+    finally:
+        tui.close()
+    hs = hook_log(plugin)[before:]
+    assert hs[0]["ev"] == "SessionStart" and hs[0]["in"]["source"] == "resume", hs
+    assert hs[-1]["ev"] == "SessionEnd" and hs[-1]["in"]["reason"] == "other", hs
+    # the thread is held by an app server: the local TUI is refused, and that is a violation
+    x = FX()
+    x.init()
+    assert "result" in x.call("thread/resume", {"threadId": tid})
+    EXPECTED_VIOLATIONS.add(tid)
+    tui = PtyProc([FAKE_CODEX, "resume", tid])
+    try:
+        assert tui.exit_code() == 1
+        assert "already has an active writer" in tui.text(), tui.text()
+    finally:
+        tui.close()
+    assert any(l == "two processes on codex session %s: pids %d and %d" % (tid, x.p.pid, tui.pid)
+               for l in violations()), violations()
+    x.close()
+    assert x.exit_code() == 0
+
+
+def t_codex_hooks_app_server():
+    """Hooks run in the stdio app server too (detached, parent = the server)."""
+    plugin = make_plugin("ternx2", "codex", matchers={"PreToolUse": "Read"})
+    x = FX(env={"FAKE_CODEX_PLUGIN_DIRS": plugin})
+    x.init()
+    tid = x.thread(model="gpt-hooks")
+    codex_say(x, tid, "SLEEP 0.2")
+    codex_say(x, tid, "FAIL now")
+    x.close()
+    assert x.exit_code() == 0
+    hs = hook_log(plugin)
+    evs = [h["ev"] for h in hs]
+    assert evs == ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "UserPromptSubmit"], evs
+    assert all(h["ppid"] == x.p.pid for h in hs)
+    assert hs[2]["in"]["tool_input"] == {"command": "sleep 0.2"} and hs[3]["in"]["last_assistant_message"] == \
+        "ok: SLEEP 0.2"
+    # a hook that outlives its "timeout" (seconds) is killed and the turn goes on
+    slow = tempfile.mkdtemp(prefix="plugin-slow-", dir=TMP)
+    nap = "29.%06d" % (os.getpid() % 1000000)     # unique, so parallel runs don't see each other's
+    os.makedirs(os.path.join(slow, "hooks"))
+    with open(os.path.join(slow, "hooks", "hooks.json"), "w") as f:
+        json.dump({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "sleep %s" % nap, "timeout": 1}]}]}}, f)
+    x = FX(env={"FAKE_CODEX_PLUGIN_DIRS": slow})
+    x.init()
+    tid = x.thread()
+    t0 = time.time()
+    turn, _ = codex_say(x, tid, "slow stop hook")
+    assert final_text(turn) == "ok: slow stop hook" and 0.9 < time.time() - t0 < 5, time.time() - t0
+    out = subprocess.run(["pgrep", "-f", "^sleep %s$" % nap], stdout=subprocess.PIPE, universal_newlines=True).stdout
+    assert not out.strip(), "the timed-out hook must be killed"
+    x.close()
+    assert x.exit_code() == 0
+
+
+# ============================================================ Claude: hooks, transcript, TUI, cancel_queued
+
+def t_claude_cancel_queued():
+    c = FC("--plugin-dir", "/nonexistent-plugin-dir", "-n", "a name")      # both accepted in -p mode
+    c.init()
+    u1 = c.user("please SLEEP 5")
+    c.tool_use()
+    u2 = c.user("queued BANANA")
+    i_q, _ = c.lifecycle(u2, "queued")
+    c.send({"type": "control_request", "request_id": "cq", "request": {"subtype": "interrupt", "cancel_queued": True}})
+    i_r, resp = c.wait_for(lambda m: m.get("type") == "control_response" and m["response"]["request_id"] == "cq")
+    assert resp["response"]["response"] == {"still_queued": [], "cancelled": [u2]}, resp
+    i_c, _ = c.lifecycle(u2, "cancelled")
+    assert i_q < i_c < i_r, (i_q, i_c, i_r)
+    i, r = c.result(i_r)
+    assert r["is_error"] and r["terminal_reason"] == "aborted_tools" and r["user_message_uuids"] == [u1]
+    c.lifecycle(u1, "cancelled", i)
+    c.state("idle", i)
+    time.sleep(0.4)
+    assert not any(m.get("type") == "command_lifecycle" and m["command_uuid"] == u2 and m["state"] == "started"
+                   for m in c.msgs)
+    assert [m for m in c.msgs if m.get("type") == "result"] == [r], "the cancelled message never runs"
+    assert not [x for x in receipts() if x["message"] == u2]
+    inits = [m for m in c.msgs if m.get("subtype") == "init"]
+    assert "interrupt_cancel_queued_v1" in inits[0]["capabilities"], inits[0]
+    # nothing running: cancel_queued answers at once
+    c.send({"type": "control_request", "request_id": "cq2", "request": {"subtype": "interrupt", "cancel_queued": True}})
+    i, resp = c.wait_for(lambda m: m.get("type") == "control_response" and m["response"]["request_id"] == "cq2")
+    assert resp["response"]["response"] == {"still_queued": [], "cancelled": []}, resp
+    r = claude_say(c, "after")
+    assert r["result"] == "ok: after"
+    c.close()
+    assert c.exit_code() == 0
+    # frame for frame against the real C15cancelq (interrupt 5 s into the command, after task_started)
+    path = os.path.join(HERE, "..", "reference", "logs", "C15cancelq.jsonl")
+    if not os.path.exists(path):
+        return
+    real = []
+    for line in open(path):
+        e = json.loads(line)
+        if e["k"] == "out" and isinstance(e["m"], dict):
+            real.append(e["m"])
+    first = [i for i, m in enumerate(real) if m.get("type") == "system" and m.get("subtype") == "session_state_changed"][0]
+    c = FC("--dangerously-skip-permissions")
+    c.init()
+    n = c.n()
+    c.user("SLEEP 15")
+    c.wait_for(lambda m: m.get("subtype") == "task_started", timeout=10)
+    u2 = c.user("Reply with exactly: BANANA")
+    c.lifecycle(u2, "queued")
+    c.send({"type": "control_request", "request_id": "int1", "request": {"subtype": "interrupt", "cancel_queued": True}})
+    i, _ = c.result(n)
+    c.state("idle", i)
+
+    def seq(msgs):
+        out = []
+        for m in msgs:
+            t = m.get("type")
+            if t in ("rate_limit_event",) or m.get("subtype") == "thinking_tokens":
+                continue
+            if t == "command_lifecycle":
+                out.append("lifecycle:" + m["state"])
+            elif t == "system":
+                out.append("system:" + (m["state"] if m["subtype"] == "session_state_changed" else m["subtype"]))
+            elif t == "control_response":
+                out.append("control_response:" + ",".join(sorted(m["response"]["response"])))
+            else:
+                out.append(t)
+        return out
+    assert seq(c.msgs[n:]) == seq(real[first:]), (seq(c.msgs[n:]), seq(real[first:]))
+    c.close()
+    c.exit_code()
+
+
+def t_claude_hooks_print():
+    plugin = make_plugin("tern", "claude", matchers={"PreToolUse": "Read|Write"})
+    plugin2 = make_plugin("tern2", "claude")
+    sid = str(uuid.uuid4())
+    c = FC("--session-id", sid, "--plugin-dir", plugin, "-n", "named", env={"FAKE_CLAUDE_PLUGIN_DIRS": plugin2})
+    init = c.init()
+    # C14: SessionStart hooks are reported before the initialize answer
+    types = [(m.get("subtype") or m.get("type")) for m in c.msgs]
+    i_init = c.msgs.index(init)
+    assert types[:i_init].count("hook_started") == 2 and types[:i_init].count("hook_response") == 2, types
+    hr = [m for m in c.msgs if m.get("subtype") == "hook_response"][0]
+    assert hr["hook_name"] == "SessionStart:startup" and hr["exit_code"] == 0 and hr["outcome"] == "success", hr
+    n = c.n()
+    u1 = c.user("SLEEP 1 first")
+    c.tool_use(n)
+    u2 = c.user("FIG steered")
+    i, r = c.result(n)
+    assert r["user_message_uuids"] == [u1, u2], r
+    sysinit = [m for m in c.msgs if m.get("subtype") == "init"][0]
+    assert {"name": "tern", "path": plugin, "source": "tern@inline", "version": "1.2.3"} in sysinit["plugins"]
+    assert {"name": "tern2", "path": plugin2, "source": "tern2@installed", "version": "1.2.3"} in sysinit["plugins"]
+    r = claude_say(c, "WAKE 0.5 nonce-w")
+    c.wait_for(lambda m: m.get("type") == "result" and m.get("result") == "woke: nonce-w", timeout=10)
+    c.state("idle", c.n() - 1)
+    r = claude_say(c, "FAIL here")
+    n = c.n()
+    c.user("SLEEP 5 to interrupt")
+    c.tool_use(n)
+    c.interrupt("int9")
+    c.result(n)
+    c.close()
+    assert c.exit_code() == 1
+    for root in (plugin, plugin2):
+        hs = hook_log(root)
+        evs = [h["ev"] for h in hs]
+        want = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop",
+                "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Stop",
+                "UserPromptSubmit", "StopFailure", "UserPromptSubmit", "PreToolUse", "SessionEnd"]
+        if root == plugin:   # its PreToolUse hook only matches Read|Write
+            want = [e for e in want if e != "PreToolUse"]
+        assert evs == want, (root, evs)
+        for h in hs:
+            assert h["ppid"] == c.p.pid and h["croot"] == root and h["proot"] == "" and h["pwd"] == TMP, h
+            i = h["in"]
+            assert i["session_id"] == sid and i["cwd"] == TMP and i["hook_event_name"] == h["ev"], i
+            assert i["transcript_path"] == os.path.join(TMP, "claude-config", "projects", TMP.replace("/", "-")
+                                                        .replace(".", "-").replace("_", "-"), sid + ".jsonl"), i
+    hs = [h["in"] for h in hook_log(plugin2)]
+    assert hs[0]["source"] == "startup" and "permission_mode" not in hs[0], hs[0]
+    assert hs[1]["prompt"] == "SLEEP 1 first" and hs[4]["prompt"] == "FIG steered"
+    assert hs[1]["prompt_id"] == hs[4]["prompt_id"] == hs[5]["prompt_id"], "a steered message shares the turn's prompt_id"
+    assert hs[2]["tool_name"] == "Bash" and hs[2]["tool_input"]["command"] == "sleep 1" and hs[2]["effort"] == {"level": "medium"}
+    assert hs[3]["tool_use_id"] == hs[2]["tool_use_id"] and hs[3]["tool_response"]["stdout"] == "" \
+        and hs[3]["duration_ms"] >= 900, hs[3]
+    assert hs[5]["last_assistant_message"] == "ok: SLEEP 1 first\nok: FIG steered" and hs[5]["background_tasks"] == []
+    assert hs[5]["stop_hook_active"] is False and hs[5]["session_crons"] == [] and hs[5]["permission_mode"] == "default"
+    assert hs[7]["tool_input"] == {"command": "sleep 0.5", "run_in_background": True}
+    assert hs[8]["tool_response"]["backgroundTaskId"]
+    wake_stop, self_stop = hs[9], hs[10]
+    assert wake_stop["last_assistant_message"] == "started" and len(wake_stop["background_tasks"]) == 1, wake_stop
+    assert wake_stop["background_tasks"][0]["task_id"] == hs[8]["tool_response"]["backgroundTaskId"]
+    assert self_stop["last_assistant_message"] == "woke: nonce-w" and self_stop["background_tasks"] == [], self_stop
+    assert hs[12]["error"] and hs[12]["last_assistant_message"].startswith("API Error: 404"), hs[12]
+    assert hs[-1]["reason"] == "other" and "permission_mode" not in hs[-1], hs[-1]
+    assert os.path.exists(hs[0]["transcript_path"])
+    # SIGTERM: SessionEnd "other" too, and SessionStart "resume" on --resume
+    before = len(hook_log(plugin2))
+    c = FC("--resume", sid, env={"FAKE_CLAUDE_PLUGIN_DIRS": plugin2})
+    c.init()
+    claude_say(c, "x")
+    c.p.terminate()
+    assert c.exit_code() == -signal.SIGTERM
+    hs = [h["in"] for h in hook_log(plugin2)[before:]]
+    assert hs[0]["hook_event_name"] == "SessionStart" and hs[0]["source"] == "resume", hs[0]
+    assert hs[-1]["hook_event_name"] == "SessionEnd" and hs[-1]["reason"] == "other", hs[-1]
+
+
+def t_claude_transcript():
+    cfg = os.path.join(TMP, "cfg_dir")
+    work = os.path.join(TMP, "my_proj.v2")
+    os.makedirs(work)
+    c = FC(env={"CLAUDE_CONFIG_DIR": cfg}, cwd=work)
+    c.init()
+    u0 = str(uuid.uuid4())
+    r = claude_say(c, "first line", u0)
+    sid = r["session_id"]
+    n = c.n()
+    u1 = c.user("SLEEP 1 then")
+    c.tool_use(n)
+    u2 = c.user("steered in")
+    c.lifecycle(u2, "queued")
+    c.result(n)
+    c.close()
+    assert c.exit_code() == 0
+    slug = re.sub(r"[^A-Za-z0-9]", "-", work)
+    assert slug.endswith("-my-proj-v2")
+    path = os.path.join(cfg, "projects", slug, sid + ".jsonl")
+    lines = [json.loads(l) for l in open(path)]
+    kinds = [(l["type"], l.get("operation") or (l.get("attachment") or {}).get("type")) for l in lines]
+    assert kinds == [("user", None), ("assistant", None), ("user", None), ("assistant", None),
+                     ("queue-operation", "enqueue"), ("user", None), ("attachment", "queued_command"),
+                     ("queue-operation", "remove"), ("assistant", None)], kinds
+    assert lines[0]["uuid"] == u0 and lines[0]["message"] == {"role": "user", "content": "first line"}
+    assert lines[0]["sessionId"] == sid and lines[0]["cwd"] == work and lines[0]["parentUuid"] is None
+    assert lines[1]["message"]["content"] == [{"type": "text", "text": "ok: first line"}]
+    assert lines[1]["parentUuid"] == lines[0]["uuid"]
+    assert lines[2]["uuid"] == u1 and lines[3]["message"]["content"][0]["type"] == "tool_use"
+    assert lines[4]["content"] == "steered in"
+    assert lines[5]["message"]["content"][0]["type"] == "tool_result" and "toolUseResult" in lines[5]
+    att = lines[6]["attachment"]
+    assert att["prompt"] == "steered in" and att["source_uuid"] == u2, att
+    assert lines[8]["message"]["content"][0]["text"] == "ok: SLEEP 1 then\nok: steered in"
+    # CLAUDE_CONFIG_DIR pointing at the real ~/.claude is never used (HOME is a scratch dir here)
+    home = os.path.join(TMP, "home")
+    os.makedirs(os.path.join(home, ".claude"))
+    c = FC(env={"HOME": home, "CLAUDE_CONFIG_DIR": os.path.join(home, ".claude")})
+    c.init()
+    sid = claude_say(c, "x")["session_id"]
+    c.close()
+    c.exit_code()
+    assert not os.listdir(os.path.join(home, ".claude"))
+    assert os.path.exists(os.path.join(TMP, "claude-config", "projects", re.sub(r"[^A-Za-z0-9]", "-", TMP),
+                                       sid + ".jsonl"))
+
+
+def t_claude_tui():
+    plugin = make_plugin("terntui", "claude")
+    sid = str(uuid.uuid4())
+    c = FC("--session-id", sid)
+    c.init()
+    claude_say(c, "remember QUINCE")
+    c.close()
+    assert c.exit_code() == 0
+    env = {"FAKE_CLAUDE_IDLE_SECS": "0.5"}
+    tui = PtyProc([FAKE_CLAUDE, "--resume", sid, "--plugin-dir", plugin, "--model", "haiku"], env)
+    try:
+        tui.wait_text("session: " + sid)
+        tui.wait_text("> remember QUINCE\n")
+        tui.wait_text("⏺ ok: remember QUINCE\n")
+        assert tui.titles() == ["✳ remember QUINCE"], tui.titles()
+        mark = tui.mark()
+        tui.type("RECALL please")
+        tui.wait_text("> RECALL please\n", after=mark)
+        tui.wait_text("⏺ history: remember QUINCE\n", after=mark)
+        tui.wait_text("✻ Worked for", after=mark)
+        wait_hooks(plugin, lambda h: h["ev"] == "Notification" and h["in"]["notification_type"] == "idle_prompt")
+        # a line typed while a turn runs is injected at the next tool boundary
+        mark = tui.mark()
+        tui.type("SLEEP 1.5 first")
+        tui.wait_text("⏺ Bash(sleep 1.5)", after=mark)
+        tui.type("FIG typed meanwhile")
+        tui.wait_text("> FIG typed meanwhile\n", after=mark)
+        tui.wait_text("⏺ ok: SLEEP 1.5 first\n  ok: FIG typed meanwhile\n", after=mark)
+        # Ctrl-C interrupts a turn (no hook); at the prompt it only hints
+        mark = tui.mark()
+        tui.type("SLEEP 10 to interrupt")
+        tui.wait_text("⏺ Bash(sleep 10)", after=mark)
+        tui.type("\x03", enter=False)
+        tui.wait_text("Interrupted", after=mark)
+        time.sleep(0.3)
+        tui.type("\x03", enter=False)
+        tui.wait_text("Ctrl-C does not quit", after=mark)
+        assert tui.poll() is None
+        # a permission prompt: y allows; n stops the turn
+        mark = tui.mark()
+        tui.type("ASK_PERMISSION:tui_p1")
+        tui.wait_text("Do you want to proceed?", after=mark)
+        tui.type("y")
+        tui.wait_text("⏺ permission allowed\n", after=mark)
+        mark = tui.mark()
+        tui.type("ASK_PERMISSION:tui_p2")
+        tui.wait_text("Do you want to proceed?", after=mark)
+        tui.type("n")
+        tui.wait_text("Interrupted", after=mark)
+        mark = tui.mark()
+        tui.type("ASK_QUESTIONS")
+        tui.wait_text("? Favorite color?", after=mark)
+        tui.type("2")
+        tui.wait_text("? Which size?", after=mark)
+        tui.type("XL")
+        tui.wait_text("⏺ answers: Favorite color?=blue; Which size?=XL\n", after=mark)
+        tui.wait_text("✻ Worked for", after=mark)      # the Stop hook ran before the turn's end
+        tui.type("/exit")
+        assert tui.exit_code() == 0
+    finally:
+        tui.close()
+    hs = hook_log(plugin)
+    evs = [h["ev"] for h in hs]
+    assert evs[0] == "SessionStart" and hs[0]["in"]["source"] == "resume", evs
+    assert evs[-1] == "SessionEnd" and hs[-1]["in"]["reason"] == "exit", evs
+    for h in hs:
+        assert h["ppid"] == tui.pid and h["tty"] == "yes", ("Claude's hooks share its terminal", h)
+    stops = [h["in"]["last_assistant_message"] for h in hs if h["ev"] == "Stop"]
+    assert stops == ["history: remember QUINCE", "ok: SLEEP 1.5 first\nok: FIG typed meanwhile", "permission allowed",
+                     "answers: Favorite color?=blue; Which size?=XL"], stops
+    ups = [h["in"]["prompt"] for h in hs if h["ev"] == "UserPromptSubmit"]
+    assert "FIG typed meanwhile" in ups and "SLEEP 10 to interrupt" in ups
+    perms = [h["in"] for h in hs if h["ev"] == "PermissionRequest"]
+    assert [p["tool_input"]["command"] for p in perms] == ["touch tui_p1", "touch tui_p2"]
+    notes = [h["in"]["notification_type"] for h in hs if h["ev"] == "Notification"]
+    assert notes.count("permission_prompt") == 2 and "idle_prompt" in notes, notes
+    # the same conversation continues headless: RECALL sees what was typed in the TUI
+    c = FC("--resume", sid)
+    c.init()
+    r = claude_say(c, "RECALL")
+    assert r["result"] == ("history: remember QUINCE | RECALL please | SLEEP 1.5 first | FIG typed meanwhile | "
+                           "SLEEP 10 to interrupt | ASK_PERMISSION:tui_p1 | ASK_PERMISSION:tui_p2 | ASK_QUESTIONS"), r
+    c.close()
+    c.exit_code()
+    # a fresh TUI session: given id, first prompt from the command line, title cut to 40 characters
+    sid2 = str(uuid.uuid4())
+    tui = PtyProc([FAKE_CLAUDE, "--session-id", sid2, "--dangerously-skip-permissions",
+                   "hello fresh tui with a rather long first prompt indeed"])
+    try:
+        tui.wait_text("⏺ ok: hello fresh tui with a rather long first prompt indeed\n")
+        assert tui.titles() == ["✳ hello fresh tui with a rather long first"], tui.titles()
+        tui.type("ASK_PERMISSION")
+        tui.wait_text("⏺ permission allowed\n")
+        tui.kill(signal.SIGHUP)
+        assert tui.exit_code() == -signal.SIGHUP
+    finally:
+        tui.close()
+    assert [r["text"] for r in receipts_for(sid2)] == ["hello fresh tui with a rather long first prompt indeed",
+                                                       "ASK_PERMISSION"]
+    # a missing conversation: the error, exit 1
+    bad = str(uuid.uuid4())
+    tui = PtyProc([FAKE_CLAUDE, "--resume", bad])
+    try:
+        assert tui.exit_code() == 1
+        assert "No conversation found with session ID: %s" % bad in tui.text()
+    finally:
+        tui.close()
+
+
+def t_violations():
+    root = tempfile.mkdtemp(prefix="viol-", dir=TMP)
+    env = {"FAKE_AGENT_DIR": root}
+    sid = str(uuid.uuid4())
+    a = FC("--session-id", sid, env=env)
+    a.init()
+    claude_say(a, "one")
+    assert violations(root) == []
+    b = FC("--resume", sid, env=env)           # a second live process on the same conversation
+    b.init()
+    assert claude_say(b, "two")["result"] == "ok: two"     # logged, not refused
+    assert violations(root) == ["two processes on claude session %s: pids %d and %d" % (sid, a.p.pid, b.p.pid)]
+    # the TUI on a conversation a headless process still runs is the same violation
+    tui = PtyProc([FAKE_CLAUDE, "--resume", sid], env)
+    try:
+        tui.wait_text("session: " + sid)
+        tui.type("/exit")
+        assert tui.exit_code() == 0
+    finally:
+        tui.close()
+    assert len(violations(root)) == 2 and violations(root)[1].endswith("pids %d and %d" % (b.p.pid, tui.pid))
+    for p in (a, b):
+        p.close()
+        p.exit_code()
+    # one after the other is fine, including after SIGTERM and after a crash
+    c = FC("--resume", sid, env=env)
+    c.init()
+    claude_say(c, "three")
+    c.p.terminate()
+    c.exit_code()
+    d = FC("--resume", sid, env=env)
+    d.init()
+    d.user("CRASH")
+    assert d.exit_code() == 1
+    e = FC("--resume", sid, env=env)
+    e.init()
+    claude_say(e, "four")
+    e.close()
+    e.exit_code()
+    tui = PtyProc([FAKE_CLAUDE, "--resume", sid], env)
+    try:
+        tui.wait_text("session: " + sid)
+        tui.type("\x04", enter=False)          # Ctrl-D on an empty prompt ends the TUI
+        assert tui.exit_code() == 0
+    finally:
+        tui.close()
+    assert len(violations(root)) == 2, violations(root)
+    # the Codex TUI ends on Ctrl-D too, and releases the thread for the next process
+    tui = PtyProc([FAKE_CODEX, "hi codex"], env)
+    try:
+        tui.wait_text("─ Worked for")
+        tid = re.search(r"thread: (\S+)", tui.text()).group(1)
+        tui.type("\x04", enter=False)
+        assert tui.exit_code() == 0
+    finally:
+        tui.close()
+    x = FX(env=env)
+    x.init()
+    assert "result" in x.call("thread/resume", {"threadId": tid})
+    x.close()
+    x.exit_code()
+    assert len(violations(root)) == 2, violations(root)
+
+
+def t_no_stray_violations():
+    """Runs last: every violation the other tests logged was provoked on purpose."""
+    stray = [l for l in violations() if not any(s in l for s in EXPECTED_VIOLATIONS)]
+    assert not stray, stray
+
+
 TESTS = [t_codex_background, t_codex_answer_id_type, t_claude_basic, t_claude_interrupt_sleep, t_claude_interrupt_keeps_queued, t_claude_injection,
          t_claude_permissions, t_claude_skip_permissions, t_claude_resume, t_claude_crash_and_malformed,
          t_claude_stdin_close_mid_turn, t_codex_basic, t_codex_steer_and_commentary, t_codex_interrupt,
@@ -1899,7 +2972,10 @@ TESTS = [t_codex_background, t_codex_answer_id_type, t_claude_basic, t_claude_in
          t_hostile_stderr_spam, t_hostile_hang, t_hostile_exit_clean, t_hostile_term_and_stubborn, t_run,
          t_slow_start, t_claude_always, t_codex_always, t_claude_wake, t_claude_wake_busy_and_queue,
          t_claude_chaos_wake, t_codex_wake, t_claude_resume_missing, t_claude_resume_other_cwd,
-         t_codex_resume_missing, t_claude_mcp, t_codex_mcp]
+         t_codex_resume_missing, t_claude_mcp, t_codex_mcp,
+         t_claude_cancel_queued, t_claude_hooks_print, t_claude_transcript, t_claude_tui, t_violations,
+         t_codex_ws_server, t_codex_ws_chaos, t_codex_tui_remote, t_codex_tui_local, t_codex_hooks_app_server, t_no_stray_violations]
+
 
 
 def main():
@@ -1919,6 +2995,8 @@ def main():
             print("FAIL %-36s %.2fs" % (t.__name__, time.time() - t0))
             traceback.print_exc()
     shutil.rmtree(TMP, ignore_errors=True)
+    for d in SCRATCH:
+        shutil.rmtree(d, ignore_errors=True)
     print("%d/%d passed" % (ran - failed, ran))
     sys.exit(1 if failed else 0)
 

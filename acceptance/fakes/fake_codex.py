@@ -63,13 +63,28 @@ scanned for other triggers):
                  reply "started"; turn/completed while the item is still open; n s later item/completed
                  for it, with the finished turn's id and no new turn (X15wake)
   default        "ok: <text>"
+
+Transports: `app-server [--listen stdio://]` (newline-delimited JSON on stdin/stdout) or
+`app-server --listen unix://PATH` (WebSocket over a unix socket, several clients at once; one JSON-RPC
+message per text frame). A client that started or resumed a thread gets its notifications and server
+requests; the first answer to a server request wins.
+
+TUI mode: `fake_codex [OPTIONS] [PROMPT]` and `fake_codex resume [THREAD] [PROMPT] [--remote unix://PATH]`
+show a line-oriented interface on a terminal. With --remote it is a client of that server; without, it
+runs its own engine on the thread (same state files and lock). Hooks from $FAKE_CODEX_PLUGIN_DIRS
+(DIR/hooks/hooks.json) run wherever the engine runs, detached from the terminal.
 """
+import base64
+import hashlib
 import json
 import os
+import queue
 import random
 import re
 import shlex
 import signal
+import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -77,7 +92,13 @@ import threading
 import time
 import uuid as uuidlib
 
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from fake_common import Hooks, LineUI, live_fake, log_violation, plugin_dirs, restore_terminals, short  # noqa: E402
+
 VERSION = "0.160.0"
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+WS_MAX_UNFRAGMENTED = 16777216    # the real 101 response advertises x-codex-websocket-max-unfragmented-message-bytes
+WS_MAX_MESSAGE = 256 * 1024 * 1024
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 RUN_RE = re.compile(r"\bRUN[ \t]+(.+)")
 WAKE_RE = re.compile(r"\bWAKE[ \t]+([0-9]*\.?[0-9]+)(?=\s|$)")
@@ -252,6 +273,16 @@ class Chaos(object):
                 self._dec.shuffle(seq)
         return seq
 
+    def plan(self, length):
+        """(delay, cut, gap) for one write: in chaos mode a 0-40 ms delay and sometimes a split."""
+        if not self.on:
+            return 0.0, 0, 0.0
+        with self._lock:
+            delay = self._out.uniform(0.0, 0.04)
+            cut = self._out.randint(1, length - 1) if length > 2 and self._out.random() < 0.2 else 0
+            gap = self._out.uniform(0.001, 0.015)
+        return delay, cut, gap
+
     def write(self, stream, line):
         """Write one line: in chaos mode after a 0-40 ms delay, sometimes as two writes 1-15 ms apart."""
         if self.on:
@@ -311,6 +342,284 @@ class ShellRun(object):
             pass
 
 
+# ------------------------------------------------------------------ WebSocket (RFC 6455) over a unix socket
+
+def ws_mask(data, key):
+    n = len(data)
+    if not n:
+        return b""
+    k = (key * (n // 4 + 1))[:n]
+    return (int.from_bytes(data, "big") ^ int.from_bytes(k, "big")).to_bytes(n, "big")
+
+
+def ws_frame(op, payload, fin=True, mask=False):
+    b0 = (0x80 if fin else 0) | op
+    m = 0x80 if mask else 0
+    n = len(payload)
+    if n < 126:
+        head = struct.pack(">BB", b0, m | n)
+    elif n < 65536:
+        head = struct.pack(">BBH", b0, m | 126, n)
+    else:
+        head = struct.pack(">BBQ", b0, m | 127, n)
+    if mask:
+        key = os.urandom(4)
+        return head + key + ws_mask(payload, key)
+    return head + payload
+
+
+class WsProtocolError(Exception):
+    def __init__(self, code, reason):
+        Exception.__init__(self, reason)
+        self.code = code
+
+
+class WsEndpoint(object):
+    """One side of a WebSocket. A server expects masked frames and sends unmasked ones; a client the
+    reverse. recv_message() answers pings, joins fragments and returns (opcode, bytes) or None on close."""
+
+    def __init__(self, sock, buf=b"", client=False):
+        self.sock = sock
+        self.buf = buf
+        self.client = client
+        self.send_lock = threading.Lock()
+        self.close_sent = False
+
+    def _need(self, n):
+        while len(self.buf) < n:
+            data = self.sock.recv(max(65536, n - len(self.buf)))
+            if not data:
+                raise EOFError("socket closed")
+            self.buf += data
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def recv_frame(self):
+        b0, b1 = struct.unpack(">BB", self._need(2))
+        n = b1 & 0x7F
+        if n == 126:
+            n = struct.unpack(">H", self._need(2))[0]
+        elif n == 127:
+            n = struct.unpack(">Q", self._need(8))[0]
+        if n > WS_MAX_MESSAGE:
+            raise WsProtocolError(1009, "frame too big")
+        key = self._need(4) if b1 & 0x80 else None
+        payload = self._need(n)
+        if key is not None:
+            payload = ws_mask(payload, key)
+        return bool(b0 & 0x80), b0 & 0x70, b0 & 0x0F, key is not None, payload
+
+    def recv_message(self):
+        msg_op, parts, size = None, [], 0
+        while True:
+            fin, rsv, op, masked, payload = self.recv_frame()
+            if rsv:
+                raise WsProtocolError(1002, "reserved bits set")
+            if masked == self.client:
+                raise WsProtocolError(1002, "client frames must be masked, server frames must not")
+            if op >= 8:
+                if not fin or len(payload) > 125:
+                    raise WsProtocolError(1002, "bad control frame")
+                if op == 9:
+                    self.send_frame(10, payload)
+                elif op == 8:
+                    if not self.close_sent:
+                        self.send_frame(8, payload[:2])
+                    return None
+                elif op != 10:
+                    raise WsProtocolError(1002, "unknown opcode %d" % op)
+                continue
+            if op == 0:
+                if msg_op is None:
+                    raise WsProtocolError(1002, "continuation without a message")
+            elif op in (1, 2):
+                if msg_op is not None:
+                    raise WsProtocolError(1002, "new message inside a fragmented one")
+                msg_op = op
+            else:
+                raise WsProtocolError(1002, "unknown opcode %d" % op)
+            parts.append(payload)
+            size += len(payload)
+            if size > WS_MAX_MESSAGE:
+                raise WsProtocolError(1009, "message too big")
+            if fin:
+                return msg_op, b"".join(parts)
+
+    def send_frame(self, op, payload, fin=True):
+        data = ws_frame(op, payload, fin, mask=self.client)
+        with self.send_lock:
+            if op == 8:
+                if self.close_sent:
+                    return
+                self.close_sent = True
+            self.sock.sendall(data)
+
+    def send_text(self, text, chaos=None):
+        """One message; above WS_MAX_UNFRAGMENTED bytes it goes out in fragments of that size.
+        chaos: (delay, cut, gap) splits the bytes over two socket writes."""
+        payload = text.encode("utf-8")
+        if len(payload) <= WS_MAX_UNFRAGMENTED:
+            data = ws_frame(1, payload, mask=self.client)
+        else:
+            chunks = [payload[i:i + WS_MAX_UNFRAGMENTED] for i in range(0, len(payload), WS_MAX_UNFRAGMENTED)]
+            data = b"".join(ws_frame(1 if i == 0 else 0, c, fin=i == len(chunks) - 1, mask=self.client)
+                            for i, c in enumerate(chunks))
+        with self.send_lock:
+            if chaos and chaos[1] and chaos[1] < len(data):
+                self.sock.sendall(data[:chaos[1]])
+                time.sleep(chaos[2])
+                self.sock.sendall(data[chaos[1]:])
+            else:
+                self.sock.sendall(data)
+
+    def close(self, code=1000):
+        try:
+            self.send_frame(8, struct.pack(">H", code))
+        except OSError:
+            pass
+
+
+def ws_accept(key):
+    return base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
+
+
+def ws_connect_unix(path, timeout=10):
+    """Client side: connect to unix socket `path` and upgrade. Returns a WsEndpoint."""
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    s.connect(path)
+    key = base64.b64encode(os.urandom(16)).decode()
+    s.sendall(("GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+               "Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n" % key).encode())
+    buf = b""
+    while b"\r\n\r\n" not in buf:
+        data = s.recv(4096)
+        if not data:
+            raise OSError("connection closed during the WebSocket handshake")
+        buf += data
+    head, rest = buf.split(b"\r\n\r\n", 1)
+    status = head.split(b"\r\n")[0].decode("latin-1")
+    if " 101 " not in status + " ":
+        raise OSError("WebSocket upgrade refused: %s" % status)
+    s.settimeout(None)
+    return WsEndpoint(s, rest, client=True)
+
+
+# ------------------------------------------------------------------ connections to the engine
+
+class Conn(object):
+    """A client of the engine. `subs`: threads whose notifications and server requests it receives."""
+
+    def __init__(self, engine):
+        self.engine = engine
+        self.initialized = False
+        self.subs = set()
+        self.closed = False
+
+    def send(self, obj):
+        self.send_raw(json.dumps(obj))
+
+    def send_raw(self, text):
+        raise NotImplementedError
+
+
+class StdioConn(Conn):
+    """`--listen stdio://`: newline-delimited JSON on stdout (the only connection)."""
+
+    def send_raw(self, text):
+        self.engine.write_stdout(text + "\n")
+
+
+class WsConn(Conn):
+    """`--listen unix://PATH`: one WebSocket client. Outgoing messages go through a queue and a writer
+    thread, so a slow client never blocks the engine."""
+
+    def __init__(self, engine, endpoint):
+        Conn.__init__(self, engine)
+        self.ep = endpoint
+        self.q = queue.Queue()
+        threading.Thread(target=self._writer, daemon=True).start()
+
+    def send_raw(self, text):
+        if self.closed or self.engine.hung:
+            return
+        self.q.put(text)
+
+    def _writer(self):
+        while True:
+            text = self.q.get()
+            if text is None:
+                return
+            plan = self.engine.chaos.plan(len(text) + 10)
+            if plan[0]:
+                time.sleep(plan[0])
+            try:
+                self.ep.send_text(text, plan)
+            except OSError:
+                self.closed = True
+                try:
+                    self.ep.sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                return
+
+    def serve(self):
+        try:
+            while True:
+                m = self.ep.recv_message()
+                if m is None:
+                    break
+                op, data = m
+                if self.engine.hung:
+                    continue
+                if op == 2:
+                    sys.stderr.write("ERROR codex_app_server_transport::transport: ignoring a binary message\n")
+                    sys.stderr.flush()
+                    continue
+                try:
+                    text = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    raise WsProtocolError(1007, "invalid UTF-8")
+                try:
+                    msg = json.loads(text)
+                except ValueError as e:
+                    sys.stderr.write("ERROR codex_app_server_transport::transport: Failed to deserialize "
+                                     "JSONRPCMessage: %s\n" % e)
+                    sys.stderr.flush()
+                    continue
+                self.engine.dispatch(self, msg)
+        except WsProtocolError as e:
+            self.ep.close(e.code)
+        except (EOFError, OSError, struct.error):
+            pass
+        finally:
+            self.engine.remove_conn(self)
+            self.q.put(None)
+            try:
+                self.ep.sock.close()
+            except OSError:
+                pass
+
+
+class LocalConn(Conn):
+    """The in-process TUI (no --remote): messages are handed to `deliver` as fresh objects."""
+
+    def __init__(self, engine, deliver):
+        Conn.__init__(self, engine)
+        self.deliver = deliver
+
+    def send(self, obj):
+        if not self.engine.hung:
+            self.deliver(json.loads(json.dumps(obj)))
+
+    def send_raw(self, text):
+        try:
+            obj = json.loads(text)
+        except ValueError:
+            return                     # GARBAGE has no meaning in-process
+        self.send(obj)
+
+
 class RpcError(Exception):
     def __init__(self, message, code=-32600):
         Exception.__init__(self, message)
@@ -341,12 +650,18 @@ class ActiveTurn(object):
 
 
 class FakeCodex(object):
-    def __init__(self):
+    def __init__(self, argv=None):
         self.lock = threading.RLock()
         self.cv = threading.Condition(self.lock)
         self.out_lock = threading.Lock()
         self.save_lock = threading.RLock()
-        self.initialized = False
+        self.load_lock = threading.Lock()
+        self.argv = sys.argv[1:] if argv is None else argv
+        self.conns = []            # connected clients (Conn)
+        self.open_requests = {}    # server request id -> (thread id, request) until answered or dropped
+        self.hooks = Hooks("codex", plugin_dirs("FAKE_CODEX_PLUGIN_DIRS"))
+        self.sock_path = None      # --listen unix://PATH
+        self.on_exit = None        # the in-process TUI's cleanup (SessionEnd, terminal)
         self.threads = {}          # loaded threads: id -> dict
         self.server_req_id = 0
         self.pending_server = {}   # req id -> ActiveTurn
@@ -358,17 +673,14 @@ class FakeCodex(object):
         self.queue_watch = set()   # chaos: threads whose queue API was used get periodic queue/changed
         self.input_delay = float(os.environ.get("FAKE_INPUT_DELAY") or 0)
         self.session_approvals = {}   # thread id -> commands approved with acceptForSession (memory only)
-        self.config = parse_config_args(sys.argv[1:])
+        self.config = parse_config_args(self.argv)
         self.mcp = parse_fake_mcp()     # FAKE_MCP: [(name, status)]
         self.home = os.path.join(agent_root(), "codex")
         self.tdir = os.path.join(self.home, "threads")
         os.makedirs(self.tdir, exist_ok=True)
 
-    # ------------------------------------------------------------ output
-    def write(self, obj):
-        self.write_raw(json.dumps(obj) + "\n")
-
-    def write_raw(self, line):
+    # ------------------------------------------------------------ output and routing
+    def write_stdout(self, line):
         with self.out_lock:
             if self.hung:
                 return
@@ -377,8 +689,72 @@ class FakeCodex(object):
             except (BrokenPipeError, ValueError):
                 os._exit(1)
 
+    def add_conn(self, conn):
+        with self.cv:
+            self.conns.append(conn)
+
+    def remove_conn(self, conn):
+        with self.cv:
+            conn.closed = True
+            conn.subs.clear()
+            if conn in self.conns:
+                self.conns.remove(conn)
+
+    def targets(self, tid=None):
+        """Thread notifications and server requests go to the thread's subscribers; the rest to everyone."""
+        with self.cv:
+            if tid is None:
+                return [c for c in self.conns if c.initialized and not c.closed]
+            return [c for c in self.conns if tid in c.subs and not c.closed]
+
+    def subscribe(self, conn, tid):
+        with self.cv:
+            conn.subs.add(tid)
+
     def notify(self, method, params):
-        self.write({"method": method, "params": params, "emittedAtMs": now_ms()})
+        obj = {"method": method, "params": params, "emittedAtMs": now_ms()}
+        tid = params.get("threadId") if isinstance(params, dict) else None
+        for c in self.targets(tid):
+            c.send(obj)
+
+    def server_request(self, th, obj):
+        """An approval / question for a thread: sent to every subscriber; the first answer wins
+        (handle_client_response) and serverRequest/resolved tells all of them."""
+        with self.cv:
+            self.open_requests[obj["id"]] = (th["id"], obj)
+        for c in self.targets(th["id"]):
+            c.send(obj)
+
+    def close_request(self, req_id):
+        with self.cv:
+            self.open_requests.pop(req_id, None)
+
+    def replay_requests(self, conn, tid):
+        """A client that subscribes while a request is pending gets it too (inferred)."""
+        with self.cv:
+            pending = [obj for t, obj in sorted(self.open_requests.values(), key=lambda v: v[1]["id"]) if t == tid]
+        for obj in pending:
+            conn.send(obj)
+
+    # ------------------------------------------------------------ hooks (FAKE_CODEX_PLUGIN_DIRS)
+    def fire(self, th, event, turn=None, match=None, **fields):
+        if not self.hooks.has(event):
+            return
+        d = {"session_id": th["id"], "transcript_path": self.path(th["id"]), "cwd": th["cwd"],
+             "hook_event_name": event, "model": th["model"]}
+        if turn is not None:
+            d["turn_id"] = turn.id
+        d.update(fields)
+        cwd = th["cwd"] if os.path.isdir(th["cwd"]) else os.getcwd()
+        self.hooks.run(event, d, cwd, match=match)
+
+    def pre_tool(self, th, turn, command, item_id):
+        self.fire(th, "PreToolUse", turn, match="Bash", tool_name="Bash", tool_use_id=item_id,
+                  tool_input={"command": command})
+
+    def post_tool(self, th, turn, command, item_id, output):
+        self.fire(th, "PostToolUse", turn, match="Bash", tool_name="Bash", tool_use_id=item_id,
+                  tool_input={"command": command}, tool_response=output)
 
     def status(self, th, typ, flags=None):
         st = {"type": typ}
@@ -396,9 +772,10 @@ class FakeCodex(object):
         self.notify("item/completed", {"item": item, "threadId": turn.thread_id, "turnId": turn.id,
                                        "completedAtMs": now_ms()})
 
-    def garbage(self):
-        for line in GARBAGE_LINES:
-            self.write_raw(line + "\n")
+    def garbage(self, tid):
+        for c in self.targets(tid):
+            for line in GARBAGE_LINES:
+                c.send_raw(line)
 
     # ------------------------------------------------------------ chaos noise (shapes from X1/X4/X4q/X7/X8)
     def usage_noise(self, th, turn):
@@ -499,20 +876,17 @@ class FakeCodex(object):
             os.replace(tmp, self.path(th["id"]))
 
     def take_lock(self, tid):
+        """X5: a thread loaded by another live process is refused; that attempt is also a violation of
+        "one process per conversation" ($FAKE_AGENT_DIR/violations.log). A dead or zombie owner doesn't count."""
         lp = self.lockpath(tid)
         if os.path.exists(lp):
             try:
                 pid = int(open(lp).read().strip() or "0")
-            except ValueError:
+            except (ValueError, IOError):
                 pid = 0
-            if pid and pid != os.getpid():
-                try:
-                    os.kill(pid, 0)
-                    alive = True
-                except OSError:
-                    alive = False
-                if alive:
-                    raise RpcError("thread %s already has an active writer" % tid)
+            if pid and pid != os.getpid() and live_fake(pid):
+                log_violation("codex", tid, pid)
+                raise RpcError("thread %s already has an active writer" % tid)
         with open(lp, "w") as f:
             f.write(str(os.getpid()))
 
@@ -567,12 +941,25 @@ class FakeCodex(object):
                 "error": t.get("error"), "startedAt": t.get("startedAt"), "completedAt": t.get("completedAt"),
                 "durationMs": t.get("durationMs")}
 
-    # ------------------------------------------------------------ input loop
+    # ------------------------------------------------------------ transports
+    def dispatch(self, conn, msg):
+        if not isinstance(msg, dict):
+            return
+        if "method" in msg:
+            if "id" in msg:
+                self.handle_request(conn, msg)
+            # notifications (e.g. "initialized") need no answer
+        elif "id" in msg:
+            self.handle_client_response(msg)
+
     def run(self):
+        """`--listen stdio://`: the one client is stdin/stdout; stdin EOF ends the server (X6)."""
         slow = float(os.environ.get("FAKE_SLOW_START") or 0)
         if slow > 0:
             time.sleep(slow)
         signal.signal(signal.SIGTERM, self.on_sigterm)
+        conn = StdioConn(self)
+        self.add_conn(conn)
         try:
             while True:
                 line = sys.stdin.readline()
@@ -590,18 +977,97 @@ class FakeCodex(object):
                                      "JSONRPCMessage: %s\n" % e)
                     sys.stderr.flush()
                     continue
-                if not isinstance(msg, dict):
-                    continue
-                if "method" in msg:
-                    if "id" in msg:
-                        self.handle_request(msg)
-                    # notifications (e.g. "initialized") need no answer
-                elif "id" in msg:
-                    self.handle_client_response(msg)
+                self.dispatch(conn, msg)
         finally:
             while self.hung:       # a hung server does not notice EOF either
                 time.sleep(3600)
             self.shutdown()
+
+    def run_unix(self, path):
+        """`--listen unix://PATH`: a WebSocket server on a unix socket. Clients come and go; the server
+        keeps running (stdin is not read) until SIGTERM/SIGINT/SIGHUP, and removes the socket file."""
+        slow = float(os.environ.get("FAKE_SLOW_START") or 0)
+        if slow > 0:
+            time.sleep(slow)
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(sig, self.on_sigterm)
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        if os.path.exists(path):
+            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                probe.connect(path)
+                sys.stderr.write("Error: failed to bind %s: address already in use\n" % path)
+                sys.stderr.flush()
+                os._exit(1)
+            except OSError:
+                os.unlink(path)          # a stale socket file left by a dead server
+            finally:
+                probe.close()
+        try:
+            srv.bind(path)
+        except OSError as e:
+            sys.stderr.write("Error: failed to bind %s: %s\n" % (path, e))
+            sys.stderr.flush()
+            os._exit(1)
+        self.sock_path = os.path.abspath(path)
+        srv.listen(64)
+        while True:
+            try:
+                s, _ = srv.accept()
+            except InterruptedError:
+                continue
+            except OSError:
+                time.sleep(0.05)
+                continue
+            threading.Thread(target=self.ws_client, args=(s,), daemon=True).start()
+
+    def ws_client(self, s):
+        """HTTP/1.1 upgrade, then one WsConn until the client goes away."""
+        try:
+            s.settimeout(10)
+            buf = b""
+            while b"\r\n\r\n" not in buf:
+                data = s.recv(4096)
+                if not data or len(buf) > 65536:
+                    s.close()
+                    return
+                buf += data
+            head, rest = buf.split(b"\r\n\r\n", 1)
+            lines = head.decode("latin-1").split("\r\n")
+            headers = {}
+            for line in lines[1:]:
+                k, _, v = line.partition(":")
+                headers[k.strip().lower()] = v.strip()
+            key = headers.get("sec-websocket-key")
+            if not lines[0].startswith("GET ") or "websocket" not in headers.get("upgrade", "").lower() or not key:
+                s.sendall(b"HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                s.close()
+                return
+            s.sendall(("HTTP/1.1 101 Switching Protocols\r\nconnection: upgrade\r\nupgrade: websocket\r\n"
+                       "sec-websocket-accept: %s\r\nx-codex-websocket-max-unfragmented-message-bytes: %d\r\n\r\n"
+                       % (ws_accept(key), WS_MAX_UNFRAGMENTED)).encode())
+            s.settimeout(None)
+        except OSError:
+            try:
+                s.close()
+            except OSError:
+                pass
+            return
+        conn = WsConn(self, WsEndpoint(s, rest))
+        self.add_conn(conn)
+        conn.serve()
+
+    def cleanup(self):
+        """What every orderly exit does: kill RUN commands, release thread locks, remove the socket."""
+        for sh in list(self.shells):
+            sh.kill()
+        self.release_locks()
+        if self.sock_path:
+            try:
+                os.unlink(self.sock_path)
+            except OSError:
+                pass
+            self.sock_path = None
 
     def shutdown(self):
         for sh in list(self.shells):
@@ -612,7 +1078,9 @@ class FakeCodex(object):
                 if turn is not None:
                     self.persist_turn(th, turn, "interrupted")
                     self.save(th)
-        self.release_locks()
+        if self.on_exit is not None:
+            self.on_exit("other")
+        self.cleanup()
         with self.out_lock:
             try:
                 sys.stdout.flush()
@@ -621,12 +1089,11 @@ class FakeCodex(object):
         os._exit(0)
 
     def on_sigterm(self, signum, frame):
-        if self.ignore_term:
+        if self.ignore_term and signum == signal.SIGTERM:
             return
-        for sh in list(self.shells):
-            sh.kill()
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        os.kill(os.getpid(), signal.SIGTERM)
+        self.cleanup()
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
 
     def hang(self):
         """HANG: stay alive, emit nothing, ignore stdin (and its EOF) until killed."""
@@ -635,34 +1102,34 @@ class FakeCodex(object):
         while True:
             time.sleep(3600)
 
-    def handle_request(self, msg):
+    def handle_request(self, conn, msg):
         rid, method, params = msg["id"], msg["method"], msg.get("params") or {}
         try:
             if method == "initialize":
-                if self.initialized:
+                if conn.initialized:
                     raise RpcError("Already initialized")
-                self.initialized = True
+                conn.initialized = True
                 result = {"userAgent": "%s/%s (fake)" % ((params.get("clientInfo") or {}).get("name", "client"),
                                                           VERSION),
                           "codexHome": self.home, "platformFamily": "unix", "platformOs": "macos"}
-            elif not self.initialized:
+            elif not conn.initialized:
                 raise RpcError("Not initialized")
             elif method not in KNOWN_METHODS:
                 raise RpcError("Invalid request: unknown variant `%s`, expected one of %s"
                                % (method, ", ".join("`%s`" % m for m in KNOWN_METHODS)))
             else:
                 fn = getattr(self, "m_" + method.replace("/", "_"))
-                result = fn(params, rid)
+                result = fn(params, rid, conn)
                 if result is None:
                     return  # handler wrote the response itself
         except RpcError as e:
-            self.write({"error": {"code": e.code, "message": e.message}, "id": rid})
+            conn.send({"error": {"code": e.code, "message": e.message}, "id": rid})
             return
         except KeyError as e:
-            self.write({"error": {"code": -32600, "message": "Invalid request: missing field `%s`" % e.args[0]},
-                        "id": rid})
+            conn.send({"error": {"code": -32600, "message": "Invalid request: missing field `%s`" % e.args[0]},
+                       "id": rid})
             return
-        self.write({"id": rid, "result": result})
+        conn.send({"id": rid, "result": result})
 
     def loaded(self, tid):
         th = self.threads.get(tid)
@@ -671,7 +1138,7 @@ class FakeCodex(object):
         return th
 
     # ------------------------------------------------------------ thread methods
-    def m_thread_start(self, p, rid):
+    def m_thread_start(self, p, rid, conn):
         tid = uuid7()
         cfg = dict(self.config)
         cfg.update(p.get("config") or {})
@@ -687,33 +1154,40 @@ class FakeCodex(object):
         with self.cv:
             self.threads[tid] = th
         self.save(th)
+        self.subscribe(conn, tid)
         resp = self.thread_response(th)
-        self.write({"id": rid, "result": resp})
+        conn.send({"id": rid, "result": resp})
         self.notify("thread/started", {"thread": self.thread_obj(th)})
         self.mcp_startup(tid)          # X1, X2*, X7: right after thread/started
+        self.fire(th, "SessionStart", match="startup", source="startup")
         return None
 
-    def m_thread_resume(self, p, rid):
+    def m_thread_resume(self, p, rid, conn):
         tid = p["threadId"]
-        with self.cv:
-            th = self.threads.get(tid)
-        if th is None:
-            if not UUID_RE.match(tid):
-                raise RpcError("invalid session id: invalid character: expected an optional prefix of "
-                               "`urn:uuid:` followed by [0-9a-fA-F-], found `%s` at 1" % tid[:1])
-            if not os.path.exists(self.path(tid)):
-                raise RpcError("no rollout found for thread id %s" % tid)
-            self.take_lock(tid)
-            with open(self.path(tid)) as f:
-                th = json.load(f)
-            for t in th["turns"]:
-                if t["status"] == "inProgress":
-                    t["status"] = "interrupted"
-            th.setdefault("queue", [])
-            th["active"] = None
-            th["status"] = {"type": "idle"}
+        loaded_now = False
+        with self.load_lock:
             with self.cv:
-                self.threads[tid] = th
+                th = self.threads.get(tid)
+            if th is None:
+                if not UUID_RE.match(tid):
+                    raise RpcError("invalid session id: invalid character: expected an optional prefix of "
+                                   "`urn:uuid:` followed by [0-9a-fA-F-], found `%s` at 1" % tid[:1])
+                if not os.path.exists(self.path(tid)):
+                    raise RpcError("no rollout found for thread id %s" % tid)
+                self.take_lock(tid)
+                with open(self.path(tid)) as f:
+                    th = json.load(f)
+                for t in th["turns"]:
+                    if t["status"] == "inProgress":
+                        t["status"] = "interrupted"
+                th.setdefault("queue", [])
+                th["active"] = None
+                th["status"] = {"type": "idle"}
+                with self.cv:
+                    self.threads[tid] = th
+                loaded_now = True
+        self.subscribe(conn, tid)
+        if loaded_now:
             self.mcp_startup(tid)      # X5c_b: before the thread/resume response
         for k_in, k_th in (("model", "model"), ("approvalPolicy", "approvalPolicy"), ("sandbox", "sandbox"),
                            ("cwd", "cwd"), ("effort", "effort")):
@@ -725,13 +1199,19 @@ class FakeCodex(object):
             th["effort"] = p["config"]["model_reasoning_effort"]
         resp = self.thread_response(th, with_turns=not p.get("excludeTurns"))
         resp.update({"collaborationMode": None, "turnsBackwardsCursor": None, "itemsBackwardsCursor": None})
-        return resp
+        conn.send({"id": rid, "result": resp})
+        if loaded_now:
+            self.fire(th, "SessionStart", match="resume", source="resume")
+        self.replay_requests(conn, tid)
+        return None
 
-    def m_thread_unsubscribe(self, p, rid):
+    def m_thread_unsubscribe(self, p, rid, conn):
         self.loaded(p["threadId"])
+        with self.cv:
+            conn.subs.discard(p["threadId"])     # no more notifications for this client
         return {"status": "unsubscribed"}   # like the real server, the writer lock is NOT released
 
-    def m_thread_turns_list(self, p, rid):
+    def m_thread_turns_list(self, p, rid, conn):
         tid = p["threadId"]
         with self.cv:
             th = self.threads.get(tid)
@@ -747,7 +1227,7 @@ class FakeCodex(object):
         return {"text": "\n".join(texts), "content": p.get("input") or [],
                 "clientId": p.get("clientUserMessageId")}
 
-    def deliver(self, th, inp, rid, steer_result, expected=None, steer_only=False):
+    def deliver(self, th, inp, rid, steer_result, conn, expected=None, steer_only=False):
         """Steer `inp` into the active turn, or start and launch a new turn; writes the response.
         Responses are written under the lock so they precede anything the worker emits for the input.
 
@@ -765,7 +1245,7 @@ class FakeCodex(object):
                         turn.finishing = True      # let it complete; this input comes after
                         wait_for = turn
                     else:
-                        self.write({"id": rid, "result": steer_result(turn)})
+                        conn.send({"id": rid, "result": steer_result(turn)})
                         turn.steer.append(inp)
                         self.cv.notify_all()
                         return
@@ -775,13 +1255,14 @@ class FakeCodex(object):
                     raise RpcError("no active turn to steer")
                 else:
                     turn = self.begin_turn(th, inp)
-                    self.write({"id": rid, "result": {"turn": self.turn_obj(turn, started=False)}})
+                    conn.send({"id": rid, "result": {"turn": self.turn_obj(turn, started=False)}})
                     self.launch(th, turn)
                     return
             wait_for.done.wait(30)
 
-    def m_turn_start(self, p, rid):
+    def m_turn_start(self, p, rid, conn):
         th = self.loaded(p["threadId"])
+        self.subscribe(conn, th["id"])     # a client that starts a turn sees it (inferred for an unsubscribed one)
         inp = self.parse_input(p)
         for k_in, k_th in (("model", "model"), ("approvalPolicy", "approvalPolicy"), ("cwd", "cwd"),
                            ("effort", "effort")):
@@ -797,7 +1278,7 @@ class FakeCodex(object):
                 "performance and cause issues." % p["model"])})
         elif self.chaos.chance(0.1):
             self.notify("warning", {"threadId": th["id"], "message": "fake chaos: a harmless warning notification"})
-        self.deliver(th, inp, rid, lambda turn: {"turn": self.turn_obj(turn, started=False)})
+        self.deliver(th, inp, rid, lambda turn: {"turn": self.turn_obj(turn, started=False)}, conn)
         return None
 
     def begin_turn(self, th, inp):
@@ -815,13 +1296,14 @@ class FakeCodex(object):
     def launch(self, th, turn):
         threading.Thread(target=self.turn_worker, args=(th, turn, turn.first_input), daemon=True).start()
 
-    def m_turn_steer(self, p, rid):
+    def m_turn_steer(self, p, rid, conn):
         th = self.loaded(p["threadId"])
-        self.deliver(th, self.parse_input(p), rid, lambda turn: {"turnId": turn.id},
+        self.subscribe(conn, th["id"])
+        self.deliver(th, self.parse_input(p), rid, lambda turn: {"turnId": turn.id}, conn,
                      expected=p.get("expectedTurnId"), steer_only=True)
         return None
 
-    def m_turn_interrupt(self, p, rid):
+    def m_turn_interrupt(self, p, rid, conn):
         th = self.loaded(p["threadId"])
         while True:
             with self.cv:
@@ -834,31 +1316,32 @@ class FakeCodex(object):
                     if p.get("turnId") != turn.id:
                         raise RpcError("expected active turn id %s but found %s" % (p.get("turnId"), turn.id))
                     self.usage_noise(th, turn)
-                    self.write({"id": rid, "result": {}})
+                    conn.send({"id": rid, "result": {}})
                     turn.interrupted = True
                     self.cv.notify_all()
                     return None
             wait_for.done.wait(30)
 
     # ------------------------------------------------------------ queue (experimental)
-    def m_thread_queue_list(self, p, rid):
+    def m_thread_queue_list(self, p, rid, conn):
         th = self.loaded(p["threadId"])
         self.watch_queue(th["id"])
         return {"data": list(th["queue"]), "nextCursor": None}
 
-    def m_thread_queue_add(self, p, rid):
+    def m_thread_queue_add(self, p, rid, conn):
         th = self.loaded(p["threadId"])
+        self.subscribe(conn, th["id"])
         self.watch_queue(th["id"])
         sub = {"id": uuid7(), "input": p.get("input") or [], "clientUserMessageId": p["clientUserMessageId"]}
         with self.cv:
             th["queue"].append(sub)
-            self.write({"id": rid, "result": {"queuedSubmission": sub}})
+            conn.send({"id": rid, "result": {"queuedSubmission": sub}})
             self.notify("thread/queue/changed", {"threadId": th["id"]})
             if th.get("active") is None:
                 self.drain_queue(th)
         return None
 
-    def m_thread_queue_delete(self, p, rid):
+    def m_thread_queue_delete(self, p, rid, conn):
         th = self.loaded(p["threadId"])
         self.watch_queue(th["id"])
         with self.cv:
@@ -869,8 +1352,9 @@ class FakeCodex(object):
             self.notify("thread/queue/changed", {"threadId": th["id"]})
         return {"deleted": deleted}
 
-    def m_thread_queue_start(self, p, rid):
+    def m_thread_queue_start(self, p, rid, conn):
         th = self.loaded(p["threadId"])
+        self.subscribe(conn, th["id"])
         self.watch_queue(th["id"])
         with self.cv:
             if not th["queue"]:
@@ -878,7 +1362,7 @@ class FakeCodex(object):
             if th.get("active") is not None:
                 raise RpcError("thread already has an active turn")
             turn = self.drain_queue(th, p.get("queuedSubmissionId"), launch=False)
-            self.write({"id": rid, "result": {"turn": self.turn_obj(turn, started=False)}})
+            conn.send({"id": rid, "result": {"turn": self.turn_obj(turn, started=False)}})
             self.launch(th, turn)
             return None
 
@@ -934,6 +1418,7 @@ class FakeCodex(object):
                 self.cv.wait(0.05 if deadline is None else max(0.0, min(0.05, deadline - time.time())))
 
     def user_item(self, th, turn, inp):
+        self.fire(th, "UserPromptSubmit", turn, prompt=inp["text"])    # also for a steered input (inferred)
         item = {"type": "userMessage", "id": uuid7(), "clientId": inp["clientId"], "content": inp["content"]}
         self.item_started(turn, item)
         self.item_completed(turn, item)
@@ -1005,18 +1490,22 @@ class FakeCodex(object):
     def run_sleep(self, th, turn, secs, label):
         self.maybe_commentary(turn, None if self.chaos.on else "Running sleep %s." % label)
         item = self.cmd_item(th, "sleep %s" % label, "inProgress", "unifiedExecStartup", pid=str(os.getpid()))
+        self.pre_tool(th, turn, "sleep %s" % label, item["id"])
         self.item_started(turn, item)
         self.wait(turn, deadline=time.time() + secs)
         done = dict(item)
         done.update({"status": "completed", "exitCode": 0, "durationMs": int(secs * 1000)})
         self.item_completed(turn, done)
+        self.post_tool(th, turn, "sleep %s" % label, item["id"], "")
         self.usage_noise(th, turn)
 
     def run_background(self, th, turn, secs, label):
         """X15wake: the command runs as a background terminal. Its item stays open through the
         turn's end; n seconds later item/completed arrives with the finished turn's id."""
         item = self.cmd_item(th, "sleep %s" % label, "inProgress", "unifiedExecStartup", pid=str(os.getpid()))
+        self.pre_tool(th, turn, "sleep %s" % label, item["id"])
         self.item_started(turn, item)
+        self.post_tool(th, turn, "sleep %s" % label, item["id"], "")   # the tool call returns at once
         started = time.time()
 
         def finish():
@@ -1030,8 +1519,9 @@ class FakeCodex(object):
 
     def run_huge(self, th, turn, out, size):
         self.maybe_commentary(turn)
-        item = self.cmd_item(th, "yes 0123456789abcdef | head -c %d" % size, "inProgress", "unifiedExecStartup",
-                             pid=str(os.getpid()))
+        command = "yes 0123456789abcdef | head -c %d" % size
+        item = self.cmd_item(th, command, "inProgress", "unifiedExecStartup", pid=str(os.getpid()))
+        self.pre_tool(th, turn, command, item["id"])
         self.item_started(turn, item)
         step = 1024 * 1024
         for i in range(0, len(out), step):
@@ -1041,6 +1531,7 @@ class FakeCodex(object):
         done = dict(item)
         done.update({"status": "completed", "exitCode": 0, "durationMs": 0, "aggregatedOutput": out})
         self.item_completed(turn, done)
+        self.post_tool(th, turn, command, item["id"], out)
         self.usage_noise(th, turn)
 
     def run_shell(self, th, turn, cmd):
@@ -1048,11 +1539,13 @@ class FakeCodex(object):
         interrupt kills it and leaves the item without item/completed (X1)."""
         self.maybe_commentary(turn)
         cwd = th["cwd"] if os.path.isdir(th["cwd"]) else os.getcwd()
+        item_id = "exec-" + str(uuidlib.uuid4())
+        self.pre_tool(th, turn, cmd, item_id)
         t0 = time.time()
         sh = ShellRun(cmd, cwd)
         self.shells.add(sh)
         item = self.cmd_item(th, cmd, "inProgress", "unifiedExecStartup", pid=str(sh.p.pid),
-                             quoted=shlex.quote(cmd), cwd=cwd)
+                             quoted=shlex.quote(cmd), cwd=cwd, item_id=item_id)
         self.item_started(turn, item)
         try:
             while not sh.done():
@@ -1071,6 +1564,7 @@ class FakeCodex(object):
         done.update({"status": "completed" if code == 0 else "failed", "exitCode": code,
                      "aggregatedOutput": out, "durationMs": int((time.time() - t0) * 1000)})
         self.item_completed(turn, done)
+        self.post_tool(th, turn, cmd, item_id, out)
         self.usage_noise(th, turn)
         return "exit=%d\n%s" % (code, out.rstrip("\n"))
 
@@ -1112,10 +1606,12 @@ class FakeCodex(object):
         if th["approvalPolicy"] == "never" or remembered:
             # X13: a remembered command runs straight away, like an approval-free one
             item = self.cmd_item(th, command, "inProgress", "unifiedExecStartup", pid=str(os.getpid()))
+            self.pre_tool(th, turn, command, item["id"])
             self.item_started(turn, item)
             done = dict(item)
             done.update({"status": "completed", "exitCode": 0, "durationMs": 0})
             self.item_completed(turn, done)
+            self.post_tool(th, turn, command, item["id"], "")
             return "approval not needed" if th["approvalPolicy"] == "never" else "approval accepted (remembered)"
         self.maybe_commentary(turn)
         with self.cv:
@@ -1123,10 +1619,12 @@ class FakeCodex(object):
             self.server_req_id += 1
             turn.approval = {"id": req_id, "decision": None}
             self.pending_server[req_id] = turn
-        self.status(th, "active", ["waitingOnApproval"])
         item = self.cmd_item(th, command, "inProgress", "agent")
+        self.pre_tool(th, turn, command, item["id"])
+        self.status(th, "active", ["waitingOnApproval"])
         self.item_started(turn, item)
-        self.write({"method": "item/commandExecution/requestApproval", "id": req_id, "params": {
+        self.fire(th, "PermissionRequest", turn, match="Bash", tool_name="Bash", tool_input={"command": command})
+        self.server_request(th, {"method": "item/commandExecution/requestApproval", "id": req_id, "params": {
             "kind": "command", "threadId": th["id"], "turnId": turn.id, "itemId": item["id"],
             "startedAtMs": now_ms(), "environmentId": "local", "command": item["command"], "cwd": th["cwd"],
             "commandActions": item["commandActions"], "proposedExecpolicyAmendment": argv,
@@ -1137,6 +1635,7 @@ class FakeCodex(object):
         with self.cv:
             turn.approval = None
             self.pending_server.pop(req_id, None)
+        self.close_request(req_id)
         self.notify("serverRequest/resolved", {"threadId": th["id"], "requestId": req_id})
         accepted = decision not in ("decline", "cancel")
         if decision == "acceptForSession":
@@ -1149,6 +1648,7 @@ class FakeCodex(object):
             done.update({"status": "completed", "exitCode": 0, "durationMs": 0, "source": "unifiedExecStartup",
                          "processId": str(os.getpid())})
             self.item_completed(turn, done)
+            self.post_tool(th, turn, command, item["id"], "")
             return "approval accepted"
         done["status"] = "declined"
         if decision == "cancel":
@@ -1169,7 +1669,7 @@ class FakeCodex(object):
             self.pending_server[req_id] = turn
         self.status(th, "active", ["waitingOnUserInput"])
         item_id = "call_" + uuidlib.uuid4().hex[:12]
-        self.write({"method": "item/tool/requestUserInput", "id": req_id, "params": {
+        self.server_request(th, {"method": "item/tool/requestUserInput", "id": req_id, "params": {
             "threadId": th["id"], "turnId": turn.id, "itemId": item_id, "isBlocking": True, "autoResolutionMs": None,
             "questions": [
                 {"id": "q_color", "header": "Color", "question": "Favorite color?", "isOther": False, "isSecret": False,
@@ -1181,6 +1681,7 @@ class FakeCodex(object):
         with self.cv:
             turn.approval = None
             self.pending_server.pop(req_id, None)
+        self.close_request(req_id)
         self.notify("serverRequest/resolved", {"threadId": th["id"], "requestId": req_id})
         self.status(th, "active", [])
         answers = result.get("answers") or {}
@@ -1195,12 +1696,13 @@ class FakeCodex(object):
             self.pending_server[req_id] = turn
         self.status(th, "active", ["waitingOnApproval"])
         params = dict(params, threadId=th["id"], turnId=turn.id)
-        self.write({"method": method, "id": req_id, "params": params})
+        self.server_request(th, {"method": method, "id": req_id, "params": params})
         self.wait(turn, pred=lambda: turn.approval["decision"] is not None)
         result = turn.approval.get("result") or {}
         with self.cv:
             turn.approval = None
             self.pending_server.pop(req_id, None)
+        self.close_request(req_id)
         self.notify("serverRequest/resolved", {"threadId": th["id"], "requestId": req_id})
         self.status(th, "active", [])
         return "result: " + json.dumps(result, sort_keys=True)
@@ -1262,6 +1764,7 @@ class FakeCodex(object):
                     if "HANG" in trig:
                         self.hang()
                     if "CRASH" in trig:
+                        restore_terminals()
                         sys.stderr.write("fake_codex: CRASH requested\n")
                         sys.stderr.flush()
                         os._exit(1)
@@ -1332,7 +1835,7 @@ class FakeCodex(object):
                             del turn.steer[:]
                 self.checkpoint(turn)
                 if garbage:
-                    self.garbage()
+                    self.garbage(th["id"])
                 self.maybe_reasoning(turn)
                 turn.last_final = self.agent_message(turn, "\n".join(replies), "final_answer")
                 with self.cv:
@@ -1356,15 +1859,18 @@ class FakeCodex(object):
                 turn.approval = None
                 if pending:
                     self.pending_server.pop(pending["id"], None)
+                    self.open_requests.pop(pending["id"], None)
             self.status(th, "idle")
             self.persist_turn(th, turn, "interrupted")
             self.end_turn(th, turn, self.turn_obj(turn, "interrupted"), pending)
             return
+        # Stop once no input can join the turn any more; an interrupted or failed turn fires none
+        self.fire(th, "Stop", turn, stop_hook_active=False, last_assistant_message=turn.last_final["text"])
         self.status(th, "idle")
         self.persist_turn(th, turn, "completed")
         self.end_turn(th, turn, self.turn_obj(turn, "completed", items=[turn.last_final], view="summary"))
         if garbage:
-            self.garbage()
+            self.garbage(th["id"])
 
     def save_progress(self, th, turn):
         for t in th["turns"]:
@@ -1372,6 +1878,482 @@ class FakeCodex(object):
                 t["items"] = list(turn.items)
         self.save(th)
 
+    # ------------------------------------------------------------ the in-process TUI's exit
+    def tui_exit(self, reason):
+        """The local TUI quits: a running turn is abandoned (persisted as interrupted, no hook), SessionEnd
+        runs for its thread (inferred: input as SessionStart's plus `reason`), locks are released."""
+        for sh in list(self.shells):
+            sh.kill()
+        with self.cv:
+            loaded = list(self.threads.values())
+            for th in loaded:
+                turn = th.get("active")
+                if turn is not None:
+                    self.persist_turn(th, turn, "interrupted")
+                    self.save(th)
+        for th in loaded:
+            self.fire(th, "SessionEnd", match=reason, reason=reason)
+        self.cleanup()
+
+
+# ------------------------------------------------------------------ TUI mode (codex [PROMPT] / codex resume ...)
+
+CLI_VALUE_FLAGS = set("""-m --model -c --config -a --ask-for-approval -s --sandbox -C --cd -p --profile --remote -i
+--image --add-dir --enable --disable --remote-auth-token-env --local-provider --listen""".split())
+
+
+def parse_cli(argv):
+    """(subcommand, options). subcommand is "app-server", "resume" or None (a new TUI session)."""
+    o = {"model": None, "approval": None, "sandbox": None, "cd": None, "remote": None, "bypass": False,
+         "positional": [], "listen": [], "last": False, "version": False}
+    sub = None
+    i = 0
+    while i < len(argv):
+        a, val = argv[i], None
+        if a.startswith("--") and "=" in a:
+            a, val = a.split("=", 1)
+        if a in CLI_VALUE_FLAGS:
+            if val is None:
+                i += 1
+                val = argv[i] if i < len(argv) else ""
+            if a in ("-m", "--model"):
+                o["model"] = val
+            elif a in ("-a", "--ask-for-approval"):
+                o["approval"] = val
+            elif a in ("-s", "--sandbox"):
+                o["sandbox"] = val
+            elif a in ("-C", "--cd"):
+                o["cd"] = val
+            elif a == "--remote":
+                o["remote"] = val
+            elif a == "--listen":
+                o["listen"].append(val)
+        elif a in ("--dangerously-bypass-approvals-and-sandbox", "--yolo"):
+            o["bypass"] = True
+        elif a == "--last":
+            o["last"] = True
+        elif a in ("--version", "-V"):
+            o["version"] = True
+        elif a.startswith("-"):
+            pass
+        elif sub is None and not o["positional"] and a in ("app-server", "resume"):
+            sub = a
+        else:
+            o["positional"].append(a)
+        i += 1
+    return sub, o
+
+
+class CodexTui(object):
+    """A line-oriented Codex interface on a terminal. With --remote unix://PATH it is a WebSocket client
+    of that app server (`initialize`, `thread/resume` without overrides); otherwise it runs its own engine
+    in-process on the thread (same state files and writer lock, hooks run here). It shows every turn on
+    the thread, including those other clients start: `› text` a user message, `• text` an agent message,
+    `• Ran cmd` a command, `─ Worked for Ns ─` a turn's end. Typed lines start a turn, or steer the
+    running one. Approvals and questions wait for a typed answer."""
+
+    def __init__(self, resume, opts):
+        self.resume = resume
+        self.opts = opts
+        self.ui = LineUI("› ")
+        self.nid = 0
+        self.waiting = {}
+        self.wlock = threading.Lock()
+        self.tid = None
+        self.active = None              # the running turn's id
+        self.turn_t0 = {}
+        self.requests = []              # server requests waiting for a typed answer (oldest first)
+        self.rlock = threading.RLock()
+        self.engine = None
+        self.ep = None
+        self.inbox = queue.Queue()      # local mode: engine -> TUI
+        self.outbox = queue.Queue()     # local mode: TUI -> engine
+        self.exiting = False
+        self.ready = False              # banner shown: prompts for server requests may print
+        self.ended = set()              # turns seen completing
+        self.started_turns = set()      # turns this TUI started
+
+    # ------------------------------------------------------------ plumbing
+    def fail(self, msg, code=1):
+        self.ui.restore()
+        sys.stderr.write(msg + "\n")
+        sys.stderr.flush()
+        os._exit(code)
+
+    def connect(self):
+        if self.opts["remote"]:
+            url = self.opts["remote"]
+            if not url.startswith("unix://") or len(url) <= 7:
+                self.fail("Error: unsupported --remote URL %r (the fake knows unix://PATH)" % url, 2)
+            try:
+                self.ep = ws_connect_unix(url[7:])
+            except (OSError, socket.error) as e:
+                self.fail("Error: failed to connect to the app server at %s: %s" % (url, e))
+            threading.Thread(target=self.ws_reader, daemon=True).start()
+            return
+        self.engine = FakeCodex()
+        self.engine.on_exit = self.engine_exit
+        conn = LocalConn(self.engine, self.inbox.put)
+        self.engine.add_conn(conn)
+
+        def to_engine():
+            while True:
+                self.engine.dispatch(conn, self.outbox.get())
+
+        def from_engine():
+            while True:
+                self.incoming(self.inbox.get())
+
+        threading.Thread(target=to_engine, daemon=True).start()
+        threading.Thread(target=from_engine, daemon=True).start()
+
+    def ws_reader(self):
+        try:
+            while True:
+                m = self.ep.recv_message()
+                if m is None:
+                    break
+                try:
+                    msg = json.loads(m[1].decode("utf-8"))
+                except ValueError:
+                    continue
+                if isinstance(msg, dict):
+                    self.incoming(msg)
+        except (EOFError, OSError, WsProtocolError, struct.error):
+            pass
+        if not self.exiting:
+            self.ui.say("■ Lost the connection to the app server")
+            self.fail("fake_codex: the app server closed the connection")
+
+    def send(self, obj):
+        if self.ep is not None:
+            try:
+                self.ep.send_text(json.dumps(obj))
+            except OSError:
+                pass
+        else:
+            self.outbox.put(obj)
+
+    def call(self, method, params, timeout=35):
+        with self.wlock:
+            self.nid += 1
+            rid = self.nid
+            slot = [threading.Event(), None]
+            self.waiting[rid] = slot
+        self.send({"id": rid, "method": method, "params": params})
+        slot[0].wait(timeout)
+        with self.wlock:
+            self.waiting.pop(rid, None)
+        return slot[1] or {"error": {"code": -1, "message": "no answer to %s" % method}}
+
+    def incoming(self, msg):
+        if "method" not in msg and "id" in msg:
+            with self.wlock:
+                slot = self.waiting.get(msg["id"])
+            if slot is not None:
+                slot[1] = msg
+                slot[0].set()
+        elif "method" in msg and "id" in msg:
+            if self.tid is None or (msg.get("params") or {}).get("threadId") in (None, self.tid):
+                with self.rlock:
+                    if any(r["msg"]["id"] == msg["id"] for r in self.requests):
+                        return
+                    self.requests.append({"msg": msg, "answers": {}})
+                    first = len(self.requests) == 1
+                if first and self.ready:
+                    self.ask()
+        elif "method" in msg:
+            self.note(msg)
+
+    # ------------------------------------------------------------ startup and the input loop
+    def latest_thread(self):
+        best = None
+        tdir = os.path.join(agent_root(), "codex", "threads")
+        for name in os.listdir(tdir) if os.path.isdir(tdir) else []:
+            if not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(tdir, name)) as f:
+                    th = json.load(f)
+            except (IOError, ValueError):
+                continue
+            if th.get("cwd") == os.getcwd():
+                key = th.get("updatedAt") or th.get("createdAt") or 0
+                if best is None or key > best[0]:
+                    best = (key, th["id"])
+        return best[1] if best else None
+
+    def main(self):
+        o = self.opts
+        if o["cd"]:
+            os.chdir(o["cd"])
+        pos = list(o["positional"])
+        thread_id = None
+        if self.resume:
+            if o["last"]:
+                if o["remote"]:
+                    self.fail("fake_codex: resume --last with --remote is not faked; pass a thread id", 2)
+                thread_id = self.latest_thread()
+                if thread_id is None:
+                    self.fail("No saved session found in %s." % os.getcwd())
+            elif pos:
+                thread_id = pos.pop(0)
+            else:
+                self.fail("fake_codex: the session picker is not faked; pass a thread id (or --last)", 2)
+        prompt = " ".join(pos) or None
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, self.on_term)
+        signal.signal(signal.SIGINT, lambda s, f: threading.Thread(target=self.interrupt, args=(True,),
+                                                                     daemon=True).start())
+        self.ui.on_escape = lambda: threading.Thread(target=self.interrupt, daemon=True).start()
+        self.connect()
+        r = self.call("initialize", {"clientInfo": {"name": "codex-tui", "title": None, "version": VERSION},
+                                     "capabilities": {"experimentalApi": True}})
+        if "error" in r:
+            self.fail("Error: %s" % r["error"]["message"])
+        self.send({"method": "initialized"})
+        if thread_id is None:
+            params = {"cwd": os.getcwd()}
+            params.update(self.overrides())
+            r = self.call("thread/start", params)
+        else:
+            params = {"threadId": thread_id}
+            if not o["remote"]:
+                params.update(self.overrides())     # --remote: thread/resume without overrides (X16)
+            r = self.call("thread/resume", params)
+        if "error" in r:
+            self.fail("Error: %s" % r["error"]["message"])
+        res = r["result"]
+        th = res["thread"]
+        self.tid = th["id"]
+        self.ui.start()
+        sb = res.get("sandbox") or {}
+        self.ui.say(">_ Fake Codex (v%s)" % VERSION, "  thread: %s" % self.tid, "  directory: %s" % res["cwd"],
+                    "  model: %s · approvals: %s · sandbox: %s%s" % (
+                        res["model"], res["approvalPolicy"], sb.get("type") if isinstance(sb, dict) else sb,
+                        " · remote: %s" % o["remote"] if o["remote"] else ""), "")
+        for t in th.get("turns") or []:
+            for it in t.get("items") or []:
+                self.show_item(it)
+            if t.get("status") == "inProgress" and t["id"] not in self.ended and self.active is None:
+                self.active = t["id"]
+        with self.rlock:
+            self.ready = True
+            if self.requests:
+                self.ask()
+        if prompt:
+            self.submit(prompt)
+        self.ui.show_prompt()
+        while True:
+            line = self.ui.read_line()
+            if line is None:
+                if not self.ui.tty:            # piped input: let the work finish first
+                    while self.active or self.started_turns - self.ended:
+                        time.sleep(0.05)
+                self.quit("other" if self.ui.hangup else "exit")
+            text = line.strip()
+            if not text:
+                continue
+            if self.answer(text):
+                continue
+            if text in ("/exit", "/quit"):
+                self.quit("exit")
+            self.submit(text)
+
+    def overrides(self):
+        o, p = self.opts, {}
+        if o["model"]:
+            p["model"] = o["model"]
+        if o["approval"]:
+            p["approvalPolicy"] = o["approval"]
+        if o["sandbox"]:
+            p["sandbox"] = o["sandbox"]
+        if o["bypass"]:
+            p["approvalPolicy"], p["sandbox"] = "never", "danger-full-access"
+        return p
+
+    def submit(self, text):
+        params = {"threadId": self.tid, "clientUserMessageId": str(uuidlib.uuid4()),
+                  "input": [{"type": "text", "text": text, "text_elements": []}]}
+        if self.active:
+            r = self.call("turn/steer", dict(params, expectedTurnId=self.active))
+            if "error" not in r:
+                return
+        r = self.call("turn/start", params)
+        if "error" in r:
+            self.ui.say("■ %s" % r["error"]["message"])
+        else:
+            self.started_turns.add(r["result"]["turn"]["id"])
+
+    def interrupt(self, hint=False):
+        turn = self.active
+        if turn:
+            self.call("turn/interrupt", {"threadId": self.tid, "turnId": turn})
+        elif hint:
+            self.ui.say("  (Ctrl-C does not quit: type /exit or press Ctrl-D)")
+
+    def engine_exit(self, reason):
+        """EXIT_CLEAN in the local engine: SessionEnd, then the terminal is restored."""
+        for th in list(self.engine.threads.values()):
+            self.engine.fire(th, "SessionEnd", match=reason, reason=reason)
+        self.ui.restore()
+
+    def quit(self, reason, signum=None):
+        if self.exiting:
+            return
+        self.exiting = True
+        if self.engine is not None:
+            self.engine.tui_exit(reason)
+        elif self.ep is not None:
+            self.ep.close(1000)
+            try:
+                self.ep.sock.close()
+            except OSError:
+                pass
+        self.ui.restore()
+        if signum is not None:
+            signal.signal(signum, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
+        os._exit(0)
+
+    def on_term(self, signum, frame):
+        if self.engine is not None and self.engine.ignore_term and signum == signal.SIGTERM:
+            return
+        self.quit("other", signum)
+
+    # ------------------------------------------------------------ rendering
+    def show_item(self, it):
+        ty = it.get("type")
+        if ty == "userMessage":
+            text = "\n".join(c.get("text", "") for c in it.get("content") or [] if c.get("type") == "text")
+            self.ui.say("› " + text.replace("\n", "\n  "))
+        elif ty == "agentMessage":
+            self.ui.say("• " + (it.get("text") or "").replace("\n", "\n  "))
+        elif ty == "commandExecution":
+            cmd = ((it.get("commandActions") or [{}])[0] or {}).get("command") or it.get("command")
+            if it.get("status") == "declined":
+                self.ui.say("✗ Declined: %s" % cmd)
+            else:
+                out = (it.get("aggregatedOutput") or "").strip("\n").split("\n")
+                first = out[0][:200] if out and out[0] else "(no output)"
+                self.ui.say("• Ran %s" % cmd, "  └ %s" % first)
+
+    def note(self, msg):
+        m, p = msg["method"], msg.get("params") or {}
+        if self.tid is not None and p.get("threadId") not in (None, self.tid):
+            return
+        if m == "turn/started":
+            self.active = p["turn"]["id"]
+            self.turn_t0[self.active] = time.time()
+        elif m == "item/completed":
+            self.show_item(p["item"])
+        elif m == "turn/completed":
+            t = p["turn"]
+            self.ended.add(t["id"])
+            if self.active == t["id"]:
+                self.active = None
+            secs = int(time.time() - self.turn_t0.pop(t["id"], time.time()))
+            if t["status"] == "completed":
+                self.ui.say("─ Worked for %ds ─" % secs)
+            elif t["status"] == "interrupted":
+                self.ui.say("■ Conversation interrupted - tell the model what to do differently.")
+            else:
+                self.ui.say("■ Turn failed: %s" % short((t.get("error") or {}).get("message", ""), 200))
+        elif m == "serverRequest/resolved":
+            with self.rlock:
+                current = self.requests[0]["msg"]["id"] if self.requests else None
+                self.requests = [r for r in self.requests if r["msg"]["id"] != p.get("requestId")]
+                if current == p.get("requestId"):
+                    self.ui.say("  (answered elsewhere)")
+                    if self.requests:
+                        self.ask()
+        elif m == "warning":
+            self.ui.say("⚠ %s" % p.get("message", ""))
+
+    def ask(self):
+        with self.rlock:
+            if not self.requests:
+                return
+            r = self.requests[0]
+            m, p = r["msg"]["method"], r["msg"].get("params") or {}
+            if m == "item/commandExecution/requestApproval":
+                cmd = ((p.get("commandActions") or [{}])[0] or {}).get("command") or p.get("command")
+                self.ui.say("", "Allow command?", "  $ %s" % cmd,
+                            "[y]es / [a]lways (this session) / [n]o, tell Codex what to do differently")
+            elif m == "item/tool/requestUserInput":
+                q = p["questions"][len(r["answers"])]
+                opts = "  ".join("(%d) %s" % (i + 1, x.get("label")) for i, x in enumerate(q.get("options") or []))
+                self.ui.say("", "? %s" % q["question"], "  %s   (type a number or an answer)" % opts)
+            elif m == "item/permissions/requestApproval":
+                self.ui.say("", "Grant permissions? %s" % json.dumps(p.get("permissions")), "[y]es / [n]o")
+            elif m == "mcpServer/elicitation/request":
+                self.ui.say("", "%s: %s %s" % (p.get("serverName"), p.get("message"), p.get("url") or ""),
+                            "[y]es / [n]o")
+            else:
+                self.ui.say("", "%s (y/n)" % m)
+
+    def answer(self, text):
+        with self.rlock:
+            if not self.requests:
+                return False
+            r = self.requests[0]
+            m, p = r["msg"]["method"], r["msg"].get("params") or {}
+            yes, no = text.lower() in ("y", "yes"), text.lower() in ("n", "no")
+            if m == "item/tool/requestUserInput":
+                q = p["questions"][len(r["answers"])]
+                labels = [x.get("label") for x in q.get("options") or []]
+                if text.isdigit() and 1 <= int(text) <= len(labels):
+                    text = labels[int(text) - 1]
+                r["answers"][q["id"]] = {"answers": [text]}
+                if len(r["answers"]) < len(p["questions"]):
+                    self.ask()
+                    return True
+                result = {"answers": r["answers"]}
+            elif m == "item/commandExecution/requestApproval":
+                if text.lower() in ("a", "always"):
+                    result = {"decision": "acceptForSession"}
+                elif yes or no:
+                    # the real TUI's "No, and tell Codex what to do differently" aborts the turn
+                    result = {"decision": "accept" if yes else "cancel"}
+                else:
+                    self.ask()
+                    return True
+            elif yes or no:
+                if m == "item/permissions/requestApproval":
+                    result = {"permissions": p.get("permissions") if yes else {}, "scope": "turn"}
+                else:
+                    result = {"action": "accept" if yes else "decline", "content": {} if yes else None}
+            else:
+                self.ask()
+                return True
+            self.requests.pop(0)
+            self.send({"id": r["msg"]["id"], "result": result})
+            if self.requests:
+                self.ask()
+        return True
+
+
+def main():
+    sub, opts = parse_cli(sys.argv[1:])
+    if opts["version"]:
+        sys.stdout.write("codex-cli %s\n" % VERSION)
+        return
+    if sub == "app-server":
+        if len(opts["listen"]) > 1:
+            sys.stderr.write("error: the argument '--listen <URL>' cannot be used multiple times\n")
+            sys.exit(2)
+        url = opts["listen"][0] if opts["listen"] else "stdio://"
+        if url in ("stdio://", "stdio"):
+            FakeCodex().run()
+        elif url.startswith("unix://") and len(url) > len("unix://"):
+            FakeCodex().run_unix(url[len("unix://"):])
+        else:
+            sys.stderr.write("error: invalid value '%s' for '--listen <URL>' (the fake knows stdio:// and "
+                             "unix://PATH)\n" % url)
+            sys.exit(2)
+        return
+    CodexTui(sub == "resume", opts).main()
+
 
 if __name__ == "__main__":
-    FakeCodex().run()
+    main()

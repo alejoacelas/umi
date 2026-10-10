@@ -2,16 +2,21 @@
 
 | file | imitates |
 |---|---|
-| `fake_claude.py` | `claude -p --input-format stream-json --output-format stream-json --verbose --replay-user-messages --permission-prompt-tool stdio` (Claude Code 2.1.289) |
-| `fake_codex.py` | `codex app-server --listen stdio://` (codex-cli 0.160.0, JSON-RPC without the `"jsonrpc"` field) |
-| `test_fakes.py` | self-tests: `python3 test_fakes.py [-v] [name-filter]` (44 tests, about 60 s) |
+| `fake_claude.py` | `claude -p --input-format stream-json --output-format stream-json --verbose --replay-user-messages --permission-prompt-tool stdio` (Claude Code 2.1.289; hooks, transcript and `cancel_queued` from 2.1.296), and without `-p` the interactive `claude` (a line-oriented [TUI](#tui-mode-live-sessions)) |
+| `fake_codex.py` | `codex app-server --listen stdio://` (codex-cli 0.160.0, JSON-RPC without the `"jsonrpc"` field), `codex app-server --listen unix://PATH` ([WebSocket, several clients](#codex-app-server-on-a-unix-socket-x16), 0.162.1), and the interactive `codex` / `codex resume` ([TUI](#tui-mode-live-sessions)) |
+| `fake_common.py` | shared by both: plugin hooks, the one-process-per-session check, the terminal line editor. Keep it next to the two fakes. |
+| `test_fakes.py` | self-tests: `python3 test_fakes.py [-v] [name-filter]` (55 tests, about 95 s) |
 
-Both are Python 3.9 stdlib-only scripts. The frame shapes and orderings come from real runs recorded in
+All are Python 3.9 stdlib-only scripts. The frame shapes and orderings come from real runs recorded in
 `../reference/agent-logs/` and summarised in `../reference/PROTOCOLS.md`. This README supersedes the "Fakes"
 section at the end of PROTOCOLS.md: thinking and rate-limit frames now exist under chaos, `task_started` is
 now delayed, and the periodic queue notification is now emulated under chaos. The 2026-10-08 recordings
 (C11wake, C12missing, C12othercwd, C13projectmcp, X14missing) added `WAKE`, `FAKE_MCP` and the missing-session
-checks.
+checks. The 2026-10-10 recordings (Claude Code 2.1.296 and codex-cli 0.162.1, script
+`reference/agent-probes/probe_phase3.py`, logs in `reference/logs/`: `X16*`, `C14*`, `C15cancelq`) added
+[live sessions](#live-sessions-tui-hooks-transcripts): the unix-socket app server, both TUIs, hooks, the
+Claude transcript, the [violations log](#one-process-per-session-violationslog) and
+[`cancel_queued`](#claude-interrupt-with-cancel_queued-c15cancelq).
 
 The design rule: a fake may do anything the real harness was observed to do, or can clearly do, and nothing
 it cannot. When a behavior was not probed, it is either left out or listed below as inferred.
@@ -20,7 +25,11 @@ it cannot. When a behavior was not probed, it is either left out or listed below
 
 | variable | fake | effect |
 |---|---|---|
-| `FAKE_AGENT_DIR` | both | Root for all state. Defaults to `<tmp>/fake-agent`. Holds `claude/<session>.json`, `claude/tasks/<session>/<task>.output` (WAKE), `codex/threads/<thread>.json` plus `<thread>.lock` (owner pid), `receipts.jsonl`, `self_turns.jsonl` and `stubborn.pid`. |
+| `FAKE_AGENT_DIR` | both | Root for all state. Defaults to `<tmp>/fake-agent`. Holds `claude/<session>.json` plus `<session>.pid` (the live process on it), `claude/tasks/<session>/<task>.output` (WAKE), `claude-config/projects/<slug>/<session>.jsonl` ([transcripts](#claude-transcript)), `codex/threads/<thread>.json` plus `<thread>.lock` (owner pid), `receipts.jsonl`, `self_turns.jsonl`, `violations.log` and `stubborn.pid`. |
+| `FAKE_CLAUDE_PLUGIN_DIRS=<dir>:<dir>` | claude | Plugin directories treated as installed plugins, in addition to `--plugin-dir`. Their `hooks/hooks.json` [hooks](#hooks) run in both modes. |
+| `FAKE_CODEX_PLUGIN_DIRS=<dir>:<dir>` | codex | Plugin directories treated as installed plugins (Codex has no `--plugin-dir`). Their hooks run wherever the engine runs: the app server (stdio or socket) or the local TUI. |
+| `CLAUDE_CONFIG_DIR` | claude | Where the [transcript](#claude-transcript) goes (`<dir>/projects/...`). Unset: `$FAKE_AGENT_DIR/claude-config`. A value that resolves to the real `~/.claude` is ignored, so the fake never writes there. |
+| `FAKE_CLAUDE_IDLE_SECS=<secs>` | claude | TUI only: how long the session sits idle after a turn before the `Notification` hook `idle_prompt` fires (once per idle period). Default 60, the real threshold. |
 | `FAKE_CHAOS=<int>` | both | Turns on chaos mode, seeded by the integer. Unset or empty turns it off. See [Chaos mode](#chaos-mode). |
 | `FAKE_SLOW_START=<secs>` | both | Sleeps before reading stdin, so the `initialize` answer (and anything else) comes late. |
 | `FAKE_INPUT_DELAY=<secs>` | codex | Gap between `turn/started` and the first `userMessage` item. The real gap is 0.04 to 2.8 s (X1, X3, X4). An interrupt inside it drops the input (see [Early interrupt](#codex-early-interrupt)). |
@@ -29,10 +38,19 @@ it cannot. When a behavior was not probed, it is either left out or listed below
 | `FAKE_WAKE_TURN_SECS=<secs>` | claude | How long a self-started `WAKE` turn spends between its `system/init` and its reply. Default 1.5: in C11wake the real one took 1.55 s from `task_notification` to `result`. Interruptible. |
 
 Command-line handling:
-* Claude accepts `--session-id`, `--resume`, `--fork-session`, `--model`, `--permission-mode`, `--effort` and
-  `--dangerously-skip-permissions`. Every other flag is ignored, and the startup errors match C4.
-* Codex accepts `-c key=value` / `--config key=value` for `model`, `model_reasoning_effort`, `approval_policy`
-  and `sandbox_mode`. These act as defaults for `thread/start`; everything else on the command line is ignored.
+* Claude accepts `--session-id`, `--resume` (`-r`), `--fork-session`, `--model`, `--permission-mode`, `--effort`,
+  `--dangerously-skip-permissions`, `--plugin-dir DIR` (repeatable) and `-n/--name NAME` in both modes, and
+  `--version`. `-p`/`--print` selects the stream-json mode; without it the fake is the [TUI](#claude-tui), and
+  the words left over (not flags or flag values) are its first prompt. Every other flag is ignored, and the
+  startup errors match C4 (the TUI prints the message on stderr and exits 1, without a JSON frame).
+* Codex: the first word that isn't a flag picks the mode. `app-server` is the server: `--listen stdio://`
+  (the default) or `--listen unix://PATH`, given at most once (a second `--listen` exits 2 like the real
+  CLI's argument parser; any other URL exits 2). `resume [THREAD] [PROMPT]` is the [TUI](#codex-tui) on a
+  thread, and anything else (`[OPTIONS] [PROMPT]`) the TUI on a new thread. `-c key=value` /
+  `--config key=value` sets `model`, `model_reasoning_effort`, `approval_policy` and `sandbox_mode` as
+  defaults for `thread/start` in every mode. The TUI also takes `-m/--model`, `-a/--ask-for-approval`,
+  `-s/--sandbox`, `-C/--cd`, `--dangerously-bypass-approvals-and-sandbox` (`--yolo`), `--remote unix://PATH`
+  and `--last`. `--version` prints `codex-cli <version>`. Everything else is ignored.
 
 ## Triggers
 
@@ -68,6 +86,18 @@ Likewise everything after `WAKE n` (up to a `RUN `) is the wake text and is not 
 A message sent to Claude while a turn runs gets `command_lifecycle queued`. It is injected at the next tool
 boundary (after SLEEP, RUN, HUGE, WAKE or ASK_*), or it runs as the next turn. Codex `turn/start` during an active
 turn steers into it, and the input is delivered at the next tool boundary or after the final answer.
+
+### Claude: interrupt with `cancel_queued` (C15cancelq)
+
+`system/init` carries the 2.1.296 `capabilities` list (`interrupt_receipt_v1`, `interrupt_cancel_queued_v1`,
+`interrupt_send_now_v1`, `msg_lifecycle_v1`, ...). `{"subtype":"interrupt","cancel_queued":true}` drops every
+message still queued: each gets `command_lifecycle cancelled` at once, then the answer
+`{"still_queued": [], "cancelled": [<their uuids>]}` (written when the running turn stops, as for a plain
+interrupt), then the usual interrupted-turn frames. A cancelled message never runs, gets no `started` and writes
+no receipt. With no turn running the answer comes at once (`"cancelled": [...]`, possibly empty). A plain
+interrupt keeps the C2 behaviour: `still_queued` lists the queued messages and they run next as their own turn.
+The self-test replays C15cancelq and matches it frame for frame. `send_now` (`interrupt_send_now_v1`) is not
+implemented.
 
 ### STATE
 
@@ -297,6 +327,248 @@ All servers report `starting` together, and each reports `ready` 0.2 to 1.5 s la
 The final status follows 0.2 s after `starting` (chaos: 0.1 to 1.5 s, and both orders shuffled). The
 notifications carry no `turnId` and may land inside a turn, as in the real logs.
 
+## Live sessions: TUI, hooks, transcripts
+
+Tern runs every session headless (`claude -p` stream-json, a private `codex app-server`) and lets the user
+take one over live: the agent's own interface in a pane, on the same conversation, and back. It observes live
+agents through hooks in its plugins. The fakes support all of it: Codex's app server on a unix socket with
+several clients, a line-oriented TUI for each harness, plugin hooks in every mode, Claude's transcript file,
+and a log of any moment two processes ran one conversation.
+
+### Codex app server on a unix socket (X16)
+
+Probed with codex-cli 0.162.1 (`X16clientA.jsonl`, `X16tui.pty`/`.txt`): `codex app-server --listen unix://PATH`
+speaks WebSocket on the socket (`101 Switching Protocols`, header
+`x-codex-websocket-max-unfragmented-message-bytes: 16777216`, one JSON-RPC message per text frame). Client A
+and Codex's own TUI (`codex resume THREAD --remote unix://PATH`) were connected at once. A saw the TUI's turns
+(`turn/started`, a `userMessage` item with a `clientId`, `agentMessage`, `turn/completed`), the TUI showed A's
+turns, A's `turn/steer` into a turn the TUI started worked, and after the TUI exited the server and the thread
+stayed usable for A.
+
+| aspect | fake | basis |
+|---|---|---|
+| handshake | `GET` with `Upgrade: websocket` and `Sec-WebSocket-Key` gets `HTTP/1.1 101 Switching Protocols` with `connection: upgrade`, `upgrade: websocket`, `sec-websocket-accept`, `x-codex-websocket-max-unfragmented-message-bytes: 16777216`. Anything else gets `400 Bad Request` and is closed. | X16 (status line and header); the 400 is inferred |
+| frames | client frames must be masked (otherwise close 1002); ping is answered with pong; a close is echoed; fragmented messages are joined, control frames may come between fragments; binary messages are ignored (stderr line); invalid UTF-8 closes with 1007, messages over 256 MiB with 1009. Non-JSON text is logged on stderr and not fatal, as on stdio. | RFC 6455 |
+| outgoing size | a message up to 16 MiB is one frame; a bigger one (`HUGE 17` and up) goes out as 16 MiB fragments | our reading of the header (inferred) |
+| subscriptions | a client is subscribed to a thread by `thread/start`, `thread/resume`, `turn/start`, `turn/steer`, `thread/queue/add` and `thread/queue/start`. Notifications with `params.threadId` go to the thread's subscribers; the rest (`thread/started`, `account/rateLimits/updated`) to every initialized client. | X16: both clients saw each other's turns, and A got `thread/started` for a thread it did not start. Subscribing by a turn method is inferred. |
+| `thread/unsubscribe` | the client gets no more notifications for that thread; the thread stays loaded and keeps its writer lock (X5). This applies to stdio as well. | the lock part is X5; the notification part is inferred |
+| server requests (approvals, questions, permissions, elicitations) | sent with the same id to every subscriber of the thread. The first answer wins; later answers are ignored; `serverRequest/resolved` goes to all subscribers. A client that subscribes while a request is pending gets it right after its `thread/resume` answer. | **inferred** (not probed) |
+| clients leaving | the server, its threads and their running turns carry on; pending requests stay pending for the others | X16 |
+| lifetime | stdin is not read. The server runs until SIGTERM, SIGINT or SIGHUP, even with no client left; it then kills RUN commands, releases its thread locks, removes the socket file and dies of the signal. `EXIT_CLEAN` also removes the file; `CRASH` leaves it, as a crash would. A stale socket file (nobody listening) is replaced; a socket with a live listener makes the fake exit 1 (`address already in use`). | X16 (kept running; Tern kills it); the rest inferred |
+| timing | `FAKE_SLOW_START` delays creating the socket. Under chaos each message waits 0 to 40 ms in its client's writer thread and is sometimes split over two socket writes. | |
+
+Not reproduced from X16: `thread/settings/updated` before the TUI's turns, the ephemeral title-generation
+thread (`thread/started` with `ephemeral: true`, then `thread/name/updated`), `remoteControl/status/changed`,
+`account/updated`, `thread/goal/cleared` and the turns' new `rootTurnId`. Remember that macOS limits a unix
+socket path to 103 bytes.
+
+### TUI mode (live sessions)
+
+Both TUIs are line-oriented, so tests can read the screen (`tern read --pane`) and type
+(`tern send --pane … --enter`). The terminal is put in a raw-ish mode (no echo, no line buffering, signals on).
+The input line stays at the bottom with a prompt (`> ` Claude, `› ` Codex); everything else is printed above
+it, each line as `\r\x1b[K<text>\n`, after which the prompt and what is being typed are redrawn. Keys: printable
+characters, Backspace, Ctrl-U (clear), Enter (`\r` or `\n`) submits, Ctrl-D on an empty line ends the TUI, Esc
+interrupts a running turn, other escape sequences (arrows) are ignored. Ctrl-C (SIGINT) interrupts a running
+turn; at the prompt it only prints `(Ctrl-C does not quit: type /exit or press Ctrl-D)`. `/exit` (or `/quit`),
+Ctrl-D, SIGTERM and SIGHUP end it. Without a terminal on stdin the TUIs read plain lines and print plain lines,
+and at the end of the input they finish the work they were given before quitting.
+
+#### Claude TUI
+
+`fake_claude [--resume ID | --session-id ID] [--plugin-dir DIR]… [--model M] [--effort E]
+[--dangerously-skip-permissions] [--permission-mode M] [-n NAME] [PROMPT]` (any invocation without `-p`).
+
+* It is the same engine on the same session file (`$FAKE_AGENT_DIR/claude/<sid>.json`), so every trigger works,
+  `RECALL` sees turns from both modes, and receipts are written as usual (a typed line's `message` is a fresh
+  uuid). A fresh session gets a new id, or `--session-id`'s; a missing `--resume` id prints
+  `No conversation found with session ID: <id>` and exits 1.
+* Startup prints `✻ Fake Claude Code <version>`, `  session: <id>`, `  cwd: <dir>`, then, on `--resume`, the
+  conversation so far. Then the SessionStart hook runs, then PROMPT is sent if given.
+* The terminal title is set with OSC 2 to `✳ <title>`: `-n NAME` if given, otherwise the conversation's first
+  prompt (whitespace collapsed, cut to 40 characters). The title is kept in the session file, so a resumed TUI
+  sets it at startup, also for a conversation started with `-p`.
+
+| line | meaning |
+|---|---|
+| `> text` | a user message the model received (a turn's first message, or one injected mid-turn) |
+| `⏺ text` | a reply (more lines indented by two spaces) |
+| `⏺ Bash(cmd)` / `⏺ Bash(cmd) (background)` / `⏺ AskUserQuestion` | a tool call |
+| `  ⎿  output` | a tool result: up to three lines, then `… +N lines`, or `(No output)` |
+| `⏺ Background command "sleep n" completed (exit code 0)` | a WAKE task finished; the self-started turn follows |
+| `✻ Worked for Ns` | the turn ended |
+| `  ⎿  Interrupted · What should Claude do instead?` | the turn was interrupted |
+
+* A line typed while a turn runs is queued and injected at the next tool boundary (shown then as `> text`), or
+  runs as the next turn, exactly as in `-p` mode.
+* `ASK_PERMISSION` without bypass prints `Bash command`, the command and
+  `Do you want to proceed? [y]es / [a]lways / [n]o`, and waits. `y` allows. `a` allows and adds an allow rule
+  for that exact command to `localSettings` (`<cwd>/.claude/settings.local.json`), like the real dialog's
+  second option. `n` denies and stops the turn (`Interrupted`), like the real "No, and tell Claude what to do
+  differently". Anything else repeats the question. `ASK_QUESTIONS` asks each question in turn; a number picks
+  an option, any other text is the answer.
+* Ctrl-C or Esc during a turn interrupts it (no hook fires). Lines still queued stay queued and run next.
+* `/exit` and Ctrl-D end it with SessionEnd reason `exit`; SIGTERM, SIGHUP or the terminal going away with
+  reason `other` (for the two signals the fake then dies of the signal). A running turn is abandoned (no Stop
+  hook) and RUN commands are killed.
+
+#### Codex TUI
+
+`fake_codex [OPTIONS] [PROMPT]` (a new thread) and `fake_codex resume [THREAD] [PROMPT] [--remote unix://PATH]
+[-m M] [-c k=v]… [--dangerously-bypass-approvals-and-sandbox]`.
+
+* **With `--remote unix://PATH`** it is a WebSocket client of that server: `initialize` (client name
+  `codex-tui`), then `thread/resume THREAD` with no overrides, as the real TUI did in X16 (`-m`, `-a`, `-s`
+  and the bypass flag are not sent; `-c` only configures a local engine), or, without `resume`, `thread/start`
+  with the folder and those flags. Hooks run in the server, not here. If the server goes away it prints
+  `■ Lost the connection to the app server` and exits 1.
+* **Without `--remote`** it runs its own engine in-process on the same state files
+  (`$FAKE_AGENT_DIR/codex/threads/`) and takes the thread's writer lock. A new thread gets the current folder
+  and `-m`, `-a`, `-s` or the bypass flag (`never` + `danger-full-access`); the defaults are `on-request` and
+  `workspace-write`, the real TUI's. A resume applies the same flags as overrides (inferred). If another live
+  process holds the thread, it prints `Error: thread <id> already has an active writer`, logs a
+  [violation](#one-process-per-session-violationslog) and exits 1. Hooks run here, detached from the terminal.
+* `resume` without THREAD: `--last` takes the most recently updated thread of the current folder (local only);
+  without `--last` the fake exits 2 (there is no session picker).
+* Startup prints `>_ Fake Codex (v<version>)`, `  thread: <id>`, `  directory: <cwd>`,
+  `  model: … · approvals: … · sandbox: …` (plus `· remote: …`), then the thread's history from the resume answer
+  (each turn's summary: first user message, last agent message).
+
+| line | meaning |
+|---|---|
+| `› text` | a `userMessage` item, from any client (this TUI's own, another client's turn, a steer) |
+| `• text` | an `agentMessage` item (commentary and final answers) |
+| `• Ran cmd` + `  └ first output line` (or `(no output)`) | a completed command |
+| `✗ Declined: cmd` | a declined command |
+| `─ Worked for Ns ─` | a turn completed |
+| `■ Conversation interrupted - tell the model what to do differently.` / `■ Turn failed: …` | a turn ended otherwise |
+| `⚠ message` | a `warning` notification |
+
+* A typed line is `turn/start`, or `turn/steer` with `expectedTurnId` while a turn runs (falling back to
+  `turn/start` on an error). Turns started by other clients count as running turns too.
+* An approval prints `Allow command?`, `  $ cmd` and `[y]es / [a]lways (this session) / [n]o, tell Codex what to
+  do differently`: `accept`, `acceptForSession`, `cancel` (which aborts the turn, as the real TUI's "No" does).
+  Questions are asked one by one (number or text). Permission and elicitation requests take `y`/`n`. A request
+  another client answers first prints `(answered elsewhere)`.
+* Ctrl-C or Esc during a turn sends `turn/interrupt`.
+* Ending it: in local mode a running turn is saved as interrupted (no hook), SessionEnd runs (reason `exit` for
+  `/exit` and Ctrl-D, `other` for signals) and the thread lock is released. In remote mode it only closes its
+  WebSocket; the thread, and any turn still running, stay on the server.
+
+### Hooks
+
+Hooks come from plugin directories: Claude's `--plugin-dir DIR` (repeatable) and `$FAKE_CLAUDE_PLUGIN_DIRS`,
+Codex's `$FAKE_CODEX_PLUGIN_DIRS` (both colon-separated; they stand in for installed plugins). Each
+`DIR/hooks/hooks.json` has the plugin shape
+`{"hooks": {"Event": [{"matcher"?: "...", "hooks": [{"type": "command", "command": "...", "timeout"?: secs}]}]}}`.
+A directory listed twice counts once. The plugin's name and version come from `.claude-plugin/plugin.json` or
+`.codex-plugin/plugin.json` (else the folder name); Claude's `system/init.plugins` lists them as
+`{"name", "path", "source": "<name>@inline", "version"}` for `--plugin-dir` (C14resume) and
+`"<name>@installed"` for the environment variable (made up: a real installed plugin names its marketplace).
+
+Running a hook, both fakes:
+* `${CLAUDE_PLUGIN_ROOT}` (Claude) or `${PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_ROOT}` (Codex) in the command are
+  replaced by the plugin directory, and the environment gets `CLAUDE_PLUGIN_ROOT` (both), `PLUGIN_ROOT` (Codex)
+  and `CLAUDE_PROJECT_DIR` (Claude) on top of the fake's own environment.
+* `/bin/sh -c <command>` is started by the fake itself, so the hook's parent is the fake (C14: `$PPID` is the
+  `claude` process), with the session's folder as cwd and one JSON object on stdin. Its stdout and stderr are
+  captured and ignored, and so are exit codes and JSON decisions (Tern's hooks print nothing).
+* Claude keeps hooks in its own session and process group, so in the TUI a hook can open `/dev/tty`. Codex
+  runs them detached with `setsid`, as Codex 0.155 and later do; a hook then finds the terminal through its
+  parent chain (as Warp's codex-warp plugin does).
+* The hooks of one event run in parallel and the fake waits for all of them before going on (so a slow Stop
+  hook delays the turn's end). A hook still running after its `timeout` (default 60 s) is killed.
+* `matcher` (a regex matched against the whole value; empty or `*` matches all) applies to the tool name for
+  PreToolUse, PostToolUse and PermissionRequest, the `source` for SessionStart, the `notification_type` for
+  Notification, the `reason` for SessionEnd and the `error` for StopFailure.
+* In `-p` mode each SessionStart hook is also reported on stdout before the `initialize` answer, as in C14:
+  `{"type":"system","subtype":"hook_started","hook_id","hook_name":"SessionStart:startup|resume","hook_event":"SessionStart",...}`
+  then `hook_response` with `output`, `stdout`, `stderr`, `exit_code` and `outcome` (`success`, or `error` for a
+  non-zero exit). No other event produces frames.
+
+**Claude** (C14hooks, `claude -p` 2.1.296: SessionStart, UserPromptSubmit also for a steered message,
+PreToolUse, PostToolUse, Stop, SessionEnd; the TUI probe stopped at the trust dialog, so TUI hooks are
+inferred to be the same). Every input has `session_id`, `transcript_path` (the [transcript](#claude-transcript))
+and `cwd`; turn events add `prompt_id` (one per turn: a steered message shares its turn's) and
+`permission_mode`; tool events and Stop add `effort: {"level": <--effort or "medium">}` (C14 had medium);
+all have `hook_event_name`.
+
+| event | when | other fields | basis |
+|---|---|---|---|
+| SessionStart | at startup, before stdin is read (and before the TUI's first prompt) | `source`: `startup` or `resume` (also with `--fork-session`); no `permission_mode` | C14 (the real resume also sends `seconds_since_last_response`, `context_tokens`, ... : not reproduced) |
+| UserPromptSubmit | each message that starts a turn or is injected into one (TUI lines too); not for a self-started WAKE turn | `prompt` | C14 |
+| PreToolUse | after the tool_use frame, before the tool runs (SLEEP, RUN, HUGE, WAKE, ASK_PERMISSION, ASK_QUESTIONS) | `tool_name` (`Bash` / `AskUserQuestion`), `tool_input`, `tool_use_id` | C14 |
+| PostToolUse | when the tool finished, before its tool_result frame; a WAKE command right away, with `backgroundTaskId` | `tool_name`, `tool_input`, `tool_response` (the frame's `tool_use_result`), `tool_use_id`, `duration_ms` | C14; none after a denial or an interrupt (inferred) |
+| PermissionRequest | an `ASK_PERMISSION` that will prompt, right before the `can_use_tool` request (both modes) | `tool_name`, `tool_input`, `permission_suggestions` | inferred |
+| Notification | TUI only: `permission_prompt` with that prompt (`Claude needs your permission to use Bash`); `idle_prompt` after `FAKE_CLAUDE_IDLE_SECS` idle after a turn (`Claude is waiting for your input`) | `notification_type`, `message` | inferred (real thresholds: 60 s) |
+| Stop | a turn that ends normally, after its last reply and before its `result` | `stop_hook_active: false`, `last_assistant_message`, `background_tasks` (WAKE tasks still running, as `{"task_id","run_id","task_type":"local_bash","description"}`), `session_crons: []` | C14; the `background_tasks` entry shape is inferred |
+| StopFailure | instead of Stop, for a `FAIL` turn | `error: "invalid_request"`, `last_assistant_message` (the API error text) | inferred |
+| SessionEnd | when the process ends normally: stdin EOF in `-p` and `EXIT_CLEAN` (`other`), SIGTERM/SIGHUP (`other`), TUI `/exit` and Ctrl-D (`exit`) | `reason`, the last `prompt_id`; no `permission_mode` | C14 (`other` at stdin EOF); the rest inferred |
+
+An interrupted turn fires no hook at all (no Stop), as with the real CLI; neither do CRASH, HANG or a SIGKILL.
+For WAKE, the turn that starts the background command ends with a Stop listing it in `background_tasks`; the
+self-started turn fires no UserPromptSubmit and ends with a Stop whose `background_tasks` is `[]` (or the
+tasks still running).
+
+**Codex** (not probed: the event set follows Warp's codex-warp plugins, which hook SessionStart,
+UserPromptSubmit, PostToolUse, PermissionRequest, Stop and SessionEnd). Every input has `session_id` (the
+thread id), `transcript_path` (the thread's `path`, its state file), `cwd` (the thread's), `hook_event_name`
+and `model`; turn events add `turn_id`.
+
+| event | when | other fields |
+|---|---|---|
+| SessionStart | after `thread/start` (`startup`, after `thread/started`) or a `thread/resume` that loads the thread (`resume`) | `source` |
+| UserPromptSubmit | before each `userMessage` item, steered inputs included | `prompt` |
+| PreToolUse | before each `commandExecution` starts (and before an approval is asked) | `tool_name: "Bash"`, `tool_input: {"command"}`, `tool_use_id` (the item id) |
+| PostToolUse | after a command's `item/completed`; a `BACKGROUND` command right after it starts | the same, plus `tool_response` (the command output, a string) |
+| PermissionRequest | right before `item/commandExecution/requestApproval` | `tool_name`, `tool_input` |
+| Stop | a completed turn, once no input can join it any more, before `thread/status/changed idle` and `turn/completed`; not for failed or interrupted turns | `stop_hook_active: false`, `last_assistant_message` |
+| SessionEnd | local TUI only, as it ends | `reason`: `exit` or `other` |
+
+The app server fires no SessionEnd (when a real server's sessions end was not probed).
+
+### Claude transcript
+
+Both modes append to `${CLAUDE_CONFIG_DIR:-$FAKE_AGENT_DIR/claude-config}/projects/<slug>/<sid>.jsonl`, the
+file every hook input names as `transcript_path`. The slug is the working directory with every character other
+than `A-Z a-z 0-9` replaced by `-` (`/Users/x/a/.b` becomes `-Users-x-a--b`, as in C14; underscores become `-`
+too, which is the real rule as far as we know). The path is chosen when the session is created and kept in the
+session file, so resuming from another folder keeps appending to the same file (inferred). A forked session
+starts a new file. Lines are shaped like Claude Code 2.1.296's; chained entries carry `parentUuid`,
+`isSidechain`, `userType`, `cwd`, `sessionId`, `version`, `uuid` and `timestamp`:
+
+| when | line |
+|---|---|
+| a message starts a turn | `{"type":"user","uuid":<the stream-json uuid, or a fresh one for a typed line>,"message":{"role":"user","content":<as sent>}}` |
+| a message arrives while a turn runs | `{"type":"queue-operation","operation":"enqueue","content":<text>,"timestamp","sessionId"}` |
+| it is injected mid-turn | `{"type":"attachment","attachment":{"type":"queued_command","prompt":<text>,"source_uuid":<its uuid>,"commandMode":"prompt"}}` then `{"type":"queue-operation","operation":"remove"}` |
+| it runs as the next turn instead | `{"type":"queue-operation","operation":"dequeue"}` then the `user` line (inferred) |
+| it is dropped by `cancel_queued` | `{"type":"queue-operation","operation":"remove"}` (inferred) |
+| every assistant frame (text, tool_use, thinking) | `{"type":"assistant","uuid","requestId","message":{"id","type":"message","role":"assistant","model","content","stop_reason","usage"}}` |
+| every tool result and interrupt marker | `{"type":"user","uuid","message":{"role":"user","content":[...]},"toolUseResult"?}` |
+
+The fake still keeps the conversation in `$FAKE_AGENT_DIR/claude/<sid>.json`; the transcript is only written,
+never read.
+
+### One process per session (violations.log)
+
+When a fake starts on a conversation that another live fake process is running, it appends one line to
+`$FAKE_AGENT_DIR/violations.log` (a single `O_APPEND` write):
+`two processes on <claude|codex> session <id>: pids <the other> and <this one>`.
+
+* Claude (`-p` or TUI) records itself in `claude/<sid>.pid` when its session is set up (`--session-id`,
+  `--resume`, or the new id of `--fork-session`), logs the line if a live fake owns it, and carries on, as the
+  real CLI doesn't refuse. It removes the file on a normal end and on SIGTERM (and SIGHUP in the TUI); the file
+  of an owner that died otherwise is ignored.
+* Codex: a `thread/resume` (app server or local TUI) of a thread whose writer lock belongs to another live
+  process is refused as before (`thread <id> already has an active writer`) and also logged.
+* "Live" means the pid runs (not a zombie) and its command line names the same fake script, so dead owners,
+  unreaped zombies and recycled pids never count. The Codex lock check now uses the same rule, so a zombie
+  owner no longer blocks a resume.
+
+Tests assert this file stays empty; a line means the product ran two processes on one conversation (for
+example a live TUI started before the headless process was stopped).
+
 ## Chaos mode
 
 `FAKE_CHAOS=<seed>` adds only variation the real harness can produce. Choices are seeded, but the exact
@@ -413,6 +685,40 @@ inside that gap therefore never records the input. A product must not assume tha
   reproduced, and there is no `mcpServerStatus/list` method.
 * Codex `thread/resume`: the real server also sends `thread/status/changed {"type":"idle"}` right before the
   resume response (X5c_b). The fake does not.
+* Claude's TUI has no folder trust dialog. In C14tui the real `claude --resume ID` (with
+  `--dangerously-skip-permissions`) stopped at "Is this a project you created or one you trust?" in a folder it
+  had not seen, and never got to the conversation. A product that takes a headless session over in a new
+  folder (a fresh worktree) has to handle that dialog with the real CLI; tests against the fake won't show it.
+* The TUIs are line-oriented stand-ins, not the real full-screen interfaces: no slash commands besides `/exit`
+  and `/quit`, no `--continue`, no session pickers, no Shift-Tab mode cycling, no spinner or working title.
+* Hooks: only `"type": "command"` hooks run; hook output, exit codes and JSON decisions (block, continue,
+  additional context) are ignored; there is no SubagentStop, PreCompact or PostToolUseFailure.
+
+### Live sessions: decisions taken without a probe
+
+This work was done without anyone to ask, so these choices were made and are listed here (the probed parts
+are marked in the sections above):
+* **Several Codex clients**: server requests go to every subscriber of the thread and the first answer wins;
+  a client that subscribes while one is pending gets it too; turn methods subscribe the caller;
+  `thread/unsubscribe` stops that client's notifications; non-WebSocket HTTP gets a 400; messages over 16 MiB
+  are fragmented at 16 MiB.
+* **Claude SessionEnd `reason`**: `exit` for `/exit` and Ctrl-D, as the brief for this work specified. Claude
+  Code's documentation lists `prompt_input_exit` for leaving from the prompt and `other` otherwise; nobody
+  probed `/exit`, so treat the exact value as unverified and don't let a product depend on it. Signals and stdin
+  EOF give `other` (stdin EOF in `-p` mode is probed).
+* **Claude TUI answers**: `n` on a permission prompt stops the turn (the real dialog's third option);
+  `a` adds a `localSettings` allow rule for the exact command. Codex TUI: `n` is `cancel`, `a` is
+  `acceptForSession`.
+* **Claude hooks**: PermissionRequest fires in both modes; Notification only in the TUI; AskUserQuestion gets
+  Pre/PostToolUse but no PermissionRequest; StopFailure's `error` is `invalid_request`; SIGTERM runs SessionEnd.
+* **Codex hooks**: the event list (including PreToolUse, which codex-warp doesn't use), `tool_name: "Bash"`,
+  `tool_response` as the output string, SessionStart at `thread/start`/load, Stop only for completed turns,
+  SessionEnd only from the local TUI, a BACKGROUND command's PostToolUse when it starts.
+* **Codex TUI**: `--remote` sends `thread/resume` without overrides (X16) and ignores model/approval flags;
+  the local TUI applies them on resume.
+* **Transcript**: tool lines are written too; `dequeue` for a queued message that runs as its own turn; the
+  file stays put when a session is resumed from another folder.
+* **Title**: `-n NAME` wins over the first prompt.
 
 ## Writing tests against the fakes
 
@@ -437,6 +743,13 @@ inside that gap therefore never records the input. A product must not assume tha
   `FAKE_WAKE_TURN_SECS` to make the product observe the agent working.
 * For MCP status display, set `FAKE_MCP`. Remember that Claude reports statuses only at `system/init`, so
   nothing shows before the first turn, while Codex reports them right after `thread/start` / `thread/resume`.
+* For take-over tests, run the product's live pane and read it: the fakes print `> text` / `› text` for user
+  messages and `⏺ text` / `• text` for replies, one per line. A screen still holds the prompt line, so look for
+  whole lines (`"⏺ ok: <nonce>"`). Wait for `✻ Worked for` / `─ Worked for` before checking what a turn did.
+* For live status, point `FAKE_CLAUDE_PLUGIN_DIRS` / `FAKE_CODEX_PLUGIN_DIRS` at the product's own plugins (or
+  let it pass `--plugin-dir`) and check what the product makes of the hook events; set
+  `FAKE_CLAUDE_IDLE_SECS` to see `idle_prompt` quickly.
+* After every test, assert that `$FAKE_AGENT_DIR/violations.log` does not exist or is empty.
 
 ## Self-tests and comparison with the real harnesses
 
@@ -456,7 +769,25 @@ inside that gap therefore never records the input. A product must not assume tha
     EOF, chaos legality, and the Codex reply;
   * missing conversations (C12missing, X14missing) and resuming from another folder (C12othercwd);
   * `FAKE_MCP` for both harnesses (with and without chaos, after `thread/start` and `thread/resume`), unset,
-    and malformed.
+    and malformed;
+  * `cancel_queued` (and the C15cancelq frame sequence, replayed against `../reference/logs/C15cancelq.jsonl`
+    when it exists), the capabilities, and `--plugin-dir` / `-n` in `-p` mode;
+  * Claude hooks in `-p` mode: the `hook_started`/`hook_response` frames, the event order and inputs for a
+    steered turn, WAKE (both Stops), FAIL (StopFailure), an interrupt (nothing), stdin EOF and SIGTERM
+    (SessionEnd `other`), matchers, both plugin sources, `$PPID`, the plugin root variables and cwd;
+  * the Claude transcript (lines, order, queue operations, slug, `CLAUDE_CONFIG_DIR`, never `~/.claude`);
+  * the Claude TUI in a pty: history, title, RECALL across modes, injection, Ctrl-C (turn and prompt),
+    permission y/n, questions, `/exit`, SIGHUP, Ctrl-D, idle and permission notifications, hooks with a terminal;
+  * the Codex socket server: handshake and header, fragmented input with a ping, two and three clients seeing
+    each other's turns, steering across clients, first answer wins, request replay, unsubscribe, a client
+    leaving, 16 MiB fragments, protocol errors, 400, life without clients, socket removal, double `--listen`,
+    and chaos legality over the socket for seeds 1 to 3 (two clients, steering across them);
+  * the Codex TUI in a pty, remote (history, other client's turns, typed turns seen by the other client,
+    steering, approvals answered here or elsewhere, Ctrl-C, SIGTERM) and local (hooks detached from the
+    terminal with their inputs, approvals, Ctrl-C, `/exit`, resume, refusal plus violation when an app
+    server holds the thread), hooks in the stdio app server, and hook timeouts;
+  * the violations log: two `-p` processes, a TUI over a `-p` process, and no line for sequential, SIGTERM-ed
+    or crashed predecessors; the last test checks that no other test logged an unexpected violation.
 * The C10 and X13 scenarios (remembered approvals) were also replayed against the fakes with the same
   filters. Both are identical.
 * `../reference/agent-probes/compare_fake.py` and `compare_fake_codex.py` replay real scenarios against the
@@ -465,5 +796,7 @@ inside that gap therefore never records the input. A product must not assume tha
   `task_notification` kept, plus the key sets of the task frames, the background `tool_use_result`, the
   result's `origin` and the `mcp_servers` entries), C12missing (plus exit code and stderr), C12othercwd-1/-2,
   X14missing (plus the error code), and the Codex MCP notifications: order after `thread/start` (X2accept),
-  order around `thread/resume` (X5c_b) and key set. The scripts expect a `fake_*.py` next to a `logs/` copy of
-  `agent-logs/`. Run them from a scratch copy so they do not write into `reference/`.
+  order around `thread/resume` (X5c_b) and key set. The scripts expect the `fake_*.py` files (with
+  `fake_common.py`) next to a `logs/` copy of `agent-logs/`, and themselves in a sibling folder. Run them from a
+  scratch copy so they do not write into `reference/`. All of the above were re-run after the live-session
+  work (2026-10-10) and are still identical.

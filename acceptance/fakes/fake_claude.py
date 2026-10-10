@@ -8,8 +8,9 @@ probes (see reference/PROTOCOLS.md). Fields that the real CLI sends but a driver
 unlikely to need (usage details, tool lists, ...) are present but minimal.
 README.md in this directory documents every env var, trigger and chaos variation.
 
-Supported flags: --session-id UUID, --resume ID, --fork-session, --model M,
---permission-mode M, --dangerously-skip-permissions. Everything else is ignored.
+Supported flags: -p/--print, --session-id UUID, --resume/-r ID, --fork-session, --model M,
+--permission-mode M, --effort E, --dangerously-skip-permissions, --plugin-dir DIR (repeatable),
+-n/--name NAME, --version. Everything else is ignored.
 
 Sessions persist as JSON under $FAKE_AGENT_DIR/claude/ (default: <tmp>/fake-agent).
 Every user message handed to the "model" appends one line to
@@ -60,6 +61,13 @@ A user message arriving while a turn runs gets `command_lifecycle queued`; it is
 injected at the next tool boundary (after SLEEP / RUN / HUGE / WAKE / ASK_*) like the real
 CLI (replay + `started`, `completed` just before the shared `result`), otherwise
 it runs as the next turn. Under FAKE_CHAOS it may also be left for the next turn.
+An interrupt with "cancel_queued": true drops the queued messages (lifecycle `cancelled`,
+response `cancelled: [uuids]`), as 2.1.296 does (C15cancelq).
+
+Without -p/--print the fake is a line-oriented TUI on the same engine and session files (TUI mode):
+a prompt line, typed lines are turns, replies are plain lines, Ctrl-C interrupts, /exit ends it.
+Hooks from --plugin-dir DIR and $FAKE_CLAUDE_PLUGIN_DIRS (DIR/hooks/hooks.json) run in both modes, and
+a transcript is appended to ${CLAUDE_CONFIG_DIR:-$FAKE_AGENT_DIR/claude-config}/projects/<slug>/<sid>.jsonl.
 """
 import json
 import os
@@ -73,7 +81,14 @@ import threading
 import time
 import uuid as uuidlib
 
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from fake_common import Hooks, LineUI, append_line, claim_session, plugin_dirs, release_session, short  # noqa: E402
+
 VERSION = "2.1.289"
+CAPABILITIES = ["interrupt_receipt_v1", "interrupt_cancel_queued_v1", "interrupt_send_now_v1", "msg_lifecycle_v1",
+                "request_marker_lists_v1", "sdk_mcp_tools_list_changed", "sdk_mcp_manifests", "mcp_read_resource_v1",
+                "mcp_tool_ui_meta_v1", "ui_surface_v1"]     # system/init.capabilities in 2.1.296 (C14, C15)
+IDLE_NOTIFY_SECS = 60.0    # the TUI's idle_prompt Notification
 MODEL_ALIASES = {
     "haiku": "claude-haiku-4-5-20251001",
     "sonnet": "claude-sonnet-4-5-20250929",
@@ -84,7 +99,7 @@ VALUE_FLAGS = set("""--session-id --resume --model --permission-mode --input-for
 --allowedTools --allowed-tools --disallowedTools --disallowed-tools --mcp-config --settings --add-dir
 --fallback-model --setting-sources --effort --max-thinking-tokens --thinking --thinking-display
 --resume-session-at --resume-drops-turn --tools --betas --plugin-dir --json-schema --max-budget-usd
---agents --task-budget --agent --debug-file""".split())
+--agents --task-budget --agent --debug-file -n --name -r""".split())
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 RUN_RE = re.compile(r"\bRUN[ \t]+(.+)")
 INTERRUPT_TOOL_TEXT = ("The user doesn't want to proceed with this tool use. The tool use was rejected "
@@ -227,6 +242,25 @@ def settings_path(dest):
     return os.path.join(agent_root(), "claude", "user-settings.json")
 
 
+def config_dir():
+    """$CLAUDE_CONFIG_DIR, else $FAKE_AGENT_DIR/claude-config. Never the real ~/.claude."""
+    d = os.environ.get("CLAUDE_CONFIG_DIR")
+    real = os.path.realpath(os.path.expanduser("~/.claude"))
+    if d and os.path.realpath(os.path.expanduser(d)) != real:
+        return os.path.expanduser(d)
+    return os.path.join(agent_root(), "claude-config")
+
+
+def project_slug(cwd):
+    """Claude Code's project directory name: every character but [A-Za-z0-9] becomes '-'
+    (/Users/x/a/.b -> -Users-x-a--b, as in C14)."""
+    return re.sub(r"[^A-Za-z0-9]", "-", cwd)
+
+
+def transcript_path(sid):
+    return os.path.join(config_dir(), "projects", project_slug(os.getcwd()), sid + ".jsonl")
+
+
 def rule_string(r):
     return "%s(%s)" % (r["toolName"], r["ruleContent"]) if r.get("ruleContent") else r["toolName"]
 
@@ -333,8 +367,10 @@ class ShellRun(object):
 
 def parse_args(argv):
     opts = {"session_id": None, "resume": None, "fork": False, "model": "default", "model_given": None,
-            "effort": None, "permission_mode": "default", "skip_perms": False}
+            "effort": None, "permission_mode": "default", "skip_perms": False, "print": False, "plugin_dirs": [],
+            "name": None, "prompt": None, "version": False}
     i = 0
+    positional = []
     while i < len(argv):
         a = argv[i]
         val = None
@@ -346,8 +382,12 @@ def parse_args(argv):
                 val = argv[i] if i < len(argv) else ""
             if a == "--session-id":
                 opts["session_id"] = val
-            elif a == "--resume":
+            elif a in ("--resume", "-r"):
                 opts["resume"] = val
+            elif a == "--plugin-dir":
+                opts["plugin_dirs"].append(val)
+            elif a in ("-n", "--name"):
+                opts["name"] = val
             elif a == "--model":
                 opts["model"] = val
                 opts["model_given"] = val
@@ -359,9 +399,17 @@ def parse_args(argv):
             opts["fork"] = True
         elif a in ("--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"):
             opts["skip_perms"] = a == "--dangerously-skip-permissions"
+        elif a in ("-p", "--print"):
+            opts["print"] = True
+        elif a in ("-v", "--version"):
+            opts["version"] = True
+        elif not a.startswith("-"):
+            positional.append(a)
         i += 1
     if opts["skip_perms"]:
         opts["permission_mode"] = "bypassPermissions"
+    if positional:
+        opts["prompt"] = " ".join(positional)
     return opts
 
 
@@ -390,6 +438,8 @@ class Turn(object):
         self.first_frame = True        # the first assistant frame carries user_message_uuid(s)
         self.first_response = True     # the first API response is followed by a rate_limit_event
         self.origin = None             # a self-started (WAKE) turn: the result's `origin` (C11wake)
+        self.prompt_id = new_id()      # hook inputs' prompt_id (a steered message shares its turn's, C14)
+        self.cancelled = None          # interrupt with cancel_queued: uuids dropped from the queue (C15)
 
 
 class FakeClaude(object):
@@ -424,12 +474,29 @@ class FakeClaude(object):
         self.wakes_due = []            # WAKE: finished background tasks waiting for their self-started turn
         raw = os.environ.get("FAKE_WAKE_TURN_SECS")
         self.wake_turn_secs = float(raw) if raw not in (None, "") else WAKE_TURN_SECS
+        self.hooks = Hooks("claude", plugin_dirs("FAKE_CLAUDE_PLUGIN_DIRS", opts["plugin_dirs"]))
+        self.tui = None                # ClaudeTui in TUI mode (frames are rendered instead of printed)
+        self.session_id = None
+        self.title = None
+        self.tr_path = None            # the transcript (projects/<slug>/<sid>.jsonl)
+        self.tr_parent = None          # uuid of the last transcript entry (parentUuid chain)
+        self.last_prompt_id = None
+        self.started = False           # SessionStart ran (SessionEnd runs once at exit)
+        self.exiting = False
+        self.idle_since = None         # TUI idle_prompt notification
 
     # ------------------------------------------------------------ output
     def emit(self, obj):
+        self.tap_transcript(obj)
+        if self.tui is not None:
+            if not self.hung:
+                self.tui.frame(obj)
+            return
         self.emit_raw(json.dumps(obj) + "\n")
 
     def emit_raw(self, line):
+        if self.tui is not None:
+            return                     # GARBAGE has no meaning on a terminal
         with self.out_lock:
             if self.hung:
                 return
@@ -487,8 +554,12 @@ class FakeClaude(object):
     def sess_path(self, sid):
         return os.path.join(self.sess_dir, sid + ".json")
 
+    def lock_path(self):
+        return os.path.join(self.sess_dir, self.session_id + ".pid")
+
     def save(self):
-        data = {"session_id": self.session_id, "cwd": os.getcwd(), "messages": self.history}
+        data = {"session_id": self.session_id, "cwd": os.getcwd(), "messages": self.history,
+                "title": self.title, "transcript_path": self.tr_path}
         tmp = "%s.%d.tmp" % (self.sess_path(self.session_id), os.getpid())
         with open(tmp, "w") as f:
             json.dump(data, f)
@@ -502,6 +573,8 @@ class FakeClaude(object):
     def early_result_error(self, sid, msg):
         sys.stderr.write(msg + "\n")
         sys.stderr.flush()
+        if not self.opts["print"]:
+            sys.exit(1)                # the TUI only prints the error
         self.emit({"type": "result", "subtype": "error_during_execution", "duration_ms": 0,
                    "duration_api_ms": 0, "is_error": True, "num_turns": 0, "stop_reason": None,
                    "session_id": sid, "total_cost_usd": 0, "usage": self.usage(), "modelUsage": {},
@@ -527,13 +600,123 @@ class FakeClaude(object):
                 self.session_id = rid
                 self.early_result_error(rid, "No conversation found with session ID: %s" % rid)
             with open(self.sess_path(rid)) as f:
-                self.history = json.load(f).get("messages", [])
+                data = json.load(f)
+            self.history = data.get("messages", [])
+            self.title = data.get("title")
+            if not o["fork"]:
+                self.tr_path = data.get("transcript_path")
             self.session_id = (o["session_id"] or new_id()) if o["fork"] else rid
         else:
             sid = o["session_id"] or new_id()
             if os.path.exists(self.sess_path(sid)):
                 self.fatal("Error: Session ID %s is already in use." % sid)
             self.session_id = sid
+        if o["name"]:
+            self.title = o["name"]
+        if not self.tr_path:
+            self.tr_path = transcript_path(self.session_id)
+        # one process per session: a second live fake on this session is a violation (logged, not refused)
+        claim_session(self.lock_path(), "claude", self.session_id)
+
+    # ------------------------------------------------------------ transcript (projects/<slug>/<sid>.jsonl)
+    def tr_write(self, entry, chained=True):
+        """Append one transcript line, shaped like Claude Code's (2.1.296)."""
+        if not self.tr_path:
+            return
+        e = {}
+        if chained:
+            e["parentUuid"] = self.tr_parent
+            e.update({"isSidechain": False, "userType": "external", "cwd": os.getcwd(),
+                      "sessionId": self.session_id, "version": VERSION})
+        e.update(entry)
+        e.setdefault("timestamp", now_iso())
+        if not chained:
+            e.setdefault("sessionId", self.session_id)
+        if chained:
+            e.setdefault("uuid", new_id())
+            self.tr_parent = e["uuid"]
+        try:
+            append_line(self.tr_path, json.dumps(e) + "\n")
+        except OSError:
+            pass
+
+    def tap_transcript(self, obj):
+        """Assistant frames and tool results / interrupt markers go to the transcript as they are emitted.
+        User messages are written by on_user / start_item."""
+        t = obj.get("type")
+        if t == "assistant":
+            m = obj["message"]
+            self.tr_write({"type": "assistant", "uuid": obj["uuid"], "requestId": obj.get("request_id"),
+                           "message": {"id": m["id"], "type": "message", "role": "assistant", "model": m["model"],
+                                       "content": m["content"], "stop_reason": m.get("stop_reason"),
+                                       "usage": m.get("usage")}})
+        elif t == "user" and not obj.get("isReplay"):
+            entry = {"type": "user", "uuid": obj["uuid"], "message": obj["message"]}
+            if "tool_use_result" in obj:
+                entry["toolUseResult"] = obj["tool_use_result"]
+            self.tr_write(entry)
+
+    # ------------------------------------------------------------ hooks
+    def effort_obj(self):
+        return {"level": self.opts["effort"] or "medium"}
+
+    def hook_input(self, event, turn=None, perm=True, effort=False, **fields):
+        d = {"session_id": self.session_id, "transcript_path": self.tr_path, "cwd": os.getcwd()}
+        if turn is not None:
+            d["prompt_id"] = turn.prompt_id
+        if perm:
+            d["permission_mode"] = self.perm_mode
+        if effort:
+            d["effort"] = self.effort_obj()
+        d["hook_event_name"] = event
+        d.update(fields)
+        return d
+
+    def fire(self, event, payload, match=None, on_start=None, on_done=None):
+        if self.hooks.has(event):
+            self.hooks.run(event, payload, os.getcwd(), match=match, on_start=on_start, on_done=on_done)
+
+    def session_start_hooks(self, source):
+        """SessionStart at startup. In -p mode the real CLI reports each hook with system/hook_started and
+        system/hook_response before it answers `initialize` (C14headless, C14resume)."""
+        self.started = True
+        if not self.hooks.has("SessionStart"):
+            return
+        ids = {}
+
+        def started(i, entry):
+            ids[i] = new_id()
+            if self.tui is None:
+                self.emit(self.sysmsg("hook_started", hook_id=ids[i], hook_name="SessionStart:" + source,
+                                      hook_event="SessionStart"))
+
+        def done(i, entry, res):
+            if self.tui is None:
+                code = res["exit_code"] if res["exit_code"] is not None else 1
+                self.emit(self.sysmsg("hook_response", hook_id=ids[i], hook_name="SessionStart:" + source,
+                                      hook_event="SessionStart", output=res["stdout"] + res["stderr"],
+                                      stdout=res["stdout"], stderr=res["stderr"], exit_code=code,
+                                      outcome="success" if code == 0 else "error"))
+
+        self.fire("SessionStart", self.hook_input("SessionStart", perm=False, source=source), match=source,
+                  on_start=started, on_done=done)
+
+    def before_exit(self, reason):
+        """Runs once on a graceful end: SessionEnd hooks, release the session, restore the terminal."""
+        with self.cv:
+            if self.exiting:
+                return
+            self.exiting = True
+        if self.started and self.hooks.has("SessionEnd"):
+            d = {"session_id": self.session_id, "transcript_path": self.tr_path, "cwd": os.getcwd()}
+            if self.last_prompt_id:
+                d["prompt_id"] = self.last_prompt_id
+            d.update({"hook_event_name": "SessionEnd", "reason": reason})
+            self.fire("SessionEnd", d, match=reason)
+        if self.session_id:
+            release_session(self.lock_path())
+        if self.tui is not None:
+            self.tui.ui.restore()
 
     # ------------------------------------------------------------ shapes
     def usage(self):
@@ -552,10 +735,17 @@ class FakeClaude(object):
     def system_init(self):
         # C13projectmcp: a server from the project's .mcp.json is {"name", "status", "source": "project"}
         mcp = [{"name": name, "status": status, "source": "project"} for name, status in self.mcp]
+        # C14resume: a --plugin-dir plugin is {"name", "path", "source": "<name>@inline", "version"}
+        # (an installed plugin's source would name its marketplace; FAKE_CLAUDE_PLUGIN_DIRS say "@installed")
+        inline = set(os.path.realpath(os.path.abspath(d)) for d in self.opts["plugin_dirs"])
+        plugins = [{"name": p["name"], "path": p["path"], "version": p["version"],
+                    "source": "%s@%s" % (p["name"], "inline" if os.path.realpath(p["path"]) in inline else "installed")}
+                   for p in self.hooks.plugins]
         return self.sysmsg("init", cwd=os.getcwd(), tools=["Bash", "Read", "Write", "Edit"], mcp_servers=mcp,
                            model=self.model, permissionMode=self.perm_mode, slash_commands=[],
                            apiKeySource="none", claude_code_version=VERSION, output_style="default",
-                           agents=[], skills=[], plugins=[], fast_mode_state="off")
+                           agents=[], skills=[], plugins=plugins, capabilities=list(CAPABILITIES),
+                           fast_mode_state="off")
 
     def assistant(self, content, turn_uuids=None, msg_id=None, req_id=None):
         m = {"type": "assistant",
@@ -676,12 +866,22 @@ class FakeClaude(object):
         else:
             text = str(content)
         item = {"uuid": msg.get("uuid"), "text": text, "content": content}
+        self.submit(item)
+
+    def submit(self, item):
+        """A user message (stream-json or typed in the TUI) joins the queue."""
         with self.cv:
             if not self.turn_active:
                 self.turn_active = True
                 self.state("running")
+            else:
+                # a message that waits behind a running turn (2.1.296 transcript: queue-operation enqueue)
+                item["queued"] = True
+                self.tr_write({"type": "queue-operation", "operation": "enqueue", "content": item["text"]},
+                              chained=False)
             self.lifecycle(item["uuid"], "queued")
             self.pending.append(item)
+            self.idle_since = None
             self.cv.notify_all()
 
     def on_control_request(self, msg):
@@ -697,14 +897,30 @@ class FakeClaude(object):
             ok(self.init_response())
         elif sub == "interrupt":
             with self.cv:
+                cancelled = None
+                if req.get("cancel_queued"):
+                    # C15cancelq: queued messages are dropped at once (lifecycle cancelled, before the answer)
+                    cancelled = [p["uuid"] for p in self.pending if p["uuid"]]
+                    for p in self.pending:
+                        self.lifecycle(p["uuid"], "cancelled")
+                        self.tr_write({"type": "queue-operation", "operation": "remove"}, chained=False)
+                    del self.pending[:]
                 turn = self.turn
                 if turn is not None and not turn.finishing and not turn.interrupt_flag:
                     turn.interrupt_flag = True
                     turn.interrupt_rid = rid
+                    turn.cancelled = cancelled
                     self.cv.notify_all()
                     return
                 queued = [p["uuid"] for p in self.pending if p["uuid"]]
-            ok({"still_queued": queued})
+                if cancelled is not None and turn is None and not self.pending and not self.wakes_due \
+                        and self.turn_active:
+                    self.turn_active = False      # nothing left to run
+                    self.state("idle")
+            resp = {"still_queued": queued}
+            if cancelled is not None:
+                resp["cancelled"] = cancelled
+            ok(resp)
         elif sub == "set_permission_mode":
             self.perm_mode = req.get("mode", self.perm_mode)
             ok({})
@@ -731,12 +947,13 @@ class FakeClaude(object):
 
     # ------------------------------------------------------------ process-level behaviours
     def on_sigterm(self, signum, frame):
-        if self.ignore_term:
+        if self.ignore_term and signum == signal.SIGTERM:
             return
         for sh in list(self.shells):
             sh.kill()
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        os.kill(os.getpid(), signal.SIGTERM)
+        self.before_exit("other")
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
 
     def hang(self):
         """HANG: stay alive, emit nothing, ignore stdin (and its EOF) until killed."""
@@ -746,6 +963,7 @@ class FakeClaude(object):
             time.sleep(3600)
 
     def exit_now(self):
+        self.before_exit("other")      # C14: `claude -p` ends with SessionEnd reason "other" at stdin EOF
         with self.out_lock:
             try:
                 sys.stdout.flush()
@@ -768,6 +986,8 @@ class FakeClaude(object):
                 self.cv.wait(0.05 if rem is None else min(rem, 0.05))
 
     def crash(self):
+        if self.tui is not None:
+            self.tui.ui.restore()
         sys.stderr.write("fake_claude: CRASH requested\n")
         sys.stderr.flush()
         os._exit(1)
@@ -794,13 +1014,31 @@ class FakeClaude(object):
             return "history: " + " | ".join(prev)
         return "ok: " + text
 
-    def start_item(self, turn, item):
+    def start_item(self, turn, item, injected=False):
         """The message becomes part of this turn (handed to the model)."""
         self.lifecycle(item["uuid"], "started")
         turn.started.append(item["uuid"])
         self.history.append({"role": "user", "text": item["text"], "uuid": item["uuid"]})
+        if self.title is None and item["text"].strip():
+            self.title = short(item["text"], 40)
+            if self.tui is not None:
+                self.tui.set_title()
         self.save()
         write_receipt("claude", self.session_id, item["uuid"], item["text"], turn.index)
+        if injected:
+            # 2.1.296: a steered message lands as a queued_command attachment, then leaves the queue
+            self.tr_write({"type": "attachment", "attachment": {
+                "type": "queued_command", "prompt": item["text"], "source_uuid": item["uuid"],
+                "commandMode": "prompt"}})
+            self.tr_write({"type": "queue-operation", "operation": "remove"}, chained=False)
+        else:
+            if item.get("queued"):
+                self.tr_write({"type": "queue-operation", "operation": "dequeue"}, chained=False)
+            self.tr_write({"type": "user", "uuid": item["uuid"] or new_id(),
+                           "message": {"role": "user", "content": item["content"]}})
+        self.last_prompt_id = turn.prompt_id
+        # C14: UserPromptSubmit fires for every message, a steered one included (same prompt_id)
+        self.fire("UserPromptSubmit", self.hook_input("UserPromptSubmit", turn, prompt=item["text"]))
 
     def delivered(self, item):
         """Checks that happen right after the model received a message."""
@@ -882,7 +1120,7 @@ class FakeClaude(object):
                             del self.pending[:]
                     for inj in injected:
                         self.replay(inj)
-                        self.start_item(turn, inj)
+                        self.start_item(turn, inj, injected=True)
                         self.delivered(inj)
                         work.append(inj)
             with self.cv:
@@ -898,6 +1136,7 @@ class FakeClaude(object):
         self.api_response(turn, [{"type": "text", "text": final}])
         self.history.append({"role": "assistant", "text": final})
         self.save()
+        self.stop_hook(turn, final)
         for u in turn.started[1:]:
             self.lifecycle(u, "completed")
         self.emit(self.result(True, final, turn.started, turn.denials, turn.num_turns, t0))
@@ -910,10 +1149,11 @@ class FakeClaude(object):
         task_started only fires once the command has run ~3 s, and task_notification only after it."""
         turn.num_turns += 1
         tid = "toolu_fake_" + uuidlib.uuid4().hex[:20]
-        self.api_response(turn, [{"type": "tool_use", "id": tid, "name": "Bash",
-                                  "input": {"command": command, "description": description}}])
+        tool_input = {"command": command, "description": description}
+        self.api_response(turn, [{"type": "tool_use", "id": tid, "name": "Bash", "input": tool_input}])
         turn.tool_use_id, turn.tool_kind = tid, "bash"
         turn.task_id, turn.task_desc = None, description
+        self.pre_tool(turn, "Bash", tool_input, tid)
         start = time.time()
         sh = None
         if shell is not None:
@@ -949,13 +1189,33 @@ class FakeClaude(object):
             self.emit(self.sysmsg("task_notification", task_id=turn.task_id, tool_use_id=tid,
                                   status="completed", output_file="", summary=description))
         shown = output.rstrip("\n")
+        result = {"stdout": shown, "stderr": "", "interrupted": False, "isImage": False,
+                  "noOutputExpected": shown == ""}
+        self.post_tool(turn, "Bash", tool_input, tid, result, start)
         self.emit(self.user_frame([{"tool_use_id": tid, "type": "tool_result", "content": shown,
-                                    "is_error": code != 0}],
-                                  tool_use_result={"stdout": shown, "stderr": "", "interrupted": False,
-                                                   "isImage": False, "noOutputExpected": shown == ""}))
+                                    "is_error": code != 0}], tool_use_result=result))
         turn.tool_use_id = None
         turn.task_id = None
         return code, output
+
+    # ------------------------------------------------------------ tool and stop hooks (C14)
+    def pre_tool(self, turn, tool, tool_input, tid):
+        self.fire("PreToolUse", self.hook_input("PreToolUse", turn, effort=True, tool_name=tool,
+                                                tool_input=tool_input, tool_use_id=tid), match=tool)
+
+    def post_tool(self, turn, tool, tool_input, tid, result, start):
+        self.fire("PostToolUse", self.hook_input("PostToolUse", turn, effort=True, tool_name=tool,
+                                                 tool_input=tool_input, tool_response=result, tool_use_id=tid,
+                                                 duration_ms=int((time.time() - start) * 1000)), match=tool)
+
+    def stop_hook(self, turn, final):
+        """Stop, before the turn's result. background_tasks lists the WAKE tasks still running."""
+        if not self.hooks.has("Stop"):
+            return
+        with self.cv:
+            tasks = self.bg_task_list()
+        self.fire("Stop", self.hook_input("Stop", turn, effort=True, stop_hook_active=False,
+                                          last_assistant_message=final, background_tasks=tasks, session_crons=[]))
 
     # ------------------------------------------------------------ background tasks and self-started turns (C11wake)
     def bg_task_list(self):
@@ -970,8 +1230,10 @@ class FakeClaude(object):
         turn.num_turns += 1
         tid = "toolu_fake_" + uuidlib.uuid4().hex[:20]
         command = "sleep %s" % secs
-        self.api_response(turn, [{"type": "tool_use", "id": tid, "name": "Bash",
-                                  "input": {"command": command, "run_in_background": True}}])
+        tool_input = {"command": command, "run_in_background": True}
+        self.api_response(turn, [{"type": "tool_use", "id": tid, "name": "Bash", "input": tool_input}])
+        self.pre_tool(turn, "Bash", tool_input, tid)
+        start = time.time()
         task_id = "b" + short_id(8)
         run_id = "%s-%s" % (short_id(9), uuidlib.uuid4().hex[:8])
         out_dir = os.path.join(agent_root(), "claude", "tasks", self.session_id)
@@ -985,10 +1247,12 @@ class FakeClaude(object):
             self.emit(self.sysmsg("background_tasks_changed", tasks=self.bg_task_list()))
         self.emit(self.sysmsg("task_started", task_id=task_id, run_id=run_id, tool_use_id=tid,
                               description=command, is_backgrounded=True, task_type="local_bash"))
+        result = {"stdout": "", "stderr": "", "interrupted": False, "isImage": False, "noOutputExpected": False,
+                  "backgroundTaskId": task_id}
+        self.post_tool(turn, "Bash", tool_input, tid, result, start)
         self.emit(self.user_frame([{"tool_use_id": tid, "type": "tool_result",
                                     "content": BG_RESULT_TEXT % (task_id, output_file), "is_error": False}],
-                                  tool_use_result={"stdout": "", "stderr": "", "interrupted": False, "isImage": False,
-                                                   "noOutputExpected": False, "backgroundTaskId": task_id}))
+                                  tool_use_result=result))
         timer = threading.Timer(float(secs), self.wake_fire, args=(task_id,))
         timer.daemon = True
         timer.start()
@@ -1042,6 +1306,8 @@ class FakeClaude(object):
         self.api_response(turn, [{"type": "text", "text": final}])
         self.history.append({"role": "assistant", "text": final})
         self.save()
+        self.last_prompt_id = turn.prompt_id
+        self.stop_hook(turn, final)     # no UserPromptSubmit: nobody sent anything
         self.emit(self.result(True, final, [], [], 1, t0, origin=turn.origin))
 
     # ------------------------------------------------------------ permission rules (C10)
@@ -1123,16 +1389,18 @@ class FakeClaude(object):
             inp = {"command": cmd, "description": "Create %s" % target}
         self.api_response(turn, [{"type": "tool_use", "id": tid, "name": tool, "input": inp}])
         turn.tool_use_id, turn.tool_kind = tid, "perm"
+        self.pre_tool(turn, tool, inp, tid)
+        start = time.time()
+        bash_result = {"stdout": "", "stderr": "", "interrupted": False, "isImage": False, "noOutputExpected": True}
         auto = None
         if self.perm_mode == "bypassPermissions":
             auto = "permission allowed"
         elif not questions:
             auto = self.allowed_without_prompt(cmd)
         if auto is not None:
+            self.post_tool(turn, tool, inp, tid, bash_result, start)
             self.emit(self.user_frame([{"tool_use_id": tid, "type": "tool_result", "content": "",
-                                        "is_error": False}],
-                                      tool_use_result={"stdout": "", "stderr": "", "interrupted": False,
-                                                       "isImage": False, "noOutputExpected": True}))
+                                        "is_error": False}], tool_use_result=bash_result))
             turn.tool_use_id = None
             return auto
         rid = new_id()
@@ -1150,6 +1418,15 @@ class FakeClaude(object):
                 {"type": "setMode", "mode": "acceptEdits", "destination": "session"}]
             request["blocked_path"] = os.path.join(os.getcwd(), target)
         request["tool_use_id"] = tid
+        if not questions:
+            # PermissionRequest as the prompt is about to show; in the TUI also Notification permission_prompt
+            self.fire("PermissionRequest", self.hook_input(
+                "PermissionRequest", turn, effort=True, tool_name=tool, tool_input=inp,
+                permission_suggestions=request["permission_suggestions"]), match=tool)
+            if self.tui is not None:
+                self.fire("Notification", self.hook_input(
+                    "Notification", perm=True, message="Claude needs your permission to use %s" % tool,
+                    notification_type="permission_prompt"), match="permission_prompt")
         self.emit({"type": "control_request", "request_id": rid, "request": request})
         if eof:
             with self.cv:
@@ -1169,14 +1446,14 @@ class FakeClaude(object):
             turn.perm = None
             if questions:
                 answers = ((resp.get("response") or {}).get("updatedInput") or {}).get("answers") or {}
+                self.post_tool(turn, tool, inp, tid, {"answers": answers}, start)
                 self.emit(self.user_frame([{"tool_use_id": tid, "type": "tool_result", "content": json.dumps(answers),
                                             "is_error": False}], tool_use_result={"answers": answers}))
                 turn.tool_use_id = None
                 return "answers: " + "; ".join("%s=%s" % (k, answers[k]) for k in sorted(answers))
+            self.post_tool(turn, tool, inp, tid, bash_result, start)
             self.emit(self.user_frame([{"tool_use_id": tid, "type": "tool_result", "content": "",
-                                        "is_error": False}],
-                                      tool_use_result={"stdout": "", "stderr": "", "interrupted": False,
-                                                       "isImage": False, "noOutputExpected": True}))
+                                        "is_error": False}], tool_use_result=bash_result))
             turn.tool_use_id = None
             return "permission allowed"
         if resp.get("subtype") == "stdin_closed":
@@ -1208,6 +1485,9 @@ class FakeClaude(object):
         self.emit(m)
         self.history.append({"role": "assistant", "text": text})
         self.save()
+        # an API error ends the turn with StopFailure instead of Stop (error type: inferred)
+        self.fire("StopFailure", self.hook_input("StopFailure", turn, error="invalid_request",
+                                                 last_assistant_message=text), match="invalid_request")
         for u in turn.started[1:]:
             self.lifecycle(u, "completed")
         self.emit(self.result(True, text, turn.started, turn.denials, turn.num_turns, t0, stop="stop_sequence",
@@ -1224,8 +1504,11 @@ class FakeClaude(object):
             self.emit({"type": "control_cancel_request", "request_id": perm["request_id"]})
             turn.denials.append({"tool_name": "Bash", "tool_use_id": perm["tool_use_id"], "tool_input": perm["input"]})
         if exc.rid is not None:
+            resp = {"still_queued": queued}
+            if turn.cancelled is not None:
+                resp["cancelled"] = turn.cancelled
             self.emit({"type": "control_response", "response": {
-                "subtype": "success", "request_id": exc.rid, "response": {"still_queued": queued}}})
+                "subtype": "success", "request_id": exc.rid, "response": resp}})
         if turn.task_id is not None and turn.tool_use_id:
             # only when task_started had already fired (C1 vs C2)
             self.emit(self.sysmsg("task_notification", task_id=turn.task_id, tool_use_id=turn.tool_use_id,
@@ -1276,18 +1559,240 @@ class FakeClaude(object):
                 if not self.pending:
                     self.turn_active = False
                     self.state("idle")
+                    self.idle_since = time.time()
                     if self.exit_when_idle:
                         self.exit_now()
         self.exit_now()
 
     def main(self):
+        if self.opts["version"]:
+            sys.stdout.write("%s (Claude Code)\n" % VERSION)
+            return
+        if not self.opts["print"]:
+            ClaudeTui(self).main()
+            return
         slow = float(os.environ.get("FAKE_SLOW_START") or 0)
         if slow > 0:
             time.sleep(slow)
         signal.signal(signal.SIGTERM, self.on_sigterm)
         self.setup_session()
+        self.session_start_hooks("resume" if self.opts["resume"] else "startup")
         threading.Thread(target=self.reader, daemon=True).start()
         self.worker()
+
+
+class ClaudeTui(object):
+    """TUI mode: the same engine and session, shown as plain lines on a terminal.
+    `> text` is a user message the model received, `⏺ text` a reply or tool call, `  ⎿  ...` a tool
+    result; permission prompts and questions wait for a typed answer."""
+
+    def __init__(self, app):
+        self.app = app
+        self.ui = LineUI("> ")
+        self.req = None                 # the can_use_tool request waiting for a typed answer
+        self.req_lock = threading.RLock()
+        raw = os.environ.get("FAKE_CLAUDE_IDLE_SECS")
+        self.idle_secs = float(raw) if raw not in (None, "") else IDLE_NOTIFY_SECS
+
+    # ------------------------------------------------------------ startup and the input loop
+    def main(self):
+        app = self.app
+        app.tui = self
+        slow = float(os.environ.get("FAKE_SLOW_START") or 0)
+        if slow > 0:
+            time.sleep(slow)
+        app.setup_session()
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, self.on_term)
+        signal.signal(signal.SIGINT, self.on_sigint)
+        self.ui.on_escape = lambda: threading.Thread(target=self.interrupt, daemon=True).start()
+        self.ui.start()
+        self.ui.say("✻ Fake Claude Code %s" % VERSION, "  session: %s" % app.session_id,
+                    "  cwd: %s" % os.getcwd(), "")
+        for h in app.history:          # a resumed conversation shows what was said
+            self.ui.say(self.user_line(h["text"]) if h["role"] == "user" else self.reply_line(h["text"]))
+        self.set_title()
+        app.session_start_hooks("resume" if app.opts["resume"] else "startup")
+        threading.Thread(target=app.worker, daemon=True).start()
+        threading.Thread(target=self.idle_watch, daemon=True).start()
+        if app.opts["prompt"]:
+            self.send(app.opts["prompt"])
+        self.ui.show_prompt()
+        while True:
+            line = self.ui.read_line()
+            if line is None:
+                if not self.ui.tty:            # piped input: let the work finish first
+                    while self.app.turn_active or self.app.pending or self.app.wakes_due:
+                        time.sleep(0.05)
+                self.quit("other" if self.ui.hangup else "exit")
+            text = line.strip()
+            if not text:
+                continue
+            if self.answer(text):
+                continue
+            if text in ("/exit", "/quit"):
+                self.quit("exit")
+            self.send(text)
+
+    def send(self, text):
+        self.app.submit({"uuid": new_id(), "text": text, "content": text})
+
+    def set_title(self):
+        if self.app.title:
+            self.ui.title("✳ " + self.app.title)
+
+    def quit(self, reason):
+        """/exit, EOF or a signal: whatever runs is abandoned (no Stop hook), SessionEnd runs."""
+        for sh in list(self.app.shells):
+            sh.kill()
+        self.app.before_exit(reason)
+        os._exit(0)
+
+    def on_term(self, signum, frame):
+        if self.app.ignore_term and signum == signal.SIGTERM:
+            return
+        for sh in list(self.app.shells):
+            sh.kill()
+        self.app.before_exit("other")
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    def on_sigint(self, signum, frame):
+        threading.Thread(target=self.interrupt, args=(True,), daemon=True).start()
+
+    def interrupt(self, hint=False):
+        """Ctrl-C (or Esc) during a turn interrupts it; no hook fires. At the prompt it only hints."""
+        app = self.app
+        with app.cv:
+            turn = app.turn
+            if turn is not None and not turn.finishing and not turn.interrupt_flag:
+                turn.interrupt_flag = True
+                turn.interrupt_rid = None
+                app.cv.notify_all()
+                return
+        if hint:
+            self.ui.say("  (Ctrl-C does not quit: type /exit or press Ctrl-D)")
+
+    def idle_watch(self):
+        """Notification idle_prompt once the session has sat idle for FAKE_CLAUDE_IDLE_SECS after a turn."""
+        app = self.app
+        while True:
+            time.sleep(0.1)
+            with app.cv:
+                since = app.idle_since
+                due = since is not None and not app.turn_active and time.time() - since >= self.idle_secs
+                if due:
+                    app.idle_since = None
+            if due and self.req is None:
+                app.fire("Notification", app.hook_input("Notification", message="Claude is waiting for your input",
+                                                        notification_type="idle_prompt"), match="idle_prompt")
+
+    # ------------------------------------------------------------ rendering
+    def user_line(self, text):
+        return "> " + text.replace("\n", "\n  ")
+
+    def reply_line(self, text):
+        return "⏺ " + text.replace("\n", "\n  ")
+
+    def frame(self, m):
+        t = m.get("type")
+        if t == "user" and m.get("isReplay"):
+            c = m["message"]["content"]
+            if isinstance(c, list):
+                c = "\n".join(b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text")
+            self.ui.say(self.user_line(str(c)))
+        elif t == "assistant":
+            for b in m["message"]["content"]:
+                if b.get("type") == "text":
+                    self.ui.say(self.reply_line(b["text"]))
+                elif b.get("type") == "tool_use":
+                    inp = b.get("input") or {}
+                    if b["name"] == "Bash":
+                        bg = " (background)" if inp.get("run_in_background") else ""
+                        self.ui.say("⏺ Bash(%s)%s" % (inp.get("command", ""), bg))
+                    else:
+                        self.ui.say("⏺ %s" % b["name"])
+        elif t == "user":
+            for b in m["message"]["content"] if isinstance(m["message"]["content"], list) else []:
+                if b.get("type") == "tool_result":
+                    content = b.get("content") or ""
+                    if not isinstance(content, str):
+                        content = json.dumps(content)
+                    lines = content.split("\n") if content else ["(No output)"]
+                    shown = ["  ⎿  " + lines[0]] + ["     " + l for l in lines[1:3]]
+                    if len(lines) > 3:
+                        shown.append("     … +%d lines" % (len(lines) - 3))
+                    self.ui.say(*shown)
+        elif t == "result":
+            if m.get("is_error") and str(m.get("terminal_reason", "")).startswith("aborted"):
+                self.ui.say("  ⎿  Interrupted · What should Claude do instead?")
+            else:
+                self.ui.say("✻ Worked for %ds" % (m.get("duration_ms", 0) // 1000))
+        elif t == "system" and m.get("subtype") == "task_notification" and str(m.get("summary", "")).startswith(
+                "Background command"):
+            self.ui.say("⏺ " + m["summary"])
+        elif t == "control_request" and m["request"].get("subtype") == "can_use_tool":
+            r = m["request"]
+            with self.req_lock:
+                self.req = {"rid": m["request_id"], "tool": r["tool_name"], "input": r["input"], "answers": {},
+                            "questions": (r["input"].get("questions") or []) if r["tool_name"] == "AskUserQuestion"
+                            else None}
+            self.ask()
+        elif t == "control_cancel_request":
+            with self.req_lock:
+                if self.req is not None and self.req["rid"] == m.get("request_id"):
+                    self.req = None
+                    self.ui.say("  ⎿  (request withdrawn)")
+
+    def ask(self):
+        with self.req_lock:
+            req = self.req
+            if req is None:
+                return
+            if req["questions"] is None:
+                self.ui.say("", "%s command" % req["tool"], "  " + req["input"].get("command", ""),
+                            "Do you want to proceed? [y]es / [a]lways / [n]o")
+                return
+            q = req["questions"][len(req["answers"])]
+            opts = "  ".join("(%d) %s" % (i + 1, o.get("label")) for i, o in enumerate(q.get("options") or []))
+            self.ui.say("", "? " + q["question"], "  " + opts + "   (type a number or an answer)")
+
+    def answer(self, text):
+        """A typed line answers the pending request, if there is one."""
+        with self.req_lock:
+            req = self.req
+            if req is None:
+                return False
+            if req["questions"] is None:
+                choice = text.lower()
+                if choice in ("y", "yes"):
+                    resp = {"behavior": "allow", "updatedInput": req["input"]}
+                elif choice in ("a", "always"):
+                    resp = {"behavior": "allow", "updatedInput": req["input"], "updatedPermissions": [
+                        {"type": "addRules", "rules": [{"toolName": req["tool"],
+                                                        "ruleContent": req["input"].get("command", "")}],
+                         "behavior": "allow", "destination": "localSettings"}]}
+                elif choice in ("n", "no"):
+                    # the TUI's "No, and tell Claude what to do differently" stops the turn
+                    resp = {"behavior": "deny", "message": "The user doesn't want to proceed with this tool use.",
+                            "interrupt": True}
+                else:
+                    self.ask()
+                    return True
+            else:
+                q = req["questions"][len(req["answers"])]
+                labels = [o.get("label") for o in q.get("options") or []]
+                if text.isdigit() and 1 <= int(text) <= len(labels):
+                    text = labels[int(text) - 1]
+                req["answers"][q["question"]] = text
+                if len(req["answers"]) < len(req["questions"]):
+                    self.ask()
+                    return True
+                resp = {"behavior": "allow", "updatedInput": dict(req["input"], answers=req["answers"])}
+            self.req = None
+        self.app.on_control_response({"type": "control_response", "response": {
+            "subtype": "success", "request_id": req["rid"], "response": resp}})
+        return True
 
 
 if __name__ == "__main__":
