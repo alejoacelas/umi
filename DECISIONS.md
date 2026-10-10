@@ -1101,4 +1101,15 @@ gets focus in the key window of the active app (UI-B's sidebar may call it too; 
 - **Hiding a session that's working** ends its interface once the interface has nothing running, even
   when messages wait for it (they run headless afterwards); the pane is remembered until the
   interface is gone, so an agent typed in a pane (whose process knows only its pane) is ended too.
+- **One interface per conversation, also across a closed pane.** A closed pane's program is kept for
+  60 s so ⇧⌘T can bring it back (L-20); a live Claude interface kept that way is ended when its session
+  is shown in another pane, and a Take Over waits until it has exited. Likewise no headless process
+  starts until the live interface's process is gone (its SessionEnd hook arrives first).
+- **Drafts are counted, roughly.** Characters typed into a live interface minus Backspaces; at zero the
+  line counts as empty. Edits Tern can't measure (a word deleted, a paste through the menu) leave a
+  typed draft standing; Enter, Ctrl-C at the prompt or Ctrl-U clear it.
+- **No window-opening animation while the screen is locked or the display asleep.** AppKit's animation
+  never ends then, and each window opened unattended kept a worker thread for ever; after 64 the app's
+  shared thread pool was exhausted and agent commands stalled (found by the suite, which runs with the
+  screen locked). With the screen in use windows open as before.
 

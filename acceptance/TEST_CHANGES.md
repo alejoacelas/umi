@@ -252,3 +252,9 @@ helper's reproduction were clean, against 1 in 5 before).
   built (it failed once in about ten runs). **Change:** it checks a snapshot taken after the view shows
   the conversation. **Requirement:** AG-5, "with a Take Over button".
 
+Round 4 regression tests: a live pane closed and its session shown elsewhere (one interface), a draft
+deleted with Backspace, Ctrl-C on an idle prompt, reopening after a resize; and
+`test_many_windows_opened_while_the_screen_is_locked_leave_the_app_responsive` (70 windows opened and
+closed, then a session must answer), found because the whole suite stalled two thirds of the way
+through with the screen locked.
+
