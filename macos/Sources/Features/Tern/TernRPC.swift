@@ -279,6 +279,11 @@ enum TernRPC {
 
         case "sidebar":
             let state = TernState.shared
+            // The width is per window (S-8): the given window, else the caller's, else the current.
+            // An unknown window changes nothing (L-4).
+            let window = params.string("window") != nil
+                ? try TernTopology.window(params.string("window"), caller: caller)
+                : try? TernTopology.window(nil, caller: caller)
             if params.bool("toggle") ?? false { state.sidebarVisible.toggle() }
             if let visible = params.bool("visible") { state.sidebarVisible = visible }
             if let mode = params.string("mode") {
@@ -288,8 +293,6 @@ enum TernRPC {
                 state.sidebarMode = parsed
                 state.sidebarVisible = true
             }
-            // The width is per window (S-8): the given window, else the caller's, else the current.
-            let window = try? TernTopology.window(params.string("window"), caller: caller)
             if let width = params.double("width") {
                 guard let window else { throw TernError.notFound("there are no Tern windows open") }
                 window.sidebarWidth = TernTheme.clampSidebarWidth(CGFloat(width))
