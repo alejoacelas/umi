@@ -1053,3 +1053,33 @@ with A focused (A's retry landed after B) — found by the L-15 test.
 
 `TernFocusHistory` calls `TernAttention.shared.looked(atPane:)` when a pane
 gets focus in the key window of the active app (UI-B's sidebar may call it too; it's idempotent).
+
+## 59. After the tests of agent sessions (fixes to what they found)
+
+- **`stopped` means someone stopped it.** A session whose live interface closed, or whose agent
+  exited by itself, is `idle`: no process runs, and a message resumes it (AG-8: "then the session is
+  headless and idle"). Only `agent stop` (or removing it) leaves `stopped`; a crash leaves `error`.
+  Taking a stopped session over clears that.
+- **Tern's own input counts as typing.** `tern send` and `tern keys` into a live pane are what
+  agents and scripts use to type into an interface, so they count like the keyboard: text held on
+  the prompt line holds messages back (AG-9), Esc or Ctrl-C ends a turn's `working` (AG-19), and
+  Ctrl-U (from either) empties the line, so held messages go.
+- **A message that crashed Codex isn't sent again.** When the process dies before Tern hears that
+  it took a message in, the message goes back in the queue; on resume, if the thread's history has
+  it (by the client id Tern gave it), it ends `FAILED` with the crash as the reason instead of
+  being sent again (AG-11, exactly once).
+- **A finished background task holds the settle** until the turn it wakes starts (Claude reports
+  the task gone before that turn's init), or until 5 s pass with nothing running, for a task the
+  running turn took in (AG-12, AG-13).
+- **The latest message's wait** gives the newer reply only when it came from a turn the agent
+  started itself, never another message's turn (a message requeued behind a redirect).
+- **The attach line waits for the shell.** Take Over (and every go-live) types `tern agent attach`
+  only once the pane's shell has the terminal again, at most 10 s: Claude Code still owns the
+  terminal for a moment after its SessionEnd hook, and the line was swallowed (AG-6).
+- **A quit leaves live sessions live.** Interface endings during the app's shutdown are ignored,
+  so the session is saved as live in its pane and goes live there after the restart, as soon as
+  the pane is restored (AG-7).
+- **`agent info` says `running`** (Tern's headless process runs) instead of `live`, which read as
+  "in its own interface" next to `location: live`.
+- **`CODEX_HOME` is configuration, not a session marker**: the app keeps it, so panes, sessions
+  and `agent plugins` use the user's chosen Codex folder.

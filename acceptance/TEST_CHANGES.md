@@ -161,3 +161,64 @@ Additions:
   update in the sidebar (`extra-I-4-update-question.png`, `extra-I-4-update-ready.png`).
 - **`app/macos/TernTests/verify_agent_panes.py`**: the Agent Sessions menu (order, ✓ for shown
   sessions, choosing one) and the Dock badge, through `debug.menu` and `debug.dock_badge`.
+
+## Agent sessions and the app changes (BRIEF-agents.md)
+
+The agent requirements MA, AP, IA and R-1, R-2, R-8 to R-10 were replaced by AG-1 to AG-23 (the
+user asked for a new design: sessions are always run headless, can go live in the agent's own interface and
+come back, and are seen read-only only when the user asks). Tests of the replaced requirements were
+ported to the new ones where the behaviour still applies, and dropped where the user's new design
+replaced it. Nothing that still applies was weakened.
+
+Changed tests:
+
+- **`app/macos/Tests/Splits/SplitTreeTests.swift`, `equalized`** (upstream Ghostty test, changed by
+  the UI-B work). **What was wrong:** it expected the third pane of a row to leave its neighbour at
+  a 0.5 ratio before equalizing, Ghostty's halving split. **Change:** it expects 1/3, what a row of
+  three equal panes has; the equalize step it checks is unchanged. **Requirement:** L-19, "a third
+  makes 33/33/33 … whichever pane is split".
+- **`tests/test_tern_panes_ui.py::test_move_tab_up_and_down_stay_in_their_pin_group`** (UI-B's
+  test). **What was wrong:** after pinning `t2` it asked whether `t3` could move up, assuming `t3`
+  was still the first unpinned tab. Pinning re-sorts the unpinned tabs (the current tab comes
+  right after the pinned ones), so `t3` wasn't first. **Change:** it asks about whichever tab is
+  first below the pinned group, and also checks that the pinned tab can't move down out of it
+  (one more assertion). **Requirement:** S-7, "pinned tabs first … then the current (selected) tab".
+- **`tests/test_layout.py::test_send_text_from_stdin_and_after_separator`**: tagged `T-1` only. It
+  also carried `MA-13`, a removed requirement. The test sends to a pane (T-1); agent messages from
+  stdin are AG-1's, tested in `test_sessions.py::test_text_from_stdin_and_after_separator`.
+- **`tests/test_layout.py` `SHORTCUTS`**: the keys added to L-9 (navigation, palettes, Settings,
+  jumps, ⇧⌘T, ⌃⌘O, ⌃⌘W) were added to the list; nothing was removed from it.
+- **Ported to AG** (by the tests helper; details in `spec-drafts/tests-notes.md`): `test_robustness.py`
+  (agent tests retagged AG-21, AG-22, AG-23; `exited` reads `stopped`; `--background` dropped, it is
+  the default), `test_chaos.py` (retagged AG-10, AG-11, AG-13, AG-21; status names), `test_install.py`
+  (`test_upgrading_keeps_sessions`: R-8 → AG-22), `test_tern_extra.py` (`tern claude TASK
+  --new-window` in place of the typed command; the `tern claude --tab --pane A` part of the folder
+  test is gone, because a session's folder is its `--cwd`, AG-1). `harness.py`: `clean_env` also
+  removes `CLAUDE_*`, `TERN_*` and `AI_AGENT` inherited from the Claude Code session that runs the
+  suite (they reached panes' shells); fake instances get their own `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
+- **`checks/run_checks.py`**: a check with several ids (`**L-14, L-15, L-16: …**`) is parsed (it
+  was skipped). `checks/tern_verdicts.py`: verdicts of removed checks (IA-1, AP-*) are gone.
+
+Removed (requirements replaced by the user's new design): `test_managed.py`, `test_resumption.py`,
+`test_agent_panes.py`, `test_interactive.py`, `test_real.py`, `test_tern_agents_extra.py`. What
+still applies was ported to `test_sessions.py`, `test_live.py`, `test_sessions_real.py` and
+`test_robustness.py`. Not ported, and why:
+
+- typing a follow-up into Tern's agent pane, Esc there interrupting (AP-1): the pane is now
+  read-only with a Take Over button; typing goes to the agent's own interface;
+- undo of closing an agent pane (AP-2): removing a session from a pane is AG-8 (`agent hide`, ⌃⌘W);
+  closing a view's pane leaving the session is tested;
+- `tern claude|codex … -- ARGS` typed as the user's command (IA-1 to IA-3): `tern claude|codex` is
+  now shorthand for `agent start … --tab --focus`, the user's "easy launch"; agents the user types
+  themselves are AG-18's;
+- `--drop-queued` (MA-25): not in the new CLI, messages to a busy session steer it;
+- most real-agent tests: the brief asks for real tests that are few and cheap; their outcomes are
+  covered with the fakes, and the real suite keeps launch/steer/resume, project instructions, live
+  hand-over, plugin install and the zero-instruction orchestration tests (AG-20).
+
+Additions: `tests/test_sessions.py`, `tests/test_live.py`, `tests/test_sessions_real.py` (AG-1 to
+AG-23), `tests/test_tern_nav.py` (L-9 to L-18, S-7), `tests/test_tern_panes_ui.py` (L-19, L-20, M-4,
+S-3, S-4, S-8, E-10), `app/macos/TernTests/verify_agent_panes.py` (rewritten for AG-5, AG-6, AG-8,
+AG-9, S-3; with a regression check that a read-only view stays in its pane when the window gets
+another split), and `checks/tern_extra_evidence.py --only ui` (agent rows, sidebar width, the three
+palettes, a live session next to a read-only one).

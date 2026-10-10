@@ -133,7 +133,8 @@ SESSION is a session id or unique prefix, a name, the agent's own session or thr
 (inside a session).
 
 - **Session**: `{"id", "name", "kind": "claude"|"codex", "status": starting|working|idle|needs_input|stopped|error,
-  "activity", "title", "cwd", "location": "background"|"pane"|"live", "pane"?: pane id, "harness_id"?, "parent"?,
+  "activity", "title", "cwd", "location": "background"|"pane"|"live", "running": bool (Tern's headless process for
+  it runs), "pane"?: pane id, "harness_id"?, "parent"?,
   "requests": [Request], "last_message"?: Message, "waiting"?: [Message] (messages not delivered yet),
   "waiting_reason"?, "error"?, "report"?: Report, "background_tasks"?: int, "startup"?: Startup, "origin": "started"|"typed"}`
 - **Report**: `{"verdict": "done"|"blocked"|"failed", "summary", "at"}` (ISO 8601 time)
