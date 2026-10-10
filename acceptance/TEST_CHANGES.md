@@ -263,3 +263,9 @@ session's name, a Take Over that fails. Not covered by a test: a paste into a li
 would have to replace the user's clipboard) and stale file-search results arriving after a mode
 change (a race of a few milliseconds).
 
+- **`tests/test_tern_nav.py::test_jump_goes_to_sessions_needing_you_then_back`** (UI-A's test). **What
+  was wrong:** it assumed the only marked panes in the shared instance were its own two; in a full run,
+  a session an earlier test left finished in a tab nobody looked at was an older target, and the jump
+  went there first (it passes on its own). **Change:** it clears other panes' marks before setting its
+  own; what it checks is unchanged. **Requirement:** L-12, "the next session that needs the user".
+

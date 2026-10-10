@@ -230,6 +230,9 @@ def test_tab_number_items_and_cycling(inst, win):
 
 @pytest.mark.req("L-12")
 def test_jump_goes_to_sessions_needing_you_then_back(inst, win):
+    # Only this test's marks: sessions earlier tests left in the shared instance may have theirs.
+    for pane in rpc(inst, "debug.ui.attention")["panes"]:
+        rpc(inst, "debug.attention.set", pane=pane, clear=True)
     home = win["pane"]
     finished = new_tab(inst, win, "--no-focus")
     waiting = new_tab(inst, win, "--no-focus")

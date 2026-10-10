@@ -536,3 +536,95 @@ def test_a_take_over_that_fails_leaves_the_read_only_view(inst, win):
     view = wait_until(lambda: (lambda v: v if v.get("showing") == "agent" and "Take Over" in v.get("buttons", []) else None)(
         inst.session_view(pane)), 10, message="the read-only view with its Take Over button again")
     assert view["session"] == sid
+
+
+# ---- round 6 -------------------------------------------------------------------------------------
+
+@pytest.mark.req("AG-11", "AG-22")
+def test_a_steered_claude_message_the_crash_kept_from_claude_is_sent_again(fresh):
+    """Round 6, P1: after a crash of the product, a message written to Claude while it worked (steered,
+    not yet taken in) was counted as delivered without looking at Claude's transcript, so it was never
+    delivered."""
+    other = fresh(prefix="acc-rv-steer-crash-")
+    sid = other.start_agent("claude", f"SLEEP 8 {nonce()}")
+    wait_until(lambda: [i for i in other.transcript(sid) if i["kind"] == "tool"], 15, message="the tool runs")
+    n = nonce()
+    message = other.send(sid, f"ECHO steered {n}")
+    time.sleep(1)
+    assert not [r for r in other.receipts() if n in (r.get("text") or "")], "taken in before the tool step ended"
+    other.kill_everything()
+    other.start_app()
+    wait_until(lambda: [r for r in other.receipts() if n in (r.get("text") or "")], 60, message="the message delivered")
+    code, out = other.wait(sid, "--message", message, timeout=60)
+    assert out["status"] == "DONE", out
+    assert len([r for r in other.receipts() if n in (r.get("text") or "")]) == 1
+
+
+@pytest.mark.req("AG-22", "AG-7")
+def test_a_turn_running_in_the_interface_continues_after_a_quit(target, fresh):
+    """Round 6, P1: a turn the user started in Claude's own interface wasn't recorded, so a quit cut it
+    off for good (headless turns continue by themselves after the restart)."""
+    if not target.restoration_safe:
+        pytest.skip("needs a restoration-safe build")
+    other = fresh(prefix="acc-rv-live-quit-", restore=True)
+    sid = other.json("agent", "start", "claude", "--cwd", other.work, *fake_args(other), "--tab", "ECHO hi")["session"]["id"]
+    pane = wait_live(other, sid)
+    other.type_line(pane, f"SLEEP 30 {nonce()}")
+    wait_until(lambda: other.info(sid)["status"] == "working", 10, message="the typed turn runs")
+    other.quit_gracefully(timeout=60)
+    other.start_app()
+    wait_until(lambda: [r for r in other.receipts() if "previous turn was cut off" in (r.get("text") or "")], 60,
+               message="the cut-off turn continues")
+    assert not other.violations()
+
+
+@pytest.mark.req("AG-15", "AG-18")
+def test_stopping_a_typed_agent_ends_what_it_started(inst, win):
+    """Round 6, P1: stopping an agent typed in a pane ended only its process; what it had started (here a
+    detached child that ignores SIGTERM) carries no session id and kept running."""
+    root = login_fake_dir()
+    plugin = os.path.join(inst.target.app, PLUGIN["claude"])
+    pane = inst.cli("split", "right", "--pane", win["pane"], "--cwd", inst.work).stdout.strip()
+    wait_until(lambda: inst.screen(pane).strip(), 20, message="the shell")
+    known = {s["id"] for s in inst.agents()}
+    inst.type_line(pane, f"FAKE_AGENT_DIR='{root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
+    session = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
+                         message="the typed agent to become a session Tern knows")
+    sid, hid = session["id"], session.get("harness_id")
+    stubborn_file = os.path.join(root, "stubborn.pid")
+    if os.path.exists(stubborn_file):
+        os.remove(stubborn_file)
+    try:
+        wait_until(lambda: BANNER in inst.screen(pane), 20, message="its interface")
+        inst.type_line(pane, "SPAWN_STUBBORN")
+        stubborn = wait_until(lambda: os.path.exists(stubborn_file) and int(open(stubborn_file).read().strip() or 0), 15,
+                              message="the detached child")
+        assert alive(stubborn)
+        inst.cli("agent", "stop", sid, timeout=60)
+        wait_until(lambda: not alive(stubborn), 15, message="what the agent started to end with it")
+    finally:
+        if os.path.exists(stubborn_file):
+            try:
+                os.kill(int(open(stubborn_file).read().strip()), 9)
+            except (OSError, ValueError):
+                pass
+        hid = hid or inst.info(sid).get("harness_id")
+        for path in glob.glob(os.path.join(root, "claude", f"{hid}.*")):
+            os.remove(path)
+
+
+@pytest.mark.req("AG-12", "AG-19")
+def test_a_failed_turn_in_the_interface_is_not_reported_done(inst, win):
+    """Round 6, P2: when a turn in Claude's own interface failed (StopFailure), `agent wait` said DONE with
+    the reply of an earlier turn."""
+    sid, pane = live_claude(inst, win)
+    inst.type_line(pane, f"FAIL {nonce()}")
+    wait_until(lambda: inst.info(sid)["status"] == "idle" and any(i["kind"] == "error" for i in inst.transcript(sid)), 15,
+               message="the failed turn ends")
+    code, out = inst.wait(sid, timeout=20)
+    assert (code, out["status"]) == (3, "FAILED") and out.get("error"), (code, out)
+    inst.type_line(pane, f"ECHO fine again {nonce()}")
+    wait_until(lambda: any(i["kind"] == "assistant" and "fine again" in (i.get("text") or "") for i in inst.transcript(sid)),
+               15, message="the next turn")
+    code, out = inst.wait(sid, timeout=20)
+    assert (code, out["status"]) == (0, "DONE"), out
