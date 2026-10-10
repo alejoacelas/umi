@@ -438,15 +438,18 @@ def assume_active(inst):
 @pytest.mark.req("S-3")
 def test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock(inst, win):
     """The marks come from the agent engine (TernAttention); the row shows them on the agent's icon
-    and the Dock badge counts the sessions that need the user."""
+    and the Dock badge counts the sessions that need the user (not the finishes not seen yet)."""
     pane, tab = new_tab(inst, win)
     other, other_tab = new_tab(inst, win)
     try:
         set_agent(inst, pane, "claude", title="Long task", status="idle", mark="finished")
         assert row(inst, win["window"], tab)["mark"] == "finished"
-        assert rpc(inst, "debug.ui.attention")["badge"] == "1"
+        # A finish not seen yet is the row's quiet mark; the badge counts sessions that need the user.
+        assert rpc(inst, "debug.ui.attention")["badge"] == ""
         set_agent(inst, other, "codex", title="Asks", status="needs_input", mark="needs_you")
         assert row(inst, win["window"], other_tab)["mark"] == "needs_you"
+        assert rpc(inst, "debug.ui.attention")["badge"] == "1"
+        set_agent(inst, pane, "claude", title="Long task", status="needs_input", mark="needs_you")
         assert rpc(inst, "debug.ui.attention")["badge"] == "2"
         set_agent(inst, pane, "claude", title="Long task", status="working", mark="none")
         assert row(inst, win["window"], tab)["mark"] == "none"

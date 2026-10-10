@@ -183,6 +183,13 @@ Changed tests:
   right after the pinned ones), so `t3` wasn't first. **Change:** it asks about whichever tab is
   first below the pinned group, and also checks that the pinned tab can't move down out of it
   (one more assertion). **Requirement:** S-7, "pinned tabs first … then the current (selected) tab".
+- **`tests/test_tern_panes_ui.py::test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock`**
+  and **`verify_agent_panes.py`**'s badge check. **What was wrong:** they expected the Dock badge to
+  count a session that finished while the user wasn't looking. The user's words keep the two apart:
+  "when a session finishes and the user hasn't looked yet, or it needs them, the agent's icon takes a
+  quiet color … The Dock badge counts the sessions that need the user." **Change:** a finish not seen
+  yet leaves the badge empty; a question counts (one more step checks that two count as 2).
+  **Requirement:** S-3, "The Dock badge counts the sessions that need the user."
 - **`tests/test_layout.py::test_send_text_from_stdin_and_after_separator`**: tagged `T-1` only. It
   also carried `MA-13`, a removed requirement. The test sends to a pane (T-1); agent messages from
   stdin are AG-1's, tested in `test_sessions.py::test_text_from_stdin_and_after_separator`.

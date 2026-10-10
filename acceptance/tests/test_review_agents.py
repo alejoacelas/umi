@@ -3,13 +3,18 @@
 Each test names the round and the finding. Fakes only (no model is called).
 """
 
+import glob
+import json
 import os
+import shutil
+import subprocess
 import time
 import uuid
 
 import pytest
 
-from harness import wait_until
+from harness import FAKE_CLAUDE, wait_until
+from test_live import PLUGIN, login_fake_dir
 
 pytestmark = pytest.mark.sessions
 
@@ -117,3 +122,163 @@ def test_a_command_cancelled_by_opening_another_palette_leaves_that_palette_alon
         assert state["entries"] and not state["output"], state
     finally:
         inst.rpc("debug.palette.close", window=win["window"])
+
+
+# ---- round 2 -------------------------------------------------------------------------------------
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+@pytest.mark.req("AG-8", "AG-9")
+def test_a_live_session_hidden_mid_turn_ends_and_then_delivers_what_waited(inst, win):
+    """Round 2, P1: a live Claude session removed from its pane while working, with a message waiting
+    for it, stayed parked for ever: its interface was only ended once nothing waited."""
+    sid = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
+                    "--pane", win["pane"], "ECHO hi")["session"]["id"]
+    pane = wait_live(inst, sid)
+    n = nonce()
+    inst.type_line(pane, f"SLEEP 4 {n}")
+    wait_until(lambda: inst.info(sid)["status"] == "working", 10, message="the typed turn runs")
+    message = inst.send(sid, f"ECHO after {n}")
+    inst.cli("agent", "hide", sid)
+    code, out = inst.wait(sid, "--message", message, timeout=40)
+    assert (code, out["status"], out.get("reply")) == (0, "DONE", f"ECHO after {n}"), out
+    wait_until(lambda: inst.info(sid)["location"] == "background", 10, message="no pane any more")
+    assert not inst.session_panes(sid)
+    assert not inst.violations()
+
+
+@pytest.mark.req("AG-8", "AG-11", "AG-18")
+def test_a_typed_agent_hidden_mid_turn_is_ended_when_its_turn_ends(inst, win):
+    """Round 2, P1: for an agent typed in a pane (its process knows its pane, not a session id), the pane
+    was forgotten before its interface was ended, so the process was never found: it kept running while
+    the session counted as headless, and a message could start a second process on the conversation."""
+    root = login_fake_dir()
+    plugin = os.path.join(inst.target.app, PLUGIN["claude"])
+    pane = inst.cli("split", "right", "--pane", win["pane"], "--cwd", inst.work).stdout.strip()
+    wait_until(lambda: inst.screen(pane).strip(), 20, message="the shell")
+    known = {s["id"] for s in inst.agents()}
+    inst.type_line(pane, f"FAKE_AGENT_DIR='{root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
+    session = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
+                         message="the typed agent to become a session Tern knows")
+    sid, hid = session["id"], session.get("harness_id")
+    try:
+        wait_until(lambda: BANNER in inst.screen(pane), 20, message="its interface")
+        n = nonce()
+        inst.type_line(pane, f"SLEEP 3 {n}")
+        wait_until(lambda: inst.info(sid)["status"] == "working", 10, message="the typed turn runs")
+        pid = wait_until(lambda: next((r.get("pid") for r in read_receipts(root) if n in (r.get("text") or "")), None),
+                         15, message="its process")
+        inst.cli("agent", "hide", sid)
+        wait_until(lambda: not alive(pid), 20, message="the interface process to end once its turn ended")
+        wait_until(lambda: inst.info(sid)["location"] != "live", 10, message="the session to be headless")
+        inst.send(sid, "RECALL")
+        code, out = inst.wait(sid, timeout=60)
+        assert out["status"] == "DONE" and f"SLEEP 3 {n}" in out["reply"], out
+        assert not inst.violations()
+    finally:
+        inst.cli("agent", "stop", sid, check=False, timeout=60)
+        hid = hid or inst.info(sid).get("harness_id")
+        for path in glob.glob(os.path.join(root, "claude", f"{hid}.*")):
+            os.remove(path)
+
+
+def read_receipts(root):
+    path = os.path.join(root, "receipts.jsonl")
+    if not os.path.exists(path):
+        return []
+    out = []
+    for line in open(path):
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            pass
+    return out
+
+
+@pytest.mark.req("AG-8", "E-3")
+def test_hiding_the_last_pane_of_a_tab_keeps_its_editors_edits(inst, win):
+    """Round 2, P1: a working live session removed from the only pane of its tab took the tab away, and
+    with it the tab's editor and its unsaved edits."""
+    started = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--tab", "--window",
+                        win["window"], "ECHO hi")
+    sid = started["session"]["id"]
+    pane = wait_live(inst, sid)
+    path = os.path.join(inst.work, f"notes-{nonce()}.md")
+    with open(path, "w") as f:
+        f.write("# notes\n")
+    inst.cli("edit", path, "--source", "--pane", pane)
+    inst.rpc("debug.editor.type", pane=pane, path=path, text="kept line\n")
+    assert any(d["dirty"] for d in inst.json("editor", "ls", "--pane", pane)["documents"])
+    inst.type_line(pane, f"SLEEP 3 {nonce()}")
+    wait_until(lambda: inst.info(sid)["status"] == "working", 10, message="the typed turn runs")
+    inst.cli("agent", "hide", sid)
+    wait_until(lambda: not inst.find_pane(pane), 10, message="the pane out of sight")
+    recovery = os.path.join(inst.dir, "recovery")
+    wait_until(lambda: "kept line" in open(path).read()
+               or any("kept line" in open(f).read() for f in glob.glob(os.path.join(recovery, "*"))), 10,
+               message="the edits saved or kept as a recovery copy")
+
+
+@pytest.mark.req("L-17")
+def test_a_key_given_to_a_second_terminal_action_leaves_the_first(inst, win):
+    """Round 2, P2: giving a terminal action a key another terminal action had been given kept both
+    bindings, and the alphabetically later one won."""
+    try:
+        inst.cli("shortcuts", "set", "ghostty:paste_from_clipboard", "ctrl+cmd+y")
+        inst.cli("shortcuts", "set", "ghostty:copy_to_clipboard", "ctrl+cmd+y")
+        conf = open(os.path.join(inst.dir, "keybindings.conf")).read()
+        assert "=copy_to_clipboard" in conf and "ctrl+super+y=paste_from_clipboard" not in conf, conf
+        entries = {e["id"]: e for e in inst.json("shortcuts")["shortcuts"]}
+        wait_until(lambda: "ctrl+super+y" in {e["id"]: e for e in inst.json("shortcuts")["shortcuts"]}
+                   ["ghostty:copy_to_clipboard"]["keys"], 5, message="Copy has the key")
+        assert "ctrl+super+y" not in {e["id"]: e for e in inst.json("shortcuts")["shortcuts"]}[
+            "ghostty:paste_from_clipboard"]["keys"], entries
+    finally:
+        inst.cli("shortcuts", "reset")
+
+
+@pytest.mark.req("L-17")
+def test_resetting_a_shortcut_takes_its_key_back(inst, win):
+    """Round 2, P2: resetting one shortcut restored its default key without taking that key from the item
+    that had been given it meanwhile, so two items had the same key."""
+    try:
+        inst.cli("shortcuts", "set", "tab.next", "cmd+p")
+        assert menu_item(inst, "Command Palette…")["key"] == ""
+        inst.cli("shortcuts", "reset", "view.palette")
+        palette, nxt = menu_item(inst, "Command Palette…"), menu_item(inst, "Show Next Tab")
+        assert (palette["key"], palette["modifiers"]) == ("p", ["cmd"]), palette
+        assert not (nxt["key"] == "p" and nxt["modifiers"] == ["cmd"]), nxt
+    finally:
+        inst.cli("shortcuts", "reset")
+
+
+@pytest.mark.req("AG-18")
+@pytest.mark.parametrize("kind", ["claude", "codex"])
+def test_hooks_run_from_a_plugin_folder_whose_path_has_spaces(inst, kind, tmp_path):
+    """Round 2, P2: the hook commands didn't quote the plugin's folder, so a folder with a space in its
+    path split the command and no hook ran."""
+    root = tmp_path / "plugin copy" / kind
+    shutil.copytree(os.path.join(inst.target.app, PLUGIN[kind]), root)
+    calls = tmp_path / "calls.txt"
+    cli = tmp_path / "fake tern"
+    cli.write_text(f"#!/bin/sh\necho \"$@\" >> '{calls}'\n")
+    cli.chmod(0o755)
+    variable = "CLAUDE_PLUGIN_ROOT" if kind == "claude" else "PLUGIN_ROOT"
+    hooks = json.load(open(root / "hooks" / "hooks.json"))["hooks"]
+    env = {k: v for k, v in os.environ.items() if not k.startswith("TERN_")}
+    env.update({"TERN_CLI": str(cli), "TERN_STATE_DIR": str(tmp_path), variable: str(root)})
+    events = []
+    for event, groups in hooks.items():
+        for group in groups:
+            for hook in group["hooks"]:
+                command = hook["command"].replace("${" + variable + "}", str(root))
+                subprocess.run(["/bin/sh", "-c", command], input=b"{}", env=env, timeout=10, check=True)
+                events.append(event)
+    ran = calls.read_text().splitlines() if calls.exists() else []
+    assert len(ran) == len(events) and all(f"agent hook {e} --agent {kind}" in line for e, line in zip(events, ran)), ran

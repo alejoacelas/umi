@@ -1084,3 +1084,9 @@ gets focus in the key window of the active app (UI-B's sidebar may call it too; 
   "in its own interface" next to `location: live`.
 - **`CODEX_HOME` is configuration, not a session marker**: the app keeps it, so panes, sessions
   and `agent plugins` use the user's chosen Codex folder.
+- **The Dock badge counts sessions that need the user** (a question, an approval, input), not the
+  ones that finished while the user wasn't looking: the user's sentence keeps them apart ("when a
+  session finishes and the user hasn't looked yet, or it needs them, the agent's icon takes a quiet
+  color … The Dock badge counts the sessions that need the user"). Finishes not seen yet show only
+  as the sidebar's quiet mark; ⌃⌘J still visits them, after the ones that need the user. (Questions
+  for the user.)
