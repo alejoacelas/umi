@@ -10,40 +10,43 @@ import Foundation
 let agentHelp = """
 \(cliName) agent: run Claude Code and Codex sessions, and supervise them.
 
-Start (runs headless in the background and prints the session id):
+Start a session (it runs headless in the background; prints the session id):
   \(cliName) agent start claude|codex "TASK" [--name N] [--cwd DIR | --worktree NAME] [--model M]
         [--effort E] [--full-access] [--env K=V]… [--wait [--timeout S]] [-- AGENT ARGS…]
-    With --tab, --split [right|down|left|up] or --new-window it also gets a pane there: it runs
-    headless until this first turn finishes, then opens live in that pane for you to use
-    (--focus switches to it).
+      With --tab, --split [right|down|left|up] or --new-window it also gets a pane there: it
+      works headless until this first turn ends, then opens live in that pane for you
+      (--focus switches to it).
 
 Supervise:
-  \(cliName) agent wait SESSION [--timeout S]    wait until it has finished (or needs input); prints
-                                     STATUS, then its reply
-  \(cliName) agent send SESSION "TEXT"           a message: it steers the turn the agent is working on, or
-                                     starts a new turn; a stopped session resumes. Prints the
-                                     message id. --interrupt stops the current turn first
-  \(cliName) agent read SESSION [--transcript]   its last reply (or everything, in order)
-  \(cliName) agent ls [--parent self]            sessions: status, what they're doing, where they are
-  \(cliName) agent info SESSION                  one session in detail
-  \(cliName) agent interrupt SESSION             stop the current turn; the session stays
-  \(cliName) agent stop SESSION                  stop it and everything it started (a message resumes it)
-  \(cliName) agent watch SESSION --notify OTHER  OTHER gets a message when SESSION finishes or needs input
+  \(cliName) agent wait SESSION [--timeout S]
+      Wait until it has finished (or needs input); prints STATUS, then its reply.
+  \(cliName) agent send SESSION "TEXT" [--interrupt]
+      Send a message: it steers the turn the agent is working on, or starts a new turn; a
+      stopped session resumes. Prints the message id. --interrupt stops the current turn first.
+  \(cliName) agent read SESSION [--transcript]       Its last reply (or everything, in order).
+  \(cliName) agent ls [--parent self]                Sessions: status, activity, where they are.
+  \(cliName) agent info SESSION                      One session in detail.
+  \(cliName) agent interrupt SESSION                 Stop the current turn; the session stays.
+  \(cliName) agent stop SESSION                      Stop it and all it started; a message resumes it.
+  \(cliName) agent watch SESSION --notify OTHER      OTHER gets a message when SESSION finishes.
   \(cliName) agent report done|blocked|failed "SUMMARY"
-                                     inside a session: your verdict on your task
-                                     (`agent wait SESSION --report` waits for it)
+      Inside a session: your verdict on your task (`agent wait SESSION --report` waits for it).
 
-Show:
+Show it to a person:
   \(cliName) agent open SESSION [--tab|--split|--new-window] [--live]
-                                     show it in a pane, read-only (--live: take it over there)
-  \(cliName) agent hide SESSION                  take it out of its pane; it keeps running until it finishes
-  \(cliName) agent attach SESSION                run its own interface in this terminal (what Take Over does)
+      Show it in a pane, read-only; --live (or the pane's Take Over button) opens the agent's
+      own interface there on the same conversation.
+  \(cliName) agent hide SESSION                      Take it out of its pane; it keeps running.
 
-Also: approve/deny/answer SESSION (approvals and questions, for sessions without --full-access),
-rename SESSION NAME, rm SESSION [--force], plugins [status|install|remove].
+Example:
+  \(cliName) agent start codex "Fix the failing test in tests/test_api.py" --name fix-api --full-access
+  \(cliName) agent wait fix-api --timeout 1800        # DONE, then its reply
+  \(cliName) agent send fix-api "Also run the linter"  # steers it if it's still working
 
-SESSION is a name, an id (or its first characters), the agent's own session id, or `self` inside a
-session. `wait` exits 0 DONE, 2 NEEDS_INPUT, 3 STOPPED/ERROR/FAILED/INTERRUPTED/CANCELLED, 124 TIMEOUT.
+Also: approve, deny, answer (for sessions without --full-access), rename, rm [--force],
+attach SESSION (run its interface in this terminal), plugins [status|install|remove].
+SESSION is a name, an id (or its start), the agent's own session id, or `self` inside a session.
+`wait` exits 0 DONE, 2 NEEDS_INPUT, 3 STOPPED/ERROR/FAILED/INTERRUPTED/CANCELLED, 124 TIMEOUT.
 """
 
 let idleNote = """
@@ -180,8 +183,10 @@ func agentStart(_ argv: [String]) {
                               "--profile", "--env", "--timeout"],
                              ["--full-access", "--wait"])
     let args = parse(argv, spec)
-    guard let kind = args.positional.first else { fail("agent start: claude or codex?") }
-    guard kind == "claude" || kind == "codex" else { fail("agent start: unknown agent \"\(kind)\" (use claude or codex)") }
+    guard let kind = args.positional.first else { fail("agent start claude|codex \"TASK\" (see `\(cliName) agent --help`)") }
+    guard kind == "claude" || kind == "codex" else {
+        fail("agent start: the agent is claude or codex, then the task: `\(cliName) agent start claude \"TASK\"`")
+    }
     var params = placementParams(args)
     // AP-3: a session runs in the background (shown nowhere) unless a placement is given.
     let background = args.has("--background") || !hasPlacement(args)

@@ -132,7 +132,7 @@ final class TernAgents: @unchecked Sendable {
     /// SESSION: an id or unique id prefix, a name, the harness's session or thread id, or
     /// `self` (inside a managed agent).
     func resolve(_ selector: String?, caller: TernCaller) throws -> TernAgentSession {
-        guard let selector, !selector.isEmpty else { throw TernError.badRequest("name a session (an id, a name, or self)") }
+        guard let selector, !selector.isEmpty else { throw TernError.badRequest("name a session (its name or id, or self; `\(TernPaths.cliName) agent ls` lists them)") }
         if selector == "self" {
             guard let id = caller.session else {
                 throw TernError.badRequest("`self` only works inside a managed agent session")
@@ -155,7 +155,7 @@ final class TernAgents: @unchecked Sendable {
             if prefixed.count == 1 { return prefixed[0] }
             if prefixed.count > 1 { throw TernError.ambiguous("\"\(selector)\" matches \(prefixed.count) sessions; use more of the id") }
         }
-        throw TernError.notFound("no session matches \"\(selector)\"")
+        throw TernError.notFound("no session matches \"\(selector)\" (`\(TernPaths.cliName) agent ls` lists them)")
     }
 
     /// Names are unique among sessions that are live (or about to be): a finished session
