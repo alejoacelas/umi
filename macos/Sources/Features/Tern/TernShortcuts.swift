@@ -135,6 +135,8 @@ enum TernShortcuts {
 
     private static var handlers: [NSMenuItem: Item] = [:]
     private static var menuItems: [String: NSMenuItem] = [:]
+    /// Each shortcut in effect and its menu item, for the key monitor.
+    private static var byShortcut: [TernShortcut: NSMenuItem] = [:]
     private static var monitor: Any?
 
     static func install() {
@@ -187,11 +189,13 @@ enum TernShortcuts {
     static func applyShortcuts() {
         guard let mainMenu = NSApp.mainMenu else { return }
         let all = allItems(mainMenu)
+        byShortcut = [:]
         for (menuItem, item) in handlers {
             let shortcut = item.shortcut
             menuItem.keyEquivalent = shortcut?.keyEquivalent ?? ""
             menuItem.keyEquivalentModifierMask = shortcut?.modifiers ?? []
             guard let shortcut else { continue }
+            byShortcut[shortcut] = menuItem
             for existing in all where handlers[existing] == nil && TernShortcut(menuItem: existing) == shortcut {
                 existing.keyEquivalent = ""
             }
@@ -253,13 +257,16 @@ enum TernShortcuts {
     /// Perform the Tern item whose shortcut this key is. True when the key was Tern's. Every
     /// key press goes through here before any view sees it.
     static func dispatch(_ event: NSEvent) -> Bool {
-        guard !suspended, let pressed = TernShortcut(event: event) else { return false }
+        guard !suspended else { return false }
         // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing.
-        guard !pressed.modifiers.isDisjoint(with: [.command, .control]) || pressed.isFunctionKey else { return false }
+        let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false
+        guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey else { return false }
+        guard let pressed = TernShortcut(event: event), let menuItem = byShortcut[pressed], let item = handlers[menuItem] else {
+            return false
+        }
         // A modal panel or alert keeps its keys.
         if NSApp.modalWindow != nil { return false }
         if let sheetParent = NSApp.keyWindow, sheetParent.attachedSheet != nil { return false }
-        guard let (menuItem, item) = handlers.first(where: { $0.value.shortcut == pressed }) else { return false }
         guard item.enabled() else {
             NSSound.beep()
             return true
