@@ -27,19 +27,21 @@ run in each pane.
 - Split dividers are subtle (thin, low contrast).
 
 **S-3: tab rows.** Setup: tabs named and unnamed; a git repo on a branch; a linked worktree; a split
-tab; a pinned tab; a managed agent working; an interactive `claude --version` that has exited.
+tab; a pinned tab; an agent session working, one finished while another tab was in front, one that
+needs the user.
 - Pinned tabs are first.
-- Line 1 has the name, or else the folder, then the branch. The worktree is visibly different from
-  the normal checkout. Split tabs show a pane count.
-- Line 2 has the running or last command, the managed agent's status and activity, or the
-  interactive agent's state.
+- Line 1 has the folder (or the tab's name), then the branch; the worktree looks different. Split
+  tabs show a pane count.
+- Line 2 has the session's title for agent tabs; otherwise the running or last command.
+- Agent tabs show a small monochrome Claude or Codex mark. The finished-unseen and needs-you marks
+  have a quiet color; nothing is loud. Selecting the tab clears the color.
 - Close and pin controls appear on hover (by hand).
 
-**S-4: row interactions (by hand).**
-- Click selects.
-- Double-click renames.
-- Right-click offers pin, color, move and close.
-- Dragging reorders.
+**S-4: row interactions (by hand).** Click selects; double-click renames; right-click shows Warp's
+items (see S-4); dragging reorders with an insertion line.
+
+**S-8: sidebar width (by hand).** Drag the sidebar's edge: the cursor is a resize cursor; it stops
+at the limits; another window keeps its width; quitting and relaunching keeps both.
 
 **S-5: readable chrome.** Setup: the same window under a light theme and then a dark theme, set
 through the user's Ghostty config in the isolated instance.
@@ -76,10 +78,9 @@ each shortcut and confirm what it does:
 
 Also: the command palette lists these actions.
 
-**M-4: dragging (by hand).**
-- Drag a pane onto another pane's edge, including in another window. The pane moves there and its
-  program keeps running.
-- Drag a tab row to reorder it, and onto another window's sidebar.
+**M-4: dragging (by hand).** Add: drag a pane's grab handle onto another tab's row (it moves into
+that tab) and between two rows (a new tab there, with an insertion line); drag a tab row out of
+the window and let go over the desktop (a new window there).
 
 ## Editor
 
@@ -114,36 +115,15 @@ save.
 
 **I-3: default app (by hand, after a real install).** `open README.md` opens it in the app's editor.
 
-## Agents in the app
+## Agent sessions
 
-**AP-1: watching and stepping in.** Setup: a managed session shown in a pane. It has run a tool,
-replied with Markdown, and now has a pending approval and a question.
-- What both sides said is visible, and so is the tool activity, the status, and the pending
-  approval and question.
-- Typing a follow-up and pressing Enter sends it. Esc interrupts a running turn (by hand).
-- The approval and the question can be answered from the pane (by hand).
-
-**AP-5: catching up.** Setup: a session is shown in a pane and the pane is closed. The session gets
-three more turns, then the pane is reopened.
-- All turns are shown, in order, with nothing duplicated.
-
-**AP-6: drafts (by hand).**
-- Text typed but not sent survives a failed send.
-- It survives switching to the pane's terminal and back.
-- It survives moving the pane.
-
-**AP-7: notifications (by hand).**
-- When an agent finishes or needs input while its pane isn't visible, a desktop notification
-  appears.
-- Clicking the notification shows the agent.
-
-**AP-8: copy reply (by hand).** Copying a reply longer than a screen copies all of it.
-
-**AP-10: presentation.** Same setup as AP-1.
-- Assistant Markdown is rendered and code blocks are set apart.
-- Tool calls expand to their output.
-- Approvals and questions are cards with buttons.
-- Shift+Enter adds a newline; queued messages are visible (by hand).
-
-**IA-1: as typed.** Setup: `<cli> claude` in a new tab.
-- The pane shows Claude Code's own interface, exactly as in a plain terminal.
+**AG-5: the read-only view.** Setup: a headless session shown in a pane with `agent open`. It has
+run a tool, replied with Markdown, and now has a pending approval; then a second screenshot after it
+was answered and the session finished.
+- What both sides said is visible, and so is the tool activity (a tool line expands to its output),
+  the status, and the pending approval as a card with buttons.
+- There's nothing to type into: the view is read-only, with a **Take Over** button and one quiet line
+  saying what it does.
+- Markdown in replies is rendered, code set apart; nothing is boxed or bordered beyond the cards
+  (S-1).
+- Pressing Take Over shows the agent's own interface in that pane at once (by hand).

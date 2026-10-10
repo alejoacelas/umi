@@ -196,6 +196,38 @@ the menu.
   - ⌃⌘J jumps to the agent that needs the user.
 
   The command palette also lists these actions.
+- **L-19 [A]** Panes share the space equally, as in Warp. Panes in the same row (or column) share
+  it equally after every split and close:
+  - splitting a pane along its row adds a pane with an equal share: two panes are 50/50, a third
+    makes 33/33/33, a fourth 25/25/25/25, whichever pane is split. Panes the user resized keep
+    their proportions and the new pane gets 1/(N+1);
+  - splitting across the row (a column in a row) halves only that pane; the row is unchanged;
+  - closing a pane shares its space among the rest of its row in proportion to their sizes
+    (33/33/33 → 50/50; 40/40/20 → 67/33 when a 40 closes);
+  - this holds for every way of making or removing panes: the shortcuts and menus, `split`,
+    dragging and dropping panes, `pane move`, and closes;
+  - dragging a divider changes only the two panes beside it; double-clicking a divider gives its
+    row (or column) equal shares and leaves the rest of the tab alone. ⌃⌘= and `tab equalize`
+    still equalize the whole tab;
+  - `split --ratio R` gives the new pane R of its row (or column); the others keep their
+    proportions.
+
+  `ls` and `pane info` report each pane's frame in its window's terminal area.
+
+- **L-20 [A]** Reopen what was closed, as in Warp. ⇧⌘T (File ▸ Reopen Closed Pane/Tab/Window) and
+  `<cli> reopen` bring back the last closed pane, tab or window, for 60 seconds after it closed:
+  - a pane comes back in its tab, in the same place at the same size when the tab hasn't changed
+    since, otherwise beside the pane it was next to, with its old share; if its tab is gone it
+    comes back as a tab of its own where that tab was;
+  - a tab comes back at its old position in its window, with its panes, name, color and pin; a
+    window comes back with its tabs and frame;
+  - for those 60 seconds the closed panes' programs keep running, with their scrollback, and they
+    come back as they were. After 60 seconds they end, as closed panes always did;
+  - the most recently closed item comes back first; something that already came back (by undo, say)
+    or whose program ended is skipped. `<cli> reopen --list` shows what can come back;
+  - closing a pane that shows an agent session never stops the session.
+
+  ⇧⌘T is no longer a second Undo key. ⌘Z still undoes a close for Ghostty's `undo-timeout`.
 
 ## M. Moving live sessions
 
@@ -208,7 +240,15 @@ A "live session" is a pane with a running program, its scrollback and its state.
   window, and reordered within its window. Its programs keep running.
 - **M-3 [A]** Moves can be undone and redone. After undo, each tab's focused pane is what it was.
 - **M-4 [W]** Panes can be dragged onto other panes, including in other windows. Tabs can be dragged
-  in the sidebar to reorder them and onto another window's sidebar.
+  in the sidebar to reorder them and onto another window's sidebar. Also, as in Warp:
+  - a pane dropped on a tab's row moves into that tab (beside its focused pane, as ⌃⌘←/→ and
+    `pane move --tab` place it); dropped between rows (the top or bottom quarter of a row) or below
+    the rows, it becomes a new tab at that position. A thin accent line shows where it lands;
+  - a tab dropped on the top or bottom half of a row lands before or after it, with the same line;
+  - a tab dragged out of its window and dropped where nothing takes it becomes a window of its own
+    at the drop point. Dropped back over its own window, nothing changes.
+
+  Programs keep running through all of these (M-1, M-2).
 - **M-5 [A]** A pane moved to a new window gets a window large enough to keep its columns and rows,
   and a window never ends up unusably small.
 - **M-6 [A]** A new window created by moving is a separate window. It isn't merged into an existing
@@ -239,18 +279,34 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **S-2 [A+W]** A left sidebar, full height, toggled with ⌘B. It has two modes: Tabs and Files
   (project explorer for the focused pane's folder). It has no "agents" section, no "no agents
   running" text and no "new agent" button.
-- **S-3 [W]** Tabs mode lists the window's tabs, grouped by tab, with pinned tabs first. Each row has
-  two lines:
-  - Line 1: the tab name, or else the focused pane's folder name, then the git branch. A linked
-    worktree is shown differently from a normal checkout. Also a pane count when split, and close and
-    pin affordances.
-  - Line 2: what the focused pane is doing. That's the running command or the last one it ran, a
-    managed agent's status and activity, or an interactive agent's state (running, exited).
-- **S-4 [W]** Rows can be clicked to select, double-clicked to rename, right-clicked for pin, color,
-  move and close, and dragged to reorder.
+- **S-3 [W]** Tabs mode lists the window's tabs, grouped by tab, with pinned tabs first.
+  Each row has two lines:
+  - Line 1: the tab's folder (its focused pane's), or the name the user gave the tab. Then the git
+    branch, a linked worktree shown differently from a normal checkout; a pane count when split;
+    and close and pin affordances on hover.
+  - Line 2: the title of the tab's agent session, when it has one (a session Tern started, or a
+    `claude`/`codex` typed in the pane and reported by Tern's plugin, AG-18). Otherwise what the
+    focused pane is doing: the running command or the last one it ran; else the folder's path.
+  - A tab with an agent session shows the agent's mark (Claude or Codex), small and monochrome, as
+    its icon. When a session finished and the user hasn't looked at it yet, or it needs the user,
+    the mark takes a quiet color. Looking at the pane (it has focus in the front window while the
+    app is active, by a tab switch, a pane focus, or switching windows or apps) clears it; a session
+    that finishes while the user looks at it leaves no mark. Colors and hints stay subtle. No desktop
+    notifications. The Dock badge counts the sessions that need the user.
+- **S-4 [W]** Rows can be clicked to select, double-clicked to rename, dragged to reorder
+  (M-4), and right-clicked for Warp's menu: Pin/Unpin Tab; Copy Branch, Copy Working Directory,
+  Copy Title; Rename Tab…, Reset Tab Name, Rename Pane…, Reset Pane Name (the tab's focused pane);
+  Move Tab Up, Move Tab Down (within the pinned or unpinned group); Close Tab, Close Other Tabs, Close
+  Tabs Below; Tab Color ▸; Move Tab to New Window, Move Tab to Window ▸. A tab's color tints its
+  row, quietly.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
   Ghostty config and theme override the product's defaults.
 - **S-6 [W]** The "running/last command" line updates for commands that finish instantly.
+- **S-8 [A+W]** Each window's sidebar can be made wider or narrower by dragging its edge, between
+  180 points and the smaller of 600 points and half the window. The width is per window, saved and
+  restored with the layout; a new window starts at the width last chosen. Double-clicking the edge
+  goes back to the default. `<cli> sidebar width [N]` shows or sets it; `sidebar status` still
+  answers `visible` and `mode` (and now the window's `width`).
 
 ## E. Editor and Markdown
 
@@ -276,6 +332,13 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **E-8 [W]** Editor shortcuts work regardless of Caps Lock.
 - **E-9 [A]** `<cli> edit FILE` opens a file in the calling pane's tab, or a given tab. An explicitly
   named pane or tab that doesn't exist is an error, never a fallback to another tab.
+- **E-10 [A]** A Markdown (or text) file opened from outside the app (Finder, `open FILE`, the app
+  being the default for Markdown) opens in the tab whose folder is closest to the file: the tab with
+  a pane whose working directory is the deepest folder containing the file. Any pane of a tab counts;
+  `/` doesn't. A file already open somewhere shows there. Ties go to the current tab, then the
+  current window's tabs in sidebar order, then other windows'. With no such tab it opens in a new
+  tab in the file's folder, in the current window (a new window if there is none). The ⌘O Open
+  panel still opens in the current tab.
 
 ## AG. Agent sessions
 

@@ -753,3 +753,183 @@ CLI's name.
   keyboard focus is the transcript, so shortcuts and copying work there.
 - **Restart:** sessions that were live come back live in their restored pane; read-only panes come
   back read-only (AG-7).
+
+===================================================================================================
+
+# Decisions for the app changes decided with the user (BRIEF-agents.md §2)
+
+Panes, tabs, the sidebar and Markdown files (§29–§46); navigation, palettes and shortcuts follow.
+Tests: `acceptance/tests/test_tern_panes_ui.py`, `test_tern_nav.py`.
+
+## 29. Equal panes on Ghostty's binary tree (L-19)
+
+Options: (a) replace `SplitTree` with an n-ary
+tree like Warp's; (b) keep the binary tree and treat a maximal chain of same-direction splits as
+one row ("run"), as WARP-PARITY §2.1 proposes. Picked (b): every caller, the persistence format
+(`ratio`), undo snapshots and SwiftUI's split views stay as they are. `SplitTree.inserting` and
+`removing` (which every path goes through: ⌘D/menus, `split`, drops, `pane move`, closes, hidden-tab
+splits, undo restores) now insert with share 1/(N+1) and remove proportionally, rebuilding the run
+as a right-leaning chain. Evidence: `test_splits_along_a_row_share_it_equally`,
+`test_closing_a_pane_shares_its_space_in_proportion`, `test_moves_and_drops_share_rows_equally`,
+`test_splits_in_a_background_tab_share_equally_too`, the SplitTree unit tests. Known limit (as
+WARP-PARITY says): closing D in `Row[A, Col[Row[B,C], D]]` joins B and C to A's row.
+
+## 30. A divider drag moves only its two neighbors
+
+In a chain `A|(B|C)` the divider between A and
+B is the split `A|rest`; moving its ratio would rescale B *and* C. Warp moves only A and B. Picked
+Warp's behavior: the new shares are written back into the run's existing shape (no structural
+change, so SwiftUI keeps the views and the drag isn't interrupted). Keyboard resize
+(`pane resize`, ⌃⌘↑/↓) uses the same rule. Evidence:
+`test_a_divider_moves_its_neighbors_and_double_click_equalizes_its_row`.
+
+## 31. `--ratio`
+
+It used to set the ratio of the split holding the new pane. With runs, that would
+mean a fraction of some sub-chain. Picked: R is the new pane's share of its row; the others keep
+their proportions. Same result as before for a single pane (the old test still holds). Evidence:
+`test_ratio_sets_the_new_panes_share_of_its_row`, `test_split_with_name_ratio_and_cwd`.
+
+## 32. Pane sizes for tests: `frame` from ratios
+
+NSView frames lag right after a split and don't
+exist for hidden tabs. Picked: frames computed from the ratios over the window's measured terminal
+area (SwiftUI's GeometryReader around the split view). Extra field, backward compatible.
+
+## 33. Reopen is its own stack (L-20)
+
+Options: (a) set `undo-timeout = 60s` and make ⇧⌘T replay
+only undo entries for closes (WARP-PARITY gap 3); (b) a separate stack whose entries hold the closed
+panes, tabs and windows for 60 s. Picked (b): undo's stack is linear (a later move or pin is undone
+first), and its entries can't be popped out of order. `undo-timeout` stays Ghostty's 5 s for ⌘Z.
+Items on the stack keep their processes; when an item expires nothing holds its panes and they end.
+The 60 s is Warp's default grace period, fixed (not a setting). Evidence:
+`test_reopen_brings_a_closed_pane_back_to_its_slot_with_its_program`,
+`test_closed_items_expire_after_60_seconds_and_their_programs_end` (slow).
+
+## 34. What counts as a close
+
+Recorded: a user's close of a pane (⌘W, the menu, `pane close`,
+also in hidden tabs), a tab (sidebar ✕, menu, `tab close`, Close Other Tabs/Below), a window (red
+button, ⇧⌘W, `window close`); the last tab of a window records the window. Not recorded: moves
+(drag, `pane move`, `tab move`), panes whose program exited (they can't come back running), closes
+done by Undo of New Tab/New Window. An entry is skipped at reopen time if its panes are back in a
+window (Undo brought them back) or all ended. Evidence:
+`test_reopen_goes_last_closed_first_and_skips_what_came_back`,
+`test_a_pane_whose_program_ended_is_not_reopened`.
+
+## 35. Where a reopened pane goes
+
+Warp drops a pane's reopen entry once its tab is rearranged.
+Picked a softer rule: if the tab's tree is as the close left it, the old tree comes back exactly
+(same slot, same sizes); otherwise the pane goes beside the pane it was next to, in the same
+direction, with its old share; failing that, beside the tab's focused pane; if the tab is gone, a
+tab of its own at the old index (the current window if that window is gone). Reopening registers an
+undo step ("Reopen Closed Pane/Tab/Window"). Evidence:
+`test_a_pane_comes_back_beside_its_neighbor_after_its_tab_changed`,
+`test_reopen_brings_back_closed_tabs_and_windows_in_their_place`.
+
+## 36. Row line 1 and line 2 (S-3)
+
+The user: "its folder and then its session's title". Picked:
+line 1 is the folder, unless the user named the tab (a name is explicit, so it wins; clearing it
+brings the folder back). Line 2: the agent session's title (TernAttention), falling back to its
+status while it has no title; for a tab with no agent, what the old S-3 said (running or last
+command, an interactive agent's running/exited, else the folder's path). The session shown is
+`TernAttention.agent(for:in:)`'s choice (focused pane's, else the strongest mark, else the latest
+stop). Evidence: `test_rows_show_the_folder_then_the_sessions_title`,
+`test_a_tab_without_an_agent_shows_its_command_on_line_2`, `test_rows_keep_the_branch_and_pane_count`.
+
+## 37. Agent data comes only from TernAttention
+
+The row used to read the old engine's
+`TernAgentUI` snapshot (status · activity). It now reads only `TernAttention`, the interface the
+lead's engine writes. Until the engine writes it, managed sessions show as plain terminals in rows.
+
+## 38. Marks
+
+Claude: a starburst of rays; Codex: a hexagon around a dot (11 pt, stroked,
+monochrome, drawn as SwiftUI shapes: no bundled logos). Colors: none → the chrome's tertiary ink;
+finished-unseen → Tern's accent at 85 %; needs-you → a muted amber at 90 %. Line 2 is brighter while
+the session works. No dots, badges or animation on rows.
+
+## 39. Looking
+
+Defined as "focused in the key window while the app is active" (TernAttention's
+words). Wired at: pane focus changes (`focusedSurfaceDidChange`), tab switches (`selectTab`),
+`pane focus`/`tab focus` from the CLI (`TernLayout.focusPane`), window becoming key, the app becoming
+active. A session that *finishes* while its pane is being looked at is cleared at once (Warp: a
+notification raised while visible starts out read). A session that starts *needing the user*
+while looked at isn't cleared by that alone, only by the next look event: TernAttention says the
+engine re-marks a still-waiting session on its next update, so clearing needs-you on every change
+could ping-pong with the engine. Evidence:
+`test_looking_at_the_pane_clears_the_mark` (with `debug.ui.assume_active`), and the `ui` test
+`test_looking_at_the_pane_clears_the_mark_ui` for real activation.
+
+## 40. Tab color is a row tint
+
+The 7 pt color dot sat in the icon slot, which agent marks now
+need. Picked Warp's way: the color tints the row (8 % at rest, 16 % hovered or selected).
+
+## 41. Drop zones (M-4)
+
+Panes: middle half of a row → into that tab; top or bottom quarter →
+a new tab before or after; below the rows → a new tab at the end (Warp's zones). Into a tab, the
+pane goes beside that tab's focused pane, to the right (as ⌃⌘←/→ and `pane move --tab`), rather than
+at the tab's root as Warp does, so the drag, the shortcuts and the CLI agree. Tabs: top or bottom
+half → before or after. A 2 pt accent line shows edge drops; the row tints for "into". A pane
+dropped on its own one-pane tab, or a tab on itself, does nothing. Evidence:
+`test_a_pane_dropped_on_a_row_moves_into_that_tab`, `test_a_pane_dropped_between_rows_makes_a_new_tab_there`,
+`test_a_tab_dropped_between_rows_lands_there`.
+
+## 42. Dragging a tab out (M-4)
+
+SwiftUI's `onDrag` can't tell how a drag ended, so a row's drag
+now starts an AppKit dragging session (from a SwiftUI `DragGesture`, minimum 5 pt) whose
+`endedAt` sees drops nothing took. Such a drop outside the tab's own window makes a new window there
+(the drop point lands on its sidebar near the top); Escape cancels; a drop back over its own window
+does nothing (a missed reorder shouldn't tear the tab off). Warp detaches on any drop outside a tab
+bar. A window's only tab dragged out moves the window. Evidence:
+`test_a_tab_dragged_out_of_its_window_makes_a_window_at_the_drop_point` (the drop handler) and the
+`ui` test `test_dragging_a_tab_row_out_of_the_window_makes_a_window_ui` (the real drag).
+
+## 43. Sidebar width (S-8)
+
+Warp: 200 px to 50 % of the window, not saved. Picked: 180–600 pt, and
+at most half the window while dragging; saved per window in `layout.json` (`sidebar_width`) and the
+last chosen width in `ui.json` for new windows; a tab moved to a new window takes its old window's width;
+double-click resets. Per-window *visibility* (optional) is not done: ⌘B is UI-A's item and the
+global `TernState.sidebarVisible` is read in several places; it stays app-wide. Evidence:
+`test_each_window_has_its_own_sidebar_width`, `test_sidebar_widths_are_restored_with_the_layout`.
+
+## 44. Row menu (S-4)
+
+Warp's sections and order; "Close Other Tabs" and "Close Tabs Below" don't
+spare pinned tabs (as Warp) and ask first if a program runs; each closed tab can be reopened. Colors
+are a submenu with a checkmark (SwiftUI context menus can't show a row of color dots). "Rename Tab…"
+starts the in-place edit; "Rename Pane…" asks with a sheet. Move Tab Up/Down stay within the pin
+group: this overlaps UI-A's ⌃⇧←/→; both call `TerminalController.moveTab` inside
+`TernLayout.undoable` and emit `tab.moved`, so either can call the other's at merge time. Evidence:
+`test_the_row_menu_has_warps_items`, `test_move_tab_up_and_down_stay_in_their_pin_group`,
+`test_close_other_tabs_and_tabs_below`.
+
+## 45. The closest tab for a file (E-10)
+
+"Closest": the deepest folder that contains the file
+among every pane's working directory (symlinks resolved, so `/tmp` and `/private/tmp` match). Any
+pane of a tab counts, not only the focused one (a tab is "in" the folders of all its panes). `/`
+never counts (it contains everything); the home folder does. A file already open in some tab shows
+there. Ties: the current tab, then the current window in sidebar order, then other windows oldest
+first. No match: a new tab started in the file's folder, in the current window (so the next file
+from that folder joins it), a new window if none. The Open panel (⌘O) keeps opening in the current
+tab, since the person chose from there. Evidence: `test_markdown_opens_in_the_tab_whose_folder_is_closest`,
+`test_ties_go_to_the_current_tab_and_any_pane_of_a_tab_counts`.
+
+## 46. Scripted checks of mouse-only paths
+
+`debug.ui.*` control methods (internal, like
+`debug.menu`) call the same functions the UI calls: rows (`TernSidebarRowModel`, which the view
+renders), drops, the drag-end handler, the row menu (`TernTabMenu.items`, which the context menu
+renders), split drops and dividers, the open-file path, and stand in for the engine's TernAttention
+writes. `debug.ui.assume_active` counts the app as active (the CLI can't bring it to the front while
+the person uses another app). The real gestures are `ui` tests.

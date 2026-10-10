@@ -205,44 +205,21 @@ def setup_editor(inst, base):
 def setup_agents(inst, base):
     w = inst.json("window", "new", "--name", "check-agents", "--cwd", base)
     sid = inst.json("agent", "start", "claude", "--cwd", base, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
-                    "--split", "right", "--pane", w["pane"],
+                    "--env", "CLAUDE_CONFIG_DIR=" + os.path.join(inst.fake_dir, "claude-config"),
                     "RUN printf '# Heading\\n\\n- item **bold**\\n\\n```sh\\necho code\\n```\\n'")["session"]["id"]
     inst.wait(sid)
+    inst.json("agent", "open", sid, "--split", "right", "--pane", w["pane"])
     inst.send(sid, "ASK_PERMISSION")
     inst.wait(sid)
     time.sleep(1.5)
-    approval, n1 = screenshot(inst, w["window"], "AP-1-approval")
+    approval, n1 = screenshot(inst, w["window"], "AG-5-approval")
     inst.cli("agent", "approve", sid, check=False)
     inst.wait(sid)
-    inst.send(sid, "ASK_QUESTIONS")
-    inst.wait(sid)
     time.sleep(1.5)
-    question, n2 = screenshot(inst, w["window"], "AP-1-question")
-    inst.cli("agent", "answer", sid, "--answer", "1=blue", "--answer", "2=L", check=False)
-    inst.wait(sid)
-    # AP-5: close the pane, three turns, reopen.
-    pane = inst.find_agent_pane(sid)
-    if pane:
-        inst.cli("pane", "close", pane[2]["id"])
-    for i in range(1, 4):
-        inst.send(sid, f"ECHO catch-up turn {i}")
-        inst.wait(sid)
-    inst.json("agent", "open", sid, "--split", "right", "--pane", w["pane"])
-    time.sleep(1.5)
-    caught, n3 = screenshot(inst, w["window"], "AP-5-reopened")
+    done, n2 = screenshot(inst, w["window"], "AG-5-finished")
     transcript = "\n".join(f"{i['kind']}: {i['text'][:100]}" for i in inst.transcript(sid))
     inst.cli("agent", "stop", sid, check=False)
-    return {"AP-1": [("pending approval", approval, n1), ("pending question", question, n2)],
-            "AP-10": [("pending approval", approval, n1), ("pending question", question, n2)],
-            "AP-5": [("reopened pane", caught, n3), ("transcript from the CLI", transcript, None)]}
-
-
-def setup_interactive(inst, base):
-    w = inst.json("window", "new", "--name", "check-interactive")
-    result = inst.json("claude", "--tab", "--window", w["window"], "--", "--version", check=False)
-    time.sleep(3)
-    shot, note = screenshot(inst, w["window"], "IA-1-claude")
-    return {"IA-1": [("claude --version via the CLI", shot, note)]}
+    return {"AG-5": [("pending approval", approval, n1), ("finished", done, n2), ("transcript from the CLI", transcript, None)]}
 
 
 def setup_theme(target, base):
@@ -265,9 +242,9 @@ def setup_theme(target, base):
     return {"S-5": shots}
 
 
-SETUPS = [setup_layout, setup_editor, setup_agents, setup_interactive]
+SETUPS = [setup_layout, setup_editor, setup_agents]
 PHASE = "all"
-PHASE_TWO_CHECKS = ("AP-",)   # SPEC.md, Delivery phases
+PHASE_TWO_CHECKS = ("AG-",)   # SPEC.md, Delivery phases
 
 
 def main():
