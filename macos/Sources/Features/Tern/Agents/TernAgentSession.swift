@@ -467,6 +467,8 @@ final class TernAgentSession {
 
     func launch() {
         guard phase == .stopped else { return }
+        // Its own interface owns the conversation (Claude): one process per conversation.
+        guard !exclusiveLive else { return }
         if let pid = exitingLivePID {
             if TernAgentLive.isLiveProcess(pid, of: self) {
                 if Date() < exitingLiveDeadline {

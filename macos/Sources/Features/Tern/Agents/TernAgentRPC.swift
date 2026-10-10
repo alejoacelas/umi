@@ -406,7 +406,7 @@ enum TernAgentRPC {
         let force = params.bool("force") ?? false
         let session = try await agents.run { () -> TernAgentSession in
             let session = try agents.resolve(params.string("session"), caller: caller)
-            if session.live && !force {
+            if (session.live || session.record.live == true) && !force {
                 throw TernError.badRequest("\(session.record.name) is running; stop it first or pass --force")
             }
             return session
@@ -430,10 +430,12 @@ enum TernAgentRPC {
                 let message = session.enqueue(text: prompt, from: caller.session)
                 out["message"] = messageJSON(message)
             }
-            if !session.live && session.phase == .stopped {
+            if !session.live && session.phase == .stopped && !session.exclusiveLive {
                 session.clearLaunchFailures()
                 session.launch()
             } else {
+                // Its own interface owns the conversation: a message goes the usual way (when the
+                // interface is idle and nothing is typed there, AG-9).
                 session.pump()
             }
             out["session"] = info(session, pane: nil)
@@ -549,9 +551,12 @@ enum TernAgentRPC {
                 + "elsewhere use `\(TernPaths.cliName) agent open SESSION --live`")
         }
         let session = try await agents.run { try agents.resolve(params.string("session"), caller: caller) }
-        // What the pane was before, put back if the session can't go live here.
+        // What the pane was before, put back if the session can't go live here. (Take Over marks
+        // the pane live before this runs: it counts as live only if an interface really ran here.)
         let previous = TernAgentUI.shared.attachments[surface.id]
-        let wasLive = TernAgentUI.shared.livePanes.contains(surface.id)
+        let wasLive = await agents.runQuietly {
+            previous.flatMap { agents.session(id: $0) }.map { $0.record.live == true && $0.record.pane == paneID } ?? false
+        }
         TernAgentUI.shared.attachments[surface.id] = session.record.id
         TernAgentUI.shared.livePanes.insert(surface.id)
         let spec: [String: Any]

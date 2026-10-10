@@ -66,6 +66,7 @@ final class TernPaletteModel: ObservableObject {
 
     func open(_ mode: Mode, in window: TerminalController) {
         cancelRun()
+        filesTask?.cancel()
         if !isPresented {
             previousResponder = window.window?.firstResponder
             pane = TernTopology.currentWindow === window ? TernTopology.currentPane : window.focusedSurface
@@ -404,7 +405,9 @@ final class TernPaletteModel: ObservableObject {
         let query = self.query
         filesTask = Task { [weak self] in
             guard let found = await self?.fileEntries(query, in: index) else { return }
-            guard !Task.isCancelled, let self, self.query == query else { return }
+            // Only while the palette still shows this file list (not another mode or a question).
+            guard !Task.isCancelled, let self, self.query == query, self.mode == .files, self.step == .list,
+                  self.files === index else { return }
             self.entries = found
             self.selection = 0
         }

@@ -344,7 +344,17 @@ extension Ghostty {
                 contents: contents,
                 available: available,
                 state: state)
+            Self.notePaste(contents, into: surfaceView)
             return GHOSTTY_CLIPBOARD_READ_STARTED
+        }
+
+        /// Text pasted into a pane running an agent's own interface is a draft there (Tern, AG-9).
+        private static func notePaste(_ contents: [Ghostty.ClipboardContent], into surfaceView: SurfaceView) {
+            guard let text = contents.first(where: { $0.mime == "text/plain" }).flatMap({ String(data: $0.data, encoding: .utf8) }),
+                  !text.isEmpty else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { TernAgentUI.shared.inputSent(pane: surfaceView, text: text, keys: []) }
+            }
         }
 
         static func confirmReadClipboard(
@@ -417,6 +427,7 @@ extension Ghostty {
                         state: state,
                         confirmed: true,
                         remember: remember)
+                    notePaste(reps, into: surfaceView)
                 } else {
                     ghostty_surface_deny_clipboard_request(surface, state)
                 }

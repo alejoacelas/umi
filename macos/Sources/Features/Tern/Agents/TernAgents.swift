@@ -162,7 +162,7 @@ final class TernAgents: @unchecked Sendable {
     /// gives its name up (it's renamed with its id) when a new one takes it (MA-11).
     func claim(name: String, for session: TernAgentSession?) throws {
         for other in sessions where other !== session && other.record.name == name {
-            if other.live || other.status == "starting" || other.status == "working" {
+            if other.live || other.record.live == true || other.status == "starting" || other.status == "working" {
                 throw TernError.badRequest("a running session (\(other.record.id.prefix(8))) is already named \"\(name)\"")
             }
         }
