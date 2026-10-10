@@ -339,12 +339,16 @@ extension Ghostty {
                 return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE
             }
 
+            let pendingBefore = surfaceView.pendingClipboardConfirmation
             completeClipboardRequest(
                 surface,
                 contents: contents,
                 available: available,
                 state: state)
-            Self.notePaste(contents, into: surfaceView)
+            // Pasted now, unless it waits for the user's confirmation (counted once confirmed).
+            if surfaceView.pendingClipboardConfirmation === pendingBefore {
+                Self.notePaste(contents, into: surfaceView)
+            }
             return GHOSTTY_CLIPBOARD_READ_STARTED
         }
 

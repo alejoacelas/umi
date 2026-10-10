@@ -445,7 +445,7 @@ final class TernShortcutStore {
     /// "goto_split:previous" → "Goto split: previous".
     static func describe(_ action: String) -> String {
         let parts = action.split(separator: ":", maxSplits: 1).map(String.init)
-        var name = parts[0].replacingOccurrences(of: "_", with: " ")
+        var name = (parts.first ?? action).replacingOccurrences(of: "_", with: " ")
         name = name.prefix(1).uppercased() + name.dropFirst()
         return parts.count > 1 ? "\(name): \(parts[1])" : name
     }
@@ -474,6 +474,9 @@ final class TernShortcutStore {
         var notes: [String] = []
         if id.hasPrefix("ghostty:") {
             let action = String(id.dropFirst("ghostty:".count))
+            // Only an action Ghostty has (bound by default or in the user's config): anything else
+            // would be written into the configuration as a broken binding.
+            guard Self.knownGhosttyActions.contains(action) else { throw StoreError.unknown(id) }
             let current = TernGhosttyBindings.effective().filter { $0.action == action }.map(\.trigger)
             var change = saved.ghostty[action] ?? GhosttyChange(unbind: [], bind: nil)
             // Unbind what's bound now (except what this change itself bound).
@@ -516,6 +519,10 @@ final class TernShortcutStore {
         }
         try save()
         return notes
+    }
+
+    static var knownGhosttyActions: Set<String> {
+        Set(TernGhosttyBindings.builtInDefaults().map { $0.1 }).union(TernGhosttyBindings.effective().map(\.action))
     }
 
     /// Back to the default (nil: everything).

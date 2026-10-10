@@ -1162,7 +1162,7 @@ final class TernAgentSession {
     func beginShutdown(reason: String) {
         shuttingDown = true
         shutdownReason = reason
-        if exclusiveLive, liveState == .working || liveState == .needsInput, record.openSelfTurn {
+        if exclusiveLive, liveState == .working || liveState == .needsInput || liveBackground > 0, record.openSelfTurn {
             // A turn running in its own interface is cut off with the app: it continues by itself
             // at the next launch, like a headless one (AG-22).
             record.cutOffAt = Date()

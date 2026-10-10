@@ -311,14 +311,16 @@ extension TernAgentSession {
                 liveTurnError = error
                 liveTurnFailedAt = Date()
             }
-            if record.openSelfTurn {
+            liveBackground = (payload["background_tasks"] as? [Any])?.count ?? 0
+            liveBackground += (payload["session_crons"] as? [Any])?.count ?? 0
+            if record.openSelfTurn && liveBackground == 0 {
+                // Done, background work included (work still pending wakes it again: until then
+                // a quit continues it).
                 record.openSelfTurn = false
                 record.cutOffAt = nil
                 record.cutOffReason = nil
                 saveRecord()
             }
-            liveBackground = (payload["background_tasks"] as? [Any])?.count ?? 0
-            liveBackground += (payload["session_crons"] as? [Any])?.count ?? 0
             liveState = .idle
             liveActivity = ""
             for item in items where item.kind == "tool" && item.state == "running" && liveBackground == 0 {
