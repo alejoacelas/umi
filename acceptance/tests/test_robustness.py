@@ -1,4 +1,5 @@
-"""Robustness (SPEC R): orphans, crashes, restarts, paths, isolation, stale environments, long runs."""
+"""Robustness: orphans, crashes, restarts and long runs of agent sessions (SPEC AG-21, AG-22, AG-23), and
+the app's own robustness (SPEC R): restarts, paths, isolation, stale environments."""
 
 import json
 import os
@@ -11,6 +12,7 @@ import uuid
 import pytest
 
 from harness import Instance, alive, processes_of_bundle, wait_until, zombies
+from test_sessions import fake_args, json_in
 
 pytestmark = pytest.mark.robustness
 
@@ -38,13 +40,19 @@ def gone(pids, timeout):
     return not any(alive(p) for p in pids)
 
 
-# ---- R-1 ----------------------------------------------------------------------------------------
+# ---- AG-21: no orphans -----------------------------------------------------------------------------
 
-@pytest.mark.req("R-1")
+def running(session):
+    """A session listed as running: one that isn't stopped or failed."""
+    return session.get("status") not in ("stopped", "error")
+
+
+@pytest.mark.req("AG-21")
 @pytest.mark.harness
 def test_quitting_the_app_leaves_no_unowned_processes(fresh):
     """Sessions may keep running after the app quits, or stop with it. Either way, nothing keeps
-    running that the product no longer owns."""
+    running that the product no longer owns: "Every process started for a session belongs to a session
+    listed as running, or is gone." """
     other = fresh(prefix="acc-r1q-")
     n = nonce()
     sid = other.start_agent("claude", f"IGNORE_TERM SPAWN_STUBBORN SLEEP 60 {n}")
@@ -54,13 +62,13 @@ def test_quitting_the_app_leaves_no_unowned_processes(fresh):
     if not gone(pids, 20):
         proc = other.cli("--json", "agent", "ls", check=False, timeout=60)
         assert proc.returncode == 0, "session processes outlived the app, and the CLI can't reach their owner"
-        live = {s["id"] for s in json.loads(proc.stdout)["sessions"] if s.get("live")}
-        assert sid in live, "session processes outlived the app without a live session owning them"
+        listed = {s["id"] for s in json.loads(proc.stdout)["sessions"] if running(s)}
+        assert sid in listed, "session processes outlived the app without a running session owning them"
         other.cli("agent", "stop", sid, timeout=60)
         assert gone(pids, 20), "`agent stop` after the app quit left processes running"
 
 
-@pytest.mark.req("R-1", "R-2")
+@pytest.mark.req("AG-21", "AG-22")
 @pytest.mark.harness
 def test_killing_the_product_leaves_nothing_running_once_it_is_back(fresh):
     other = fresh(prefix="acc-r1k-")
@@ -72,7 +80,7 @@ def test_killing_the_product_leaves_nothing_running_once_it_is_back(fresh):
     assert gone(pids, 30), "processes of a killed product's sessions were never cleaned up"
 
 
-@pytest.mark.req("R-1")
+@pytest.mark.req("AG-21")
 @pytest.mark.harness
 def test_no_zombies_accumulate(inst):
     for _ in range(5):
@@ -84,7 +92,25 @@ def test_no_zombies_accumulate(inst):
     assert not [z for z in zombies() if z[1] in product], "zombie children of the product"
 
 
-# ---- R-2, R-3 ---------------------------------------------------------------------------------
+@pytest.mark.req("AG-21")
+@pytest.mark.slow
+@pytest.mark.harness
+def test_quitting_right_after_an_agent_crash_leaves_nothing(fresh):
+    """The agent crashes and the app quits while its detached child is still being cleaned up: the
+    child must not survive the quit."""
+    other = fresh(prefix="acc-ag21-crashquit-")
+    sid = other.start_agent("claude", "ECHO warm-up")
+    other.wait(sid)
+    other.send(sid, "SPAWN_STUBBORN")
+    other.wait(sid)
+    child = stubborn_child(other)
+    other.send(sid, "CRASH")
+    other.wait(sid)
+    other.quit_gracefully(timeout=60)
+    wait_until(lambda: not alive(child), 10, message="the detached child is gone after the quit")
+
+
+# ---- AG-22, R-3: crashes and restarts ------------------------------------------------------------
 
 def remember(inst, kind):
     word = f"{kind}-word-{nonce()}"
@@ -96,7 +122,7 @@ def remember(inst, kind):
     return sid, word
 
 
-@pytest.mark.req("R-2", "MA-3", "MA-4")
+@pytest.mark.req("AG-22", "AG-11", "AG-10")
 @pytest.mark.harness
 def test_crash_recovery(fresh):
     other = fresh(prefix="acc-r2-")
@@ -121,7 +147,7 @@ def test_crash_recovery(fresh):
     assert len(deliveries) == len(set(deliveries)), "no message delivered twice"
 
 
-@pytest.mark.req("R-3", "MA-3")
+@pytest.mark.req("AG-22", "AG-10")
 @pytest.mark.harness
 def test_restart_resumes_sessions(fresh):
     other = fresh(prefix="acc-r3-")
@@ -147,6 +173,29 @@ def test_restart_restores_pins_and_names(target, fresh):
     tabs = [t for w in other.tree()["windows"] for t in w["tabs"]]
     kept = [t for t in tabs if t.get("name") == "kept-name"]
     assert kept and kept[0]["pinned"]
+
+
+@pytest.mark.req("AG-22", "AG-11")
+@pytest.mark.harness
+def test_a_partial_log_line_left_by_a_crash_loses_nothing_after_it(fresh):
+    """A crash can cut the last line of a session's log short. Entries written after the restart must
+    still be read back at the next one. (Tern-specific: it keeps each session in sessions/<id>/log.jsonl.)"""
+    other = fresh(prefix="acc-ag22-partial-")
+    sid = other.start_agent("claude", "ECHO first")
+    other.wait(sid)
+    other.quit_app()
+    log = os.path.join(other.dir, "sessions", sid, "log.jsonl")
+    if not os.path.exists(log):
+        pytest.skip("this build keeps no sessions/<id>/log.jsonl")
+    with open(log, "a") as f:
+        f.write('{"m": {"id": "cut-sho')
+    other.start_app()
+    n = nonce()
+    message = other.send(sid, f"ECHO after the cut {n}")
+    other.wait(sid, "--message", message)
+    other.quit_app()
+    other.start_app()
+    assert other.read_reply(sid, message) == f"ECHO after the cut {n}"
 
 
 # ---- R-4 ----------------------------------------------------------------------------------------
@@ -175,12 +224,11 @@ def test_paths_with_spaces_and_long_state_dirs(target, fresh):
     shutil.rmtree(base, ignore_errors=True)
 
 
-@pytest.mark.req("R-4")
+@pytest.mark.req("R-4", "AG-1")
 @pytest.mark.harness
 def test_agents_with_spaces_and_long_state_dirs(target, fresh):
     base, other, work = spaced_instance(fresh)
-    sid = other.json("agent", "start", "claude", "--background", "--cwd", work, "--env",
-                     "FAKE_AGENT_DIR=" + other.fake_dir, "RUN pwd")["session"]["id"]
+    sid = other.json("agent", "start", "claude", "--cwd", work, *fake_args(other), "RUN pwd")["session"]["id"]
     code, out = other.wait(sid)
     assert out["status"] == "DONE" and os.path.realpath(out["reply"].splitlines()[1]) == work, out
     pane = other.cli("tab", "new", "--cwd", work).stdout.strip()
@@ -220,7 +268,7 @@ def test_instances_never_talk_to_each_other(fresh):
     assert a_pane in seen
 
 
-@pytest.mark.req("R-5")
+@pytest.mark.req("R-5", "AG-16")
 @pytest.mark.harness
 def test_agents_of_one_instance_never_reach_another(fresh):
     a, b = fresh(prefix="acc-r5a-"), fresh(prefix="acc-r5b-")
@@ -234,7 +282,7 @@ def test_agents_of_one_instance_never_reach_another(fresh):
     # An agent of A, using the CLI, reaches A.
     a.send(sa, f"RUN {a.target.cli_name} --json agent ls")
     code, out = a.wait(sa)
-    listed = {s["id"] for s in json.loads(out["reply"].split("\n", 1)[1])["sessions"]}
+    listed = {s["id"] for s in json_in(out["reply"])["sessions"]}
     assert sa in listed and sb not in listed
 
 
@@ -281,7 +329,21 @@ def test_stale_environments_never_act_on_the_wrong_instance(fresh):
     assert_stale_envs_never_act_on(b, [stale, agent_env])   # a terminal and an agent that outlived their instance
 
 
-# ---- R-6, R-9 -----------------------------------------------------------------------------------
+@pytest.mark.req("R-7", "L-4")
+def test_an_explicit_target_overrides_a_stale_caller(inst, win):
+    """A CLI carrying the identity of a pane that's gone still creates a tab where --pane or --window
+    says."""
+    gone = inst.json("tab", "new", "--window", win["window"])["pane"]
+    pane_env = {"TERN_PANE_ID": gone, "TERN_INSTANCE": json.loads(inst.cli("--json", "ping").stdout)["instance"]}
+    inst.cli("pane", "close", gone)
+    time.sleep(0.5)
+    created = inst.json("tab", "new", "--pane", win["pane"], "--no-focus", env=pane_env)
+    assert created["window"] == win["window"]
+    created = inst.json("tab", "new", "--window", win["window"], "--no-focus", env=pane_env)
+    assert created["window"] == win["window"]
+
+
+# ---- AG-23: long runs ----------------------------------------------------------------------------
 
 def timed(fn):
     t0 = time.time()
@@ -289,7 +351,7 @@ def timed(fn):
     return time.time() - t0
 
 
-@pytest.mark.req("R-6")
+@pytest.mark.req("AG-23", "AG-13")
 @pytest.mark.harness
 def test_cli_stays_responsive_and_truthful_while_busy(inst):
     busy = [inst.start_agent("codex", "SLEEP 10") for _ in range(3)]
@@ -309,7 +371,7 @@ def test_cli_stays_responsive_and_truthful_while_busy(inst):
             inst.cli("agent", "stop", s, check=False)
 
 
-@pytest.mark.req("R-9")
+@pytest.mark.req("AG-23")
 @pytest.mark.slow
 @pytest.mark.harness
 def test_long_runs_stay_fast_and_disk_follows_what_is_kept(fresh):

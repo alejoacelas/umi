@@ -23,9 +23,11 @@ FAKE_CLAUDE = os.path.join(FAKES, "fake_claude.py")
 FAKE_CODEX = os.path.join(FAKES, "fake_codex.py")
 
 # Keep the environment of whoever runs the tests (often an agent, or a terminal of some
-# product) out of the product under test.
-_SCRUB_PREFIXES = ("CLAUDE_CODE", "CODEX_", "SHADE_", "WRAITH_", "GHOSTTY_", "FAKE_")
-_SCRUB_KEYS = {"CLAUDECODE", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID"}
+# product) out of the product under test. The app's own environment reaches its panes' shells,
+# so an agent the tests run in a pane would otherwise inherit, say, the outer Claude Code's
+# CLAUDE_EFFORT or CLAUDE_CONFIG_DIR.
+_SCRUB_PREFIXES = ("CLAUDE_", "CODEX_", "SHADE_", "WRAITH_", "GHOSTTY_", "FAKE_", "TERN_")
+_SCRUB_KEYS = {"CLAUDECODE", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "AI_AGENT"}
 
 
 def clean_env():
@@ -218,9 +220,17 @@ class Instance:
         os.makedirs(self.fake_dir, exist_ok=True)
         self.env = clean_env()
         self.env[target.env_names["state_dir"]] = self.dir
+        # Where the fake Claude writes its transcript (fakes/README.md); `start_agent` passes it on.
+        self.claude_config = os.path.join(self.fake_dir, "claude-config")
         if fakes:
             self.env[target.env_names["claude_bin"]] = FAKE_CLAUDE
             self.env[target.env_names["codex_bin"]] = FAKE_CODEX
+            # The agents' configuration folders, for the app and every pane's shell: nothing an
+            # instance running fakes does (`agent plugins`, an agent typed in a pane) may reach the
+            # user's own ~/.claude or ~/.codex. (Real-agent instances need the user's logins, so
+            # their tests set these only on instances that never call a model.)
+            self.env["CLAUDE_CONFIG_DIR"] = self.claude_config
+            self.env["CODEX_HOME"] = os.path.join(self.fake_dir, "codex-home")
         if env:
             self.env.update(env)
         self.app_proc = None
@@ -298,15 +308,40 @@ class Instance:
 
     def cleanup(self):
         # Stop sessions first so nothing outlives the test.
-        if self.app_running() or True:
+        if self.app_running():
             try:
                 for s in self.agents():
-                    if s.get("live"):
+                    if s.get("running") or s.get("live") or s.get("location") == "live" \
+                            or s.get("status") not in ("stopped", "error"):
                         self.cli("agent", "stop", s["id"], check=False, timeout=30)
             except Exception:  # noqa: BLE001
                 pass
         self.quit_app()
         shutil.rmtree(self.dir, ignore_errors=True)
+
+    # -- raw control requests (Tern's internal debug.* methods)
+
+    def rpc(self, method, **params):
+        """A raw control request to the app (for internal `debug.*` methods that the CLI doesn't
+        expose). Raises AssertionError with the app's error."""
+        import socket
+        with open(os.path.join(self.dir, "instance.json")) as f:
+            path = json.load(f)["socket"]
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(60)
+        s.connect(path)
+        s.sendall((json.dumps({"id": 1, "method": method, "params": params}) + "\n").encode())
+        data = b""
+        while not data.endswith(b"\n"):
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+        s.close()
+        reply = json.loads(data)
+        if reply.get("error"):
+            raise AssertionError(f"{method}: {reply['error']}")
+        return reply.get("result", reply)
 
     # -- CLI
 
@@ -353,7 +388,8 @@ class Instance:
     # -- agent helpers
 
     def start_agent(self, kind, prompt=None, *options, name=None, chaos=None, background=True, env=None, cwd=None):
-        args = ["agent", "start", kind, "--cwd", cwd or self.work, "--env", "FAKE_AGENT_DIR=" + self.fake_dir]
+        args = ["agent", "start", kind, "--cwd", cwd or self.work, "--env", "FAKE_AGENT_DIR=" + self.fake_dir,
+                "--env", "CLAUDE_CONFIG_DIR=" + self.claude_config]
         if chaos is not None:
             args += ["--env", f"FAKE_CHAOS={chaos}"]
         for key, value in (env or {}).items():
@@ -392,11 +428,62 @@ class Instance:
         return self.json("agent", "read", session, "--transcript")["items"]
 
     def receipts(self):
-        path = os.path.join(self.fake_dir, "receipts.jsonl")
+        return read_jsonl(os.path.join(self.fake_dir, "receipts.jsonl"))
+
+    def self_turns(self):
+        """Turns the fake Claude started by itself (WAKE), from fakes/README.md's self_turns.jsonl."""
+        return read_jsonl(os.path.join(self.fake_dir, "self_turns.jsonl"))
+
+    def violations(self):
+        """Lines of the fakes' violations.log: two processes ran one conversation at once."""
+        path = os.path.join(self.fake_dir, "violations.log")
         if not os.path.exists(path):
             return []
         with open(path) as f:
-            return [json.loads(line) for line in f if line.strip()]
+            return [line.rstrip("\n") for line in f if line.strip()]
+
+    # -- sessions shown in panes
+
+    def screen(self, pane, scrollback=False):
+        """What a pane's terminal shows (its text), or "" if the pane can't be read."""
+        args = ["read", "--pane", pane] + (["--scrollback"] if scrollback else [])
+        return self.cli(*args, check=False, timeout=30).stdout
+
+    def type_line(self, pane, text):
+        """Type a line into a pane's terminal (and press Enter), as a person would."""
+        self.cli("send", "--pane", pane, "--enter", text, timeout=30)
+
+    def session_view(self, pane):
+        """What a pane shows of a session (Tern's internal `debug.agent.pane`): {"showing":
+        "agent" (the read-only view) | "live" | "terminal", "session"?, "transcript"?, "texts"?,
+        "buttons"?}."""
+        return self.rpc("debug.agent.pane", pane=pane)
+
+    def press(self, pane, title, field_text=None):
+        """Press a button of a pane's read-only session view (Tern's internal `debug.agent.press`)."""
+        params = {"pane": pane, "title": title}
+        if field_text is not None:
+            params["field_text"] = field_text
+        return self.rpc("debug.agent.press", **params)
+
+    def session_panes(self, session):
+        """Every pane of the layout that shows the session (read-only or live)."""
+        return [p for w in self.tree()["windows"] for t in w["tabs"] for p in t["panes"]
+                if p.get("agent") == session]
+
+
+def read_jsonl(path):
+    if not os.path.exists(path):
+        return []
+    out = []
+    with open(path) as f:
+        for line in f:
+            if line.strip():
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass   # a line being written right now
+    return out
 
 
 # ---------------------------------------------------------------------------------------------

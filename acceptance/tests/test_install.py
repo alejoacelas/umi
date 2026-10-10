@@ -106,7 +106,7 @@ def test_doctor(inst):
     assert (proc.returncode == 0) == everything, report
 
 
-@pytest.mark.req("R-8")
+@pytest.mark.req("AG-22")
 @pytest.mark.slow
 @pytest.mark.harness
 def test_upgrading_keeps_sessions(target, tmp_path):

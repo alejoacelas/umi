@@ -1,4 +1,5 @@
-"""Property-based and fault-injection tests of managed sessions (SPEC MA-3, MA-4, MA-7, MA-22, R-1).
+"""Property-based and fault-injection tests of agent sessions (SPEC AG-11 exactly once, AG-13 truthful
+status, AG-21 no orphans).
 
 Hypothesis drives random sequences of operations (send, interrupt, stop, crash, start another
 session) against fake harnesses that themselves vary timing, noise and legal event orderings
@@ -19,11 +20,11 @@ from hypothesis.stateful import RuleBasedStateMachine, initialize, invariant, pr
 
 from harness import alive
 
-pytestmark = [pytest.mark.chaos, pytest.mark.managed, pytest.mark.slow, pytest.mark.harness]
+pytestmark = [pytest.mark.chaos, pytest.mark.sessions, pytest.mark.slow, pytest.mark.harness]
 
 KINDS = ["claude", "codex"]
-TERMINAL = {"DONE", "INTERRUPTED", "FAILED", "EXITED", "ERROR"}
-LEGAL_STATUS = {"starting", "working", "idle", "needs_input", "exited", "error"}
+TERMINAL = {"DONE", "INTERRUPTED", "FAILED", "STOPPED", "ERROR", "CANCELLED"}
+LEGAL_STATUS = {"starting", "working", "idle", "needs_input", "stopped", "error"}
 BODIES = ["ECHO", "SLEEP 0.3", "SLEEP 1.5", "RUN echo hi", "GARBAGE ECHO", "STDERR_SPAM ECHO", "HUGE 0.3"]
 
 
@@ -119,7 +120,7 @@ class Sessions(RuleBasedStateMachine):
                 else:
                     assert got <= 1, f"message {n} delivered {got} times"
             for sid in self.sessions:
-                assert self.inst.info(sid)["status"] in {"idle", "exited", "error"}, self.inst.info(sid)
+                assert self.inst.info(sid)["status"] in {"idle", "stopped", "error"}, self.inst.info(sid)
         finally:
             nonces = [n for _, _, n in self.messages]
             pids = {r["pid"] for r in self.inst.receipts() if any(n in r.get("text", "") for n in nonces)}
@@ -140,13 +141,13 @@ def still_alive(pids, timeout):
     return [p for p in pids if alive(p)]
 
 
-@pytest.mark.req("MA-3", "MA-4", "MA-7", "MA-22")
+@pytest.mark.req("AG-11", "AG-13", "AG-21", "AG-10")
 def test_random_operation_sequences(inst):
     examples = int(os.environ.get("ACCEPTANCE_CHAOS_EXAMPLES", "12"))
     run_machine(inst, Sessions, examples, steps=8)
 
 
-@pytest.mark.req("MA-4", "MA-22", "R-1")
+@pytest.mark.req("AG-11", "AG-21")
 @pytest.mark.parametrize("seed", range(1, 9))
 @pytest.mark.parametrize("kind", KINDS)
 def test_burst_under_chaos(inst, kind, seed):

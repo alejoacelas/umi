@@ -17,7 +17,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from harness import CLIError, Instance, Target, clean_env, frontmost_pid, login_which, wait_until
+from harness import CLIError, Instance, Target, clean_env, frontmost_pid, wait_until
 
 pytestmark = pytest.mark.layout
 
@@ -196,17 +196,23 @@ def test_editor_documents_follow_a_pane_out_of_its_dissolving_tab(inst, win, tmp
     assert any(os.path.realpath(d["path"]) == os.path.realpath(doc) for d in docs), docs
 
 
-@pytest.mark.req("IA-1", "IA-3")
+@pytest.mark.req("AG-2", "L-8")
+@pytest.mark.harness
 def test_an_agent_launched_into_a_new_window_gets_its_command(inst, win):
-    """A new window that takes focus shows on the next turn of the run loop; the agent's command
-    must still be typed into its pane, and the agent noted."""
-    if not login_which("claude"):
-        pytest.skip("claude is not on the login PATH")
-    result = inst.json("claude", "--window", "--", "--version")
-    inst.cli("wait", "--pane", result["pane"], "--pattern", r"\(Claude Code\)", "--timeout", "30")
-    agent = inst.find_pane(result["pane"])[2].get("interactive_agent") or {}
-    assert agent.get("kind") == "claude", agent
-    inst.cli("window", "close", inst.find_pane(result["pane"])[0]["id"], check=False)
+    """A new window that takes focus shows on the next turn of the run loop; the command that opens the
+    agent's own interface must still be typed into its pane (`tern claude TASK --new-window`: the task
+    headless, then live there)."""
+    marker = "new-window-" + uuid.uuid4().hex[:6]
+    result = inst.json("claude", f"ECHO {marker}", "--new-window", "--cwd", inst.work,
+                       "--env", "FAKE_AGENT_DIR=" + inst.fake_dir, "--env", "CLAUDE_CONFIG_DIR=" + inst.claude_config)
+    sid, pane = result["session"]["id"], result["pane"]
+    try:
+        assert inst.wait(sid)[1]["status"] == "DONE"
+        wait_until(lambda: inst.info(sid)["location"] == "live", 30, message="the session live in its window")
+        inst.cli("wait", "--pane", pane, "--pattern", f"> ECHO {marker}", "--timeout", "30")
+    finally:
+        inst.cli("agent", "stop", sid, check=False)
+        inst.cli("window", "close", inst.find_pane(pane)[0]["id"], check=False)
 
 
 @pytest.mark.req("I-4")
@@ -353,10 +359,10 @@ def test_update_now_relaunches_the_same_instance(target, tmp_path):
         server.shutdown()
 
 
-@pytest.mark.req("L-6", "IA-3")
+@pytest.mark.req("L-6")
 def test_new_tabs_start_in_the_folder_of_the_pane_they_come_from(inst, win, tmp_path):
     """A tab made from a pane that isn't the one its window has focused starts in that pane's
-    folder: from inside the pane, and for `tern claude --pane`."""
+    folder (from inside the pane)."""
     a_dir = tmp_path / "repo-a"
     b_dir = tmp_path / "repo-b"
     a_dir.mkdir()
@@ -371,10 +377,6 @@ def test_new_tabs_start_in_the_folder_of_the_pane_they_come_from(inst, win, tmp_
     made = json.loads(out.read_text())["pane"]
     wait_until(lambda: os.path.realpath(pane_info(inst, made)["cwd"]) == os.path.realpath(a_dir), 15,
                message="the new tab in A's folder")
-    if login_which("claude"):
-        result = inst.json("claude", "--tab", "--pane", a, "--no-focus", "--", "--version")
-        wait_until(lambda: os.path.realpath(pane_info(inst, result["pane"])["cwd"]) == os.path.realpath(a_dir), 15,
-                   message="the agent's tab in A's folder")
 
 
 @pytest.mark.req("L-3")
