@@ -282,3 +282,91 @@ def test_hooks_run_from_a_plugin_folder_whose_path_has_spaces(inst, kind, tmp_pa
                 events.append(event)
     ran = calls.read_text().splitlines() if calls.exists() else []
     assert len(ran) == len(events) and all(f"agent hook {e} --agent {kind}" in line for e, line in zip(events, ran)), ran
+
+
+# ---- round 3 -------------------------------------------------------------------------------------
+
+@pytest.mark.req("AG-23", "AG-15")
+def test_a_codex_server_that_stops_reading_blocks_no_other_session(inst, win):
+    """Round 3, P1: messages were written to Codex's socket on the queue every session shares; a server
+    that stopped reading (here: hung) with a large message waiting blocked every agent command."""
+    stuck = inst.start_agent("codex", f"HANG {nonce()}", name=f"stuck-{nonce()}")
+    wait_until(lambda: inst.info(stuck)["status"] == "working", 15, message="the turn hangs")
+    big = "ECHO " + ("x" * 1024 * 1024)
+    began = time.time()
+    inst.cli("agent", "send", stuck, "-", stdin=big, timeout=30)
+    assert time.time() - began < 10, "sending to a server that doesn't read held the caller"
+    began = time.time()
+    inst.agents()
+    assert time.time() - began < 5, "`agent ls` waited on another session's socket"
+    other = inst.start_agent("claude", f"ECHO meanwhile {nonce()}")
+    code, out = inst.wait(other, timeout=30)
+    assert out["status"] == "DONE", out
+    inst.cli("agent", "stop", stuck, timeout=60)
+    wait_until(lambda: inst.info(stuck)["status"] == "stopped", 30, message="the stuck session stops")
+
+
+@pytest.mark.req("AG-22", "I-4")
+def test_an_update_now_counts_work_in_a_live_interface(fresh):
+    """Round 3, P2: installing an update now (it restarts the app) checked only headless turns; work in
+    a Claude interface Tern shows live was cut off without asking for --force."""
+    inst = fresh(prefix="acc-rv-update-")
+    win = inst.json("window", "new", "--cwd", inst.work)
+    wait_until(lambda: inst.screen(win["pane"]).strip(), 20, message="the shell")
+    assert "turn" not in inst.cli("update", "--now", check=False, timeout=30).stderr, "nothing runs yet"
+    sid = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
+                    "--pane", win["pane"], "ECHO hi")["session"]["id"]
+    pane = wait_live(inst, sid)
+    inst.type_line(pane, f"SLEEP 8 {nonce()}")
+    wait_until(lambda: inst.info(sid)["status"] == "working", 10, message="the typed turn runs")
+    refused = inst.cli("update", "--now", check=False, timeout=30)
+    assert refused.returncode != 0 and "1 managed-agent turn is running" in refused.stderr, (refused.returncode, refused.stderr)
+
+
+@pytest.mark.req("S-3", "L-12")
+def test_a_session_waiting_for_the_user_stays_reachable_after_its_pane_closes(inst, win):
+    """Round 3, P2: closing the pane that showed a session waiting for approval left its mark on the
+    closed pane: the Dock badge kept a stale count and ⌃⌘J (`jump`) couldn't reach the session."""
+    sid = inst.start_agent("claude", "ASK_PERMISSION")
+    wait_until(lambda: inst.info(sid)["status"] == "needs_input", 15, message="it asks")
+    pane = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])["pane"]
+    wait_until(lambda: (inst.rpc("debug.ui.attention")["panes"].get(pane) or {}).get("mark") == "needs_you", 10,
+               message="the pane shows that it needs the user")
+    inst.cli("pane", "close", pane)
+    wait_until(lambda: pane not in inst.rpc("debug.ui.attention")["panes"], 10, message="the closed pane's mark goes")
+    assert inst.rpc("debug.ui.attention")["needing_you"] >= 1
+    jumped = inst.json("jump")
+    shown = inst.session_panes(sid)
+    assert jumped.get("session") == sid or (shown and jumped.get("pane") in [p["id"] for p in shown]), (jumped, shown)
+    inst.cli("agent", "stop", sid, check=False)
+
+
+@pytest.mark.req("L-14", "L-2")
+def test_rename_tab_from_the_palette_with_an_empty_name_clears_it(inst, win):
+    """Round 3, P2: the palette's Rename Tab says an empty name names the tab after its folder, but an
+    empty answer was refused (and would have been dropped from the command line)."""
+    inst.cli("tab", "rename", win["tab"], "named-for-now")
+    inst.cli("pane", "focus", win["pane"])
+    inst.rpc("debug.palette", window=win["window"], mode="commands", query="rename tab")
+    result = inst.rpc("debug.palette.perform", window=win["window"], title="Rename Tab…", answers=[""])
+    assert not result.get("failed"), result
+    tab = next(t for w in inst.tree()["windows"] for t in w["tabs"] if t["id"] == win["tab"])
+    assert not tab.get("name"), tab
+    inst.rpc("debug.palette.close", window=win["window"])
+
+
+@pytest.mark.req("AG-23", "T-5")
+def test_a_large_message_is_quick_to_send_and_list(inst, win):
+    """Found while testing round 3: a 4 MB message took 17 s to send and made `agent ls` take 14 s, because
+    the control connection looked for the end of a request from its start again after every read."""
+    sid = inst.start_agent("codex", f"ECHO warm {nonce()}")
+    inst.wait(sid)
+    big = "ECHO " + ("x" * 4 * 1024 * 1024)
+    began = time.time()
+    message = inst.cli("agent", "send", sid, "-", stdin=big, timeout=60).stdout.strip()
+    assert time.time() - began < 5, f"sending 4 MB took {time.time() - began:.1f} s"
+    began = time.time()
+    inst.agents()
+    assert time.time() - began < 5, f"`agent ls` took {time.time() - began:.1f} s"
+    code, out = inst.wait(sid, "--message", message, timeout=60)
+    assert out["status"] == "DONE" and len(out["reply"]) == len(big), (out["status"], len(out.get("reply") or ""))

@@ -8,7 +8,7 @@ reference/PROTOCOLS.md). README.md in this directory documents every env var,
 trigger and chaos variation.
 
 Implemented methods: initialize, initialized (notification), thread/start,
-thread/resume, thread/unsubscribe, thread/turns/list, turn/start (new turn or
+thread/resume, thread/unsubscribe, thread/turns/list, thread/items/list, turn/start (new turn or
 steer), turn/steer, turn/interrupt, thread/queue/{add,list,delete,start}
 (experimental queue; auto-drains like the real one).
 
@@ -50,7 +50,8 @@ scanned for other triggers):
                  (persistent, all threads). Skipped approvals reply "approval accepted (remembered)"
   GARBAGE        non-JSON and blank lines on stdout around the reply
   STDERR_SPAM    ~2 MB written to stderr during the turn
-  HANG           after the userMessage item, stop responding to everything until killed
+  HANG           after the userMessage item, stop responding to everything until killed (on a
+                 unix socket it stops reading it too)
   EXIT_CLEAN     after turn/completed, once no turn is active, exit 0
   IGNORE_TERM    ignore SIGTERM from then on
   SPAWN_STUBBORN detached child (own session) ignoring SIGTERM; pid -> $FAKE_AGENT_DIR/stubborn.pid
@@ -106,7 +107,7 @@ BACKGROUND_RE = re.compile(r"\bBACKGROUND[ \t]+([0-9]*\.?[0-9]+)(?=\s|$)")
 MCP_STATUSES = ("connected", "pending", "failed", "needs-auth")
 MCP_FINAL_AFTER = 0.2      # "ready" came 0.2-1.5 s after "starting" in every X log
 KNOWN_METHODS = ["initialize", "thread/start", "thread/resume", "thread/unsubscribe",
-                 "thread/turns/list", "turn/start", "turn/steer", "turn/interrupt", "thread/queue/add",
+                 "thread/turns/list", "thread/items/list", "turn/start", "turn/steer", "turn/interrupt", "thread/queue/add",
                  "thread/queue/list", "thread/queue/delete", "thread/queue/start"]
 GARBAGE_LINES = ["", "this is not json", "   ", "\x1b[2m2026-01-01T00:00:00Z\x1b[0m \x1b[32mINFO\x1b[0m fake garbage",
                  "{\"method\": \"item/started\", \"truncated", "[object Object]"]
@@ -566,6 +567,8 @@ class WsConn(Conn):
     def serve(self):
         try:
             while True:
+                while self.engine.hung:      # a hung server stops reading its socket too
+                    time.sleep(3600)
                 m = self.ep.recv_message()
                 if m is None:
                     break
@@ -1220,6 +1223,34 @@ class FakeCodex(object):
                 raise RpcError("no rollout found for thread id %s" % tid)
             th = json.load(open(self.path(tid)))
         return {"data": [self.turn_summary(t) for t in reversed(th["turns"])], "nextCursor": None}
+
+    def m_thread_items_list(self, p, rid, conn):
+        """Every item of the thread (or of one turn), not the turns' summaries: a message steered into a
+        turn is listed with its clientId (the schema's ThreadItemsListResponse: {item, turnId} entries,
+        ascending by default, `sortDirection` "desc" for newest first, `limit`)."""
+        tid = p["threadId"]
+        with self.cv:
+            th = self.threads.get(tid)
+            turns = [dict(t, items=list(t["items"])) for t in th["turns"]] if th is not None else None
+            if th is not None and th.get("active") is not None:
+                active = th["active"]
+                for t in turns:
+                    if t["id"] == active.id:
+                        t["items"] = list(active.items)
+        if turns is None:
+            if not os.path.exists(self.path(tid)):
+                raise RpcError("no rollout found for thread id %s" % tid)
+            turns = json.load(open(self.path(tid)))["turns"]
+        entries = [{"item": item, "turnId": t["id"], "startedAtMs": None, "completedAtMs": None}
+                   for t in turns if p.get("turnId") in (None, t["id"]) for item in t["items"]]
+        if p.get("sortDirection") == "desc":
+            entries.reverse()
+        start = int(p.get("cursor") or 0)
+        limit = int(p.get("limit") or 100)
+        page = entries[start:start + limit]
+        more = start + limit < len(entries)
+        return {"data": page, "nextCursor": str(start + limit) if more else None,
+                "backwardsCursor": str(start) if page else None}
 
     # ------------------------------------------------------------ turn methods
     def parse_input(self, p):
