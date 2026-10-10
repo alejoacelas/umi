@@ -689,39 +689,70 @@ enum TernCLIRunner {
         }
         process.environment = env
         if let cwd, FileManager.default.fileExists(atPath: cwd) { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
-        let out = Pipe()
-        let err = Pipe()
+        let out = TernPipe.make(), err = TernPipe.make()
         process.standardOutput = out
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
-        // Read on background queues so a large output never blocks the process.
-        final class Buffer: @unchecked Sendable { var data = Data() }
-        let outBuffer = Buffer(), errBuffer = Buffer()
-        let group = DispatchGroup()
-        for (pipe, buffer) in [(out, outBuffer), (err, errBuffer)] {
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                buffer.data = pipe.fileHandleForReading.readDataToEndOfFile()
-                group.leave()
-            }
-        }
+        let outBuffer = TernPipe.Collector(out), errBuffer = TernPipe.Collector(err)
         process.terminationHandler = { process in
             let status = process.terminationStatus
-            group.notify(queue: .main) {
+            // What the CLI wrote is in the pipes by now; don't wait for end-of-file, which a
+            // program it started could hold off.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 MainActor.assumeIsolated {
-                    completion(status, String(decoding: outBuffer.data, as: UTF8.self), String(decoding: errBuffer.data, as: UTF8.self))
+                    completion(status, outBuffer.finish(), errBuffer.finish())
                 }
             }
         }
         do {
             try process.run()
         } catch {
-            try? out.fileHandleForWriting.close()
-            try? err.fileHandleForWriting.close()
+            _ = outBuffer.finish()
+            _ = errBuffer.finish()
             completion(127, "", "couldn't run \(TernPaths.cliPath): \(error.localizedDescription)")
             return nil
         }
         return process
+    }
+}
+
+/// Pipes for programs Tern runs. Their ends are close-on-exec, so terminals started meanwhile
+/// (Ghostty forks shells without closing other descriptors) never keep them open.
+enum TernPipe {
+    static func make() -> Pipe {
+        let pipe = Pipe()
+        for fd in [pipe.fileHandleForReading.fileDescriptor, pipe.fileHandleForWriting.fileDescriptor] {
+            _ = fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC)
+        }
+        return pipe
+    }
+
+    /// Collects a pipe's output as it arrives.
+    final class Collector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+        private let handle: FileHandle
+
+        init(_ pipe: Pipe) {
+            handle = pipe.fileHandleForReading
+            handle.readabilityHandler = { [weak self] handle in
+                guard let self else { return }
+                self.lock.lock()
+                defer { self.lock.unlock() }
+                let chunk = handle.availableData
+                if chunk.isEmpty { handle.readabilityHandler = nil }
+                self.data.append(chunk)
+            }
+        }
+
+        /// Everything read so far. (Called a moment after the program exited: what it wrote has
+        /// been read by then. Never waits for end-of-file.)
+        func finish() -> String {
+            handle.readabilityHandler = nil
+            lock.lock()
+            defer { lock.unlock() }
+            return String(decoding: data, as: UTF8.self)
+        }
     }
 }
 
@@ -953,7 +984,7 @@ final class TernFileIndex {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", dir] + args
-        let pipe = Pipe()
+        let pipe = TernPipe.make()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice

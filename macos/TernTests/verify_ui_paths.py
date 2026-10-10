@@ -82,6 +82,12 @@ def main():
             ("left", ("ctrl", "cmd")): "pane to previous tab", ("right", ("ctrl", "cmd")): "pane to next tab",
             ("n", ("ctrl", "shift", "cmd")): "tab to new window", ("p", ("ctrl", "cmd")): "pin",
             ("r", ("ctrl", "cmd")): "rename tab", ("r", ("ctrl", "shift", "cmd")): "rename pane",
+            ("[", ("shift", "cmd")): "back to the previous tab", ("]", ("shift", "cmd")): "next tab",
+            ("\t", ("ctrl",)): "cycle to next tab", ("\t", ("ctrl", "shift")): "cycle to previous tab",
+            ("1", ("cmd",)): "tab 1", ("9", ("cmd",)): "last tab",
+            ("left", ("ctrl", "shift")): "move tab up", ("right", ("ctrl", "shift")): "move tab down",
+            ("p", ("cmd",)): "command palette", ("p", ("shift", "cmd")): "pane palette", (",", ("cmd",)): "settings",
+            ("j", ("ctrl", "cmd")): "next session needing you", ("k", ("ctrl", "cmd")): "jump back",
         }
         titles = {}
         for (key, mods), what in wanted.items():

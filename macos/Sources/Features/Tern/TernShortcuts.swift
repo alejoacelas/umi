@@ -164,6 +164,10 @@ enum TernShortcuts {
             menuItems[item.id] = menuItem
         }
         applyShortcuts()
+        // Ghostty's own palette item is Tern's Command Palette… now.
+        for existing in allItems(mainMenu) where existing.action == #selector(BaseTerminalController.toggleCommandPalette(_:)) {
+            existing.isHidden = true
+        }
         // Every session, shown in a pane or not, with its status (AP-3, AP-4).
         if let windowMenu = topMenu("Window", in: mainMenu) {
             TernAgentMenu.shared.install(in: windowMenu)
@@ -250,8 +254,8 @@ enum TernShortcuts {
     /// key press goes through here before any view sees it.
     static func dispatch(_ event: NSEvent) -> Bool {
         guard !suspended, let pressed = TernShortcut(event: event) else { return false }
-        // Only shortcuts with ⌘ or ⌃: plain keys and ⌥-keys are typing.
-        guard !pressed.modifiers.isDisjoint(with: [.command, .control]) else { return false }
+        // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing.
+        guard !pressed.modifiers.isDisjoint(with: [.command, .control]) || pressed.isFunctionKey else { return false }
         // A modal panel or alert keeps its keys.
         if NSApp.modalWindow != nil { return false }
         if let sheetParent = NSApp.keyWindow, sheetParent.attachedSheet != nil { return false }

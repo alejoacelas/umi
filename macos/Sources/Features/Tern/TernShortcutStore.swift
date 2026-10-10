@@ -171,6 +171,11 @@ struct TernShortcut: Hashable {
 
     var display: String { symbols.joined() }
 
+    /// F1–F35.
+    var isFunctionKey: Bool {
+        key.unicodeScalars.first.map { (NSF1FunctionKey...NSF35FunctionKey).contains(Int($0.value)) } ?? false
+    }
+
     /// What a menu item's key equivalent is set to.
     var keyEquivalent: String { key }
 }
@@ -215,7 +220,7 @@ enum TernGhosttyBindings {
         let process = Process()
         process.executableURL = Bundle.main.executableURL
         process.arguments = ["+list-keybinds", "--default", "--plain"]
-        let pipe = Pipe()
+        let pipe = TernPipe.make()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
@@ -453,7 +458,7 @@ final class TernShortcutStore {
             switch self {
             case .unknown(let id): return "no shortcut \"\(id)\" (see `tern shortcuts`)"
             case .badShortcut(let spec): return "can't read the shortcut \"\(spec)\" (write it like cmd+shift+] or ctrl+cmd+left)"
-            case .needsModifier: return "a shortcut needs ⌘ or ⌃ (or is a function key)"
+            case .needsModifier: return "a menu shortcut needs ⌘ or ⌃ (or is a function key)"
             }
         }
     }
@@ -462,9 +467,9 @@ final class TernShortcutStore {
     /// shortcuts the change took the key from.
     @discardableResult
     func set(_ id: String, to shortcut: TernShortcut?) throws -> [String] {
-        if let shortcut {
-            let isFunctionKey = shortcut.key.unicodeScalars.first.map { (NSF1FunctionKey...NSF35FunctionKey).contains(Int($0.value)) } ?? false
-            guard isFunctionKey || !shortcut.modifiers.isDisjoint(with: [.command, .control]) else { throw StoreError.needsModifier }
+        // Menu shortcuts need ⌘ or ⌃ (anything else is typing); terminal bindings can be any key.
+        if let shortcut, !id.hasPrefix("ghostty:") {
+            guard shortcut.isFunctionKey || !shortcut.modifiers.isDisjoint(with: [.command, .control]) else { throw StoreError.needsModifier }
         }
         var notes: [String] = []
         if id.hasPrefix("ghostty:") {
