@@ -470,3 +470,69 @@ def test_many_windows_opened_while_the_screen_is_locked_leave_the_app_responsive
     sid = inst.start_agent("claude", f"ECHO still answering {nonce()}")
     code, out = inst.wait(sid, timeout=30)
     assert out["status"] == "DONE", out
+
+
+# ---- round 5 -------------------------------------------------------------------------------------
+
+def live_claude(inst, win, *extra):
+    sid = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), *extra, "--split", "right",
+                    "--pane", win["pane"], "ECHO hi")["session"]["id"]
+    return sid, wait_live(inst, sid)
+
+
+@pytest.mark.req("AG-11", "AG-10")
+def test_resume_of_a_live_session_starts_no_second_process(inst, win):
+    """Round 5, P1: `agent resume` launched the headless process directly, beside a Claude interface that
+    owned the conversation."""
+    sid, pane = live_claude(inst, win)
+    inst.cli("agent", "resume", sid)
+    time.sleep(3)
+    assert inst.info(sid)["location"] == "live" and not inst.violations()
+    n = nonce()
+    inst.cli("agent", "resume", sid, f"ECHO resumed {n}")
+    wait_until(lambda: [r for r in inst.receipts() if n in (r.get("text") or "")], 30, message="the message delivered")
+    wait_live(inst, sid)
+    assert len([r for r in inst.receipts() if n in (r.get("text") or "")]) == 1
+    assert not inst.violations()
+
+
+@pytest.mark.req("AG-15")
+def test_removing_a_working_live_session_needs_force(inst, win):
+    """Round 5, P2: `agent rm` checked only Tern's headless process, so a Claude interface at work was
+    removed (and ended) without --force."""
+    sid, pane = live_claude(inst, win)
+    inst.type_line(pane, f"SLEEP 20 {nonce()}")
+    wait_until(lambda: inst.info(sid)["status"] == "working", 10, message="the typed turn runs")
+    refused = inst.cli("agent", "rm", sid, check=False)
+    assert refused.returncode != 0 and "--force" in refused.stderr, refused.stderr
+    assert inst.info(sid)["status"] == "working"
+    inst.cli("agent", "rm", sid, "--force")
+
+
+@pytest.mark.req("AG-15", "AG-16")
+def test_a_live_sessions_name_is_not_taken_by_another(inst, win):
+    """Round 5, P2: a name was reserved only for sessions starting or working, so an idle Claude interface
+    lost its name to a new session, and commands by name reached the newcomer."""
+    name = f"keeper-{nonce()}"
+    sid, pane = live_claude(inst, win, "--name", name)
+    clash = inst.cli("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--name", name, "ECHO x",
+                     check=False)
+    assert clash.returncode != 0 and name in clash.stderr, clash.stderr
+    assert inst.info(name)["id"] == sid
+
+
+@pytest.mark.req("AG-6", "AG-5")
+def test_a_take_over_that_fails_leaves_the_read_only_view(inst, win):
+    """Round 5, P2: when the session couldn't go live (its Codex wouldn't start), the pane kept the mark
+    Take Over had set and showed a bare shell instead of the session with its Take Over button."""
+    sid = inst.json("agent", "start", "codex", "--cwd", inst.work, *fake_args(inst), "ECHO first", "--",
+                    "--listen", "stdio://")["session"]["id"]
+    wait_until(lambda: inst.info(sid)["status"] == "error", 30, message="Codex fails to start")
+    pane = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])["pane"]
+    wait_until(lambda: inst.session_view(pane).get("showing") == "agent", 10, message="the read-only view")
+    inst.json("agent", "open", sid, "--live")
+    wait_until(lambda: "couldn't start" in inst.screen(pane).lower() or "error" in inst.screen(pane).lower(), 70,
+               message="the attach command reports the failure")
+    view = wait_until(lambda: (lambda v: v if v.get("showing") == "agent" and "Take Over" in v.get("buttons", []) else None)(
+        inst.session_view(pane)), 10, message="the read-only view with its Take Over button again")
+    assert view["session"] == sid

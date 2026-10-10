@@ -258,3 +258,8 @@ deleted with Backspace, Ctrl-C on an idle prompt, reopening after a resize; and
 closed, then a session must answer), found because the whole suite stalled two thirds of the way
 through with the screen locked.
 
+Round 5 regression tests: resume of a live session, removing a working live session, a live
+session's name, a Take Over that fails. Not covered by a test: a paste into a live interface (a test
+would have to replace the user's clipboard) and stale file-search results arriving after a mode
+change (a race of a few milliseconds).
+
