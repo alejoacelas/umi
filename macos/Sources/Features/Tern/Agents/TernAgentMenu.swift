@@ -22,16 +22,6 @@ final class TernAgentMenu: NSObject, NSMenuDelegate {
     /// Add the submenu to the Window menu (after Tern's own items).
     func install(in windowMenu: NSMenu) {
         guard menu == nil else { return }
-        let takeOver = NSMenuItem(title: "Take Over Session", action: #selector(takeOverFocused(_:)), keyEquivalent: "o")
-        takeOver.keyEquivalentModifierMask = [.command, .control]
-        takeOver.target = self
-        takeOver.toolTip = "Run the agent's own interface in this pane, on the session's conversation"
-        windowMenu.addItem(takeOver)
-        let remove = NSMenuItem(title: "Remove Session from Pane", action: #selector(removeFocused(_:)), keyEquivalent: "w")
-        remove.keyEquivalentModifierMask = [.command, .control]
-        remove.target = self
-        remove.toolTip = "Take the session out of this pane; it keeps running until it finishes"
-        windowMenu.addItem(remove)
         let item = NSMenuItem(title: Self.title, action: nil, keyEquivalent: "")
         if #available(macOS 26.0, *) {
             item.image = NSImage(systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: nil)
@@ -122,48 +112,6 @@ final class TernAgentMenu: NSObject, NSMenuDelegate {
                                   action: nil, keyEquivalent: "")
             more.isEnabled = false
             menu.addItem(more)
-        }
-    }
-
-    /// The focused pane of the key window (or of Tern's current window), wherever focus is.
-    private func focusedPane() -> Ghostty.SurfaceView? {
-        let controller = (NSApp.keyWindow?.windowController as? TerminalController) ?? TernTopology.currentWindow
-        return controller?.focusedSurface
-    }
-
-    private func sessionInFocusedPane() -> (Ghostty.SurfaceView, String)? {
-        guard let pane = focusedPane() else { return nil }
-        if let session = TernAgentUI.shared.session(forPane: pane.id) ?? TernAgentUI.sessionLive(in: pane.id) {
-            return (pane, session)
-        }
-        return nil
-    }
-
-    @objc private func takeOverFocused(_ sender: NSMenuItem) {
-        guard let (pane, session) = sessionInFocusedPane(), !TernAgentUI.shared.livePanes.contains(pane.id) else {
-            NSSound.beep()
-            return
-        }
-        TernAgentUI.shared.takeOver(pane, session: session)
-    }
-
-    @objc private func removeFocused(_ sender: NSMenuItem) {
-        guard let (pane, _) = sessionInFocusedPane() else {
-            NSSound.beep()
-            return
-        }
-        TernAgentUI.shared.removeFromPane(pane)
-    }
-
-    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        switch item.action {
-        case #selector(takeOverFocused(_:)):
-            guard let (pane, _) = sessionInFocusedPane() else { return false }
-            return !TernAgentUI.shared.livePanes.contains(pane.id)
-        case #selector(removeFocused(_:)):
-            return sessionInFocusedPane() != nil
-        default:
-            return true
         }
     }
 

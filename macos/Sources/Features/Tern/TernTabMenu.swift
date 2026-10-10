@@ -137,19 +137,14 @@ enum TernTabMenu {
         if let window { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
     }
 
-    /// Moving a tab up or down stays within its group (pinned or not).
-    /// (Overlaps UI-A's Move Tab Up/Down on ⌃⇧←/→; both use `TerminalController.moveTab`.)
+    /// Moving a tab up or down stays within its group (pinned or not): the same as ⌃⇧←/→
+    /// (TernNavigation), with its undo step, event and sidebar-order hold.
     static func canMove(_ tab: TernTab, by delta: Int, in controller: TerminalController) -> Bool {
-        guard let index = controller.index(of: tab) else { return false }
-        let target = index + delta
-        return controller.tabs.indices.contains(target) && controller.tabs[target].pinned == tab.pinned
+        TernNavigation.canMoveTab(tab, by: delta, in: controller)
     }
 
     static func move(_ tab: TernTab, by delta: Int, in controller: TerminalController) {
-        guard canMove(tab, by: delta, in: controller), let index = controller.index(of: tab) else { return }
-        TernLayout.undoable("Move Tab", windows: [controller]) { controller.moveTab(tab, to: index + delta) }
-        TernEvents.shared.emit("tab.moved", ["tab": tab.idString, "from_window": controller.ternIDString,
-                                             "window": controller.ternIDString])
+        TernNavigation.moveTab(tab, by: delta, in: controller)
     }
 
     // MARK: Finding items (debug.sidebar.menu)

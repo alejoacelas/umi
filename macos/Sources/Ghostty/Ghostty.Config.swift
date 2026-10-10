@@ -84,6 +84,11 @@ extension Ghostty {
 
             ghostty_config_load_recursive_files(cfg)
 
+            // Tern: shortcuts changed in Tern's shortcuts editor, after the user's own files.
+            if path == nil, let keybindings = TernTheme.keybindingsConfigPath() {
+                ghostty_config_load_file(cfg, keybindings)
+            }
+
             // TODO: we'd probably do some config loading here... for now we'd
             // have to do this synchronously. When we support config updating we can do
             // this async and update later.

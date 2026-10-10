@@ -229,23 +229,6 @@ final class TernAgentUI: ObservableObject {
         }
         TernTopology.windowBecameCurrent(location.window)
     }
-
-    // MARK: ⌃⌘J and the command palette
-
-    /// The session that needs the user (or, failing that, the one that most recently
-    /// finished), shown and focused.
-    func jumpToAgentNeedingInput() {
-        let target: String? = TernAgents.queue.sync {
-            let sessions = TernAgents.shared.sessions
-            if let waiting = sessions.last(where: { $0.status == "needs_input" }) { return waiting.record.id }
-            return nil
-        }
-        guard let target else {
-            NSSound.beep()
-            return
-        }
-        _ = try? Self.open(target, placement: .init(kind: .tab, focus: true), caller: TernCaller([:]))
-    }
 }
 
 /// A session as one view sees it.

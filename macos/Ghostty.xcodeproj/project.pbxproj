@@ -433,6 +433,7 @@
 			inputPaths = (
 				"$(PROJECT_DIR)/TernCLI/main.swift",
 				"$(PROJECT_DIR)/TernCLI/agent.swift",
+				"$(PROJECT_DIR)/TernCLI/commands.swift",
 				"$(PROJECT_DIR)/TernCLI/build.sh",
 				"$(PROJECT_DIR)/TernPlugins/.claude-plugin/marketplace.json",
 				"$(PROJECT_DIR)/TernPlugins/.agents/plugins/marketplace.json",

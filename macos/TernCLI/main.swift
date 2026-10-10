@@ -601,71 +601,8 @@ func printTree(_ result: Any) {
 
 // MARK: - Commands
 
-let help = """
-\(cliName): control \(productName) from the command line.
-
-Layout
-  ls                                     windows, tabs and panes
-  window new [--cwd D] [--cmd C] [--name N] [--worktree W [--base REF]] [--no-focus]
-  window focus|close [WINDOW]
-  tab new [NAME] [--window W] [--pane P] [--cwd D] [--cmd C] [--name N] [--color C]
-          [--index I] [--worktree W [--base REF]] [--no-focus]
-  tab focus|close|equalize [TAB]
-  tab rename [TAB] NAME                  ("" clears the name)
-  tab color [TAB] COLOR                  blue purple pink red orange yellow green teal graphite none
-  tab pin|unpin [TAB]
-  tab move [TAB] (--window W [--index I] | --index I | --new-window) [--no-focus]
-  split [right|down|left|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R]
-        [--worktree W] [--no-focus]
-  pane focus|close|info|zoom [PANE]
-  pane rename [PANE] NAME
-  pane move [PANE] (--to PANE [--dir D] | --tab T [--dir D] | --window W [--dir D]
-                    | --new-tab [--window W] | --new-window) [--no-focus]
-  pane swap [PANE] TARGET
-  pane resize [PANE] up|down|left|right [AMOUNT]
-  worktree ls
-
-Input and output
-  send [--pane P] [--enter|-e] TEXT…     type text (no TEXT: read piped stdin; - reads stdin)
-  keys [--pane P] KEY…                   enter esc tab backspace up down left right ctrl+c …
-  read [--pane P] [--scrollback] [--lines N]
-  wait [--pane P] (--pattern RE | --idle SECS) [--timeout T]    exits 124 on timeout
-  events [--filter PREFIX]… [--pane P]   JSON lines (pane.created, tab.renamed, …)
-  notify [--pane P] TITLE [BODY]
-  sidebar [on|off|toggle|status|tabs|files] [--window W]
-  sidebar width [N] [--window W]         the window's sidebar width (points); N sets it
-  reopen [--list]                        reopen the last closed pane, tab or window (for 60 s)
-  screenshot [--window W] OUT.png
-
-Editor
-  edit FILE… [--source|--preview] [--tab T | --pane P]
-  editor ls [--tab T | --pane P]
-  editor close [FILE] [--force]
-  editor mode [preview|source]
-  editor default [--dry-run]             make \(productName) the default app for Markdown
-
-Agents (Claude Code and Codex sessions; `\(cliName) agent --help` explains them)
-  agent start claude|codex "TASK" …      start a session (headless, in the background); prints its id
-  agent wait SESSION                     wait until it finishes; prints its reply
-  agent send SESSION "TEXT"              steer it, or give it its next task; prints the message id
-  agent read | ls | info | open | hide | interrupt | stop | watch | report | rm
-  claude ["TASK"] / codex ["TASK"]       a session for you in a new tab: it does TASK headless, then
-                                         opens live there (`agent start … --tab --focus`)
-
-Other
-  update                                 download the newest version (it installs when \(productName) quits)
-  update --check | --status              look for a newer version | say what's known, without looking
-  update --now [--force]                 download and install now, then relaunch (--force: even while
-                                         agent turns run; they continue after the relaunch)
-  update --later | --skip                answer \(productName)'s update question: ask again tomorrow |
-                                         don't ask about this version again
-  doctor                                 check this machine for what \(productName) needs
-  help
-
-Selectors: an id or unique id prefix, a name, `.` (the focused one) or #N (tabs, windows).
-Inside \(productName)'s terminals, commands default to the calling pane, its tab and window.
-Add --json (before any --) for JSON output.
-"""
+/// The help, printed from the command table (`commands.swift`), as `help --json` is.
+var help: String { renderHelp() }
 
 func layoutCommand(_ argv: [String]) {
     guard let command = argv.first else {
@@ -795,6 +732,22 @@ func layoutCommand(_ argv: [String]) {
         let result = callDict("screenshot", params)
         if jsonOutput { printJSON(result) } else { print(result["path"] as? String ?? absolutePath(out)) }
 
+    case "jump":
+        let args = parse(rest, ArgSpec())
+        let back = args.positional.first == "back"
+        guard args.positional.count <= 1, back || args.positional.first ?? "next" == "next" else {
+            fail("jump: use `jump` (the next session that needs you) or `jump back`")
+        }
+        let result = callDict(back ? "jump.back" : "jump.next")
+        if jsonOutput {
+            printJSON(result)
+        } else {
+            print(result["pane"] as? String ?? result["session"] as? String ?? "")
+        }
+
+    case "shortcuts", "shortcut":
+        shortcutsCommand(rest)
+
     case "worktree", "worktrees":
         let args = parse(rest, ArgSpec())
         guard args.positional.first ?? "ls" == "ls" || args.positional.first == "list" else {
@@ -811,6 +764,47 @@ func layoutCommand(_ argv: [String]) {
 
     default:
         fail("unknown command `\(command)` (see `\(cliName) help`)")
+    }
+}
+
+/// `shortcuts`: list, change, clear or reset keyboard shortcuts (Settings, ⌘,).
+func shortcutsCommand(_ argv: [String]) {
+    let args = parse(argv, ArgSpec())
+    let words = args.positional
+    switch words.first ?? "ls" {
+    case "ls", "list":
+        let result = callDict("shortcuts.list")
+        if jsonOutput {
+            printJSON(result)
+            return
+        }
+        var kind = ""
+        for entry in result["shortcuts"] as? [[String: Any]] ?? [] {
+            let entryKind = entry["kind"] as? String ?? ""
+            if entryKind != kind {
+                kind = entryKind
+                print(bold(kind == "tern" ? productName : "Terminal (Ghostty keybindings)"))
+            }
+            let display = (entry["display"] as? [String] ?? []).joined(separator: " ")
+            let keys = (entry["keys"] as? [String] ?? []).joined(separator: ", ")
+            let changed = entry["changed"] as? Bool ?? false
+            let id = (entry["id"] as? String ?? "").padding(toLength: 34, withPad: " ", startingAt: 0)
+            print("  \(id) \((display.isEmpty ? (keys.isEmpty ? "-" : keys) : display).padding(toLength: 12, withPad: " ", startingAt: 0)) \(dim(entry["title"] as? String ?? ""))\(changed ? "  (changed)" : "")")
+        }
+    case "set":
+        guard words.count == 3 else { fail("shortcuts set ID KEYS (KEYS like cmd+shift+] or ctrl+cmd+left)") }
+        let result = callDict("shortcuts.set", ["id": words[1], "keys": words[2]])
+        if jsonOutput { printJSON(result) } else { for note in result["notes"] as? [String] ?? [] { print(note) } }
+    case "clear":
+        guard words.count == 2 else { fail("shortcuts clear ID") }
+        printOK(call("shortcuts.set", ["id": words[1], "keys": ""]))
+    case "reset":
+        guard words.count <= 2 else { fail("shortcuts reset [ID]") }
+        var params: [String: Any] = [:]
+        if words.count == 2 { params["id"] = words[1] }
+        printOK(call("shortcuts.reset", params))
+    default:
+        fail("shortcuts: use ls, set ID KEYS, clear ID or reset [ID]")
     }
 }
 
@@ -833,7 +827,7 @@ func windowCommand(_ argv: [String]) {
 }
 
 func tabCommand(_ argv: [String]) {
-    guard let sub = argv.first else { fail("tab: use new, focus, close, rename, color, pin, unpin, move or equalize") }
+    guard let sub = argv.first else { fail("tab: use new, focus, back, next, prev, close, rename, color, pin, unpin, move or equalize") }
     let rest = Array(argv.dropFirst())
     switch sub {
     case "new":
@@ -856,6 +850,13 @@ func tabCommand(_ argv: [String]) {
         if let tab = args.positional.first { params["tab"] = tab }
         let method = sub == "select" ? "focus" : sub
         printOK(call("tab.\(method)", params))
+    case "back", "next", "prev", "previous":
+        let args = parse(rest, ArgSpec(valued: ["--window"], aliases: ["-w": "--window"]))
+        guard args.positional.isEmpty else { fail("tab \(sub) takes no tab: it goes from the selected one") }
+        var params: [String: Any] = [:]
+        if let window = args.value("--window") { params["window"] = window }
+        let result = callDict("tab.\(sub == "previous" ? "prev" : sub)", params)
+        if jsonOutput { printJSON(result) } else { print(result["tab"] as? String ?? "") }
     case "rename", "name":
         let args = parse(rest, ArgSpec())
         let words = args.positional + (args.rest ?? [])
@@ -880,7 +881,7 @@ func tabCommand(_ argv: [String]) {
         }
         printOK(call("tab.color", params))
     case "move":
-        let args = parse(rest, ArgSpec(valued: ["--window", "--index"], boolean: ["--new-window", "--no-focus"],
+        let args = parse(rest, ArgSpec(valued: ["--window", "--index"], boolean: ["--new-window", "--no-focus", "--up", "--down"],
                                        aliases: ["-w": "--window"]))
         var params: [String: Any] = [:]
         if let tab = args.positional.first { params["tab"] = tab }
@@ -891,8 +892,14 @@ func tabCommand(_ argv: [String]) {
         }
         if args.has("--new-window") { params["new_window"] = true }
         if args.has("--no-focus") { params["focus"] = false }
-        guard params["window"] != nil || params["index"] != nil || params["new_window"] != nil else {
-            fail("tab move: give --window W, --index I or --new-window")
+        if args.has("--up") || args.has("--down") {
+            guard params["window"] == nil, params["index"] == nil, params["new_window"] == nil, !(args.has("--up") && args.has("--down")) else {
+                fail("tab move: --up and --down go alone (not with --window, --index or --new-window)")
+            }
+            params["by"] = args.has("--up") ? -1 : 1
+        }
+        guard params["window"] != nil || params["index"] != nil || params["new_window"] != nil || params["by"] != nil else {
+            fail("tab move: give --window W, --index I, --up, --down or --new-window")
         }
         printOK(call("tab.move", params))
     default:
@@ -1375,7 +1382,7 @@ func main() {
     let rest = Array(argv.dropFirst())
     switch command {
     case "help", "-h", "--help":
-        print(help)
+        if jsonOutput || rest.contains("--json") { printJSON(helpJSON()) } else { print(help) }
     case "version", "--version":
         let version = ownAppBundle().flatMap { Bundle(path: $0)?.infoDictionary?["CFBundleShortVersionString"] as? String }
         print("\(cliName) \(version ?? "dev")")

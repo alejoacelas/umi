@@ -73,6 +73,9 @@ class TerminalController: BaseTerminalController {
     /// The notification cancellable for focused surface property changes.
     private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
 
+    /// Tern's palette over this window: commands, panes and files (L-14, L-15, L-16).
+    let palette = TernPaletteModel()
+
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil,
@@ -192,11 +195,13 @@ class TerminalController: BaseTerminalController {
         objectWillChange.send()
 
         if focus, let target, window?.isKeyWindow ?? false {
-            DispatchQueue.main.async { Ghostty.moveFocus(to: target) }
+            TernLayout.moveFocus(to: target, in: self)
         }
         TernLooking.focusChanged(in: self)
         TernEvents.shared.emit("tab.selected", ["tab": tab.idString, "window": ternIDString])
         TernState.shared.layoutDidChange()
+        if TernTopology.currentWindow === self { TernTabHistory.visited(tab) }
+        TernTabOrder.selectionChanged(in: self)
     }
 
     /// Insert a tab, keeping pinned tabs first. `index` is a position among all tabs and
@@ -260,6 +265,16 @@ class TerminalController: BaseTerminalController {
         tab.pinned = pinned
         let pinnedCount = tabs.filter(\.pinned).count
         tabs.insert(tab, at: pinnedCount)
+        TernState.shared.layoutDidChange()
+        TernTabOrder.pinsChanged(in: self)
+    }
+
+    /// Put the tabs in a new order (the sidebar order, S-7): a permutation of `tabs` that
+    /// keeps pinned tabs first. Not an undo step: it follows from selection and agent stops.
+    func reorderTabs(_ order: [TernTab]) {
+        guard order.count == tabs.count, tabs.allSatisfy({ tab in order.contains { $0 === tab } }) else { return }
+        withAnimation(.easeInOut(duration: 0.18)) { tabs = Self.ordered(order) }
+        TernEvents.shared.emit("tab.reordered", ["window": ternIDString, "tabs": tabs.map(\.idString)])
         TernState.shared.layoutDidChange()
     }
 
@@ -362,6 +377,18 @@ class TerminalController: BaseTerminalController {
 
     /// Undo of a tree change made while another tab was shown applies to that tab.
     override func undoTreeOwner() -> AnyObject? { selectedTabStorage }
+
+    /// After a close, focus returns to the pane of this tab used most recently (L-18).
+    override func previouslyFocusedSurface(excluding node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
+        let closing = Set(node.leaves().map(ObjectIdentifier.init))
+        let remaining = (surfaceTree.root?.leaves() ?? []).filter { !closing.contains(ObjectIdentifier($0)) }
+        return TernFocusHistory.mostRecent(among: remaining)
+    }
+
+    /// Ghostty's "toggle command palette" opens Tern's palette (L-14).
+    @IBAction override func toggleCommandPalette(_ sender: Any?) {
+        palette.toggle(.commands, in: self)
+    }
 
     override func restoreUndoTree(_ tree: SplitTree<Ghostty.SurfaceView>, owner: AnyObject?) {
         guard let tab = owner as? TernTab, tab !== selectedTabStorage else {
@@ -784,7 +811,8 @@ class TerminalController: BaseTerminalController {
         let lostFocus = tab === selectedTabStorage && focusedSurface.map { !newTree.contains($0) } ?? false
         setTree(newTree, for: tab)
         // The focused pane went away (an undone split): focus moves to one that's left.
-        if lostFocus, let next = tab.focusedSurface.flatMap({ newTree.contains($0) ? $0 : nil }) ?? newTree.root?.leaves().first {
+        if lostFocus, let next = tab.focusedSurface.flatMap({ newTree.contains($0) ? $0 : nil })
+            ?? TernFocusHistory.mostRecent(among: newTree.root?.leaves() ?? []) ?? newTree.root?.leaves().first {
             DispatchQueue.main.async { Ghostty.moveFocus(to: next) }
         }
         guard let undoManager else { return }
@@ -1333,6 +1361,7 @@ class TerminalController: BaseTerminalController {
             TernState.shared.layoutDidChange()
         }
         if to != nil { TernLooking.focusChanged(in: self) }
+        if let to, surfaceTree.contains(to) { TernFocusHistory.focused(to) }
 
         surfaceAppearanceCancellables.removeAll()
         guard let focusedSurface else { return }
@@ -1365,8 +1394,10 @@ class TerminalController: BaseTerminalController {
         guard target == self.focusedSurface, surfaceTree.contains(target) else { return }
         guard let action = notification.userInfo?[Notification.Name.GhosttyMoveTabKey] as? Ghostty.Action.MoveTab else { return }
         guard action.amount != 0, let current = index(of: selectedTab) else { return }
-        TernLayout.undoable("Move Tab", windows: [self]) {
-            self.moveTab(self.selectedTab, to: current + action.amount)
+        TernTabOrder.hold {
+            TernLayout.undoable("Move Tab", windows: [self]) {
+                self.moveTab(self.selectedTab, to: current + action.amount)
+            }
         }
         TernEvents.shared.emit("tab.moved", ["tab": selectedTab.idString, "window": ternIDString])
     }
@@ -1377,24 +1408,20 @@ class TerminalController: BaseTerminalController {
         guard let tabEnumAny = notification.userInfo?[Ghostty.Notification.GotoTabKey] else { return }
         guard let tabEnum = tabEnumAny as? ghostty_action_goto_tab_e else { return }
         let tabIndex: Int32 = tabEnum.rawValue
-        guard let selectedIndex = index(of: selectedTab) else { return }
 
-        let finalIndex: Int
+        // A Ghostty keybinding the user kept (Tern's defaults unbind these keys in favor of
+        // its menu items): the same navigation as the menu items.
         if tabIndex <= 0 {
             if tabIndex == GHOSTTY_GOTO_TAB_PREVIOUS.rawValue {
-                finalIndex = selectedIndex == 0 ? tabs.count - 1 : selectedIndex - 1
+                TernNavigation.selectAdjacentTab(-1, in: self)
             } else if tabIndex == GHOSTTY_GOTO_TAB_NEXT.rawValue {
-                finalIndex = selectedIndex == tabs.count - 1 ? 0 : selectedIndex + 1
+                TernNavigation.selectAdjacentTab(1, in: self)
             } else if tabIndex == GHOSTTY_GOTO_TAB_LAST.rawValue {
-                finalIndex = tabs.count - 1
-            } else {
-                return
+                TernNavigation.selectLastTab(in: self)
             }
         } else {
-            finalIndex = min(Int(tabIndex - 1), tabs.count - 1)
+            TernNavigation.selectTab(number: Int(tabIndex), in: self)
         }
-        guard finalIndex >= 0 else { return }
-        selectTab(tabs[finalIndex])
     }
 
     @objc private func onCloseTab(notification: SwiftUI.Notification) {

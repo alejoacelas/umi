@@ -526,6 +526,9 @@ class BaseTerminalController: NSWindowController,
     private func findNextFocusTargetAfterClosing(node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
         guard let root = surfaceTree.root else { return nil }
 
+        // Tern: the pane the user focused before, when there is one (Warp's pane history).
+        if let previous = previouslyFocusedSurface(excluding: node) { return previous }
+
         // If we're the leftmost, then we move to the next surface after closing.
         // Otherwise, we move to the previous.
         if root.leftmostLeaf() == node.leftmostLeaf() {
@@ -533,6 +536,12 @@ class BaseTerminalController: NSWindowController,
         } else {
             return surfaceTree.focusTarget(for: .previous, from: node)
         }
+    }
+
+    /// Tern: the pane to focus after `node` closes, from the panes focused before it. Nil
+    /// falls back to tree order.
+    func previouslyFocusedSurface(excluding node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
+        nil
     }
 
     /// Remove a node from the surface tree and move focus appropriately.

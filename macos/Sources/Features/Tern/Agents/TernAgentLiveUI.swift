@@ -138,6 +138,32 @@ extension TernAgentUI {
         }
     }
 
+    // MARK: The focused pane's session (Window > Take Over Session, Remove Session from Pane)
+
+    /// The focused pane of the key window (or of Tern's current window), wherever keyboard focus
+    /// is, when it shows a session. `live`: only a live one (true), only a read-only one (false).
+    static func focusedSessionPane(live: Bool?) -> (Ghostty.SurfaceView, String)? {
+        let controller = (NSApp.keyWindow?.windowController as? TerminalController) ?? TernTopology.currentWindow
+        guard let pane = controller?.focusedSurface,
+              let session = shared.session(forPane: pane.id) ?? sessionLive(in: pane.id) else { return nil }
+        if let live, shared.livePanes.contains(pane.id) != live { return nil }
+        return (pane, session)
+    }
+
+    @discardableResult
+    static func takeOverFocused() -> Bool {
+        guard let (pane, session) = focusedSessionPane(live: false) else { return false }
+        shared.takeOver(pane, session: session)
+        return true
+    }
+
+    @discardableResult
+    static func removeFocusedFromPane() -> Bool {
+        guard let (pane, _) = focusedSessionPane(live: nil) else { return false }
+        shared.removeFromPane(pane)
+        return true
+    }
+
     // MARK: Removing a session from its pane (AG-8)
 
     /// The shortcut: the session in this pane keeps running out of sight.

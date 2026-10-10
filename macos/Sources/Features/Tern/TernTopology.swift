@@ -14,6 +14,7 @@ enum TernTopology {
     static func windowBecameCurrent(_ controller: TerminalController) {
         guard current !== controller else { return }
         current = controller
+        if !controller.tabs.isEmpty { TernTabHistory.visited(controller.selectedTab) }
         TernState.shared.layoutDidChange()
     }
 

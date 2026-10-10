@@ -159,6 +159,9 @@ final class TernDocument: ObservableObject, Identifiable {
     @Published var error: String?
     /// Bumped when the preview should re-render (e.g. reloaded from disk).
     @Published private(set) var renderRevision = 0
+    /// A line to show and put the cursor on (1-based), from the quick file search's
+    /// `path:line`. The source view clears it once shown.
+    @Published var revealLine: Int?
 
     private(set) var encoding: String.Encoding
     private var bom: Data
@@ -358,6 +361,7 @@ final class TernEditorGroup: ObservableObject {
         documents.append(doc)
         active = doc
         TernState.shared.layoutDidChange()
+        TernFileIndex.noteOpened(standardized.path)
         return doc
     }
 
@@ -975,6 +979,26 @@ struct TernSourceEditor: NSViewRepresentable {
             textView.selectedRanges = clamped.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : clamped
         }
         if textView.textColor != TernTheme.textNSColor { textView.textColor = TernTheme.textNSColor }
+        if let line = doc.revealLine {
+            DispatchQueue.main.async { doc.revealLine = nil }
+            Self.reveal(line: line, in: textView)
+        }
+    }
+
+    /// Put the cursor at the start of a line and scroll it into view.
+    static func reveal(line: Int, in textView: NSTextView) {
+        let text = textView.string as NSString
+        var location = 0
+        var current = 1
+        while current < line, location < text.length {
+            let range = text.lineRange(for: NSRange(location: location, length: 0))
+            location = NSMaxRange(range)
+            current += 1
+        }
+        let target = NSRange(location: min(location, text.length), length: 0)
+        textView.setSelectedRange(target)
+        textView.scrollRangeToVisible(target)
+        textView.window?.makeFirstResponder(textView)
     }
 
     @MainActor
