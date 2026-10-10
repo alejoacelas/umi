@@ -177,6 +177,8 @@ enum TernShortcuts {
         installMonitor()
         TernTabOrder.start()
         TernGhosttyBindings.warm()
+        // The CLI's commands for the palette, so the first ⌘P has them.
+        TernCLICatalog.shared.load {}
         // Ghostty re-syncs its own menu items' shortcuts when its config reloads; Tern's
         // shortcuts keep their keys.
         NotificationCenter.default.addObserver(forName: .ghosttyConfigDidChange, object: nil, queue: .main) { note in
