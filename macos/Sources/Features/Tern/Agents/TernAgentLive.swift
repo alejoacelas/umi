@@ -144,6 +144,9 @@ extension TernAgentSession {
             notice("Opened in its own interface (live) in a pane.")
             changed()
             completion(.success(spec))
+            // Messages that waited meanwhile: Codex takes them through its server now; for
+            // Claude they wait for its interface to be idle.
+            pump()
         } catch {
             goingLive = false
             changed()
@@ -296,10 +299,11 @@ extension TernAgentSession {
 
     /// Esc or Ctrl-C typed into the live interface while it worked: interrupts fire no hook, so
     /// a turn with no hook for two seconds afterwards is taken as interrupted (Warp does the same).
-    func liveKey(interrupt: Bool) {
+    func liveKey(interrupt: Bool, typing: Bool) {
         lastLiveKey = Date()
         if !interrupt {
-            if liveState != .working { liveDraft = true }
+            // Text typed and not sent (also while a turn runs: it waits in the input box).
+            if typing { liveDraft = true }
             changed()
             return
         }
@@ -417,6 +421,9 @@ extension TernAgentSession {
         guard settled else { return }
         if endLiveWhenSettled, record.live == true {
             endLiveWhenSettled = false
+            // Its parked pane goes away with the interface.
+            record.pane = nil
+            saveRecord()
             endLiveInterface(reason: "hidden")
             return
         }

@@ -1027,7 +1027,7 @@ final class TernAgentSession {
         }
         inFlight.removeAll()
         record.goLiveWhenSettled = nil
-        if exclusiveLive {
+        if record.live == true {
             // Its own interface closes too (AG-15).
             endLiveInterface(reason: "stop")
         }

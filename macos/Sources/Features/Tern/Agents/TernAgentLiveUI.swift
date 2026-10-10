@@ -116,13 +116,17 @@ extension TernAgentUI {
         let interrupt = event.keyCode == 53 /* esc */
             || (event.modifierFlags.contains(.control) && chars.lowercased() == "c")
         let submit = event.keyCode == 36 || event.keyCode == 76   // return, enter
+        // Text going into the input box: not navigation (arrows, page keys) or app shortcuts.
+        let navigation: Set<UInt16> = [123, 124, 125, 126, 115, 116, 119, 121]
+        let typing = !navigation.contains(event.keyCode) && !event.modifierFlags.contains(.command)
+            && !(event.characters ?? "").isEmpty
         TernAgents.queue.async {
             guard let s = TernAgents.shared.session(id: session), s.record.live == true else { return }
             if submit {
                 s.lastLiveKey = Date()
                 return   // UserPromptSubmit says whether something was sent
             }
-            s.liveKey(interrupt: interrupt)
+            s.liveKey(interrupt: interrupt, typing: typing)
         }
     }
 
