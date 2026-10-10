@@ -16,7 +16,9 @@ final class TernAgentUI: ObservableObject {
 
     /// Pane id → session id. Kept for closed panes too, so undoing a close brings the
     /// session's view back with the pane.
-    @Published var attachments: [UUID: String] = [:]
+    @Published var attachments: [UUID: String] = [:] {
+        didSet { Self.publishShownPanes() }
+    }
     /// Agent panes currently showing their terminal instead of the session.
     @Published var showingTerminal: Set<UUID> = []
     /// Panes where the session's own interface runs (or is starting): the view steps aside.
@@ -92,6 +94,23 @@ final class TernAgentUI: ObservableObject {
         showingTerminal.remove(pane)
         TernState.shared.layoutDidChange()
         TernAgentMenu.shared.setNeedsRebuild()
+    }
+
+    /// Session id → the pane showing it, readable from the agent queue (`agent ls`, AG-14).
+    private static let shownLock = NSLock()
+    nonisolated(unsafe) private static var shown: [String: String] = [:]
+
+    nonisolated static func shownPane(of session: String) -> String? {
+        shownLock.lock()
+        defer { shownLock.unlock() }
+        return shown[session]
+    }
+
+    static func publishShownPanes() {
+        let map = panesBySession()
+        shownLock.lock()
+        shown = map
+        shownLock.unlock()
     }
 
     /// Panes in a window (not closed ones) that show a session: session id → pane id.

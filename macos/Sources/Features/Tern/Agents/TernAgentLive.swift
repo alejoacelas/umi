@@ -18,10 +18,11 @@ extension TernAgentSession {
     /// The agent's own interface owns the conversation (Claude Code, or a Codex the user typed).
     var exclusiveLive: Bool { liveState != nil && record.liveAttached != true }
 
-    /// Where the session is, for `agent ls`/`info` (AG-14).
+    /// Where the session is, for `agent ls`/`info` (AG-14): its own interface in a pane, its
+    /// read-only view in a pane, or no pane at all.
     var location: String {
         if record.live == true { return "live" }
-        if record.pane != nil { return "pane" }
+        if TernAgentUI.shownPane(of: record.id) != nil { return "pane" }
         return "background"
     }
 
@@ -343,8 +344,12 @@ extension TernAgentSession {
         saveRecord()
         let pane = record.pane
         let id = record.id
+        // A `claude` the user typed leaves their shell behind; a session Tern opened goes back
+        // to its read-only view.
+        let keepView = record.origin != "typed" || wasReclaiming
+        if !keepView { record.pane = nil; saveRecord() }
         DispatchQueue.main.async {
-            MainActor.assumeIsolated { TernAgentUI.liveEnded(session: id, pane: pane) }
+            MainActor.assumeIsolated { TernAgentUI.liveEnded(session: id, pane: pane, keepView: keepView) }
         }
         changed()
         pump()

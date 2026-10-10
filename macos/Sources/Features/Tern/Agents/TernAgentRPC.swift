@@ -669,7 +669,9 @@ enum TernAgentRPC {
         out["location"] = session.location
         out["title"] = record.title ?? record.name
         out["origin"] = record.origin ?? "started"
-        if let pane = pane ?? record.pane { out["pane"] = pane }
+        if let pane = pane ?? TernAgentUI.shownPane(of: record.id) ?? (record.live == true ? record.pane : nil) {
+            out["pane"] = pane
+        }
         let waiting = session.queue.compactMap { session.message($0) }.filter { $0.note != true }
         if !waiting.isEmpty {
             out["waiting"] = waiting.map(messageJSON)

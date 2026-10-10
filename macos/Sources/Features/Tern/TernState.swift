@@ -53,8 +53,10 @@ final class TernState: ObservableObject {
             self.pendingBump = false
             self.revision &+= 1
             self.prune()
-            // Panes opened, closed or moved: Window > Agent Sessions marks the shown sessions.
+            // Panes opened, closed or moved: Window > Agent Sessions marks the shown sessions,
+            // and `agent ls` says where each session is.
             TernAgentMenu.shared.setNeedsRebuild()
+            TernAgentUI.publishShownPanes()
         }
     }
 

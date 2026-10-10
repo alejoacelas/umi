@@ -59,7 +59,7 @@ extension TernAgentUI {
 
     /// The live interface ended: the pane shows the read-only view again, or (removed from
     /// its pane) the parked terminal goes away.
-    static func liveEnded(session: String, pane: String?) {
+    static func liveEnded(session: String, pane: String?, keepView: Bool = true) {
         if let parkedSurface = shared.parked.removeValue(forKey: session) {
             shared.livePanes.remove(parkedSurface.id)
             shared.attachments.removeValue(forKey: parkedSurface.id)
@@ -69,6 +69,9 @@ extension TernAgentUI {
         }
         guard let pane, let surface = surface(ternID: pane) else { return }
         shared.livePanes.remove(surface.id)
+        if !keepView, shared.attachments[surface.id] == session {
+            shared.attachments.removeValue(forKey: surface.id)
+        }
         if shared.attachments[surface.id] == session {
             shared.showingTerminal.remove(surface.id)
             if TernLayout.isFocusedPane(surface) {
