@@ -97,6 +97,13 @@ enum TernPaneContext {
         return nil
     }
 
+    /// The pane's shell has the terminal (nothing else runs in front of it).
+    static func shellInFront(_ pane: Ghostty.SurfaceView) -> Bool {
+        guard let surface = pane.surface else { return true }
+        let foreground = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
+        return foreground <= 0 || TernProcess.isShell(foreground)
+    }
+
     private static func display(_ args: [String]) -> String {
         var argv = args
         let interpreters: Set<String> = ["node", "python", "python3", "ruby", "bun", "deno", "perl"]

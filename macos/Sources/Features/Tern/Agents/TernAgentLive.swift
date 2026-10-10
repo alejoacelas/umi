@@ -130,6 +130,8 @@ extension TernAgentSession {
             let spec = try liveCommand()
             record.live = true
             record.pane = pane
+            // Running again: whatever stopped it before is over.
+            record.ended = nil
             record.liveAttached = record.kind == .codex
             record.livePID = nil
             record.goLiveWhenSettled = nil
@@ -324,10 +326,21 @@ extension TernAgentSession {
         }
     }
 
+    /// The user emptied the interface's input line: messages that waited for it can go.
+    func liveDraftCleared() {
+        lastLiveKey = Date()
+        liveDraft = false
+        changed()
+        pump()
+    }
+
     /// The live interface closed (its SessionEnd hook, its process gone, or its pane closed):
     /// the session is headless again (AG-7).
     func liveEnded() {
         guard record.live == true || liveState != nil else { return }
+        // The app is quitting and took the interface with it: the session stays recorded as
+        // live in its pane, so it comes back live there (AG-7).
+        guard !shuttingDown else { return }
         let wasReclaiming = reclaiming
         record.live = nil
         record.livePID = nil

@@ -158,7 +158,11 @@ enum TernEnvironment {
             "TERM_SESSION_ID", "ITERM_SESSION_ID", "WEZTERM_PANE", "KITTY_WINDOW_ID",
         ]
         let prefixes = ["CLAUDE_CODE_", "CODEX_"]
-        for key in env.keys where exact.contains(key) || prefixes.contains(where: { key.hasPrefix($0) }) {
+        // Where the user keeps Codex's configuration isn't a session marker: panes, sessions and
+        // `agent plugins` all need it.
+        let kept: Set<String> = ["CODEX_HOME"]
+        for key in env.keys where !kept.contains(key)
+            && (exact.contains(key) || prefixes.contains(where: { key.hasPrefix($0) })) {
             unsetenv(key)
         }
     }

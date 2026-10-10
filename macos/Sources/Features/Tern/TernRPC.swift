@@ -242,12 +242,17 @@ enum TernRPC {
 
         case "pane.send", "send":
             let pane = try TernTopology.pane(params.string("pane"), caller: caller)
-            try await TernInput.send(text: params.string("text") ?? "", to: pane, enter: params.bool("enter") ?? false)
+            let text = params.string("text") ?? ""
+            let enter = params.bool("enter") ?? false
+            try await TernInput.send(text: text, to: pane, enter: enter)
+            TernAgentUI.shared.inputSent(pane: pane, text: text, keys: enter ? ["enter"] : [])
             return ["pane": pane.ternID]
 
         case "pane.keys", "keys":
             let pane = try TernTopology.pane(params.string("pane"), caller: caller)
-            try TernInput.send(keys: params.strings("keys") ?? [], to: pane)
+            let keys = params.strings("keys") ?? []
+            try TernInput.send(keys: keys, to: pane)
+            TernAgentUI.shared.inputSent(pane: pane, text: "", keys: keys)
             return ["pane": pane.ternID]
 
         case "pane.read", "read":

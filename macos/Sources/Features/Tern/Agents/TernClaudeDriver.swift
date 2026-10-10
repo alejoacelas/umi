@@ -179,8 +179,9 @@ final class TernClaudeDriver: TernHarnessDriver {
                 session.changed()
             }
         case "task_notification":
-            if let summary = frame["summary"] as? String, !summary.isEmpty, frame["status"] as? String != "stopped" {
-                session.notice(summary)
+            if frame["status"] as? String != "stopped" {
+                if let summary = frame["summary"] as? String, !summary.isEmpty { session.notice(summary) }
+                session.backgroundTaskFinished()
             }
         case "compact_boundary":
             session.notice("The conversation was compacted.")

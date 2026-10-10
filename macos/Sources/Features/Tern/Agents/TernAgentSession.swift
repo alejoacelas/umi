@@ -62,6 +62,9 @@ final class TernAgentSession {
     private var generation = 0
     /// Messages written to the harness whose delivery isn't confirmed yet, in order.
     private(set) var inFlight: [String] = []
+    /// Messages put back in the queue because the process ended before saying it took them in,
+    /// with why it ended: the thread's history (Codex) may show it did (AG-11).
+    private var requeuedUnconfirmed: [String: String] = [:]
 
     struct Turn {
         var id: String?
@@ -76,6 +79,10 @@ final class TernAgentSession {
     private var claudeTurnCounter = 0
 
     var backgroundTasks: Int?
+    /// A background task finished and the turn it wakes hasn't started yet (Claude reports the
+    /// task gone before that turn's init, AG-13).
+    private(set) var wakePending = false
+    private var wakeGeneration = 0
     private(set) var activity: String = ""
     private var runningTools: [String: String] = [:]   // ref → description
 
@@ -244,13 +251,25 @@ final class TernAgentSession {
         case .launching, .starting:
             return "starting"
         case .ready:
-            return (turn != nil || !inFlight.isEmpty || !queue.isEmpty || pendingBackground > 0) ? "working" : "idle"
+            return (turn != nil || !inFlight.isEmpty || !queue.isEmpty || pendingBackground > 0 || wakePending)
+                ? "working" : "idle"
         case .stopping:
-            return turn != nil ? "working" : "stopped"
+            if turn != nil { return "working" }
+            return stop?.kind == .handoff || stop?.kind == .restart ? "idle" : "stopped"
         case .stopped, .cleaning:
             if !queue.isEmpty && canRelaunch { return "starting" }
             if goingLive { return "starting" }
-            return record.ended == "error" ? "error" : "stopped"
+            return restingStatus
+        }
+    }
+
+    /// No process and nothing to do: `stopped` only when someone stopped it; a session whose
+    /// interface closed or whose agent exited by itself is idle (a message resumes it).
+    private var restingStatus: String {
+        switch record.ended {
+        case "error": return "error"
+        case "stopped": return "stopped"
+        default: return "idle"
         }
     }
 
@@ -278,10 +297,11 @@ final class TernAgentSession {
             if !queue.isEmpty && canRelaunch { return "resuming" }
             if goingLive { return "opening its own interface" }
             if record.ended == "error" { return record.lastError.map { TernAgentText.oneLine($0, max: 120) } ?? "error" }
-            return "stopped"
+            return restingStatus
         case .ready:
             if turn == nil && inFlight.isEmpty && queue.isEmpty {
-                return pendingBackground > 0 ? "waiting for \(pendingBackground) background task(s)" : "idle"
+                if pendingBackground > 0 { return "waiting for \(pendingBackground) background task(s)" }
+                return wakePending ? "a background task finished; it wakes the agent" : "idle"
             }
             if let tool = runningTools.values.first { return tool }
             if !activity.isEmpty { return activity }
@@ -293,7 +313,7 @@ final class TernAgentSession {
     /// for now (what `agent wait` and "finished" mean, AG-12).
     var settled: Bool {
         if exclusiveLive { return liveState == .idle && queue.isEmpty && liveBackground == 0 }
-        return turn == nil && inFlight.isEmpty && queue.isEmpty && pendingBackground == 0
+        return turn == nil && inFlight.isEmpty && queue.isEmpty && pendingBackground == 0 && !wakePending
             && phase != .launching && phase != .starting && !goingLive
     }
 
@@ -522,6 +542,8 @@ final class TernAgentSession {
         }
         changed()
         pump()
+        // A session asked to go live with nothing to run first (`tern codex` with no task).
+        checkSettled()
     }
 
     /// The harness couldn't open the conversation (gone, unreadable, …). Nothing is started
@@ -582,6 +604,15 @@ final class TernAgentSession {
 
     /// After a Codex resume: which unconfirmed messages the thread really received.
     func reconcileDelivery(received: Set<String>, known: Bool) {
+        // Put back in the queue when the process ended, but the thread has it: it was delivered
+        // and ended with that process. Sending it again would repeat it (and what it caused).
+        for id in queue where received.contains(id) {
+            guard let why = requeuedUnconfirmed[id] else { continue }
+            queue.removeAll { $0 == id }
+            finish(id, .error, error: why.isEmpty ? "the agent ended after it received this message" : why)
+        }
+        requeuedUnconfirmed = requeuedUnconfirmed.filter { queue.contains($0.key) }
+        saveQueue()
         for m in messages where m.state == .sent && !inFlight.contains(m.id) && !queue.contains(m.id) {
             if received.contains(m.id) {
                 update(m.id) { $0.state = .delivered; $0.cutOff = true; $0.cutOffAt = $0.cutOffAt ?? Date() }
@@ -695,6 +726,7 @@ final class TernAgentSession {
         }
         claudeTurnCounter += 1
         turn = Turn(id: id ?? "t\(claudeTurnCounter)", messages: ids, selfStarted: selfStarted, startedAt: Date())
+        wakePending = false
         // The harness has a conversation from its first turn on (Codex records the turn even if
         // the input never arrived), so later starts resume it.
         if record.conversation != true {
@@ -745,6 +777,28 @@ final class TernAgentSession {
 
     var currentTurnID: String? { turn?.id }
     var turnIsRunning: Bool { turn != nil }
+
+    /// A background task finished: the agent starts a turn for it (unless the running turn takes
+    /// it in). Until then the session isn't settled; if no turn comes, a few quiet seconds end it.
+    func backgroundTaskFinished() {
+        wakePending = true
+        wakeGeneration += 1
+        armWakeTimeout(wakeGeneration)
+        changed()
+    }
+
+    private func armWakeTimeout(_ generation: Int) {
+        TernAgents.queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.wakePending, self.wakeGeneration == generation else { return }
+            if self.turnIsRunning || !self.inFlight.isEmpty {
+                self.armWakeTimeout(generation)
+                return
+            }
+            self.wakePending = false
+            self.changed()
+            self.checkSettled()
+        }
+    }
 
     func noteFinalText(_ text: String) {
         turn?.lastFinal = text
@@ -1078,7 +1132,7 @@ final class TernAgentSession {
                 TernProcessTree.terminate(leftovers, grace: 1.0)
                 TernAgents.queue.async { completion?() }
             }
-            if record.ended == nil || record.ended == "exited" { record.ended = "stopped" }
+            if kind != .handoff && (record.ended == nil || record.ended == "exited") { record.ended = "stopped" }
             saveRecord()
             changed()
             return
@@ -1141,6 +1195,8 @@ final class TernAgentSession {
                 reason = "\(record.kind.rawValue) \(described)" + (tail.isEmpty ? "" : ": \(tail)")
             }
         }
+        let endedWhy = reason ?? "\(record.kind.rawValue) \(described)"
+        for (id, why) in requeuedUnconfirmed where why.isEmpty { requeuedUnconfirmed[id] = endedWhy }
         // The turn that was running.
         if let current = turn {
             turn = nil
@@ -1173,14 +1229,17 @@ final class TernAgentSession {
                 } else if msg.state == .delivered || msg.note == true {
                     finish(m, .error, error: reason ?? "\(record.kind.rawValue) \(described)")
                 } else {
-                    // Never received: deliver it again after the resume.
+                    // Never confirmed: deliver it again after the resume, unless the resume
+                    // shows it arrived after all.
                     update(m) { $0.state = .queued }
                     queue.insert(m, at: 0)
+                    requeuedUnconfirmed[m] = ""
                 }
             }
         }
         requests.removeAll()
         backgroundTasks = nil
+        wakePending = false
         // Tools this process was running (background commands included) ended with it.
         for item in items where item.kind == "tool" && item.state == "running" {
             if let ref = item.ref { updateItem(ref: ref) { $0.state = "stopped" } }
@@ -1246,6 +1305,7 @@ final class TernAgentSession {
             } else {
                 update(id) { $0.state = .queued }
                 back.append(id)
+                if stopping == nil { requeuedUnconfirmed[id] = "" }
             }
         }
         // Behind a redirect that was waiting for them, ahead of everything else.

@@ -81,10 +81,13 @@ final class TernAgentUI: ObservableObject {
         // The session's pane is this one (a restored pane has a new id).
         let ternID = pane.uuidString.lowercased()
         TernAgents.queue.async {
-            guard let s = TernAgents.shared.session(id: session), s.record.pane != ternID else { return }
-            s.record.pane = ternID
-            s.saveRecord()
-            s.changed()
+            guard let s = TernAgents.shared.session(id: session) else { return }
+            if s.record.pane != ternID {
+                s.record.pane = ternID
+                s.saveRecord()
+                s.changed()
+            }
+            // A session that was live here before a quit goes live again now its pane is back.
             s.checkSettled()
         }
     }

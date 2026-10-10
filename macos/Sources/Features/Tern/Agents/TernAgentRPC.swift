@@ -298,8 +298,10 @@ enum TernAgentRPC {
             if latest, message.state == .done, !session.settled { return nil }
             out["status"] = message.state.waitStatus
             var reply = message.reply
-            if latest, message.state == .done, let last = session.lastReply, !last.isEmpty, last != reply {
-                // Turns after it (woken by its background work) have the newest word.
+            if latest, message.state == .done, let last = session.lastReply, !last.isEmpty, last != reply,
+               !session.messages.contains(where: { $0.id != message.id && $0.reply == last }) {
+                // Turns the agent ran by itself after it (woken by its background work) have the
+                // newest word; another message's turn (one requeued behind a redirect) doesn't.
                 reply = last
             }
             if let reply { out["reply"] = reply }
@@ -650,7 +652,7 @@ enum TernAgentRPC {
         let record = session.record
         var out: [String: Any] = [
             "id": record.id, "name": record.name, "kind": record.kind.rawValue, "status": session.status,
-            "activity": session.activityText, "cwd": record.cwd, "live": session.live,
+            "activity": session.activityText, "cwd": record.cwd, "running": session.live,
             "requests": session.requests.map(\.json), "full_access": record.fullAccess,
             "created_at": TernAgentTime.iso(record.createdAt), "queued": session.queue.count,
         ]

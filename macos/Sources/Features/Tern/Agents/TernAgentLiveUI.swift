@@ -34,6 +34,12 @@ extension TernAgentUI {
         TernState.shared.layoutDidChange()
         let quoted = selector.allSatisfy { $0.isLetter || $0.isNumber || "-_.~".contains($0) } ? selector : "'\(selector)'"
         Task { @MainActor in
+            // An interface still on its way out (Claude Code prints its resume hint after its
+            // SessionEnd hook) would swallow the line: wait for the shell to have the terminal.
+            let deadline = Date().addingTimeInterval(10)
+            while !TernPaneContext.shellInFront(surface) && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
             // `$TERN_CLI` is this app's own CLI (an older `tern` elsewhere on PATH must not answer).
             try? await TernInput.send(text: "\"$TERN_CLI\" agent attach \(quoted)", to: surface, enter: true)
         }
@@ -118,13 +124,40 @@ extension TernAgentUI {
         let submit = event.keyCode == 36 || event.keyCode == 76   // return, enter
         // Text going into the input box: not navigation (arrows, page keys) or app shortcuts.
         let navigation: Set<UInt16> = [123, 124, 125, 126, 115, 116, 119, 121]
+        let clears = event.modifierFlags.contains(.control) && chars.lowercased() == "u"
         let typing = !navigation.contains(event.keyCode) && !event.modifierFlags.contains(.command)
-            && !(event.characters ?? "").isEmpty
+            && !(event.characters ?? "").isEmpty && !clears
+        Self.liveInput(session: session, interrupt: interrupt, submit: submit, typing: typing, clears: clears)
+    }
+
+    /// Text and keys put into a pane through Tern (`tern send`, `tern keys`): agents and scripts
+    /// type into a live interface this way, so it counts like the keyboard (AG-9, AG-19).
+    func inputSent(pane: Ghostty.SurfaceView, text: String, keys: [String]) {
+        guard let session = attachments[pane.id] ?? Self.sessionLive(in: pane.id) else { return }
+        if !text.isEmpty { Self.liveInput(session: session, interrupt: false, submit: false, typing: true, clears: false) }
+        for key in keys {
+            let spec = key.lowercased()
+            let interrupt = ["esc", "escape", "ctrl+c", "control+c", "c+c"].contains(spec)
+            let submit = ["enter", "return", "ret", "cr", "nl"].contains(spec)
+            let clears = ["ctrl+u", "control+u", "c+u"].contains(spec)
+            let navigation = ["up", "down", "left", "right", "pgup", "pgdn", "pageup", "pagedown", "home", "end"]
+                .contains(spec) || spec.hasPrefix("arrow") || spec.hasPrefix("cmd+") || spec.hasPrefix("command+")
+            Self.liveInput(session: session, interrupt: interrupt, submit: submit,
+                           typing: !interrupt && !submit && !navigation && !clears, clears: clears)
+        }
+    }
+
+    private static func liveInput(session: String, interrupt: Bool, submit: Bool, typing: Bool, clears: Bool) {
         TernAgents.queue.async {
             guard let s = TernAgents.shared.session(id: session), s.record.live == true else { return }
             if submit {
                 s.lastLiveKey = Date()
                 return   // UserPromptSubmit says whether something was sent
+            }
+            if clears {
+                // Ctrl-U empties the input line.
+                s.liveDraftCleared()
+                return
             }
             s.liveKey(interrupt: interrupt, typing: typing)
         }
