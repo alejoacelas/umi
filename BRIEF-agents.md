@@ -38,6 +38,15 @@ the instructions above, including live tests with real agents.
 uncommitted work. Its plugins are the GitHub repositories `warpdotdev/claude-code-warp` and
 `warpdotdev/codex-warp`. Warp's plugins stay silent outside Warp; Tern's should stay silent outside
 Tern.
+- **What to look at:** Warp's observability lives in `app/src/terminal/cli_agent_sessions/` and in
+  the `warp` plugin of each of those repositories. Their hooks send structured OSC 777 events to the
+  terminal: through Claude Code's `terminalSequence` hook output, and for Codex 0.155 and later by
+  finding the terminal through the process tree.
+- **What to learn from its bugs:**
+  - status broke when Claude 2.1.139 and Codex 0.155 updated;
+  - every Claude stop counted as "done" until claude-code-warp #92 and warp #16367;
+  - its orchestration mailbox (the `oz-harness-support` and `orchestration` plugins) loses messages
+    and is not a model to copy.
 
 ## 2. App changes, decided with the user
 - **Sidebar:** each tab shows two lines, its folder and then its session's title. When a session
