@@ -246,3 +246,9 @@ its socket as a hung process would. `test_chaos.py::test_random_operation_sequen
 steered into a turn just before a crash delivered twice; it doesn't any more (12 of 12 repeats of the
 helper's reproduction were clean, against 1 in 5 before).
 
+- **`tests/test_live.py::test_a_headless_session_appears_only_when_asked`** (the helper's new test).
+  **What was wrong:** it checked for the Take Over button in the first snapshot of the pane, taken the
+  moment the pane's state says it shows the session, which can come before the view's controls are
+  built (it failed once in about ten runs). **Change:** it checks a snapshot taken after the view shows
+  the conversation. **Requirement:** AG-5, "with a Take Over button".
+

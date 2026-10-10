@@ -370,3 +370,103 @@ def test_a_large_message_is_quick_to_send_and_list(inst, win):
     assert time.time() - began < 5, f"`agent ls` took {time.time() - began:.1f} s"
     code, out = inst.wait(sid, "--message", message, timeout=60)
     assert out["status"] == "DONE" and len(out["reply"]) == len(big), (out["status"], len(out.get("reply") or ""))
+
+
+# ---- round 4 -------------------------------------------------------------------------------------
+
+def tab_frames(inst, tab_id):
+    for w in inst.tree()["windows"]:
+        for t in w["tabs"]:
+            if t["id"] == tab_id:
+                return {p["id"]: p["frame"] for p in t["panes"]}
+    return {}
+
+
+@pytest.mark.req("AG-11", "AG-6", "L-20")
+def test_a_live_pane_closed_then_shown_elsewhere_leaves_one_interface(inst, win):
+    """Round 4, P1: a closed pane's program is kept for 60 s so ⇧⌘T can bring it back. Showing its live
+    session in another pane meanwhile moved the session there with its interface still running in the
+    closed pane, and Take Over started a second interface on the same conversation."""
+    sid = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
+                    "--pane", win["pane"], "ECHO hi")["session"]["id"]
+    old = wait_live(inst, sid)
+    n = nonce()
+    inst.type_line(old, f"ECHO marker {n}")
+    pid = wait_until(lambda: next((r.get("pid") for r in inst.receipts() if n in (r.get("text") or "")), None), 15,
+                     message="the interface's process")
+    inst.cli("pane", "close", old)
+    wait_until(lambda: not inst.find_pane(old), 5, message="the pane closes")
+    assert alive(pid), "a closed pane's program is kept for reopening"
+    pane = inst.json("agent", "open", sid, "--split", "down", "--pane", win["pane"], "--live")["pane"]
+    wait_until(lambda: not alive(pid), 15, message="the interface left in the closed pane to end")
+    assert wait_live(inst, sid) == pane
+    assert not inst.violations()
+
+
+@pytest.mark.req("AG-9")
+def test_a_draft_deleted_with_backspace_lets_a_waiting_message_go(inst, win):
+    """Round 4, P2: every key counted as typed text, so text typed and then deleted with Backspace kept
+    holding messages back."""
+    sid = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
+                    "--pane", win["pane"], "ECHO hi")["session"]["id"]
+    pane = wait_live(inst, sid)
+    inst.cli("send", "--pane", pane, "abc")
+    n = nonce()
+    message = inst.send(sid, f"ECHO after the draft {n}")
+    time.sleep(4)
+    assert not [r for r in inst.receipts() if n in (r.get("text") or "")], "delivered under the draft"
+    inst.cli("keys", "--pane", pane, "backspace", "backspace", "backspace")
+    code, out = inst.wait(sid, "--message", message, timeout=40)
+    assert (code, out.get("reply")) == (0, f"ECHO after the draft {n}"), out
+
+
+@pytest.mark.req("AG-9")
+def test_ctrl_c_on_an_idle_prompt_lets_a_waiting_message_go(inst, win):
+    """Round 4, P2: Ctrl-C at an idle prompt cleared the draft but nothing then delivered the message
+    that waited for it."""
+    sid = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
+                    "--pane", win["pane"], "ECHO hi")["session"]["id"]
+    pane = wait_live(inst, sid)
+    inst.cli("send", "--pane", pane, "half a thought")
+    n = nonce()
+    message = inst.send(sid, f"ECHO after ctrl-c {n}")
+    time.sleep(4)
+    assert not [r for r in inst.receipts() if n in (r.get("text") or "")], "delivered under the draft"
+    inst.cli("keys", "--pane", pane, "ctrl+c")
+    code, out = inst.wait(sid, "--message", message, timeout=40)
+    assert (code, out.get("reply")) == (0, f"ECHO after ctrl-c {n}"), out
+
+
+@pytest.mark.req("L-20", "L-19")
+def test_reopening_a_pane_keeps_a_resize_made_after_the_close(inst, win):
+    """Round 4, P2: reopening a pane restored the whole tab as it was before the close when its
+    structure hadn't changed, undoing a resize made since."""
+    a = win["pane"]
+    b = inst.cli("split", "right", "--pane", a).stdout.strip()
+    c = inst.cli("split", "right", "--pane", b).stdout.strip()
+    inst.cli("pane", "close", b)
+    wait_until(lambda: not inst.find_pane(b), 5, message="closed")
+    inst.cli("pane", "resize", a, "right", "20")
+    resized = tab_frames(inst, win["tab"])
+    share = resized[a]["width"] / (resized[a]["width"] + resized[c]["width"])
+    assert share > 0.55, resized
+    inst.json("reopen")
+    after = tab_frames(inst, win["tab"])
+    assert set(after) == {a, b, c}
+    assert after[a]["width"] / after[c]["width"] > 1.1, f"the resize was undone: {after}"
+
+
+# ---- found while running the suite with the screen locked ---------------------------------------
+
+@pytest.mark.req("AG-23", "R-6", "L-8")
+def test_many_windows_opened_while_the_screen_is_locked_leave_the_app_responsive(fresh):
+    """With the screen locked (or the display asleep) AppKit's window-opening animation never ends, and
+    each window opened then kept a worker thread waiting for ever. After 64 of them the shared thread
+    pool was gone and every agent command stalled. (On an unlocked screen this passes either way.)"""
+    inst = fresh(prefix="acc-rv-windows-")
+    for _ in range(70):
+        w = inst.json("window", "new")
+        inst.cli("window", "close", w["window"])
+    sid = inst.start_agent("claude", f"ECHO still answering {nonce()}")
+    code, out = inst.wait(sid, timeout=30)
+    assert out["status"] == "DONE", out

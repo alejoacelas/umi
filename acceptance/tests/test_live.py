@@ -282,7 +282,8 @@ def test_a_headless_session_appears_only_when_asked(inst, win, shown, kind):
         inst.session_view(pane).get("transcript", "")), 10, message="the view to show the conversation")
     assert f"SLEEP 1 {n}" in transcript, "both sides of the conversation"
     assert "sleep 1" in transcript.lower(), "tool activity"
-    assert "Take Over" in view.get("buttons", [])
+    # The view as it is now (the first look can come before its controls are built).
+    assert "Take Over" in inst.session_view(pane).get("buttons", [])
     info = inst.info(sid)
     assert (info["location"], info["pane"]) == ("pane", pane), info
     assert BANNER[kind] not in screen(inst, pane), "showing a session isn't taking it over"
