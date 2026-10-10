@@ -130,10 +130,29 @@ struct TernSidebarRowDropDelegate: DropDelegate {
     }
 }
 
+/// The space below the rows: whatever is dropped there lands at the end.
+struct TernSidebarListDropDelegate: DropDelegate {
+    let controller: TerminalController
+    @Binding var targeted: Bool
+
+    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: TernSidebarDrop.types) }
+    func dropEntered(info: DropInfo) { targeted = true }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func dropExited(info: DropInfo) { targeted = false }
+
+    func performDrop(info: DropInfo) -> Bool {
+        targeted = false
+        let controller = controller
+        return TernSidebarDrop.receive(info.itemProviders(for: TernSidebarDrop.types)) { payload in
+            TernSidebarDrop.perform(payload, zone: .end, row: nil, in: controller)
+        }
+    }
+}
+
 /// Drag and drop of tab rows, within a window and between windows (M-4).
 @MainActor
 enum TernTabDrag {
-    static let prefix = "tern-tab:"
+    nonisolated static let prefix = "tern-tab:"
 
     static func receive(_ providers: [NSItemProvider], perform: @escaping @MainActor (TernTab, TerminalController) -> Void) -> Bool {
         guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return false }

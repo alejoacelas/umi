@@ -23,8 +23,9 @@ enum TernTabMenu {
     /// Copies go here (tests point it at a private pasteboard).
     static var pasteboard: NSPasteboard = .general
 
-    static func items(for tab: TernTab, in controller: TerminalController, rename: (() -> Void)?) -> [TernTabMenuItem] {
-        let row = TernSidebarRowModel(tab: tab, in: controller)
+    static func items(for tab: TernTab, in controller: TerminalController, row: TernSidebarRowModel? = nil,
+                      rename: (() -> Void)?) -> [TernTabMenuItem] {
+        let row = row ?? TernSidebarRowModel(tab: tab, in: controller)
         let pane = row.focusedPane
         let paneName = pane.flatMap { TernState.shared.paneName($0.id) }
         var items: [TernTabMenuItem] = []

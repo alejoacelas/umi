@@ -803,7 +803,7 @@ class TerminalController: BaseTerminalController {
         if newTree.isEmpty {
             closeTabImmediately(tab)
         } else {
-            if case .leaf(let view) = node { TernReopen.shared.recordPane(view, tab: tab, tree: oldTree) }
+            if case .leaf(let view) = node { TernReopen.shared.recordPane(view, tab: tab, tree: oldTree, in: self) }
             replaceTree(newTree, for: tab, undoAction: "Close Terminal")
         }
     }
@@ -811,7 +811,7 @@ class TerminalController: BaseTerminalController {
     /// A pane of the shown tab is being closed (not its last: that closes the tab).
     override func surfaceNodeWillClose(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
         guard case .leaf(let view) = node, surfaceTree.root != node else { return }
-        TernReopen.shared.recordPane(view, tab: selectedTab, tree: surfaceTree)
+        TernReopen.shared.recordPane(view, tab: selectedTab, tree: surfaceTree, in: self)
     }
 
     // MARK: Panes in hidden tabs (AppleScript, App Intents)

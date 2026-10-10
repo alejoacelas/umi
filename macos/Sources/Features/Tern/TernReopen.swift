@@ -62,11 +62,14 @@ final class TernReopen {
     // MARK: Recording closes
 
     /// A pane is about to leave `tree` (its tab's tree) for good: the user closed it.
-    func recordPane(_ pane: Ghostty.SurfaceView, tab: TernTab, tree: SplitTree<Ghostty.SurfaceView>) {
+    func recordPane(_ pane: Ghostty.SurfaceView, tab: TernTab, tree: SplitTree<Ghostty.SurfaceView>,
+                    in window: TerminalController) {
         guard TernSnapshot.isAlive(pane), let root = tree.root, let node = root.node(view: pane) else { return }
         let entry = Entry(.pane)
         entry.pane = pane
         entry.paneTab = tab
+        entry.window = window
+        entry.tabIndex = window.index(of: tab) ?? window.tabs.count
         entry.before = TernSnapshot.WeakNode(root)
         entry.after = tree.removing(node).root.map(TernSnapshot.WeakNode.init)
         push(entry)
@@ -203,7 +206,7 @@ final class TernReopen {
         }
         // Its tab is gone: the pane comes back as a tab of its own where that tab was.
         let tab = TernTab(tree: .init(view: pane))
-        let (window, index) = try placeTab(near: entry.window, index: entry.paneTab.flatMap { t in entry.window?.index(of: t) })
+        let (window, index) = try placeTab(near: entry.window, index: entry.tabIndex)
         guard let window else {
             return try reopenInNewWindow([tab], selected: tab, frame: nil, focused: pane.id, kind: .pane)
         }

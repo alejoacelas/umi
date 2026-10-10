@@ -10,6 +10,7 @@ enum TernUIDebug {
         case "debug.ui.rows":
             let window = try TernTopology.window(params.string("window"), caller: caller)
             return ["window": window.ternIDString, "sidebar_width": Double(window.sidebarWidth),
+                    "frame": frameJSON(window.window?.frame ?? .zero),
                     "rows": window.tabs.map { TernSidebarRowModel(tab: $0, in: window).json() }]
 
         case "debug.ui.attention.set":

@@ -38,13 +38,10 @@ struct TernSidebar: View {
                 .padding(.horizontal, 6)
                 .padding(.bottom, 12)
             }
-            .onDrop(of: TernSidebarDrop.types, isTargeted: $listDropTargeted) { providers in
-                // Dropped below the rows: a tab goes to the end of this window's tabs, a pane
-                // becomes a new tab there (M-4).
-                TernSidebarDrop.receive(providers) { payload in
-                    TernSidebarDrop.perform(payload, zone: .end, row: nil, in: controller)
-                }
-            }
+            // Dropped below the rows: a tab goes to the end of this window's tabs, a pane
+            // becomes a new tab there (M-4).
+            .onDrop(of: TernSidebarDrop.types, delegate: TernSidebarListDropDelegate(
+                controller: controller, targeted: $listDropTargeted))
 
             if let notice = updater.notice {
                 TernUpdateNotice(notice: notice)
@@ -368,7 +365,7 @@ struct TernSidebarTabRow: View {
         })
         .onDrop(of: TernSidebarDrop.types, delegate: TernSidebarRowDropDelegate(
             controller: controller, tab: tab, height: rowHeight, zone: $dropZone))
-        .contextMenu { TernTabMenuView(items: TernTabMenu.items(for: tab, in: controller, rename: beginRename)) }
+        .contextMenu { TernTabMenuView(items: TernTabMenu.items(for: tab, in: controller, row: row, rename: beginRename)) }
         .help(row.cwd.map(TernSidebarRowModel.abbreviate) ?? row.title)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.title)
@@ -579,6 +576,12 @@ struct TernSidebarResizeEdge: View {
             .onTapGesture(count: 2) {
                 controller.sidebarWidth = TernTheme.sidebarWidth
                 TernState.shared.sidebarWidth = TernTheme.sidebarWidth
+            }
+            .onDisappear {
+                if cursorPushed {
+                    NSCursor.pop()
+                    cursorPushed = false
+                }
             }
             .accessibilityLabel("Sidebar Edge")
             .accessibilityValue("\(Int(controller.sidebarWidth))")
