@@ -1,16 +1,14 @@
-"""Check, without the accessibility tree, the agent-pane behaviors the suite checks through it.
+"""Check, without the accessibility tree, the agent-pane paths a person uses (SPEC AG-5 to AG-9).
 
-The AP UI tests (typing a follow-up into the pane, Esc, pending questions shown, Undo of a
-closed agent pane, the transcript after reopening and after a restart) need an unlocked screen.
-This script drives the same paths through Tern's internal `debug.agent.*` and `debug.menu.*`
-control methods: it types into the pane's composer and presses its keys and buttons the way
-the text view and buttons do, and reads what the pane shows. Same black-box harness and fakes
-as the suite.
+The UI tests need an unlocked screen. This script drives the same paths through Tern's internal
+`debug.*` control methods: it reads a session's read-only view and presses its buttons (Take
+Over) the way a click does, performs the Window menu's items (Take Over Session ⌃⌘O, Remove
+Session from Pane ⌃⌘W) as choosing them does, and reads the sidebar's marks and the Dock badge.
+Same black-box harness and fake agents as the suite.
 
     cd acceptance && uv run python ../app/macos/TernTests/verify_agent_panes.py
 """
 
-import json
 import os
 import sys
 import time
@@ -26,251 +24,96 @@ from verify_ui_paths import Control, check, results, soon  # noqa: E402
 
 
 def nonce():
-    return uuid.uuid4().hex[:10]
+    return uuid.uuid4().hex[:8]
 
 
-def start(inst, kind, prompt, *placement, env=None, name=None):
-    args = ["agent", "start", kind, "--cwd", inst.work, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
-            "--name", name or f"v-{nonce()}"]
-    for key, value in (env or {}).items():
-        args += ["--env", f"{key}={value}"]
-    return inst.json(*args, *placement, prompt)["session"]["id"]
-
-
-def agent_pane(inst, sid):
-    found = inst.find_agent_pane(sid)
-    return found[2]["id"] if found else None
-
-
-def receipts_with(inst, marker):
-    return [r for r in inst.receipts() if marker in (r.get("text") or "")]
+def info(inst, sid):
+    return inst.json("agent", "info", sid)
 
 
 def main():
     target = Target(os.path.join(ACCEPTANCE, "targets", "tern.json"))
-    inst = Instance(target, prefix="acc-verify-ap-")
+    inst = Instance(target, prefix="acc-verify-ag-")
     inst.start_app()
     try:
         ctl = Control(inst)
-        win = inst.json("window", "new", "--name", "verify-ap")
+        win = inst.json("window", "new", "--name", "verify-ag")
         wait_until(lambda: inst.cli("read", "--pane", win["pane"], check=False).stdout.strip() != "", 20)
-        time.sleep(0.5)
+        ctl.call("debug.ui.assume_active", on=True)
 
-        def pane_state(pane):
-            return ctl.call("debug.agent.pane", pane=pane)
-
-        # L-9: ⌃⌘J is a menu item (one), and it shows and focuses the session that needs the user.
         items = ctl.call("debug.menu")["items"]
-        jump = [i for i in items if i["key"].lower() == "j" and tuple(i["modifiers"]) == ("ctrl", "cmd")]
-        check("L-9 menu item for ctrl+cmd+j (jump to the agent that needs the user)", len(jump) == 1,
-              f"found {[m['title'] for m in jump]}")
-        waiting = start(inst, "claude", "ASK_QUESTIONS", "--background")
-        inst.wait(waiting)
-        if jump:
-            ctl.call("debug.menu.perform", title=jump[0]["title"])
-            shown = soon(lambda: inst.find_agent_pane(waiting), 10)
-            check("⌃⌘J shows the session that needs the user", shown)
-            if shown:
-                check("and focuses its pane", soon(lambda: inst.find_agent_pane(waiting)[1]["focused_pane"] ==
-                                                   inst.find_agent_pane(waiting)[2]["id"], 5))
-                inst.cli("pane", "close", inst.find_agent_pane(waiting)[2]["id"], check=False)
-        inst.cli("agent", "stop", waiting, check=False)
-        inst.cli("window", "focus", win["window"])
-        inst.cli("tab", "focus", win["tab"])
+        def item(key, mods):
+            return [i for i in items if i["key"].lower() == key and tuple(i["modifiers"]) == mods]
+        take = item("o", ("ctrl", "cmd"))
+        remove = item("w", ("ctrl", "cmd"))
+        check("AG-6 menu item ⌃⌘O (Take Over Session)", len(take) == 1 and "Take Over" in take[0]["title"],
+              str([i["title"] for i in take]))
+        check("AG-8 menu item ⌃⌘W (Remove Session from Pane)", len(remove) == 1 and "Remove" in remove[0]["title"],
+              str([i["title"] for i in remove]))
 
-        # AP-3: background sessions are listed in Window > Agent Sessions with their status, the
-        # ones that need the user first; the Dock badge counts those; choosing one shows it.
-        n = nonce()
-        idle_one = start(inst, "codex", "ECHO idle", name=f"bg-idle-{n}")
-        asking = start(inst, "claude", "ASK_QUESTIONS", name=f"bg-asking-{n}")
-        inst.wait(idle_one)
-        inst.wait(asking)
-
-        def session_items():
-            return [i for i in ctl.call("debug.menu")["items"] if i["menu"].endswith("Agent Sessions")]
-        def ours():
-            titles = [i["title"] for i in session_items() if n in i["title"]]
-            return (len(titles) == 2 and titles[0].startswith(f"bg-asking-{n} — needs input")
-                    and titles[1] == f"bg-idle-{n} — idle")
-        ok = soon(ours, 10)
-        check("Agent Sessions lists background sessions, the one that needs the user first",
-              ok, [i["title"] for i in session_items()])
-        check("the Dock badge counts the session that needs the user",
-              soon(lambda: ctl.call("debug.dock_badge")["badge"] == "1", 5), ctl.call("debug.dock_badge"))
-        check("neither is shown in a pane", not agent_pane(inst, idle_one) and not agent_pane(inst, asking))
-        ctl.call("debug.menu.perform", title=f"bg-idle-{n}")
-        shown = soon(lambda: agent_pane(inst, idle_one), 10)
-        check("choosing one shows it in a pane, focused",
-              shown and soon(lambda: inst.json("ls")["current_pane"] == agent_pane(inst, idle_one), 5))
-        check("the menu marks it as shown",
-              soon(lambda: any(i["title"].startswith(f"bg-idle-{n}") and i.get("state") == "on" for i in session_items()), 5),
-              session_items())
-        inst.cli("agent", "stop", asking, check=False)
-        check("the badge clears when nothing needs the user",
-              soon(lambda: ctl.call("debug.dock_badge")["badge"] == "", 10), ctl.call("debug.dock_badge"))
-        inst.cli("pane", "close", agent_pane(inst, idle_one), check=False)
-        inst.cli("agent", "stop", idle_one, check=False)
-        inst.cli("window", "focus", win["window"])
-        inst.cli("tab", "focus", win["tab"])
-
-        # AP-1: a follow-up typed into the pane and Enter sends it (both harnesses).
-        for kind in ("claude", "codex"):
-            secret = "reply-" + nonce()
-            sid = start(inst, kind, "ECHO hello", "--split", "right", "--pane", win["pane"], env={"ACC_AP": secret})
-            inst.wait(sid)
-            pane = soon(lambda: agent_pane(inst, sid), 10)
-            check(f"{kind}: the session is shown in a pane", pane)
-            inst.cli("pane", "focus", pane)
-            ok = soon(lambda: pane_state(pane).get("composer_focused"), 5)
-            check(f"{kind}: focusing the agent pane puts the keyboard in its composer", ok)
-            n = nonce()
-            ctl.call("debug.agent.type", pane=pane, text=f"PRINTENV ACC_AP {n}", key="enter")
-            ok = soon(lambda: receipts_with(inst, n), 15)
-            check(f"{kind}: Enter in the composer sends the follow-up, once", ok and len(receipts_with(inst, n)) == 1)
-            code, out = inst.wait(sid)
-            check(f"{kind}: the typed follow-up got its reply", out.get("reply") == secret, out)
-            ok = soon(lambda: secret in pane_state(pane).get("transcript", ""), 10)
-            check(f"{kind}: the reply is shown in the pane", ok)
-            check(f"{kind}: the composer is empty after sending", pane_state(pane).get("composer") == "")
-            inst.cli("agent", "stop", sid, check=False)
-            inst.cli("pane", "close", pane, check=False)
-
-        # AP-1, MA-8: Esc in the pane interrupts the running turn.
-        sid = start(inst, "claude", "ECHO ready", "--split", "right", "--pane", win["pane"])
+        # AG-5: a headless session shown read-only, with its transcript and a Take Over button.
+        sid = inst.start_agent("claude", "ECHO hello from the read-only view", name=f"v-{nonce()}")
         inst.wait(sid)
-        pane = soon(lambda: agent_pane(inst, sid), 10)
-        message = inst.send(sid, "SLEEP 30")
-        soon(lambda: inst.info(sid)["status"] == "working", 10)
+        opened = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])
+        pane = opened["pane"]
+        view = soon(lambda: (lambda v: v if "hello from the read-only view" in v.get("transcript", "") else None)(
+            ctl.call("debug.agent.pane", pane=pane)), 10)
+        check("AG-5 the read-only view shows the transcript", view)
+        check("AG-5 it has a Take Over button and nothing to type into",
+              view and "Take Over" in view.get("buttons", []) and not any("Message" in t for t in view.get("texts", [])),
+              str(view and view.get("buttons")))
+        check("AG-14 info says the session is in a pane", info(inst, sid)["location"] == "pane")
+
+        # AG-6: Take Over → the agent's own interface in that pane, on the same conversation.
+        ctl.call("debug.agent.press", pane=pane, title="Take Over")
+        live = soon(lambda: info(inst, sid)["location"] == "live" and info(inst, sid)["status"] == "idle", 20)
+        check("AG-6 Take Over makes the session live in its pane", live, str(info(inst, sid)))
+        screen = soon(lambda: (lambda t: t if "hello from the read-only view" in t else None)(
+            inst.cli("read", "--pane", pane, check=False).stdout), 10)
+        check("AG-6 the interface shows the conversation so far", screen)
+
+        # AG-9: a message to the live (idle) Claude session runs headless and the interface comes back.
+        m = inst.send(sid, "ECHO sent while live")
+        done = inst.cli("agent", "wait", sid, "--message", m, "--timeout", "60", check=False)
+        check("AG-9 a message to a live session is answered", done.returncode == 0 and "sent while live" in done.stdout,
+              done.stdout[-200:])
+        check("AG-9 and the session is live again in the same pane",
+              soon(lambda: info(inst, sid)["location"] == "live" and info(inst, sid).get("pane") == pane, 20),
+              str(info(inst, sid)))
+
+        # AG-8: Remove Session from Pane (the menu item, on the focused pane): the pane goes away, the
+        # session stays and can be shown again.
         inst.cli("pane", "focus", pane)
-        soon(lambda: pane_state(pane).get("composer_focused"), 5)
-        ctl.call("debug.agent.type", pane=pane, key="escape")
-        code, out = inst.wait(sid, "--message", message, timeout=15)
-        check("Esc in the pane interrupts the turn", out["status"] == "INTERRUPTED", out)
-        check("the session stays alive after Esc", inst.info(sid)["live"])
+        if remove:
+            ctl.call("debug.menu.perform", title=remove[0]["title"])
+        gone = soon(lambda: not any(p["id"] == pane for w in inst.tree()["windows"] for t in w["tabs"] for p in t["panes"]), 15)
+        check("AG-8 Remove Session from Pane takes the pane away", gone)
+        after = info(inst, sid)
+        check("AG-8 the session is still there, headless", after["location"] == "background", str(after))
+        reopened = inst.json("agent", "open", sid, "--live")
+        check("AG-6 `agent open --live` shows it live again",
+              soon(lambda: info(inst, sid)["location"] == "live", 20), str(info(inst, sid)))
+        inst.cli("agent", "hide", sid, check=False)
 
-        # AP-6: a draft survives switching to the terminal and back, and moving the pane.
-        ctl.call("debug.agent.type", pane=pane, text="a draft not sent yet")
-        menu = {i["title"] for i in ctl.call("debug.menu")["items"]}
-        check("the menu has the agent pane's terminal toggle", "Toggle Agent Pane's Terminal" in menu)
-        inst.cli("pane", "focus", pane)
-        ctl.call("debug.menu.perform", title="Toggle Agent Pane's Terminal")
-        ok = soon(lambda: pane_state(pane).get("showing") == "terminal", 5)
-        check("the agent pane shows its shell", ok)
-        shell_cwd = inst.json("pane", "info", pane)["cwd"]
-        check("the shell is in the session's folder", os.path.realpath(shell_cwd) == os.path.realpath(inst.work), shell_cwd)
-        ctl.call("debug.menu.perform", title="Toggle Agent Pane's Terminal")
-        soon(lambda: pane_state(pane).get("showing") == "agent", 5)
-        check("a draft survives showing the terminal and back", pane_state(pane).get("composer") == "a draft not sent yet")
-        ctl.call("debug.menu.perform", title="Toggle Agent Pane's Terminal")
-        soon(lambda: pane_state(pane).get("showing") == "terminal", 5)
-        inst.json("agent", "open", sid, "--focus")
-        check("`agent open` of a pane showing its shell shows the session again",
-              soon(lambda: pane_state(pane).get("showing") == "agent", 5))
-        inst.cli("pane", "move", pane, "--new-tab")
-        time.sleep(1.0)
-        check("a draft survives moving the pane", pane_state(pane).get("composer") == "a draft not sent yet")
-        check("the moved pane still shows the session", inst.json("pane", "info", pane).get("agent") == sid)
-        inst.cli("agent", "stop", sid, check=False)
-
-        # AP-1: pending questions are shown, and answered from the pane's buttons. (Views of a
-        # tab that isn't shown are built when it is, so show the window's first tab again.)
+        # S-3 / AG-18: a session finishing while its pane isn't looked at marks its row; the Dock counts it.
+        other = inst.start_agent("claude", "SLEEP 2", "--tab", "--window", win["window"], name=f"m-{nonce()}",
+                                 background=False)
         inst.cli("tab", "focus", win["tab"])
-        sid = start(inst, "claude", "ASK_QUESTIONS", "--split", "right", "--pane", win["pane"])
-        code, out = inst.wait(sid)
-        pane = soon(lambda: agent_pane(inst, sid), 10)
-        def question_texts():
-            texts = " ".join(pane_state(pane).get("texts", []))
-            return texts if "Favorite color?" in texts and "Which size?" in texts else ""
-        texts = soon(question_texts, 15)
-        check("pending questions are shown in the pane", texts, " ".join(pane_state(pane).get("texts", [])))
-        buttons = pane_state(pane).get("buttons", [])
-        check("their options are buttons", "red" in buttons and "blue" in buttons and "Answer" in buttons, buttons)
-        ctl.call("debug.agent.press", pane=pane, title="Answer", field_text="blue")
-        code, out = inst.wait(sid)
-        check("questions answered from the pane", out["status"] == "DONE" and "Favorite color?=blue" in out["reply"], out)
-        inst.cli("agent", "stop", sid, check=False)
-
-        # A Codex question can only be answered: no Decline button that would do nothing.
-        sid = inst.json("agent", "start", "codex", "--cwd", inst.work, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
-                        "--split", "right", "--pane", win["pane"], "ASK_QUESTIONS")["session"]["id"]
-        inst.wait(sid)
-        pane = soon(lambda: agent_pane(inst, sid), 10)
-        ok = soon(lambda: "Answer" in pane_state(pane).get("buttons", []), 15)
-        check("a Codex question card offers Answer and no Decline",
-              ok and "Decline" not in pane_state(pane).get("buttons", []), pane_state(pane).get("buttons"))
-        inst.cli("agent", "stop", sid, check=False)
-
-        # AP-1: an approval answered from the pane.
-        sid = inst.json("agent", "start", "codex", "--cwd", inst.work, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
-                        "--permission-mode", "on-request", "--split", "right", "--pane", win["pane"],
-                        "ASK_APPROVAL")["session"]["id"]
-        code, out = inst.wait(sid)
-        pane = soon(lambda: agent_pane(inst, sid), 10)
-        ok = soon(lambda: {"Allow", "Always allow", "Deny"} <= set(pane_state(pane).get("buttons", [])), 15)
-        check("an approval is shown with Allow / Always allow / Deny", ok, pane_state(pane).get("buttons"))
-        ctl.call("debug.agent.press", pane=pane, title="Allow")
-        code, out = inst.wait(sid)
-        check("the approval was given from the pane", out["status"] == "DONE" and "accepted" in out["reply"], out)
-        inst.cli("agent", "stop", sid, check=False)
-
-        # AP-2, AP-4: closing the pane leaves the session; Undo brings the pane back.
-        sid = start(inst, "claude", "ECHO undo me", "--split", "right", "--pane", win["pane"])
-        inst.wait(sid)
-        pane = soon(lambda: agent_pane(inst, sid), 10)
-        inst.cli("pane", "close", pane)
-        soon(lambda: not inst.find_agent_pane(sid), 5)
-        check("closing the agent pane leaves the session running", inst.info(sid)["live"])
-        inst.cli("pane", "focus", win["pane"])
-        ctl.call("debug.menu.perform", title="Undo")
-        back = soon(lambda: inst.find_agent_pane(sid), 5)
-        check("Undo brings the agent pane back", back and back[1]["id"] == win["tab"])
-        if back:
-            ok = soon(lambda: "undo me" in pane_state(back[2]["id"]).get("transcript", ""), 5)
-            check("and it shows the session again", ok)
-
-        # AP-5: a pane opened again shows every turn, in order, once.
-        secrets = ["s1-" + nonce(), "s2-" + nonce(), "s3-" + nonce()]
-        sid = start(inst, "claude", "PRINTENV ACC_S1", "--split", "right", "--pane", win["pane"],
-                    env={"ACC_S1": secrets[0], "ACC_S2": secrets[1], "ACC_S3": secrets[2]})
-        inst.wait(sid)
-        pane = soon(lambda: agent_pane(inst, sid), 10)
-        inst.cli("pane", "close", pane)
-        soon(lambda: not inst.find_agent_pane(sid), 5)
-        for name in ("ACC_S2", "ACC_S3"):
-            inst.send(sid, f"PRINTENV {name}")
-            inst.wait(sid)
-        pane = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])["pane"]
-
-        def ordered():
-            text = pane_state(pane).get("transcript", "")
-            positions = [text.find(s) for s in secrets]
-            return all(p >= 0 for p in positions) and positions == sorted(positions) and \
-                all(text.count(s) == 1 for s in secrets)
-        check("a reopened pane shows every reply in order, once each", soon(ordered, 10))
+        inst.wait(other)
+        attention = soon(lambda: (lambda a: a if any(p.get("mark") == "finished" for p in a["panes"].values()) else None)(
+            ctl.call("debug.ui.attention")), 15)
+        check("S-3 a session that finished out of sight gets the finished mark", attention, str(ctl.call("debug.ui.attention")))
+        check("S-3 the Dock badge counts it", attention and attention.get("badge") not in ("", None))
+        shown = inst.find_agent_pane(other)
+        if shown:
+            inst.cli("pane", "focus", shown[2]["id"])
+            cleared = soon(lambda: not any(p.get("mark") != "none" for p in ctl.call("debug.ui.attention")["panes"].values()), 10)
+            check("S-3 looking at it clears the mark", cleared, str(ctl.call("debug.ui.attention")))
+        for s in (sid, other):
+            inst.cli("agent", "stop", s, check=False)
+        check("no two processes ever ran one conversation", not inst.violations(), str(inst.violations()))
     finally:
         inst.cleanup()
-
-    # AP-5, R-3: after a restart, the pane shows the earlier conversation.
-    other = Instance(target, prefix="acc-verify-ap5-")
-    other.start_app()
-    try:
-        ctl = Control(other)
-        secret = "before-restart-" + nonce()
-        sid = other.json("agent", "start", "claude", "--cwd", other.work, "--env", "FAKE_AGENT_DIR=" + other.fake_dir,
-                         "--env", f"ACC_SECRET={secret}", "--tab", "PRINTENV ACC_SECRET")["session"]["id"]
-        other.wait(sid)
-        other.quit_app()
-        other.start_app()
-        ctl = Control(other)
-        other.json("agent", "open", sid, "--focus")
-        found = soon(lambda: other.find_agent_pane(sid), 10)
-        check("the session is shown after a restart", found)
-        if found:
-            ok = soon(lambda: secret in ctl.call("debug.agent.pane", pane=found[2]["id"]).get("transcript", ""), 15)
-            check("and its pane shows the conversation from before the restart", ok)
-    finally:
-        other.cleanup()
-
     failed = [r for r in results if not r[1]]
     print(f"\n{len(results) - len(failed)} passed, {len(failed)} failed")
     sys.exit(1 if failed else 0)
