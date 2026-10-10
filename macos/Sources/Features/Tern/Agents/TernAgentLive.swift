@@ -73,6 +73,26 @@ extension TernAgentSession {
     /// `agent attach` from a pane: make the conversation free for the agent's own interface
     /// (taking it over from a running headless turn, at once) and say how to run it there.
     func prepareLive(pane: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        if record.live == true, endingLivePane != nil {
+            // Its previous interface is being ended: one process per conversation, so go on once
+            // it has (at most 10 s).
+            var done = false
+            var waiter: UUID?
+            waiter = addWaiter { [weak self] in
+                guard let self, !done else { return true }
+                guard self.record.live != true else { return false }
+                done = true
+                self.prepareLive(pane: pane, completion: completion)
+                return true
+            }
+            TernAgents.queue.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, !done else { return }
+                done = true
+                if let waiter { self.removeWaiter(waiter) }
+                completion(.failure(TernError.failed("\(self.record.name)'s previous interface is still closing; try again")))
+            }
+            return
+        }
         if record.live == true, let current = record.pane, current != pane, liveState != nil {
             completion(.failure(TernError.failed("\(record.name) is already live in pane \(current.prefix(8)); "
                 + "`\(TernPaths.cliName) agent open \(record.name)` shows it")))
@@ -136,7 +156,7 @@ extension TernAgentSession {
             record.livePID = nil
             record.goLiveWhenSettled = nil
             liveState = record.kind == .codex ? .idle : .starting
-            liveDraft = false
+            liveDraft = false; liveDraftChars = 0
             liveBackground = 0
             liveActivity = ""
             goingLive = false
@@ -233,7 +253,7 @@ extension TernAgentSession {
             if liveState == .starting || liveState == nil { liveState = .idle }
         case "UserPromptSubmit":
             liveState = .working
-            liveDraft = false
+            liveDraft = false; liveDraftChars = 0
             liveActivity = ""
             if record.conversation != true { record.conversation = true; saveRecord() }
             let prompt = payload["prompt"] as? String ?? ""
@@ -304,16 +324,27 @@ extension TernAgentSession {
 
     /// Esc or Ctrl-C typed into the live interface while it worked: interrupts fire no hook, so
     /// a turn with no hook for two seconds afterwards is taken as interrupted (Warp does the same).
-    func liveKey(interrupt: Bool, typing: Bool) {
+    /// A key in the live interface. `typed`: characters added to its input line (negative:
+    /// deleted with Backspace). Text typed and not sent holds messages back (also while a turn
+    /// runs: it waits in the input box); deleting it all lets them go.
+    func liveKey(interrupt: Bool, typed: Int) {
         lastLiveKey = Date()
         if !interrupt {
-            // Text typed and not sent (also while a turn runs: it waits in the input box).
-            if typing { liveDraft = true }
+            liveDraftChars = max(0, liveDraftChars + typed)
+            let had = liveDraft
+            if typed > 0 { liveDraft = true } else if typed < 0 && liveDraftChars == 0 { liveDraft = false }
             changed()
+            if had && !liveDraft { pump() }
             return
         }
-        // Ctrl-C at an idle prompt clears what was typed.
-        if liveState == .idle { liveDraft = false }
+        if liveState == .idle {
+            // Ctrl-C at an idle prompt clears what was typed: what waited for that can go.
+            liveDraft = false
+            liveDraftChars = 0
+            changed()
+            pump()
+            return
+        }
         guard liveState == .working || liveState == .needsInput else { changed(); return }
         let asked = Date()
         TernAgents.queue.asyncAfter(deadline: .now() + 2) { [weak self] in
@@ -333,6 +364,7 @@ extension TernAgentSession {
     func liveDraftCleared() {
         lastLiveKey = Date()
         liveDraft = false
+        liveDraftChars = 0
         changed()
         pump()
     }
@@ -345,13 +377,18 @@ extension TernAgentSession {
         // live in its pane, so it comes back live there (AG-7).
         guard !shuttingDown else { return }
         let wasReclaiming = reclaiming
-        let endedPane = record.pane ?? endingLivePane
+        // The pane the interface ran in (the session may have been shown in another since).
+        let endedPane = endingLivePane ?? record.pane
+        if let pid = record.livePID, record.liveAttached != true {
+            exitingLivePID = pid
+            exitingLiveDeadline = Date().addingTimeInterval(5)
+        }
         endingLivePane = nil
         record.live = nil
         record.livePID = nil
         record.liveAttached = nil
         liveState = nil
-        liveDraft = false
+        liveDraft = false; liveDraftChars = 0
         liveBackground = 0
         liveActivity = ""
         reclaiming = false
@@ -364,12 +401,12 @@ extension TernAgentSession {
             notice("Its interface closed; the session is headless again.")
         }
         saveRecord()
-        let pane = record.pane ?? endedPane
+        let pane = endedPane
         let id = record.id
         // A `claude` the user typed leaves their shell behind; a session Tern opened goes back
         // to its read-only view.
         let keepView = record.origin != "typed" || wasReclaiming
-        if !keepView { record.pane = nil; saveRecord() }
+        if !keepView, record.pane == endedPane { record.pane = nil; saveRecord() }
         DispatchQueue.main.async {
             MainActor.assumeIsolated { TernAgentUI.liveEnded(session: id, pane: pane, keepView: keepView) }
         }

@@ -80,8 +80,16 @@ final class TernAgentUI: ObservableObject {
         TernAgentMenu.shared.setNeedsRebuild()
         // The session's pane is this one (a restored pane has a new id).
         let ternID = pane.uuidString.lowercased()
+        let openPanes = Set(TernTopology.allSurfaces.map(\.ternID))
         TernAgents.queue.async {
             guard let s = TernAgents.shared.session(id: session) else { return }
+            if s.record.live == true, let old = s.record.pane, old != ternID, !openPanes.contains(old) {
+                // Its interface still runs in a closed pane kept for reopening (L-20): end it, so
+                // taking the session over here can't start a second process on its conversation.
+                s.endingLivePane = old
+                s.record.pane = nil
+                s.endLiveInterface(reason: "shown elsewhere")
+            }
             if s.record.pane != ternID {
                 s.record.pane = ternID
                 s.saveRecord()

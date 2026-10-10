@@ -125,47 +125,83 @@ extension TernAgentUI {
     func keyTyped(pane: Ghostty.SurfaceView, event: NSEvent) {
         guard let session = attachments[pane.id] ?? Self.sessionLive(in: pane.id) else { return }
         let chars = event.charactersIgnoringModifiers ?? ""
-        let interrupt = event.keyCode == 53 /* esc */
-            || (event.modifierFlags.contains(.control) && chars.lowercased() == "c")
-        let submit = event.keyCode == 36 || event.keyCode == 76   // return, enter
-        // Text going into the input box: not navigation (arrows, page keys) or app shortcuts.
-        let navigation: Set<UInt16> = [123, 124, 125, 126, 115, 116, 119, 121]
-        let clears = event.modifierFlags.contains(.control) && chars.lowercased() == "u"
-        let typing = !navigation.contains(event.keyCode) && !event.modifierFlags.contains(.command)
-            && !(event.characters ?? "").isEmpty && !clears
-        Self.liveInput(session: session, interrupt: interrupt, submit: submit, typing: typing, clears: clears)
+        let control = event.modifierFlags.contains(.control)
+        let input: LiveInput
+        if event.keyCode == 53 /* esc */ || (control && chars.lowercased() == "c") {
+            input = .interrupt
+        } else if event.keyCode == 36 || event.keyCode == 76 {   // return, enter
+            input = .submit
+        } else if control && chars.lowercased() == "u" {
+            input = .clear
+        } else if event.keyCode == 51 && event.modifierFlags.isDisjoint(with: [.option, .command]) {
+            input = .delete                                       // backspace: one character
+        } else if [123, 124, 125, 126, 115, 116, 119, 121, 117].contains(event.keyCode)
+                    || event.modifierFlags.contains(.command) || (event.characters ?? "").isEmpty {
+            input = .other                                        // navigation, shortcuts
+        } else if event.keyCode == 51 || control {
+            input = .edit                                         // a word deleted, a control key
+        } else {
+            input = .text((event.characters ?? "").count)
+        }
+        Self.liveInput(session: session, input)
     }
 
     /// Text and keys put into a pane through Tern (`tern send`, `tern keys`): agents and scripts
     /// type into a live interface this way, so it counts like the keyboard (AG-9, AG-19).
     func inputSent(pane: Ghostty.SurfaceView, text: String, keys: [String]) {
         guard let session = attachments[pane.id] ?? Self.sessionLive(in: pane.id) else { return }
-        if !text.isEmpty { Self.liveInput(session: session, interrupt: false, submit: false, typing: true, clears: false) }
+        if !text.isEmpty { Self.liveInput(session: session, .text(text.count)) }
         for key in keys {
             let spec = key.lowercased()
-            let interrupt = ["esc", "escape", "ctrl+c", "control+c", "c+c"].contains(spec)
-            let submit = ["enter", "return", "ret", "cr", "nl"].contains(spec)
-            let clears = ["ctrl+u", "control+u", "c+u"].contains(spec)
-            let navigation = ["up", "down", "left", "right", "pgup", "pgdn", "pageup", "pagedown", "home", "end"]
-                .contains(spec) || spec.hasPrefix("arrow") || spec.hasPrefix("cmd+") || spec.hasPrefix("command+")
-            Self.liveInput(session: session, interrupt: interrupt, submit: submit,
-                           typing: !interrupt && !submit && !navigation && !clears, clears: clears)
+            let input: LiveInput
+            if ["esc", "escape", "ctrl+c", "control+c", "c+c"].contains(spec) {
+                input = .interrupt
+            } else if ["enter", "return", "ret", "cr", "nl"].contains(spec) {
+                input = .submit
+            } else if ["ctrl+u", "control+u", "c+u"].contains(spec) {
+                input = .clear
+            } else if ["backspace", "bs"].contains(spec) {
+                input = .delete
+            } else if ["up", "down", "left", "right", "pgup", "pgdn", "pageup", "pagedown", "home", "end", "delete", "del"]
+                        .contains(spec) || spec.hasPrefix("arrow") || spec.hasPrefix("cmd+") || spec.hasPrefix("command+") {
+                input = .other
+            } else if spec.contains("+") {
+                input = .edit
+            } else {
+                input = .text(1)
+            }
+            Self.liveInput(session: session, input)
         }
     }
 
-    private static func liveInput(session: String, interrupt: Bool, submit: Bool, typing: Bool, clears: Bool) {
+    /// What a key (or text) does to the live interface's input line, as far as Tern can tell.
+    enum LiveInput {
+        case interrupt, submit, clear, delete, other, edit
+        case text(Int)
+    }
+
+    private static func liveInput(session: String, _ input: LiveInput) {
         TernAgents.queue.async {
             guard let s = TernAgents.shared.session(id: session), s.record.live == true else { return }
-            if submit {
+            switch input {
+            case .submit:
+                s.lastLiveKey = Date()   // UserPromptSubmit says whether something was sent
+            case .clear:
+                s.liveDraftCleared()     // Ctrl-U empties the input line
+            case .interrupt:
+                s.liveKey(interrupt: true, typed: 0)
+            case .delete:
+                s.liveKey(interrupt: false, typed: -1)
+            case .text(let count):
+                s.liveKey(interrupt: false, typed: count)
+            case .edit:
+                // Something changed the line by an amount Tern can't tell: if text was typed, it
+                // still counts as typed.
+                s.liveKey(interrupt: false, typed: 0)
+            case .other:
                 s.lastLiveKey = Date()
-                return   // UserPromptSubmit says whether something was sent
+                s.changed()
             }
-            if clears {
-                // Ctrl-U empties the input line.
-                s.liveDraftCleared()
-                return
-            }
-            s.liveKey(interrupt: interrupt, typing: typing)
         }
     }
 

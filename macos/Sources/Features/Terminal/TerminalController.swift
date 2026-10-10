@@ -1132,6 +1132,10 @@ class TerminalController: BaseTerminalController {
 
         // Tern manages tabs itself; AppKit must never merge windows into tab groups.
         window.tabbingMode = .disallowed
+        // While the screen is locked or asleep no frames are drawn, and AppKit's window-opening
+        // animation never ends: each window opened then (agents open windows unattended) kept a
+        // thread waiting for ever, until the shared thread pool ran out. No animation then.
+        if TernScreen.isUnavailable { window.animationBehavior = .none }
 
         let config = ghostty.config
         syncRestoration()

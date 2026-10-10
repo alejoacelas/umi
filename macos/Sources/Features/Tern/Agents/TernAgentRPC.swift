@@ -529,8 +529,12 @@ enum TernAgentRPC {
         }
         let pane = try TernAgentUI.open(session.record.id, placement: placement, caller: caller)
         if params.bool("live") ?? false, let surface = TernAgentUI.surface(ternID: pane) {
-            let live = await agents.runQuietly { session.record.live == true }
-            if live != true { TernAgentUI.shared.takeOver(surface, session: session.record.id) }
+            // Already live in this pane: nothing to do. Live elsewhere (or an interface left in a
+            // closed pane, being ended): take it over here.
+            let liveHere = await agents.runQuietly {
+                session.record.live == true && session.record.pane == pane && session.endingLivePane == nil
+            }
+            if liveHere != true { TernAgentUI.shared.takeOver(surface, session: session.record.id) }
         }
         return try await agents.run { ["session": info(session, pane: pane), "pane": pane] }
     }

@@ -191,13 +191,27 @@ final class TernReopen {
         }
     }
 
+    /// Same split sizes throughout (structural identity ignores them): a tab resized since the
+    /// close keeps its new sizes, and the pane is inserted into it instead.
+    private static func sameRatios(_ a: SplitTree<Ghostty.SurfaceView>.Node, _ b: SplitTree<Ghostty.SurfaceView>.Node) -> Bool {
+        switch (a, b) {
+        case (.leaf, .leaf):
+            return true
+        case (.split(let x), .split(let y)):
+            return abs(x.ratio - y.ratio) < 0.001 && sameRatios(x.left, y.left) && sameRatios(x.right, y.right)
+        default:
+            return false
+        }
+    }
+
     private func restorePane(_ entry: Entry) throws -> [String: Any]? {
         guard let pane = entry.pane else { return nil }
         if let tab = entry.paneTab, let window = TernTopology.locate(tab: tab) {
             let current = window.tree(of: tab)
             let newTree: SplitTree<Ghostty.SurfaceView>
             if let root = current.root, let after = entry.after?.resolve(), let before = entry.before?.resolve(),
-               after.structuralIdentity == root.structuralIdentity, before.node(view: pane) != nil {
+               after.structuralIdentity == root.structuralIdentity, Self.sameRatios(after, root),
+               before.node(view: pane) != nil {
                 // The tab is as the close left it: the pane goes back in its slot, at its size.
                 newTree = SplitTree(root: before, zoomed: nil)
             } else {

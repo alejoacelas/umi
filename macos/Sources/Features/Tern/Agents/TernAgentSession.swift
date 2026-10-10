@@ -124,6 +124,9 @@ final class TernAgentSession {
     /// The user typed into the live interface since their last prompt: a message waiting for
     /// the session doesn't take it back from them (AG-9).
     var liveDraft = false
+    /// Characters typed on the interface's input line and not deleted (Backspace), as far as Tern
+    /// saw them.
+    var liveDraftChars = 0
     var lastLiveKey: Date?
     /// Background work the live interface reported at its last Stop.
     var liveBackground = 0
@@ -137,6 +140,10 @@ final class TernAgentSession {
     /// The pane a live interface ran in while it's being ended after the session left it: its
     /// process carries that pane's id (an agent typed there has no session id).
     var endingLivePane: String?
+    /// The live interface's process after its end was noticed (its SessionEnd hook comes before
+    /// it has exited): no headless process starts until it's gone (one process per conversation).
+    var exitingLivePID: Int32?
+    var exitingLiveDeadline = Date.distantPast
     /// The last time a hook reported anything (an interrupt in the interface fires none).
     var lastHookAt: Date?
     /// Waiters for the headless process to stop (taking the session over).
@@ -460,6 +467,16 @@ final class TernAgentSession {
 
     func launch() {
         guard phase == .stopped else { return }
+        if let pid = exitingLivePID {
+            if TernAgentLive.isLiveProcess(pid, of: self) {
+                if Date() < exitingLiveDeadline {
+                    TernAgents.queue.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.pump() }
+                    return
+                }
+                kill(pid, SIGKILL)
+            }
+            exitingLivePID = nil
+        }
         var isDir = ObjCBool(false)
         guard FileManager.default.fileExists(atPath: record.cwd, isDirectory: &isDir), isDir.boolValue else {
             failOutstanding("the session's folder \(record.cwd) no longer exists")
