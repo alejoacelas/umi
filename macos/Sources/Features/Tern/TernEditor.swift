@@ -506,14 +506,13 @@ enum TernEditor {
          "encoding": TernTextFile.encodingName(doc.encoding), "changed_on_disk": doc.changedOnDisk]
     }
 
-    /// Open a file from Finder or `open FILE` in the current tab, bringing it forward.
+    /// Open a file from Finder or `open FILE` (Tern is the default Markdown app), bringing it
+    /// forward: in the tab whose folder is closest to the file, else in a new tab (E-10). The
+    /// Open panel (`inCurrentTab`) opens in the current tab, where the person asked.
     @discardableResult
-    static func openFromSystem(_ url: URL) -> Bool {
+    static func openFromSystem(_ url: URL, inCurrentTab: Bool = false) -> Bool {
         do {
-            try TernTextFile.checkOpenable(url)
-            let (window, tab) = try targetTab(TernParams([:]), caller: TernCaller([:]), createWindow: true)
-            try tab.editor.open(url, mode: nil)
-            TernLayout.focusTab(tab, in: window)
+            try open(url, inCurrentTab: inCurrentTab)
             return true
         } catch let error as TernError {
             let alert = NSAlert()
@@ -524,6 +523,74 @@ enum TernEditor {
         } catch {
             return false
         }
+    }
+
+    /// Open a file from outside Tern (see `openFromSystem`); returns where it opened.
+    @discardableResult
+    static func open(_ url: URL, inCurrentTab: Bool) throws -> (TerminalController, TernTab) {
+        try TernTextFile.checkOpenable(url)
+        let (window, tab) = inCurrentTab
+            ? try targetTab(TernParams([:]), caller: TernCaller([:]), createWindow: true)
+            : try closestTab(to: url)
+        try tab.editor.open(url, mode: nil)
+        TernLayout.focusTab(tab, in: window)
+        return (window, tab)
+    }
+
+    /// The tab a file from outside Tern opens in (E-10):
+    /// 1. a tab where it is already open;
+    /// 2. else the tab with a pane whose folder is the deepest one containing the file. Every
+    ///    pane of a tab counts, not only the focused one; `/` doesn't count. Ties go to the
+    ///    current tab, then the current window's tabs in sidebar order, then the other
+    ///    windows' (oldest window first);
+    /// 3. else a new tab in the file's folder, in the current window (a new window if none).
+    static func closestTab(to url: URL) throws -> (TerminalController, TernTab) {
+        let file = canonicalPath(url.path)
+        let current = TernTopology.currentWindow
+        var candidates: [(TerminalController, TernTab)] = []
+        if let current {
+            candidates.append((current, current.selectedTab))
+            candidates += current.tabs.filter { $0 !== current.selectedTab }.map { (current, $0) }
+        }
+        for window in TernTopology.windows where window !== current {
+            candidates += window.tabs.map { (window, $0) }
+        }
+        if let open = candidates.first(where: { $0.1.editor.document(for: url) != nil }) { return open }
+
+        var best: (window: TerminalController, tab: TernTab, depth: Int)?
+        for (window, tab) in candidates {
+            for pane in TernTopology.panes(of: tab, in: window) {
+                let folder = canonicalPath(TernTopology.cwd(of: pane))
+                guard folder != "/", !folder.isEmpty, file.hasPrefix(folder + "/") else { continue }
+                let depth = folder.split(separator: "/").count
+                if depth > (best?.depth ?? 0) { best = (window, tab, depth) }
+            }
+        }
+        if let best { return (best.window, best.tab) }
+
+        // No tab is in or above the file's folder: a new tab there.
+        var options = TernLayout.PaneOptions()
+        options.cwd = url.deletingLastPathComponent().path
+        let created: [String: Any]
+        if let current {
+            created = try TernLayout.newTab(in: current, options: options, tabName: nil, color: .none,
+                                            index: nil, focus: false, inheritFrom: nil)
+        } else {
+            created = try TernLayout.newWindow(options, tabName: nil, focus: false)
+        }
+        guard let windowID = created["window"] as? String, let tabID = created["tab"] as? String,
+              let window = TernTopology.windows.first(where: { $0.ternIDString == windowID }),
+              let tab = window.tabs.first(where: { $0.idString == tabID }) else {
+            throw TernError.failed("couldn't make a tab for \(url.lastPathComponent)")
+        }
+        return (window, tab)
+    }
+
+    /// A path with symlinks resolved (/tmp and /private/tmp are one folder).
+    private static func canonicalPath(_ path: String) -> String {
+        guard !path.isEmpty else { return path }
+        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+        return resolved.count > 1 && resolved.hasSuffix("/") ? String(resolved.dropLast()) : resolved
     }
 
     /// The active document of the current tab (for menu commands).
@@ -559,7 +626,7 @@ enum TernEditor {
         panel.allowsMultipleSelection = true
         if let pane = TernTopology.currentPane, let pwd = pane.pwd { panel.directoryURL = URL(fileURLWithPath: pwd) }
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls { openFromSystem(url) }
+        for url in panel.urls { openFromSystem(url, inCurrentTab: true) }
     }
 
     /// Close a document, asking first if it has unsaved changes (E-3).

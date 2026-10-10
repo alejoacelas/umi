@@ -7,6 +7,8 @@ import SwiftUI
 enum TerminalSplitOperation {
     case resize(Resize)
     case drop(Drop)
+    /// Tern: give the panes of a divider's row (or column) equal shares (double-click).
+    case equalize(SplitTree<Ghostty.SurfaceView>.Node)
 
     struct Resize {
         let node: SplitTree<Ghostty.SurfaceView>.Node
@@ -78,8 +80,9 @@ private struct TerminalSplitSubtreeView: View {
                     TerminalSplitSubtreeView(node: split.right, action: action)
                 },
                 onEqualize: {
-                    guard let surface = node.leftmostLeaf().surface else { return }
-                    ghostty.splitEqualize(surface: surface)
+                    // Tern: only this divider's row or column, as in Warp (⌃⌘= still
+                    // equalizes the whole tab).
+                    action(.equalize(node))
                 }
             )
         }

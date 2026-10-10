@@ -151,7 +151,9 @@ enum TernLayout {
         let oldTree = window.tree(of: tab)
         var newTree = try oldTree.inserting(view: view, at: target, direction: direction)
         if let ratio, ratio > 0, ratio < 1 {
-            newTree = resized(newTree, containing: view, ratio: ratio)
+            // The new pane's share of its row (or column); the others keep their proportions.
+            newTree = newTree.settingShare(of: view, to: ratio,
+                                           along: direction == .left || direction == .right ? .horizontal : .vertical)
         }
         // Splitting unzooms, like Ghostty.
         newTree = SplitTree(root: newTree.root, zoomed: nil)
@@ -159,8 +161,8 @@ enum TernLayout {
         if tab !== window.selectedTab {
             // Start at the size it will have, so its program sees the right columns/rows.
             let bounds = window.surfaceTree.viewBounds()
-            if bounds.width > 0 {
-                view.frame = CGRect(origin: .zero, size: CGSize(width: bounds.width / 2, height: bounds.height))
+            if bounds.width > 0, let frame = newTree.root?.frames(in: bounds).first(where: { $0.view === view })?.frame {
+                view.frame = CGRect(origin: .zero, size: frame.size)
                 view.sizeDidChange(view.frame.size)
             }
         }
@@ -171,23 +173,6 @@ enum TernLayout {
         }
         TernEvents.shared.emit("pane.created", ["pane": view.ternID, "tab": tab.idString, "window": window.ternIDString])
         return created(view, tab: tab, window: window)
-    }
-
-    /// Set the ratio of the split that directly contains `view` so that `view` gets
-    /// `ratio` of the space.
-    static func resized(_ tree: SplitTree<Ghostty.SurfaceView>, containing view: Ghostty.SurfaceView, ratio: Double) -> SplitTree<Ghostty.SurfaceView> {
-        guard let root = tree.root,
-              let path = root.path(to: .leaf(view: view)),
-              !path.path.isEmpty else { return tree }
-        let parentPath = SplitTree<Ghostty.SurfaceView>.Path(path: Array(path.path.dropLast()))
-        guard let parent = root.node(at: parentPath), case .split(let split) = parent else { return tree }
-        let viewIsLeft = path.path.last == .left
-        let resizedNode = SplitTree<Ghostty.SurfaceView>.Node.split(.init(
-            direction: split.direction,
-            ratio: viewIsLeft ? ratio : 1 - ratio,
-            left: split.left,
-            right: split.right))
-        return (try? tree.replacing(node: parent, with: resizedNode)) ?? tree
     }
 
     // MARK: Focus
@@ -206,6 +191,7 @@ enum TernLayout {
         location.tab.focusedSurface = pane
         if window.surfaceTree.contains(pane) { window.focusedSurface = pane }
         TernTopology.windowBecameCurrent(window)
+        TernLooking.focusChanged(in: window)
         window.window?.makeKeyAndOrderFront(nil)
         if activate && !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
         DispatchQueue.main.async { Ghostty.moveFocus(to: pane) }
@@ -445,9 +431,10 @@ enum TernLayout {
     // MARK: Moving tabs
 
     /// Move a tab within its window or to another (or a new) window. `index` is 1-based
-    /// and clamped into the tab's pin group.
+    /// and clamped into the tab's pin group. A new window opens at `point` (screen
+    /// coordinates, where a dragged tab was dropped) when given, else offset from the source.
     static func move(tab: TernTab, from source: TerminalController, toWindow target: TerminalController?,
-                     index: Int?, newWindow: Bool, focus: Bool) throws -> TerminalController {
+                     index: Int?, newWindow: Bool, focus: Bool, at point: NSPoint? = nil) throws -> TerminalController {
         let ghostty = try requireGhostty()
         var involved: [TerminalController] = [source]
         if let target, target !== source { involved.append(target) }
@@ -455,11 +442,18 @@ enum TernLayout {
         undoable("Move Tab", windows: involved) {
             if newWindow {
                 let frame = source.window?.frame
+                let width = source.sidebarWidth
                 source.detachTab(tab, focusNeighbor: false)
                 result = TerminalController.newWindow(
                     ghostty, tabs: [tab], selected: tab,
-                    frame: frame.map { NSRect(origin: CGPoint(x: $0.minX + 30, y: $0.minY - 30), size: $0.size) },
+                    frame: frame.map { frame in
+                        // The drop point lands on the new window's sidebar, near its top.
+                        let origin = point.map { CGPoint(x: $0.x - 60, y: $0.y + 40 - frame.height) }
+                            ?? CGPoint(x: frame.minX + 30, y: frame.minY - 30)
+                        return NSRect(origin: origin, size: frame.size)
+                    },
                     focus: focus, registerUndo: false)
+                result.sidebarWidth = width
             } else if let target, target !== source {
                 source.detachTab(tab, focusNeighbor: false)
                 target.insertTab(tab, at: index.map { $0 - 1 })

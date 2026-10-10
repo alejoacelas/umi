@@ -64,7 +64,9 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     /// The focused terminal's initial size plus the sidebar.
     private var idealContentSize: CGSize? {
         guard let initial = lastFocusedSurface?.value?.initialSize else { return nil }
-        let chrome = TernTheme.chromeSize(sidebar: ternState.sidebarVisible && viewModel is TerminalController)
+        let controller = viewModel as? TerminalController
+        let chrome = TernTheme.chromeSize(sidebar: ternState.sidebarVisible && controller != nil,
+                                          width: controller?.sidebarWidth ?? TernTheme.sidebarWidth)
         return CGSize(width: initial.width + chrome.width, height: initial.height + chrome.height)
     }
 
@@ -92,7 +94,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     HStack(spacing: 0) {
                         if ternState.sidebarVisible, let controller {
                             TernSidebar(controller: controller, topInset: topInset)
-                                .frame(width: TernTheme.sidebarWidth)
+                                .frame(width: controller.sidebarWidth)
+                                .overlay(alignment: .trailing) { TernSidebarResizeEdge(controller: controller) }
                                 .transition(.move(edge: .leading))
                         }
 
@@ -142,6 +145,13 @@ extension TerminalView {
             TerminalSplitTreeView(
                 tree: viewModel.surfaceTree,
                 action: { delegate?.performSplitAction($0) })
+                .background(GeometryReader { geo in
+                    // Tern: the panes' area, for the frames `ls` reports (L-19).
+                    let controller = viewModel as? TerminalController
+                    Color.clear
+                        .onAppear { controller?.terminalAreaSize = geo.size }
+                        .onChange(of: geo.size) { controller?.terminalAreaSize = $0 }
+                })
                 .environmentObject(ghostty)
                 .ghosttyLastFocusedSurface(lastFocusedSurface)
                 .focused($focused)

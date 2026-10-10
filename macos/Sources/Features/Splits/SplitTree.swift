@@ -122,10 +122,14 @@ extension SplitTree {
 
     /// Insert a new view at the given view point by creating a split in the given direction.
     /// This will always reset the zoomed state of the tree.
+    ///
+    /// Tern (L-19): panes in the same row or column share it equally, as in Warp. When `at`
+    /// is already in a row (column) and the split goes along it, the new view joins that run
+    /// with an equal share and the others shrink proportionally; otherwise `at` is halved.
     func inserting(view: ViewType, at: ViewType, direction: NewDirection) throws -> Self {
         guard let root else { throw SplitError.viewNotFound }
         return .init(
-            root: try root.inserting(view: view, at: at, direction: direction),
+            root: try root.insertingIntoRun(view: view, at: at, direction: direction),
             zoomed: nil)
     }
     /// Find a node containing a view with the specified ID.
@@ -138,6 +142,9 @@ extension SplitTree {
 
     /// Remove a node from the tree. If the node being removed is part of a split,
     /// the sibling node takes the place of the parent split.
+    ///
+    /// Tern (L-19): a pane leaving a row (column) of three or more shares its space among
+    /// the rest of that row in proportion to their sizes.
     func removing(_ target: Node) -> Self {
         guard let root else { return self }
 
@@ -147,7 +154,7 @@ extension SplitTree {
         }
 
         // Otherwise, try to remove from the tree
-        let newRoot = root.remove(target)
+        let newRoot = root.removingFromRun(target)
 
         // Update zoomed if it was the removed node
         let newZoomed = (zoomed == target) ? nil : zoomed
@@ -319,16 +326,9 @@ extension SplitTree {
             throw SplitError.viewNotFound
         }
 
-        // Create new split with adjusted ratio
-        let newSplit = Node.Split(
-            direction: split.direction,
-            ratio: newRatio,
-            left: split.left,
-            right: split.right
-        )
-
-        // Replace the split node with the new one
-        let newRoot = try root.replacingNode(at: splitPath, with: .split(newSplit))
+        // Tern: move only this divider. In a row of three or more, the two panes beside
+        // it change size and the others keep theirs (as in Warp).
+        let newRoot = try root.movingDivider(at: splitPath, to: newRatio)
         return .init(root: newRoot, zoomed: nil)
     }
 
@@ -1409,5 +1409,214 @@ extension SplitTree {
                 return false
             }
         }
+    }
+}
+
+// MARK: Runs (Tern: equal panes, L-19)
+
+// Warp lays out panes as flex siblings: panes in the same row (or column) share it, a split
+// along the row adds an equal sibling, and a close shares the space among the rest. A binary
+// tree holds the same thing as a *run*: a maximal chain of nested splits with the same
+// direction. Its *members* are the maximal subtrees not split in that direction; a member's
+// share of the run is the product of the ratios along its path inside the run.
+//
+// Known limit: a binary tree can't tell a nested same-direction row from a flat one, so a row
+// Warp would keep separate (closing D in Row[A, Col[Row[B, C], D]]) joins its parent row here.
+
+extension SplitTree {
+    /// Give every member of the run that `node` (a split) belongs to the same share: what
+    /// double-clicking a divider does. The rest of the tree keeps its sizes.
+    func equalizingRun(containing node: Node) -> Self {
+        guard let root, let path = root.path(to: node),
+              let newRoot = try? root.equalizingRun(at: path) else { return self }
+        return .init(root: newRoot, zoomed: zoomed)
+    }
+
+    /// Move the divider of `node` (a split) to `ratio` of that split. In a row of three or
+    /// more only the two panes beside the divider change size (as in Warp).
+    func movingDivider(of node: Node, to ratio: Double) throws -> Self {
+        guard let root else { throw SplitError.viewNotFound }
+        guard let path = root.path(to: node) else { throw SplitError.viewNotFound }
+        return .init(root: try root.movingDivider(at: path, to: ratio), zoomed: zoomed)
+    }
+
+    /// Give `view` `share` of its row (`.horizontal`) or column (`.vertical`); the others keep
+    /// their proportions. A view not in such a run is left as it is.
+    func settingShare(of view: ViewType, to share: Double, along direction: Direction) -> Self {
+        guard let root, let newRoot = try? root.settingShare(of: view, to: share, along: direction) else { return self }
+        return .init(root: newRoot, zoomed: zoomed)
+    }
+}
+
+extension SplitTree.Node {
+    typealias Member = (node: Node, share: Double)
+
+    /// The members of the run this node heads in `direction`, in order (left to right, top
+    /// to bottom), with their shares (they sum to 1). A node not split in `direction` is a
+    /// run of one.
+    func runMembers(_ direction: SplitTree.Direction) -> [Member] {
+        guard case .split(let split) = self, split.direction == direction else { return [(self, 1)] }
+        let left = split.left.runMembers(direction).map { ($0.node, $0.share * split.ratio) }
+        let right = split.right.runMembers(direction).map { ($0.node, $0.share * (1 - split.ratio)) }
+        return left + right
+    }
+
+    /// A run of `members`, built as a chain leaning right: the i-th split's ratio is
+    /// sᵢ / (sᵢ + … + sₙ). Shares count relative to their sum.
+    static func run(_ direction: SplitTree.Direction, _ members: [Member]) -> Node {
+        guard let first = members.first else { preconditionFailure("a run needs a member") }
+        guard members.count > 1 else { return first.node }
+        let total = members.reduce(0) { $0 + Swift.max($1.share, 0) }
+        let ratio = total > 0 ? Swift.max(first.share, 0) / total : 1 / Double(members.count)
+        return .split(.init(direction: direction, ratio: ratio, left: first.node,
+                            right: run(direction, Array(members.dropFirst()))))
+    }
+
+    /// This run with its members' shares replaced, keeping its shape, so SwiftUI keeps the
+    /// panes' views (and a divider being dragged keeps its gesture).
+    func withShares(_ shares: [Double], _ direction: SplitTree.Direction) -> Node {
+        var index = 0
+        func rebuild(_ node: Node) -> (node: Node, total: Double) {
+            guard case .split(let split) = node, split.direction == direction else {
+                let share = index < shares.count ? Swift.max(shares[index], 0) : 0
+                index += 1
+                return (node, share)
+            }
+            let left = rebuild(split.left)
+            let right = rebuild(split.right)
+            let total = left.total + right.total
+            let ratio = total > 0 ? left.total / total : split.ratio
+            return (.split(.init(direction: direction, ratio: ratio, left: left.node, right: right.node)), total)
+        }
+        return rebuild(self).node
+    }
+
+    /// The path of the top split of the run that the split at `path` belongs to.
+    func runRoot(of path: Path) -> Path {
+        guard case .split(let split) = node(at: path) else { return path }
+        var components = path.path
+        while !components.isEmpty,
+              case .split(let parent) = node(at: Path(path: Array(components.dropLast()))),
+              parent.direction == split.direction {
+            components.removeLast()
+        }
+        return Path(path: components)
+    }
+
+    /// Insert `view` next to `at` (see `SplitTree.inserting`).
+    func insertingIntoRun(view: ViewType, at: ViewType, direction: NewDirection) throws -> Self {
+        guard let path = path(to: .leaf(view: at)) else { throw SplitError.viewNotFound }
+        let splitDirection: SplitTree.Direction = (direction == .left || direction == .right) ? .horizontal : .vertical
+        let before = direction == .left || direction == .up
+        let parentPath = Path(path: Array(path.path.dropLast()))
+        guard !path.isEmpty, case .split(let parent) = node(at: parentPath), parent.direction == splitDirection else {
+            // Not in a row (column) along the split: halve `at`, as Ghostty does.
+            return try inserting(view: view, at: at, direction: direction)
+        }
+        let runPath = runRoot(of: parentPath)
+        guard let runNode = node(at: runPath) else { throw SplitError.viewNotFound }
+        var members = runNode.runMembers(splitDirection)
+        guard let index = members.firstIndex(where: { $0.node == .leaf(view: at) }) else { throw SplitError.viewNotFound }
+        // N members become N+1: the new one gets 1/(N+1) and the others keep their
+        // proportions, so equal panes stay equal.
+        let n = Double(members.count)
+        members = members.map { ($0.node, $0.share * n / (n + 1)) }
+        members.insert((.leaf(view: view), 1 / (n + 1)), at: before ? index : index + 1)
+        return try replacingNode(at: runPath, with: .run(splitDirection, members))
+    }
+
+    /// Remove `target` (see `SplitTree.removing`). Nil when nothing is left.
+    func removingFromRun(_ target: Node) -> Node? {
+        guard let path = path(to: target), !path.isEmpty else { return remove(target) }
+        let parentPath = Path(path: Array(path.path.dropLast()))
+        guard case .split(let parent) = node(at: parentPath) else { return remove(target) }
+        let runPath = runRoot(of: parentPath)
+        guard let runNode = node(at: runPath) else { return remove(target) }
+        let gone = target.runMembers(parent.direction).map(\.node)
+        let kept = runNode.runMembers(parent.direction).filter { member in !gone.contains { $0 == member.node } }
+        guard !kept.isEmpty else { return remove(target) }
+        // One left takes the run's place; more share the space in proportion.
+        let replacement: Node = kept.count == 1 ? kept[0].node : .run(parent.direction, kept)
+        return (try? replacingNode(at: runPath, with: replacement)) ?? remove(target)
+    }
+
+    /// Move the divider of the split at `path` to `ratio` (of that split). Only the two
+    /// members beside the divider change; the rest of the run keeps its sizes.
+    func movingDivider(at path: Path, to ratio: Double) throws -> Self {
+        guard case .split(let split) = node(at: path) else { throw SplitError.viewNotFound }
+        let runPath = runRoot(of: path)
+        guard let runNode = node(at: runPath) else { throw SplitError.viewNotFound }
+        let members = runNode.runMembers(split.direction)
+        let leftMembers = split.left.runMembers(split.direction)
+        let rightMembers = split.right.runMembers(split.direction)
+        guard members.count > 2,
+              let first = members.firstIndex(where: { $0.node == leftMembers[0].node }),
+              first + leftMembers.count + rightMembers.count <= members.count else {
+            return try replacingNode(at: path, with: .split(.init(
+                direction: split.direction, ratio: ratio, left: split.left, right: split.right)))
+        }
+        // The split's slot in the run, and where its divider is now and should be.
+        let last = first + leftMembers.count - 1
+        let slot = members[first...(last + rightMembers.count)].reduce(0) { $0 + $1.share }
+        let leftShare = members[first...last].reduce(0) { $0 + $1.share }
+        var delta = ratio * slot - leftShare
+        // Keep both neighbors visible.
+        let minimum = 0.02
+        let lowest = minimum - members[last].share
+        let highest = members[last + 1].share - minimum
+        delta = lowest <= highest ? Swift.min(Swift.max(delta, lowest), highest) : 0
+        var shares = members.map(\.share)
+        shares[last] += delta
+        shares[last + 1] -= delta
+        return try replacingNode(at: runPath, with: runNode.withShares(shares, split.direction))
+    }
+
+    /// Give every member of the run that the split at `path` belongs to the same share.
+    func equalizingRun(at path: Path) throws -> Self {
+        guard case .split(let split) = node(at: path) else { throw SplitError.viewNotFound }
+        let runPath = runRoot(of: path)
+        guard let runNode = node(at: runPath) else { throw SplitError.viewNotFound }
+        let count = runNode.runMembers(split.direction).count
+        return try replacingNode(at: runPath, with: runNode.withShares(Array(repeating: 1, count: count), split.direction))
+    }
+
+    /// Give `view` `share` of its run along `direction` (the others keep their proportions).
+    func settingShare(of view: ViewType, to share: Double, along direction: SplitTree.Direction) throws -> Self {
+        guard let path = path(to: .leaf(view: view)), !path.isEmpty else { return self }
+        let parentPath = Path(path: Array(path.path.dropLast()))
+        guard case .split(let parent) = node(at: parentPath), parent.direction == direction else { return self }
+        let runPath = runRoot(of: parentPath)
+        guard let runNode = node(at: runPath) else { throw SplitError.viewNotFound }
+        let members = runNode.runMembers(direction)
+        guard let index = members.firstIndex(where: { $0.node == .leaf(view: view) }) else { return self }
+        let others = 1 - members[index].share
+        let shares = members.enumerated().map { i, member in
+            i == index ? share : (others > 0 ? member.share / others * (1 - share) : (1 - share) / Double(members.count - 1))
+        }
+        return try replacingNode(at: runPath, with: runNode.withShares(shares, direction))
+    }
+
+    /// Each leaf's frame (top-left origin) when this node is laid out in `size`, from the
+    /// ratios alone (dividers aren't subtracted).
+    func frames(in size: CGSize) -> [(view: ViewType, frame: CGRect)] {
+        func layout(_ node: Node, _ rect: CGRect) -> [(view: ViewType, frame: CGRect)] {
+            switch node {
+            case .leaf(let view):
+                return [(view, rect)]
+            case .split(let split):
+                let r = CGFloat(split.ratio)
+                switch split.direction {
+                case .horizontal:
+                    let w = rect.width * r
+                    return layout(split.left, CGRect(x: rect.minX, y: rect.minY, width: w, height: rect.height))
+                        + layout(split.right, CGRect(x: rect.minX + w, y: rect.minY, width: rect.width - w, height: rect.height))
+                case .vertical:
+                    let h = rect.height * r
+                    return layout(split.left, CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: h))
+                        + layout(split.right, CGRect(x: rect.minX, y: rect.minY + h, width: rect.width, height: rect.height - h))
+                }
+            }
+        }
+        return layout(self, CGRect(origin: .zero, size: size))
     }
 }

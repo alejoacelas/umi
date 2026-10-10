@@ -5,13 +5,14 @@ import UniformTypeIdentifiers
 
 /// The left sidebar: Warp-style vertical tabs and a project explorer. No cards, borders or
 /// "agents" section: rows sit directly on the terminal background with a subtle hover and
-/// selection tint (S-1, S-2).
+/// selection tint (S-1, S-2). Its width is per window, dragged at its edge (S-8).
 struct TernSidebar: View {
     @ObservedObject var controller: TerminalController
     /// Height of the titlebar band above the sidebar content (traffic lights).
     let topInset: CGFloat
 
     @ObservedObject private var state = TernState.shared
+    @ObservedObject private var attention = TernAttention.shared
     @ObservedObject private var updater = TernUpdater.shared
     @StateObject private var files = TernFileTreeModel()
     /// Periodic refresh for things nothing publishes (running command, branch).
@@ -37,11 +38,11 @@ struct TernSidebar: View {
                 .padding(.horizontal, 6)
                 .padding(.bottom, 12)
             }
-            .onDrop(of: [UTType.plainText], isTargeted: $listDropTargeted) { providers in
-                TernTabDrag.receive(providers) { tab, source in
-                    // Dropped below the rows: the end of this window's tabs.
-                    _ = try? TernLayout.move(tab: tab, from: source, toWindow: controller,
-                                             index: controller.tabs.count + 1, newWindow: false, focus: true)
+            .onDrop(of: TernSidebarDrop.types, isTargeted: $listDropTargeted) { providers in
+                // Dropped below the rows: a tab goes to the end of this window's tabs, a pane
+                // becomes a new tab there (M-4).
+                TernSidebarDrop.receive(providers) { payload in
+                    TernSidebarDrop.perform(payload, zone: .end, row: nil, in: controller)
                 }
             }
 
@@ -109,6 +110,7 @@ struct TernSidebar: View {
     @ViewBuilder
     private var tabsList: some View {
         let _ = state.revision
+        let _ = attention.revision
         let tabs = controller.tabs
         let pinned = tabs.filter(\.pinned)
         let others = tabs.filter { !$0.pinned }
@@ -123,85 +125,168 @@ struct TernSidebar: View {
         ForEach(others) { tab in
             TernSidebarTabRow(controller: controller, tab: tab, tick: tick)
         }
+        // Where a drop below the rows lands.
+        TernInsertionLine().opacity(listDropTargeted ? 1 : 0)
     }
 }
 
-/// Drag and drop of tab rows, within a window and between windows (M-4).
+// MARK: - Row model
+
+/// What a tab's row shows (S-3). The view and `debug.sidebar.rows` both read it.
+///
+/// Line 1 is the tab's folder (the focused pane's), or the name the user gave the tab, with the
+/// git branch (a linked worktree shown differently), a pane count when split, and pin and
+/// close on hover. Line 2 is the title of the tab's agent session when it has one, with the
+/// agent's mark as the row icon; otherwise what the focused pane is doing (the command it is
+/// running or last ran, an agent typed into it), else its folder's path.
 @MainActor
-enum TernTabDrag {
-    static let prefix = "tern-tab:"
+struct TernSidebarRowModel {
+    enum Icon: String { case claude, codex, pin, terminal }
 
-    static func provider(for tab: TernTab) -> NSItemProvider {
-        NSItemProvider(object: (prefix + tab.idString) as NSString)
-    }
+    enum Detail {
+        case session(title: String, status: String)
+        case interactive(kind: String, running: Bool)
+        case command(text: String, running: Bool)
+        case folder(String)
 
-    static func receive(_ providers: [NSItemProvider], perform: @escaping @MainActor (TernTab, TerminalController) -> Void) -> Bool {
-        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return false }
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let string = object as? String, string.hasPrefix(prefix) else { return }
-            let id = String(string.dropFirst(prefix.count))
-            DispatchQueue.main.async {
-                for window in TernTopology.windows {
-                    if let tab = window.tabs.first(where: { $0.idString == id }) {
-                        perform(tab, window)
-                        return
-                    }
-                }
+        var text: String {
+            switch self {
+            case .session(let title, _): return title
+            case .interactive(let kind, let running): return "\(kind) · \(running ? "running" : "exited")"
+            case .command(let text, _): return text
+            case .folder(let path): return path
             }
         }
-        return true
+    }
+
+    let tab: TernTab
+    let selected: Bool
+    let paneCount: Int
+    let focusedPane: Ghostty.SurfaceView?
+    let cwd: String?
+    let git: TernPaneContext.Git?
+    let title: String
+    let agent: TernAttention.Agent?
+    let detail: Detail
+
+    init(tab: TernTab, in controller: TerminalController) {
+        self.tab = tab
+        selected = tab === controller.selectedTab
+        let panes = controller.tree(of: tab).root?.leaves() ?? []
+        paneCount = panes.count
+        let focusedPane = (selected ? controller.focusedSurface.flatMap { panes.contains($0) ? $0 : nil } : nil)
+            ?? tab.effectiveFocusedSurface
+        self.focusedPane = focusedPane
+        let cwd = focusedPane.map(TernTopology.cwd(of:)).flatMap { $0.isEmpty ? nil : $0 }
+        self.cwd = cwd
+        git = cwd.flatMap { TernPaneContext.git(for: $0) }
+        title = tab.name.flatMap { $0.isEmpty ? nil : $0 } ?? cwd.map(TernPaneContext.folderName) ?? tab.title
+        let agent = TernAttention.shared.agent(for: tab, in: controller)
+        self.agent = agent
+        if let agent {
+            detail = .session(title: agent.title.isEmpty ? Self.describe(agent.status) : agent.title, status: agent.status)
+        } else if let interactive = focusedPane.flatMap({ TernState.shared.interactiveAgents[$0.id] }) {
+            detail = .interactive(kind: interactive.kind, running: interactive.running)
+        } else if let command = focusedPane.flatMap({ TernPaneContext.command(for: $0) }) {
+            detail = .command(text: command.text, running: command.running)
+        } else {
+            detail = .folder(cwd.map(Self.abbreviate) ?? "shell")
+        }
+    }
+
+    var icon: Icon {
+        switch agent?.kind {
+        case .claude: return .claude
+        case .codex: return .codex
+        case nil: return tab.pinned ? .pin : .terminal
+        }
+    }
+
+    /// The mark's name for the CLI and accessibility.
+    var markName: String {
+        switch agent?.mark ?? .none {
+        case .none: return "none"
+        case .finished: return "finished"
+        case .needsYou: return "needs_you"
+        }
+    }
+
+    var accessibilityValue: String {
+        guard let agent else { return detail.text }
+        var parts = [agent.kind.rawValue, Self.describe(agent.status)]
+        switch agent.mark {
+        case .finished: parts.append("finished, not seen yet")
+        case .needsYou: parts.append("needs you")
+        case .none: break
+        }
+        return (parts + [detail.text]).joined(separator: " · ")
+    }
+
+    static func describe(_ status: String) -> String {
+        status.replacingOccurrences(of: "_", with: " ")
+    }
+
+    static func abbreviate(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        if path == home { return "~" }
+        if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
+        return path
+    }
+
+    func json() -> [String: Any] {
+        var json: [String: Any] = [
+            "tab": tab.idString, "selected": selected, "pinned": tab.pinned, "panes": paneCount,
+            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName,
+            "color": TernTopology.colorName(tab.color),
+        ]
+        if let git {
+            json["branch"] = git.branch
+            if let worktree = git.worktree { json["worktree"] = worktree }
+        }
+        if let agent {
+            json["agent"] = ["kind": agent.kind.rawValue, "status": agent.status, "title": agent.title,
+                             "session": agent.session ?? "", "live": agent.live]
+        }
+        switch detail {
+        case .session: json["detail"] = "session"
+        case .interactive: json["detail"] = "interactive"
+        case .command(_, let running): json["detail"] = running ? "running_command" : "last_command"
+        case .folder: json["detail"] = "folder"
+        }
+        return json
     }
 }
 
-/// One tab in the sidebar, on two lines (S-3):
-///   1. the tab's name (or the focused pane's folder) and its git branch / linked worktree,
-///      a pane count when split, and pin and close affordances;
-///   2. what the focused pane is doing: the command it is running or last ran, or the
-///      state of an agent launched in it.
+// MARK: - Row
+
+/// One tab in the sidebar, on two lines (S-3; see `TernSidebarRowModel`). Rows can be
+/// clicked, double-clicked to rename, right-clicked for Warp's menu (S-4), dragged to reorder
+/// or out of the window, and take panes and tabs dropped on them (M-4).
 struct TernSidebarTabRow: View {
     @ObservedObject var controller: TerminalController
     @ObservedObject var tab: TernTab
     var tick: Int = 0
     @ObservedObject private var state = TernState.shared
+    @ObservedObject private var attention = TernAttention.shared
     @State private var hovering = false
-    @State private var dropTargeted = false
+    @State private var dropZone: TernSidebarDrop.Zone?
     @State private var editing = false
     @State private var draftName = ""
+    @State private var rowHeight: CGFloat = 40
     @FocusState private var nameFieldFocused: Bool
 
     var body: some View {
         let _ = state.revision
+        let _ = attention.revision
         let _ = tick
-        let selected = tab === controller.selectedTab
-        let tree = controller.tree(of: tab)
-        let panes = tree.root?.leaves() ?? []
-        let focusedPane = (selected ? controller.focusedSurface.flatMap { panes.contains($0) ? $0 : nil } : nil)
-            ?? tab.effectiveFocusedSurface
-        let cwd = focusedPane.map(TernTopology.cwd(of:)).flatMap { $0.isEmpty ? nil : $0 }
-        let git = cwd.flatMap { TernPaneContext.git(for: $0) }
-        // A managed session shown in the focused pane (S-3: its status and activity).
-        let agent = focusedPane.flatMap { TernAgentUI.shared.session(forPane: $0.id) }
-            .flatMap { TernAgentUI.shared.snapshot(for: $0) }
-        let primary = tab.name.flatMap { $0.isEmpty ? nil : $0 } ?? agent?.name ?? cwd.map(TernPaneContext.folderName) ?? tab.title
-        let interactive = agent == nil ? focusedPane.flatMap { state.interactiveAgents[$0.id] } : nil
-        let command = interactive == nil && agent == nil ? focusedPane.flatMap { TernPaneContext.command(for: $0) } : nil
+        let row = TernSidebarRowModel(tab: tab, in: controller)
 
         HStack(alignment: .top, spacing: 7) {
-            Group {
-                if let color = tab.color.displayColor {
-                    Circle().fill(Color(color)).frame(width: 7, height: 7)
-                } else if tab.pinned {
-                    Image(systemName: "pin.fill").font(.system(size: 8.5))
-                        .foregroundColor(TernTheme.textTertiary)
-                } else {
-                    Image(systemName: agent != nil ? "bubble.left" : "terminal").font(.system(size: 10, weight: .medium))
-                        .foregroundColor(TernTheme.textTertiary)
-                }
-            }
-            .frame(width: 14, height: 17)
+            icon(row)
+                .frame(width: 14, height: 17)
 
             VStack(alignment: .leading, spacing: 2) {
-                // Line 1: name/folder, branch, pane count, affordances.
+                // Line 1: the folder (or the tab's name), branch, pane count, affordances.
                 HStack(spacing: 6) {
                     if editing {
                         TextField("Tab name", text: $draftName, onCommit: commitRename)
@@ -210,14 +295,14 @@ struct TernSidebarTabRow: View {
                             .focused($nameFieldFocused)
                             .onExitCommand { editing = false }
                     } else {
-                        Text(primary)
-                            .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                            .foregroundColor(selected ? TernTheme.textPrimary : TernTheme.textSecondary)
+                        Text(row.title)
+                            .font(.system(size: 12.5, weight: row.selected ? .semibold : .regular))
+                            .foregroundColor(row.selected ? TernTheme.textPrimary : TernTheme.textSecondary)
                             .lineLimit(1)
                             .layoutPriority(1)
                     }
 
-                    if let git, !editing {
+                    if let git = row.git, !editing {
                         HStack(spacing: 3) {
                             Image(systemName: git.worktree != nil ? "square.stack.3d.up" : "arrow.triangle.branch")
                                 .font(.system(size: 8.5, weight: .semibold))
@@ -225,17 +310,17 @@ struct TernSidebarTabRow: View {
                                 .lineLimit(1)
                         }
                         .font(.system(size: 11))
-                        .foregroundColor(git.worktree != nil ? TernTheme.accent.opacity(0.85) : TernTheme.textTertiary)
+                        .foregroundColor(git.worktree != nil ? TernTheme.accent.opacity(0.75) : TernTheme.textTertiary)
                         .help(git.worktree.map { "linked worktree \($0) · branch \(git.branch)" } ?? "branch \(git.branch)")
                     }
 
-                    if panes.count > 1 {
-                        Text("\(panes.count)")
+                    if row.paneCount > 1 {
+                        Text("\(row.paneCount)")
                             .font(.system(size: 10, weight: .medium, design: .rounded))
                             .foregroundColor(TernTheme.textTertiary)
                             .padding(.horizontal, 4)
                             .background(RoundedRectangle(cornerRadius: 3).fill(TernTheme.hoverFill))
-                            .help("\(panes.count) panes")
+                            .help("\(row.paneCount) panes")
                     }
                     Spacer(minLength: 4)
 
@@ -256,112 +341,121 @@ struct TernSidebarTabRow: View {
                     }
                 }
 
-                // Line 2: what the focused pane is doing.
-                if let agent {
-                    HStack(spacing: 5) {
-                        Circle().fill(Color(TernAgentPaneView.color(for: agent.status)))
-                            .frame(width: 5, height: 5)
-                        Text(agent.activity.isEmpty || agent.activity == agent.status
-                             ? "\(agent.kind.rawValue) · \(agent.status)"
-                             : "\(agent.kind.rawValue) · \(agent.status) · \(agent.activity)")
-                            .font(.system(size: 11))
-                            .foregroundColor(agent.status == "working" ? TernTheme.textSecondary : TernTheme.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                } else if let interactive {
-                    HStack(spacing: 5) {
-                        Circle().fill(interactive.running ? TernTheme.accent : TernTheme.textTertiary)
-                            .frame(width: 5, height: 5)
-                        Text("\(interactive.kind) · \(interactive.running ? "running" : "exited")")
-                            .font(.system(size: 11))
-                            .foregroundColor(TernTheme.textTertiary)
-                            .lineLimit(1)
-                    }
-                } else if let command {
-                    HStack(spacing: 4) {
-                        if command.running {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 6))
-                                .foregroundColor(TernTheme.accent)
-                        }
-                        Text(command.text)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(command.running ? TernTheme.textSecondary : TernTheme.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                } else {
-                    Text(cwd.map(abbreviate) ?? "shell")
-                        .font(.system(size: 11))
-                        .foregroundColor(TernTheme.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
+                // Line 2: the session's title, or what the focused pane is doing.
+                detail(row)
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(selected ? TernTheme.selectedFill : (hovering || dropTargeted ? TernTheme.hoverFill : .clear))
+                .fill(background(row))
         )
+        .overlay(alignment: .top) { TernInsertionLine().opacity(dropZone == .before ? 1 : 0).offset(y: -1) }
+        .overlay(alignment: .bottom) { TernInsertionLine().opacity(dropZone == .after ? 1 : 0).offset(y: 1) }
+        .background(GeometryReader { geo in
+            Color.clear.onAppear { rowHeight = geo.size.height }
+                .onChange(of: geo.size.height) { rowHeight = $0 }
+        })
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(count: 2) { beginRename() }
         .onTapGesture { select() }
-        .onDrag { TernTabDrag.provider(for: tab) }
-        .onDrop(of: [UTType.plainText], isTargeted: $dropTargeted) { providers in
-            TernTabDrag.receive(providers) { dragged, source in
-                guard dragged !== tab, let index = controller.index(of: tab) else { return }
-                _ = try? TernLayout.move(tab: dragged, from: source, toWindow: controller,
-                                         index: index + 1, newWindow: false, focus: true)
-            }
-        }
-        .contextMenu { menu }
-        .help(cwd.map(abbreviate) ?? primary)
+        .gesture(DragGesture(minimumDistance: 5).onChanged { _ in
+            // An AppKit drag, so a drop outside the window can make a new window (M-4).
+            guard !editing else { return }
+            TernTabDragSource.shared.begin(tab: tab, in: controller, title: row.title)
+        })
+        .onDrop(of: TernSidebarDrop.types, delegate: TernSidebarRowDropDelegate(
+            controller: controller, tab: tab, height: rowHeight, zone: $dropZone))
+        .contextMenu { TernTabMenuView(items: TernTabMenu.items(for: tab, in: controller, rename: beginRename)) }
+        .help(row.cwd.map(TernSidebarRowModel.abbreviate) ?? row.title)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(primary)
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .accessibilityLabel(row.title)
+        .accessibilityValue(row.accessibilityValue)
+        .accessibilityAddTraits(row.selected ? [.isSelected, .isButton] : .isButton)
     }
 
-    private func abbreviate(_ path: String) -> String {
-        let home = NSHomeDirectory()
-        if path == home { return "~" }
-        if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
-        return path
+    // MARK: Pieces
+
+    private func background(_ row: TernSidebarRowModel) -> Color {
+        let lit = row.selected || hovering || dropZone == .into
+        // A tab color tints its row, quietly (as Warp does).
+        if let color = tab.color.displayColor {
+            return Color(color).opacity(lit ? 0.16 : 0.08)
+        }
+        if row.selected { return TernTheme.selectedFill }
+        return hovering || dropZone == .into ? TernTheme.hoverFill : .clear
     }
 
     @ViewBuilder
-    private var menu: some View {
-        Button("Rename Tab…") { beginRename() }
-        Button(tab.pinned ? "Unpin Tab" : "Pin Tab") { pinToggle() }
-        Menu("Tab Color") {
-            ForEach(TerminalTabColor.allCases, id: \.self) { color in
-                Button(color.localizedName) {
-                    tab.color = color
-                    TernState.shared.layoutDidChange()
-                }
-            }
+    private func icon(_ row: TernSidebarRowModel) -> some View {
+        switch row.icon {
+        case .claude, .codex:
+            TernAgentMark(kind: row.agent?.kind ?? .claude)
+                .foregroundColor(Self.markColor(row.agent?.mark ?? .none))
+                .frame(width: 11, height: 11)
+                .help(row.accessibilityValue)
+        case .pin:
+            Image(systemName: "pin.fill").font(.system(size: 8.5))
+                .foregroundColor(TernTheme.textTertiary)
+        case .terminal:
+            Image(systemName: "terminal").font(.system(size: 10, weight: .medium))
+                .foregroundColor(TernTheme.textTertiary)
         }
-        Divider()
-        Button("Move Tab to New Window") {
-            _ = try? TernLayout.move(tab: tab, from: controller, toWindow: nil, index: nil, newWindow: true, focus: true)
-        }
-        let others = TernTopology.windows.filter { $0 !== controller }
-        if !others.isEmpty {
-            Menu("Move Tab to Window") {
-                ForEach(others, id: \.ternID) { window in
-                    Button("Window \(TernTopology.windowNumber(window)): \(window.selectedTab.title)") {
-                        _ = try? TernLayout.move(tab: tab, from: controller, toWindow: window, index: nil,
-                                                 newWindow: false, focus: true)
-                    }
-                }
-            }
-        }
-        Divider()
-        Button("Close Tab") { controller.closeTab(tab, sender: nil) }
     }
+
+    /// The agent's icon takes a quiet color when its session finished unseen or needs the
+    /// user; otherwise it is as quiet as the rest of the chrome.
+    static func markColor(_ mark: TernAttention.Mark) -> Color {
+        switch mark {
+        case .none: return TernTheme.textTertiary
+        case .finished: return TernTheme.accent.opacity(0.85)
+        case .needsYou: return Color(red: 0.93, green: 0.66, blue: 0.30).opacity(0.9)
+        }
+    }
+
+    @ViewBuilder
+    private func detail(_ row: TernSidebarRowModel) -> some View {
+        switch row.detail {
+        case .session(let title, let status):
+            Text(title)
+                .font(.system(size: 11))
+                .foregroundColor(status == "working" ? TernTheme.textSecondary : TernTheme.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        case .interactive(let kind, let running):
+            HStack(spacing: 5) {
+                Circle().fill(running ? TernTheme.accent : TernTheme.textTertiary)
+                    .frame(width: 5, height: 5)
+                Text("\(kind) · \(running ? "running" : "exited")")
+                    .font(.system(size: 11))
+                    .foregroundColor(TernTheme.textTertiary)
+                    .lineLimit(1)
+            }
+        case .command(let text, let running):
+            HStack(spacing: 4) {
+                if running {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 6))
+                        .foregroundColor(TernTheme.accent)
+                }
+                Text(text)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(running ? TernTheme.textSecondary : TernTheme.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        case .folder(let path):
+            Text(path)
+                .font(.system(size: 11))
+                .foregroundColor(TernTheme.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.head)
+        }
+    }
+
+    // MARK: Actions
 
     private func select() {
         guard !editing else { return }
@@ -383,11 +477,111 @@ struct TernSidebarTabRow: View {
 
     private func commitRename() {
         editing = false
-        let name = draftName.trimmingCharacters(in: .whitespaces)
-        tab.name = name.isEmpty ? nil : name
-        if tab === controller.selectedTab { controller.titleOverride = tab.name }
-        TernEvents.shared.emit("tab.renamed", ["tab": tab.idString, "name": name, "window": controller.ternIDString])
-        TernState.shared.layoutDidChange()
+        TernTabMenu.rename(tab, in: controller, to: draftName)
+    }
+}
+
+/// The 2 pt accent line where a dragged tab or pane would land.
+struct TernInsertionLine: View {
+    var body: some View {
+        Capsule()
+            .fill(TernTheme.accent.opacity(0.8))
+            .frame(height: 2)
+            .padding(.horizontal, 4)
+            .allowsHitTesting(false)
+    }
+}
+
+/// Claude's and Codex's marks, small and monochrome (they take the row's quiet colors).
+struct TernAgentMark: View {
+    let kind: TernAttention.Kind
+
+    var body: some View {
+        switch kind {
+        case .claude: ClaudeMark().stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+        case .codex: CodexMark().stroke(style: StrokeStyle(lineWidth: 1.3, lineJoin: .round))
+        }
+    }
+
+    /// A starburst of rays, after Claude's spark.
+    private struct ClaudeMark: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            let outer = min(rect.width, rect.height) / 2
+            let rays = 8
+            for i in 0..<rays {
+                let angle = Double(i) / Double(rays) * 2 * .pi - .pi / 2
+                let length = i.isMultiple(of: 2) ? outer : outer * 0.78
+                path.move(to: CGPoint(x: center.x + CGFloat(cos(angle)) * outer * 0.22,
+                                      y: center.y + CGFloat(sin(angle)) * outer * 0.22))
+                path.addLine(to: CGPoint(x: center.x + CGFloat(cos(angle)) * length,
+                                         y: center.y + CGFloat(sin(angle)) * length))
+            }
+            return path
+        }
+    }
+
+    /// A hexagon around a dot, after OpenAI's knot.
+    private struct CodexMark: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            let r = min(rect.width, rect.height) / 2 - 0.6
+            for i in 0..<6 {
+                let angle = Double(i) / 6 * 2 * .pi - .pi / 2
+                let point = CGPoint(x: center.x + CGFloat(cos(angle)) * r, y: center.y + CGFloat(sin(angle)) * r)
+                if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
+            }
+            path.closeSubpath()
+            path.addEllipse(in: CGRect(x: center.x - 1, y: center.y - 1, width: 2, height: 2))
+            return path
+        }
+    }
+}
+
+/// The drag edge on the sidebar's trailing side (S-8). Double-click goes back to the default.
+struct TernSidebarResizeEdge: View {
+    @ObservedObject var controller: TerminalController
+    @State private var startWidth: CGFloat?
+    @State private var cursorPushed = false
+
+    var body: some View {
+        Color.clear
+            .frame(width: 7)
+            .contentShape(Rectangle())
+            .offset(x: 3)
+            .onHover { inside in
+                if inside, !cursorPushed {
+                    NSCursor.resizeLeftRight.push()
+                    cursorPushed = true
+                } else if !inside, cursorPushed, startWidth == nil {
+                    NSCursor.pop()
+                    cursorPushed = false
+                }
+            }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    let start = startWidth ?? controller.sidebarWidth
+                    if startWidth == nil { startWidth = start }
+                    let width = TernTheme.clampSidebarWidth(start + value.translation.width,
+                                                            windowWidth: controller.window?.frame.width)
+                    controller.sidebarWidth = width
+                    TernState.shared.sidebarWidth = width
+                }
+                .onEnded { _ in
+                    startWidth = nil
+                    if cursorPushed {
+                        NSCursor.pop()
+                        cursorPushed = false
+                    }
+                })
+            .onTapGesture(count: 2) {
+                controller.sidebarWidth = TernTheme.sidebarWidth
+                TernState.shared.sidebarWidth = TernTheme.sidebarWidth
+            }
+            .accessibilityLabel("Sidebar Edge")
+            .accessibilityValue("\(Int(controller.sidebarWidth))")
     }
 }
 
