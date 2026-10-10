@@ -1187,3 +1187,23 @@ private struct TernPalettePanel: View {
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 }
+
+extension TernPaletteModel {
+    /// The palette drawn on its own, over a transparent window-sized canvas, for `tern screenshot`
+    /// (terminals are composited separately and would otherwise cover it).
+    @MainActor
+    func capturedImage(in content: NSView) -> (image: NSImage, frame: NSRect)? {
+        guard isPresented, let ghostty = TernLayout.ghostty else { return nil }
+        let bounds = content.bounds
+        let host = NSHostingView(rootView: TernPaletteView(model: self, background: ghostty.config.backgroundColor)
+            .frame(width: bounds.width, height: bounds.height))
+        host.frame = NSRect(origin: .zero, size: bounds.size)
+        host.appearance = content.window?.effectiveAppearance
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        return (image, bounds)
+    }
+}

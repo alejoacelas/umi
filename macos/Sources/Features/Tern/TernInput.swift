@@ -222,12 +222,16 @@ enum TernScreenshot {
         (window.backgroundColor ?? .black).setFill()
         bounds.fill()
         image.draw(in: bounds)
-        // (A pane showing a managed session is drawn by its AppKit view, already in the capture.)
+        // (A pane showing a session's read-only view is drawn by its AppKit view, already in the capture.)
         for pane in controller.surfaceTree.root?.leaves() ?? [] where pane.window === window && !pane.isHiddenOrHasHiddenAncestor
             && !TernAgentUI.shared.isShowingAgent(pane.id) {
             guard let paneImage = pane.terminalImage() else { continue }
             let frame = pane.convert(pane.bounds, to: content)
             paneImage.draw(in: frame)
+        }
+        // Overlays drawn above the terminals (the palettes) go on top again.
+        if controller.palette.isPresented, let overlay = controller.palette.capturedImage(in: content) {
+            overlay.image.draw(in: overlay.frame)
         }
         composed.unlockFocus()
 

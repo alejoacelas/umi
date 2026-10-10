@@ -61,9 +61,8 @@ private struct TernAgentPaneRepresentable: NSViewRepresentable {
         proposal.replacingUnspecifiedDimensions(by: CGSize(width: 400, height: 300))
     }
 
-    static func dismantleNSView(_ view: TernAgentPaneView, coordinator: ()) {
-        view.removeFromSuperview()
-    }
+    // No dismantleNSView: the view is cached per pane and a rebuilt split tree adopts it before
+    // the old host goes away, so removing it there would take it out of the new host.
 }
 
 /// A grip that drags the pane, like a terminal pane's grab handle (AP-2, M-4).

@@ -63,6 +63,13 @@ def main():
               view and "Take Over" in view.get("buttons", []) and not any("Message" in t for t in view.get("texts", [])),
               str(view and view.get("buttons")))
         check("AG-14 info says the session is in a pane", info(inst, sid)["location"] == "pane")
+        # The split tree rebuilds when another pane is added: the view must stay in its pane.
+        extra = inst.cli("split", "down", "--pane", win["pane"], "--no-focus").stdout.strip()
+        time.sleep(1)
+        kept = ctl.call("debug.agent.pane", pane=pane)
+        check("AG-5 the read-only view stays in its pane when the window gets another split",
+              kept.get("showing") == "agent" and kept.get("in_window") is True, str(kept))
+        inst.cli("pane", "close", extra, check=False)
 
         # AG-6: Take Over → the agent's own interface in that pane, on the same conversation.
         ctl.call("debug.agent.press", pane=pane, title="Take Over")
