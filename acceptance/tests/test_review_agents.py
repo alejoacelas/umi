@@ -693,3 +693,35 @@ def test_a_failed_turn_in_codexs_interface_is_not_reported_done(inst, win):
     wait_until(lambda: inst.info(sid)["status"] == "idle", 20, message="the turn ends")
     code, out = inst.wait(sid, timeout=20)
     assert (code, out["status"]) == (3, "FAILED") and out.get("error"), (code, out)
+
+
+# ---- round 8 -------------------------------------------------------------------------------------
+
+@pytest.mark.req("AG-22", "AG-13")
+def test_background_work_from_the_interface_continues_after_a_quit(target, fresh):
+    """Round 8, P2: a turn in Claude's interface that ended with background work still running (which
+    would wake it) counted as finished, so a quit before the work was done left nothing to continue."""
+    if not target.restoration_safe:
+        pytest.skip("needs a restoration-safe build")
+    other = fresh(prefix="acc-rv-wake-quit-", restore=True)
+    sid, pane = live_in_new_tab(other, "claude")
+    other.type_line(pane, f"WAKE 30 {nonce()}")
+    wait_until(lambda: other.info(sid)["status"] == "working", 15, message="the turn runs")
+    time.sleep(3)   # its turn has ended; the background work is still running
+    other.quit_gracefully(timeout=60)
+    other.start_app()
+    wait_until(lambda: continuation_notes(other), 60, message="the cut-off work continues")
+
+
+@pytest.mark.req("L-17")
+@pytest.mark.parametrize("action", ["", "no_such_action"])
+def test_an_unknown_terminal_action_is_refused_and_the_app_stays_up(inst, win, action):
+    """Round 8, P2: `tern shortcuts set 'ghostty:' cmd+j` saved a broken binding and crashed the app."""
+    try:
+        refused = inst.cli("shortcuts", "set", f"ghostty:{action}", "cmd+j", check=False)
+        assert refused.returncode != 0, refused.stdout
+        assert inst.json("ping") and inst.json("shortcuts")["shortcuts"]
+        assert f"={action}\n" not in open(os.path.join(inst.dir, "keybindings.conf")).read() + "\n" if os.path.exists(
+            os.path.join(inst.dir, "keybindings.conf")) else True
+    finally:
+        inst.cli("shortcuts", "reset", check=False)
