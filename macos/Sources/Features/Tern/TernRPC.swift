@@ -333,10 +333,6 @@ enum TernRPC {
         case "editor.mode":
             return try TernEditor.handleMode(params, caller: caller)
 
-        // MARK: Interactive agents
-        case "interactive.launch":
-            return try TernInteractive.launch(params, caller: caller)
-
         // MARK: Updates
         case "update.check":
             return try await TernUpdater.shared.check(userInitiated: false)

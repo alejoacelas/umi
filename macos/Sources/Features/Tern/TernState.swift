@@ -45,7 +45,6 @@ final class TernState: ObservableObject {
     private(set) var paneStartFolders: [UUID: String] = [:]
 
     /// Agents launched as typed (`tern claude`), by pane.
-    @Published private(set) var interactiveAgents: [UUID: TernInteractiveAgent] = [:]
 
     private var pendingBump = false
 
@@ -102,27 +101,13 @@ final class TernState: ObservableObject {
 
     func startFolder(_ id: UUID) -> String? { paneStartFolders[id] }
 
-    func setInteractiveAgent(_ id: UUID, _ agent: TernInteractiveAgent?) {
-        interactiveAgents[id] = agent
-        layoutDidChange()
-    }
-
     /// Forget per-pane state of panes that no longer exist (except while undo could still
     /// bring them back: a pane in no window but still alive keeps its state).
     private func prune() {
-        guard paneNames.count + paneStartFolders.count + interactiveAgents.count > 256 else { return }
+        guard paneNames.count + paneStartFolders.count > 256 else { return }
         let live = Set(TernTopology.allSurfaces.map(\.id))
         paneNames = paneNames.filter { live.contains($0.key) }
         paneStartFolders = paneStartFolders.filter { live.contains($0.key) }
-        interactiveAgents = interactiveAgents.filter { live.contains($0.key) }
     }
 }
 
-/// An agent launched in a pane exactly as if typed (`tern claude …`). Tern doesn't control
-/// it; it only notes whether it is still running (IA-2).
-struct TernInteractiveAgent: Equatable {
-    let kind: String
-    let commandLine: String
-    var running: Bool
-    var exitCode: Int?
-}

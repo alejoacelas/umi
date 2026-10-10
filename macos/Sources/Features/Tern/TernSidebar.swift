@@ -142,14 +142,12 @@ struct TernSidebarRowModel {
 
     enum Detail {
         case session(title: String, status: String)
-        case interactive(kind: String, running: Bool)
         case command(text: String, running: Bool)
         case folder(String)
 
         var text: String {
             switch self {
             case .session(let title, _): return title
-            case .interactive(let kind, let running): return "\(kind) · \(running ? "running" : "exited")"
             case .command(let text, _): return text
             case .folder(let path): return path
             }
@@ -182,8 +180,6 @@ struct TernSidebarRowModel {
         self.agent = agent
         if let agent {
             detail = .session(title: agent.title.isEmpty ? Self.describe(agent.status) : agent.title, status: agent.status)
-        } else if let interactive = focusedPane.flatMap({ TernState.shared.interactiveAgents[$0.id] }) {
-            detail = .interactive(kind: interactive.kind, running: interactive.running)
         } else if let command = focusedPane.flatMap({ TernPaneContext.command(for: $0) }) {
             detail = .command(text: command.text, running: command.running)
         } else {
@@ -246,7 +242,6 @@ struct TernSidebarRowModel {
         }
         switch detail {
         case .session: json["detail"] = "session"
-        case .interactive: json["detail"] = "interactive"
         case .command(_, let running): json["detail"] = running ? "running_command" : "last_command"
         case .folder: json["detail"] = "folder"
         }
@@ -421,15 +416,6 @@ struct TernSidebarTabRow: View {
                 .foregroundColor(status == "working" ? TernTheme.textSecondary : TernTheme.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-        case .interactive(let kind, let running):
-            HStack(spacing: 5) {
-                Circle().fill(running ? TernTheme.accent : TernTheme.textTertiary)
-                    .frame(width: 5, height: 5)
-                Text("\(kind) · \(running ? "running" : "exited")")
-                    .font(.system(size: 11))
-                    .foregroundColor(TernTheme.textTertiary)
-                    .lineLimit(1)
-            }
         case .command(let text, let running):
             HStack(spacing: 4) {
                 if running {

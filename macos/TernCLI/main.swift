@@ -590,8 +590,8 @@ func printTree(_ result: Any) {
                 if let name = pane["name"] as? String { row += "  \(bold(name))" }
                 row += "  \(abbreviateHome(pane["cwd"] as? String ?? ""))"
                 if pane["zoomed"] as? Bool ?? false { row += "  (zoomed)" }
-                if let agent = pane["interactive_agent"] as? [String: Any] {
-                    row += "  [\(agent["kind"] ?? "agent") \((agent["running"] as? Bool ?? false) ? "running" : "exited")]"
+                if let agent = pane["agent"] as? String {
+                    row += "  [session \(shortID(agent))\((pane["showing"] as? String) == "live" ? ", live" : "")]"
                 }
                 print(row)
             }
@@ -1220,45 +1220,6 @@ func shellQuote(_ word: String) -> String {
     return "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
-func interactiveAgentCommand(_ kind: String, _ argv: [String]) {
-    var agentArgs = argv
-    var params: [String: Any] = ["placement": "tab"]
-    if let separator = argv.firstIndex(of: "--") {
-        // Before `--`: the product's own options. After it: the agent's arguments.
-        agentArgs = Array(argv[(separator + 1)...])
-        let directions: Set<String> = ["right", "down", "left", "up"]
-        var spec = ArgSpec(valued: ["--cwd", "--worktree", "--base", "--name", "--pane"],
-                           boolean: ["--tab", "--no-focus"], aliases: ["-p": "--pane"])
-        spec.optionalValue["--split"] = { directions.contains($0) }
-        spec.optionalValue["--window"] = { !$0.hasPrefix("-") }
-        let args = parse(Array(argv[..<separator]), spec)
-        if let extra = args.positional.first { fail("\(kind): unexpected argument \(extra) before --") }
-        params.merge(creationParams(args)) { _, new in new }
-        let newWindow = args.has("--window") && args.value("--window") == nil
-        guard [args.has("--split"), newWindow, args.has("--tab")].filter({ $0 }).count <= 1 else {
-            fail("\(kind): choose one of --tab, --split or --window")
-        }
-        if args.has("--split") {
-            params["placement"] = "split"
-            params["direction"] = args.value("--split") ?? "right"
-        } else if newWindow {
-            params["placement"] = "window"
-        }
-        // `--window W` (with or without --tab) names the window of the new tab.
-        if let window = args.value("--window") { params["window"] = window }
-        if let pane = args.value("--pane") { params["pane"] = pane }
-    }
-    let line = ([kind] + agentArgs.map(shellQuote)).joined(separator: " ")
-    params["kind"] = kind
-    params["line"] = line
-    let result = callDict("interactive.launch", params)
-    if jsonOutput {
-        printJSON(["pane": result["pane"] ?? "", "command": line, "tab": result["tab"] ?? "",
-                   "window": result["window"] ?? ""])
-    } else {
-        print(result["pane"] as? String ?? "")
-    }
-}
 
 // MARK: - Updates
 
