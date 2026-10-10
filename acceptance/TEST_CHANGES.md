@@ -229,3 +229,20 @@ S-3, S-4, S-8, E-10), `app/macos/TernTests/verify_agent_panes.py` (rewritten for
 AG-9, S-3; with a regression check that a read-only view stays in its pane when the window gets
 another split), and `checks/tern_extra_evidence.py --only ui` (agent rows, sidebar width, the three
 palettes, a live session next to a read-only one).
+
+Review regression tests (`tests/test_review_agents.py`, one test per finding that a test can reach,
+each failing on the build before its fix): round 1, take over during a launch, a failed attach leaves
+the pane alone, a name with quotes, a freed key given to another action, a cancelled palette run;
+round 2, a session hidden mid-turn with a waiting message, a typed agent hidden mid-turn, a parked
+tab's editor edits, a key given to a second terminal action, resetting a shortcut, hook paths with
+spaces; round 3, a Codex server that stops reading, update-now with work in a live interface, a
+waiting session whose pane closes, Rename Tab with an empty name, and a 4 MB message (found while
+testing round 3). Not covered by a test: paging through more than 500 newer items of a Codex thread
+to find a message (it needs a turn with hundreds of items after the message).
+
+Fakes (`fakes/fake_codex.py`), to stay faithful to Codex: `thread/items/list` (every item with its
+turn, newest first on request, paged, as in Codex's schema), and a hung server (`HANG`) stops reading
+its socket as a hung process would. `test_chaos.py::test_random_operation_sequences` found a message
+steered into a turn just before a crash delivered twice; it doesn't any more (12 of 12 repeats of the
+helper's reproduction were clean, against 1 in 5 before).
+

@@ -1090,3 +1090,15 @@ gets focus in the key window of the active app (UI-B's sidebar may call it too; 
   color … The Dock badge counts the sessions that need the user"). Finishes not seen yet show only
   as the sidebar's quiet mark; ⌃⌘J still visits them, after the ones that need the user. (Questions
   for the user.)
+- **Codex delivery after a crash is read from the thread's items.** `thread/resume` (and
+  `thread/turns/list`) show each turn's first message only, so a message steered into a turn was
+  invisible there and could be sent twice. After a resume with unconfirmed messages, Tern pages
+  through `thread/items/list` (newest first) until each is found or the history ends; an older Codex
+  without that method leaves the summary (the old behaviour).
+- **Codex's socket is written on its own queue**, as Claude's stdin already was: a server that stops
+  reading blocks only its own writer, and more than 32 MB waiting closes the connection (the session
+  then recovers like after a crash).
+- **Hiding a session that's working** ends its interface once the interface has nothing running, even
+  when messages wait for it (they run headless afterwards); the pane is remembered until the
+  interface is gone, so an agent typed in a pane (whose process knows only its pane) is ended too.
+
