@@ -71,6 +71,8 @@ final class TernAgentSession {
         var messages: [String]
         let selfStarted: Bool
         let startedAt: Date
+        /// Started by the user in the agent's own interface (Codex attached to its server).
+        var fromInterface = false
         var interruptRequested = false
         var lastFinal: String?
         var error: String?
@@ -777,7 +779,8 @@ final class TernAgentSession {
             return
         }
         claudeTurnCounter += 1
-        turn = Turn(id: id ?? "t\(claudeTurnCounter)", messages: ids, selfStarted: selfStarted, startedAt: Date())
+        turn = Turn(id: id ?? "t\(claudeTurnCounter)", messages: ids, selfStarted: selfStarted, startedAt: Date(),
+                    fromInterface: fromInterface)
         wakePending = false
         // The harness has a conversation from its first turn on (Codex records the turn even if
         // the input never arrived), so later starts resume it.
@@ -787,7 +790,12 @@ final class TernAgentSession {
         }
         activity = ""
         if fromInterface {
-            // The user started it in the agent's own interface: theirs to finish.
+            // The user started it in the agent's own interface: theirs to finish, and recorded so
+            // a quit or crash continues it (AG-22).
+            liveTurnError = nil
+            liveTurnFailedAt = nil
+            record.openSelfTurn = true
+            saveRecord()
         } else if selfStarted {
             record.openSelfTurn = true
             saveRecord()
@@ -880,6 +888,16 @@ final class TernAgentSession {
             updateItem(ref: "req:\(request.id)") { if $0.state == "pending" { $0.state = "withdrawn" } }
         }
         requests.removeAll()
+        if current.fromInterface {
+            // What `agent wait` reports for the interface's own turns.
+            if case .failed(let error) = outcome {
+                liveTurnError = error
+                liveTurnFailedAt = Date()
+            } else {
+                liveTurnError = nil
+                liveTurnFailedAt = nil
+            }
+        }
         let continuedSelfTurn = current.messages.contains { message($0)?.note == true }
         if current.selfStarted || continuedSelfTurn {
             if shuttingDown {

@@ -368,6 +368,13 @@ extension TernAgentSession {
             self.liveState = .idle
             self.liveActivity = ""
             self.addItem(kind: "notice", text: "Interrupted in its interface.")
+            if self.record.openSelfTurn {
+                // Cancelled by the user: not a turn to continue after a restart.
+                self.record.openSelfTurn = false
+                self.record.cutOffAt = nil
+                self.record.cutOffReason = nil
+                self.saveRecord()
+            }
             self.lastStopAt = Date()
             self.changed()
             self.pump()
