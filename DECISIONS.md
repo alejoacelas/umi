@@ -746,8 +746,9 @@ CLI's name.
 - **`tern claude [TASK]` / `tern codex [TASK]`** are kept as the short way to start a session for
   yourself: `agent start … --tab --focus`. They no longer type the agent into a shell (that would
   launch outside headless control).
-- **Status words:** `stopped` replaces `exited` (a session with no process, resumable by a message);
-  `agent wait` prints `STOPPED`.
+- **Status words:** `stopped` replaces `exited`; `agent wait` prints `STOPPED`. Since §59 it means
+  "someone stopped it": a session that merely has no process (its interface closed, its agent
+  exited by itself) is `idle`.
 - **The read-only view** keeps phase 2's transcript rendering and approval/question cards (answering
   an agent's request isn't composing a message), drops the composer, and adds Take Over. Its
   keyboard focus is the transcript, so shortcuts and copying work there.

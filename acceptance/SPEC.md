@@ -492,7 +492,8 @@ runs, it is the same session: same id, conversation, folder and settings.
   `CANCELLED` 3; `TIMEOUT` 124 (with what is still running). An old message's wait returns that
   message's own reply. `--report` waits for the worker's own report instead (AG-16).
 - **AG-13 [A]** Truthful status: `starting`, `working`, `idle`, `needs_input`, `stopped` or `error`,
-  for headless and live sessions alike. A session isn't `idle` while a turn runs, a message waits,
+  for headless and live sessions alike. `stopped` is what `agent stop` leaves; a session whose
+  interface closed or whose agent exited by itself is `idle` (a message resumes it). A session isn't `idle` while a turn runs, a message waits,
   or background work it started (that will wake it) is pending; it isn't `working` when it's done.
   Turns the agent starts by itself (a background task finished, a scheduled wake-up) show as
   `working`, appear in the transcript as their own turns, and are never taken as the reply to a
