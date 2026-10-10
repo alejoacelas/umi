@@ -250,7 +250,16 @@ extension TernAgentSession {
     func markCutOff(_ id: String, at: Date, reason: String) {
         guard let current = message(id) else { return }
         var updated = current
-        if updated.state == .sent && record.kind == .claude { updated.state = .delivered }
+        if updated.state == .sent && record.kind == .claude {
+            // Written to Claude, never confirmed: its transcript says whether it arrived. If not,
+            // it's sent again; if the transcript can't be read, it counts as delivered (Claude
+            // reads its input before anything else).
+            if claudeTranscriptHas(id) == false {
+                requeueNeverDelivered(id)
+                return
+            }
+            updated.state = .delivered
+        }
         updated.cutOff = true
         updated.cutOffAt = updated.cutOffAt ?? at
         updated.cutOffReason = updated.cutOffReason ?? reason

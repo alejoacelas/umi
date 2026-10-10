@@ -255,6 +255,13 @@ extension TernAgentSession {
             liveState = .working
             liveDraft = false; liveDraftChars = 0
             liveActivity = ""
+            liveTurnError = nil
+            liveTurnFailedAt = nil
+            if record.liveAttached != true, !record.openSelfTurn {
+                // A turn of the interface's own: recorded, so a quit or crash continues it.
+                record.openSelfTurn = true
+                saveRecord()
+            }
             if record.conversation != true { record.conversation = true; saveRecord() }
             let prompt = payload["prompt"] as? String ?? ""
             if !prompt.isEmpty {
@@ -301,6 +308,14 @@ extension TernAgentSession {
                 let error = payload["error"] as? String ?? "the turn failed"
                 addItem(kind: "error", text: reply.isEmpty ? error : "\(error): \(reply)")
                 record.lastError = error
+                liveTurnError = error
+                liveTurnFailedAt = Date()
+            }
+            if record.openSelfTurn {
+                record.openSelfTurn = false
+                record.cutOffAt = nil
+                record.cutOffReason = nil
+                saveRecord()
             }
             liveBackground = (payload["background_tasks"] as? [Any])?.count ?? 0
             liveBackground += (payload["session_crons"] as? [Any])?.count ?? 0
@@ -384,6 +399,12 @@ extension TernAgentSession {
             exitingLiveDeadline = Date().addingTimeInterval(5)
         }
         endingLivePane = nil
+        if record.openSelfTurn {
+            // The interface ended mid-turn (the user quit it): that turn isn't continued.
+            record.openSelfTurn = false
+            record.cutOffAt = nil
+            record.cutOffReason = nil
+        }
         record.live = nil
         record.livePID = nil
         record.liveAttached = nil
@@ -430,7 +451,24 @@ extension TernAgentSession {
             return
         }
         if let pid = record.livePID, TernAgentLive.isLiveProcess(pid, of: self) {
+            // What the interface started goes with it: an agent typed in a pane tags nothing with
+            // the session, so its processes are found as its descendants now, and checked again
+            // (same session or pane) before they're ended.
+            let tree = TernProcessTree.descendants(of: pid)
+            let id = record.id
+            let pane = record.pane ?? endingLivePane
+            let stateDir = TernPaths.stateDirectory
             kill(pid, SIGTERM)
+            if !tree.isEmpty {
+                DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
+                    let left = tree.filter { child in
+                        guard TernProcessTree.isAlive(child), let env = TernProcessTree.environment(child) else { return false }
+                        return env["TERN_SESSION_ID"] == id
+                            || (pane != nil && env["TERN_PANE_ID"] == pane && env["TERN_STATE_DIR"] == stateDir)
+                    }
+                    if !left.isEmpty { TernProcessTree.terminate(Set(left), grace: 1.0) }
+                }
+            }
         } else {
             let pane = record.pane ?? endingLivePane
             let id = record.id

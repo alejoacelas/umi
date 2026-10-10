@@ -143,6 +143,12 @@ final class TernAgentSession {
     /// The live interface's process after its end was noticed (its SessionEnd hook comes before
     /// it has exited): no headless process starts until it's gone (one process per conversation).
     var exitingLivePID: Int32?
+    /// The conversation couldn't be opened: the process is still on its way out, but the session
+    /// is in error already (AG-3, "fails at once").
+    private var startFailedNow = false
+    /// The last turn run in the live interface failed (StopFailure): `agent wait` says so.
+    var liveTurnError: String?
+    var liveTurnFailedAt: Date?
     var exitingLiveDeadline = Date.distantPast
     /// The last time a hook reported anything (an interrupt in the interface fires none).
     var lastHookAt: Date?
@@ -259,7 +265,7 @@ final class TernAgentSession {
         if let state = liveState, state == .needsInput { return "needs_input" }
         switch phase {
         case .launching, .starting:
-            return "starting"
+            return startFailedNow ? "error" : "starting"
         case .ready:
             return (turn != nil || !inFlight.isEmpty || !queue.isEmpty || pendingBackground > 0 || wakePending)
                 ? "working" : "idle"
@@ -301,7 +307,9 @@ final class TernAgentSession {
         }
         if live, let request = requests.first { return "waiting: \(request.title)" }
         switch phase {
-        case .launching, .starting: return everReady || record.conversation == true ? "resuming" : "starting"
+        case .launching, .starting:
+            if startFailedNow { return record.lastError.map { TernAgentText.oneLine($0, max: 120) } ?? "error" }
+            return everReady || record.conversation == true ? "resuming" : "starting"
         case .stopping: return "stopping"
         case .stopped, .cleaning:
             if !queue.isEmpty && canRelaunch { return "resuming" }
@@ -467,6 +475,7 @@ final class TernAgentSession {
 
     func launch() {
         guard phase == .stopped else { return }
+        startFailedNow = false
         // Its own interface owns the conversation (Claude): one process per conversation.
         guard !exclusiveLive else { return }
         if let pid = exitingLivePID {
@@ -581,6 +590,7 @@ final class TernAgentSession {
         record.lastError = reason
         record.ended = "error"
         failedLaunches = 99
+        startFailedNow = true
         failOutstanding(reason)
         notice("Couldn't resume the conversation: \(reason)")
         saveRecord()
@@ -628,6 +638,14 @@ final class TernAgentSession {
     /// Set at launch for a session whose turn was cut off (or that has messages waiting):
     /// once its harness is back, a note goes first (R-10).
     var recovering = false
+
+    /// A message the harness never got (its own record says so): back to the front of the queue.
+    func requeueNeverDelivered(_ id: String) {
+        inFlight.removeAll { $0 == id }
+        update(id) { $0.state = .queued; $0.cutOff = nil; $0.cutOffAt = nil; $0.cutOffReason = nil }
+        if !queue.contains(id) { queue.insert(id, at: 0) }
+        saveQueue()
+    }
 
     /// Messages whose delivery a resume must settle: put back after the process ended without
     /// saying, or written and never confirmed.
@@ -1126,6 +1144,13 @@ final class TernAgentSession {
     func beginShutdown(reason: String) {
         shuttingDown = true
         shutdownReason = reason
+        if exclusiveLive, liveState == .working || liveState == .needsInput, record.openSelfTurn {
+            // A turn running in its own interface is cut off with the app: it continues by itself
+            // at the next launch, like a headless one (AG-22).
+            record.cutOffAt = Date()
+            record.cutOffReason = reason
+            saveRecord()
+        }
         if phase == .launching {
             // Still preparing to spawn: don't start now.
             generation += 1

@@ -267,12 +267,17 @@ enum TernAgentRPC {
             // Nothing was ever sent: the current state, at once.
             // A live session the user drives: wait for its turn to end.
             if session.record.live == true, !session.settled, session.status != "needs_input" { return nil }
-            let status: String
+            var status: String
             switch session.status {
             case "stopped": status = "STOPPED"
             case "error": status = "ERROR"
             case "needs_input": status = "NEEDS_INPUT"
             default: status = "DONE"
+            }
+            // The last turn in its own interface failed.
+            if status == "DONE", let failure = session.liveTurnError {
+                status = "FAILED"
+                out["error"] = failure
             }
             if status == "DONE", let reply = session.lastReply { out["reply"] = reply }
             out["status"] = status
@@ -296,6 +301,13 @@ enum TernAgentRPC {
             // The latest message's wait also waits for the session to settle: background work
             // it started that will wake it, or turns it runs by itself after (AG-12).
             if latest, message.state == .done, !session.settled { return nil }
+            // A turn run in its own interface since then failed: that's where things stand.
+            if latest, message.state == .done, let failure = session.liveTurnError,
+               let at = session.liveTurnFailedAt, at > (message.finishedAt ?? .distantPast) {
+                out["status"] = "FAILED"
+                out["error"] = failure
+                return out
+            }
             out["status"] = message.state.waitStatus
             var reply = message.reply
             if latest, message.state == .done, let last = session.lastReply, !last.isEmpty, last != reply,
