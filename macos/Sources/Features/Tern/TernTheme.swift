@@ -37,15 +37,26 @@ enum TernTheme {
         TernState.shared.layoutDidChange()
     }
 
+    /// The sidebar's default width; each window's can be dragged between the limits (S-8).
     static let sidebarWidth: CGFloat = 252
+    static let sidebarMinWidth: CGFloat = 180
+    static let sidebarMaxWidth: CGFloat = 600
+
+    /// A sidebar width within the limits and, when the window's width is given, no more than
+    /// half of it.
+    static func clampSidebarWidth(_ width: CGFloat, windowWidth: CGFloat? = nil) -> CGFloat {
+        var upper = sidebarMaxWidth
+        if let windowWidth, windowWidth > 0 { upper = min(upper, max(sidebarMinWidth, (windowWidth / 2).rounded(.down))) }
+        return min(max(width.rounded(), sidebarMinWidth), upper)
+    }
 
     /// The smallest content area a window gets (M-5).
     static let minimumContentSize = CGSize(width: 640, height: 380)
 
     /// Room the chrome takes around the terminal inside a window's content area: the
     /// sidebar when shown. Added to a terminal's size so it keeps its columns and rows.
-    static func chromeSize(sidebar: Bool) -> CGSize {
-        CGSize(width: sidebar ? sidebarWidth : 0, height: 0)
+    static func chromeSize(sidebar: Bool, width: CGFloat = sidebarWidth) -> CGSize {
+        CGSize(width: sidebar ? width : 0, height: 0)
     }
 
     static let uiFont = Font.system(size: 12, weight: .medium)
@@ -105,6 +116,9 @@ enum TernTheme {
         # ⌃⌘← / ⌃⌘→ move the pane into the previous or next tab.
         keybind = super+ctrl+arrow_left=unbind
         keybind = super+ctrl+arrow_right=unbind
+
+        # ⇧⌘T reopens the last closed pane, tab or window (File menu), not Undo.
+        keybind = super+shift+t=unbind
         """
     }
 

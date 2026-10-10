@@ -39,6 +39,23 @@ class TerminalController: BaseTerminalController {
     /// A name given at creation (`window new --name`), usable as a selector.
     var windowName: String?
 
+    /// The size of the area the selected tab's panes share (laid out by SwiftUI).
+    var terminalAreaSize: CGSize = .zero
+
+    /// This window's sidebar width (S-8): dragged at the sidebar's edge, saved with the layout.
+    /// A new window starts at the width last chosen in any window (`TernState.sidebarWidth`).
+    @Published var sidebarWidth: CGFloat = TernState.shared.sidebarWidth {
+        didSet {
+            let clamped = TernTheme.clampSidebarWidth(sidebarWidth)
+            if clamped != sidebarWidth { sidebarWidth = clamped; return }
+            guard sidebarWidth != oldValue else { return }
+            TernState.shared.layoutDidChange(persistOnly: true)
+            TernEvents.shared.emit("sidebar.changed", ["visible": TernState.shared.sidebarVisible,
+                                                        "mode": TernState.shared.sidebarMode.rawValue,
+                                                        "width": Double(sidebarWidth), "window": ternIDString])
+        }
+    }
+
     /// The window was closed (AppKit may keep the object around for a moment).
     private(set) var isClosed = false
 
@@ -177,6 +194,7 @@ class TerminalController: BaseTerminalController {
         if focus, let target, window?.isKeyWindow ?? false {
             DispatchQueue.main.async { Ghostty.moveFocus(to: target) }
         }
+        TernLooking.focusChanged(in: self)
         TernEvents.shared.emit("tab.selected", ["tab": tab.idString, "window": ternIDString])
         TernState.shared.layoutDidChange()
     }
@@ -531,7 +549,7 @@ class TerminalController: BaseTerminalController {
                 c.explicitFrame = frame
                 window.setFrame(frame, display: false)
             } else if let treeSize, treeSize.width > 0, treeSize.height > 0 {
-                let chrome = TernTheme.chromeSize(sidebar: TernState.shared.sidebarVisible)
+                let chrome = TernTheme.chromeSize(sidebar: TernState.shared.sidebarVisible, width: c.sidebarWidth)
                 window.setContentSize(CGSize(
                     width: max(treeSize.width + chrome.width, TernTheme.minimumContentSize.width),
                     height: max(treeSize.height + chrome.height, TernTheme.minimumContentSize.height)))
@@ -777,14 +795,23 @@ class TerminalController: BaseTerminalController {
         }
     }
 
-    /// Close part of a tab that isn't shown; a tab left empty closes. Both can be undone.
+    /// Close part of a tab that isn't shown; a tab left empty closes. Both can be undone,
+    /// and reopened (⇧⌘T).
     func closeHiddenNode(_ node: SplitTree<Ghostty.SurfaceView>.Node, in tab: TernTab) {
-        let newTree = tree(of: tab).removing(node)
+        let oldTree = tree(of: tab)
+        let newTree = oldTree.removing(node)
         if newTree.isEmpty {
             closeTabImmediately(tab)
         } else {
+            if case .leaf(let view) = node { TernReopen.shared.recordPane(view, tab: tab, tree: oldTree, in: self) }
             replaceTree(newTree, for: tab, undoAction: "Close Terminal")
         }
+    }
+
+    /// A pane of the shown tab is being closed (not its last: that closes the tab).
+    override func surfaceNodeWillClose(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
+        guard case .leaf(let view) = node, surfaceTree.root != node else { return }
+        TernReopen.shared.recordPane(view, tab: selectedTab, tree: surfaceTree, in: self)
     }
 
     // MARK: Panes in hidden tabs (AppleScript, App Intents)
@@ -817,8 +844,9 @@ class TerminalController: BaseTerminalController {
         let newView = Ghostty.SurfaceView(app, baseConfig: config)
         guard let newTree = try? tab.tree.inserting(view: newView, at: oldView, direction: direction) else { return nil }
         let bounds = surfaceTree.viewBounds()
-        if bounds.width > 0, bounds.height > 0 {
-            newView.frame = CGRect(origin: .zero, size: CGSize(width: bounds.width / 2, height: bounds.height))
+        if bounds.width > 0, bounds.height > 0,
+           let frame = newTree.root?.frames(in: bounds).first(where: { $0.view === newView })?.frame {
+            newView.frame = CGRect(origin: .zero, size: frame.size)
             newView.sizeDidChange(newView.frame.size)
         }
         replaceTree(SplitTree(root: newTree.root, zoomed: nil), for: tab, undoAction: "New Split")
@@ -857,6 +885,8 @@ class TerminalController: BaseTerminalController {
         }
 
         detachTab(tab)
+        // ⇧⌘T can bring it back (not when undo of New Tab is what closes it).
+        if registerUndo { TernReopen.shared.recordTab(tab, index: index, in: self) }
 
         if registerUndo, let undoManager {
             undoManager.setActionName("Close Tab")
@@ -898,6 +928,37 @@ class TerminalController: BaseTerminalController {
         }
     }
 
+    /// Close every tab but `keep` (the sidebar row's menu), asking first if a program runs in
+    /// one of them. Pinned tabs aren't spared, as in Warp. Each can be reopened (⇧⌘T).
+    func closeTabs(otherThan keep: TernTab) {
+        closeTabs(tabs.filter { $0 !== keep }, actionName: "Close Other Tabs", question: "Close Other Tabs?")
+    }
+
+    /// Close the tabs listed below `tab` in the sidebar.
+    func closeTabs(below tab: TernTab) {
+        guard let index = index(of: tab) else { return }
+        closeTabs(Array(tabs[(index + 1)...]), actionName: "Close Tabs Below", question: "Close Tabs Below?")
+    }
+
+    private func closeTabs(_ toClose: [TernTab], actionName: String, question: String) {
+        guard !toClose.isEmpty else { return }
+        let close = { [weak self] in
+            guard let self else { return }
+            self.undoManager?.beginUndoGrouping()
+            defer { self.undoManager?.endUndoGrouping() }
+            for tab in toClose where self.tabs.contains(where: { $0 === tab }) { self.closeTabImmediately(tab) }
+            self.undoManager?.setActionName(actionName)
+        }
+        guard toClose.contains(where: { tree(of: $0).contains(where: { $0.needsConfirmQuit }) }) else {
+            close()
+            return
+        }
+        confirmClose(
+            messageText: question,
+            informativeText: "At least one of these tabs still has a running process. If you close the tabs the processes will be killed."
+        ) { close() }
+    }
+
     private func closeOtherTabsImmediately() {
         let keep = selectedTab
         undoManager?.beginUndoGrouping()
@@ -926,6 +987,9 @@ class TerminalController: BaseTerminalController {
         cancelPendingInitialPresentation()
         registerUndoForCloseWindow()
         for tab in tabs { TernEditor.saveDirtyDocuments(of: tab) }
+        // ⇧⌘T can bring it back (not when undo of New Window is what closes it).
+        if !surfaceTree.isEmpty { selectedTab.tree = surfaceTree }
+        if !(undoManager?.isUndoing ?? false) { TernReopen.shared.recordWindow(self) }
 
         let paneIDs = allSurfaces.map(\.ternID)
         let tabIDs = tabs.map(\.idString)
@@ -1054,7 +1118,7 @@ class TerminalController: BaseTerminalController {
         }
 
         // The terminal's initial size plus the sidebar.
-        let chrome = TernTheme.chromeSize(sidebar: TernState.shared.sidebarVisible)
+        let chrome = TernTheme.chromeSize(sidebar: TernState.shared.sidebarVisible, width: sidebarWidth)
         container.initialContentSize = focusedSurface?.initialSize.map {
             NSSize(width: $0.width + chrome.width, height: $0.height + chrome.height)
         }
@@ -1129,6 +1193,7 @@ class TerminalController: BaseTerminalController {
     override func windowDidBecomeKey(_ notification: Notification) {
         super.windowDidBecomeKey(notification)
         TernTopology.windowBecameCurrent(self)
+        TernLooking.focusChanged(in: self)
     }
 
     override func windowDidMove(_ notification: Notification) {
@@ -1267,6 +1332,7 @@ class TerminalController: BaseTerminalController {
             TernEvents.shared.emit("pane.focused", ["pane": to.ternID, "tab": tab.idString, "window": ternIDString])
             TernState.shared.layoutDidChange()
         }
+        if to != nil { TernLooking.focusChanged(in: self) }
 
         surfaceAppearanceCancellables.removeAll()
         guard let focusedSurface else { return }

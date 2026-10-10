@@ -261,7 +261,12 @@ enum TernTopology {
         // Zoom is per tab: mark the zoomed pane.
         var zoomedPane: Ghostty.SurfaceView?
         if let zoomed = tree.zoomed, case .leaf(let view) = zoomed { zoomedPane = view }
-        json["panes"] = panes.map { paneJSON($0, focused: $0 === focused, zoomed: $0 === zoomedPane) }
+        let frames = paneFrames(tree, in: window)
+        json["panes"] = panes.map { pane in
+            var paneJSON = paneJSON(pane, focused: pane === focused, zoomed: pane === zoomedPane)
+            if let frame = frames[ObjectIdentifier(pane)] { paneJSON["frame"] = frameJSON(frame) }
+            return paneJSON
+        }
         if let zoomedPane { json["zoomed_pane"] = zoomedPane.ternID }
         if let name = tab.name, !name.isEmpty { json["name"] = name }
         if tab.color != .none { json["color"] = TernTopology.colorName(tab.color) }
@@ -289,6 +294,23 @@ enum TernTopology {
         return json
     }
 
+    /// Where each pane of a tab sits in the window's terminal area (points, top-left origin),
+    /// from the split ratios: what the tab shows, or will show when selected. Zoom aside.
+    static func paneFrames(_ tree: SplitTree<Ghostty.SurfaceView>, in window: TerminalController) -> [ObjectIdentifier: CGRect] {
+        var size = window.terminalAreaSize
+        if size.width <= 0 || size.height <= 0 { size = window.surfaceTree.viewBounds() }
+        if size.width <= 0 || size.height <= 0 { size = tree.viewBounds() }
+        guard let root = tree.root else { return [:] }
+        var out: [ObjectIdentifier: CGRect] = [:]
+        for (view, frame) in root.frames(in: size) { out[ObjectIdentifier(view)] = frame }
+        return out
+    }
+
+    static func frameJSON(_ frame: CGRect) -> [String: Any] {
+        func round(_ v: CGFloat) -> Double { (Double(v) * 10).rounded() / 10 }
+        return ["x": round(frame.minX), "y": round(frame.minY), "width": round(frame.width), "height": round(frame.height)]
+    }
+
     /// `pane info`: the pane plus its tab and window.
     static func paneInfoJSON(_ pane: Ghostty.SurfaceView) -> [String: Any] {
         guard let location = locate(pane) else {
@@ -301,6 +323,7 @@ enum TernTopology {
         var json = paneJSON(pane, focused: focused, zoomed: zoomed)
         json["tab"] = location.tab.idString
         json["window"] = location.window.ternIDString
+        if let frame = paneFrames(tree, in: location.window)[ObjectIdentifier(pane)] { json["frame"] = frameJSON(frame) }
         json["tab_index"] = (location.window.index(of: location.tab) ?? 0) + 1
         json["window_index"] = windowNumber(location.window)
         if let size = pane.surface.map({ ghostty_surface_size($0) }) {

@@ -26,6 +26,15 @@ final class TernState: ObservableObject {
         }
     }
 
+    /// The sidebar width a new window starts with: the one last chosen in any window (S-8).
+    /// Each window keeps its own (`TerminalController.sidebarWidth`).
+    var sidebarWidth: CGFloat = TernTheme.sidebarWidth {
+        didSet {
+            guard sidebarWidth != oldValue else { return }
+            TernPersistence.shared.saveUISoon()
+        }
+    }
+
     /// Bumped whenever windows, tabs or panes may have changed.
     @Published private(set) var revision: Int = 0
 

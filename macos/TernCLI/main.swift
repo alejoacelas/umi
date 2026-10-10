@@ -632,7 +632,9 @@ Input and output
   wait [--pane P] (--pattern RE | --idle SECS) [--timeout T]    exits 124 on timeout
   events [--filter PREFIX]… [--pane P]   JSON lines (pane.created, tab.renamed, …)
   notify [--pane P] TITLE [BODY]
-  sidebar [on|off|toggle|status|tabs|files]
+  sidebar [on|off|toggle|status|tabs|files] [--window W]
+  sidebar width [N] [--window W]         the window's sidebar width (points); N sets it
+  reopen [--list]                        reopen the last closed pane, tab or window (for 60 s)
   screenshot [--window W] OUT.png
 
 Editor
@@ -740,17 +742,49 @@ func layoutCommand(_ argv: [String]) {
         let args = parse(rest, ArgSpec(valued: ["--window"], aliases: ["-w": "--window"]))
         var params: [String: Any] = [:]
         if let window = args.value("--window") { params["window"] = window }
-        switch args.positional.first ?? "toggle" {
+        let sub = args.positional.first ?? "toggle"
+        switch sub {
         case "on", "show": params["visible"] = true
         case "off", "hide": params["visible"] = false
         case "toggle": params["toggle"] = true
         case "status": break
-        case "tabs", "files": params["mode"] = args.positional.first!
-        default: fail("sidebar: use on, off, toggle, status, tabs or files")
+        case "tabs", "files": params["mode"] = sub
+        case "width":
+            // `sidebar width` says the window's width; `sidebar width N` sets it.
+            if args.positional.count > 1 {
+                guard let width = Double(args.positional[1]), width > 0 else { fail("sidebar width: give a width in points") }
+                params["width"] = width
+            }
+        default: fail("sidebar: use on, off, toggle, status, tabs, files or width [N]")
         }
         let result = callDict("sidebar", params)
-        if jsonOutput || args.positional.first == "status" {
-            printJSON(["visible": result["visible"] as? Bool ?? false, "mode": result["mode"] as? String ?? "tabs"])
+        if sub == "width" && !jsonOutput {
+            if let width = result["width"] as? Double { print(Int(width)) }
+        } else if jsonOutput || sub == "status" {
+            var status: [String: Any] = ["visible": result["visible"] as? Bool ?? false, "mode": result["mode"] as? String ?? "tabs"]
+            if let width = result["width"] { status["width"] = width }
+            printJSON(status)
+        }
+
+    case "reopen":
+        let args = parse(rest, ArgSpec(boolean: ["--list"]))
+        guard args.positional.isEmpty else { fail("reopen: unexpected argument \(args.positional[0])") }
+        if args.has("--list") {
+            let result = callDict("reopen.list")
+            if jsonOutput {
+                printJSON(result)
+            } else {
+                let items = result["items"] as? [[String: Any]] ?? []
+                if items.isEmpty { print(dim("nothing to reopen")) }
+                for item in items {
+                    let what = item["kind"] as? String ?? "?"
+                    let title = item["title"] as? String ?? ""
+                    print("\(what)\(title.isEmpty ? "" : "  \(title)")  \(dim("\(item["expires_in"] ?? "?")s left"))")
+                }
+            }
+        } else {
+            let result = callDict("reopen")
+            if jsonOutput { printJSON(result) } else { print(result["pane"] as? String ?? result["window"] as? String ?? "") }
         }
 
     case "screenshot":

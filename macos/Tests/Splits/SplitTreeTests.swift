@@ -185,13 +185,68 @@ struct SplitTreeTests {
             Issue.record("unexpected node type")
             return
         }
-        #expect(abs(before.ratio - 0.5) < 0.001)
+        // Tern: a split along a row already shares it equally (L-19).
+        #expect(abs(before.ratio - 1.0/3.0) < 0.001)
 
         let equalized = tree.equalized()
 
         if case .split(let s) = equalized.root {
             #expect(abs(s.ratio - 1.0/3.0) < 0.001)
         }
+    }
+
+    // MARK: - Equal panes (Tern, L-19)
+
+    /// The widths of a tree's leaves laid out in 1200 points, left to right.
+    private func widths(_ tree: SplitTree<MockView>) -> [Double] {
+        (tree.root?.frames(in: CGSize(width: 1200, height: 600)) ?? []).map { Double($0.frame.width) }
+    }
+
+    @Test func splitsAlongARowShareItEqually() throws {
+        let a = MockView(), b = MockView(), c = MockView(), d = MockView()
+        var tree = SplitTree<MockView>(view: a)
+        tree = try tree.inserting(view: b, at: a, direction: .right)
+        tree = try tree.inserting(view: c, at: b, direction: .right)
+        #expect(widths(tree).map { $0.rounded() } == [400, 400, 400])
+        tree = try tree.inserting(view: d, at: a, direction: .left)
+        #expect(widths(tree).map { $0.rounded() } == [300, 300, 300, 300])
+        #expect(tree.root?.leaves().map(\.id) == [d, a, b, c].map(\.id))
+    }
+
+    @Test func aSplitAcrossARowHalvesOnlyThatPane() throws {
+        let a = MockView(), b = MockView(), c = MockView(), d = MockView()
+        var tree = SplitTree<MockView>(view: a)
+        tree = try tree.inserting(view: b, at: a, direction: .right)
+        tree = try tree.inserting(view: c, at: b, direction: .right)
+        tree = try tree.inserting(view: d, at: b, direction: .down)
+        let frames = tree.root?.frames(in: CGSize(width: 1200, height: 600)) ?? []
+        #expect(frames.map { Double($0.frame.width).rounded() } == [400, 400, 400, 400])
+        #expect(frames.map { Double($0.frame.height).rounded() } == [600, 300, 300, 600])
+    }
+
+    @Test func closingShareTheSpaceInProportion() throws {
+        let a = MockView(), b = MockView(), c = MockView()
+        var tree = SplitTree<MockView>(view: a)
+        tree = try tree.inserting(view: b, at: a, direction: .right)
+        tree = try tree.inserting(view: c, at: b, direction: .right)
+        #expect(widths(tree.removing(.leaf(view: b))).map { $0.rounded() } == [600, 600])
+        // 50/30/20, close the 30: 71/29.
+        tree = SplitTree(root: tree.root?.withShares([0.5, 0.3, 0.2], .horizontal), zoomed: nil)
+        #expect(widths(tree).map { ($0 / 12).rounded() } == [50, 30, 20])
+        #expect(widths(tree.removing(.leaf(view: b))).map { ($0 / 12).rounded() } == [71, 29])
+    }
+
+    @Test func aDividerMovesOnlyItsNeighbors() throws {
+        let a = MockView(), b = MockView(), c = MockView()
+        var tree = SplitTree<MockView>(view: a)
+        tree = try tree.inserting(view: b, at: a, direction: .right)
+        tree = try tree.inserting(view: c, at: b, direction: .right)
+        guard let root = tree.root else { Issue.record("empty tree"); return }
+        // The divider between a and the rest: a grows to 50%, b shrinks, c keeps its third.
+        tree = try tree.movingDivider(of: root, to: 0.5)
+        #expect(widths(tree).map { $0.rounded() } == [600, 200, 400])
+        tree = tree.equalizingRun(containing: tree.root!)
+        #expect(widths(tree).map { $0.rounded() } == [400, 400, 400])
     }
 
     // MARK: - Resizing

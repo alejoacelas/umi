@@ -279,6 +279,11 @@ enum TernRPC {
 
         case "sidebar":
             let state = TernState.shared
+            // The width is per window (S-8): the given window, else the caller's, else the current.
+            // An unknown window changes nothing (L-4).
+            let window = params.string("window") != nil
+                ? try TernTopology.window(params.string("window"), caller: caller)
+                : try? TernTopology.window(nil, caller: caller)
             if params.bool("toggle") ?? false { state.sidebarVisible.toggle() }
             if let visible = params.bool("visible") { state.sidebarVisible = visible }
             if let mode = params.string("mode") {
@@ -288,7 +293,22 @@ enum TernRPC {
                 state.sidebarMode = parsed
                 state.sidebarVisible = true
             }
-            return ["visible": state.sidebarVisible, "mode": state.sidebarMode.rawValue]
+            if let width = params.double("width") {
+                guard let window else { throw TernError.notFound("there are no Tern windows open") }
+                window.sidebarWidth = TernTheme.clampSidebarWidth(CGFloat(width))
+                state.sidebarWidth = window.sidebarWidth
+            }
+            var json: [String: Any] = ["visible": state.sidebarVisible, "mode": state.sidebarMode.rawValue]
+            if let window {
+                json["width"] = Double(window.sidebarWidth)
+                json["window"] = window.ternIDString
+            }
+            return json
+
+        case "reopen":
+            return try TernReopen.shared.reopen()
+        case "reopen.list":
+            return ["items": TernReopen.shared.list()]
 
         case "screenshot":
             let window = try TernTopology.window(params.string("window"), caller: caller)
@@ -366,6 +386,9 @@ enum TernRPC {
 
         case "debug.agent.pane", "debug.agent.type", "debug.agent.press":
             return try TernAgentDebug.handle(method, params, caller: caller)
+
+        case let ui where ui.hasPrefix("debug.ui."):
+            return try TernUIDebug.handle(method, params, caller: caller)
 
         default:
             if method.hasPrefix("agent.") {

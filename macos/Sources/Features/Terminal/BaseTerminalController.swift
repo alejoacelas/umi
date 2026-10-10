@@ -494,6 +494,7 @@ class BaseTerminalController: NSWindowController,
 
         // If the child process is not alive, then we exit immediately
         guard withConfirmation else {
+            surfaceNodeWillClose(node)
             removeSurfaceNode(node)
             return
         }
@@ -508,10 +509,15 @@ class BaseTerminalController: NSWindowController,
             informativeText: "The terminal still has a running process. If you close the terminal the process will be killed."
         ) { [weak self] in
             if let self {
+                self.surfaceNodeWillClose(node)
                 self.removeSurfaceNode(node)
             }
         }
     }
+
+    /// A node of the shown tree is about to be closed for good (not moved). Tern: closed
+    /// panes can be reopened (⇧⌘T).
+    func surfaceNodeWillClose(_ node: SplitTree<Ghostty.SurfaceView>.Node) {}
 
     // MARK: Split Tree Management
 
@@ -975,13 +981,15 @@ class BaseTerminalController: NSWindowController,
             splitDidResize(node: resize.node, to: resize.ratio)
         case .drop(let drop):
             splitDidDrop(source: drop.payload, destination: drop.destination, zone: drop.zone)
+        case .equalize(let node):
+            surfaceTree = surfaceTree.equalizingRun(containing: node)
         }
     }
 
     private func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
-        let resizedNode = node.resizing(to: newRatio)
+        // Tern: only the two panes beside the dragged divider change size (L-19).
         do {
-            surfaceTree = try surfaceTree.replacing(node: node, with: resizedNode)
+            surfaceTree = try surfaceTree.movingDivider(of: node, to: newRatio)
         } catch {
             Ghostty.logger.warning("failed to replace node during split resize: \(error, privacy: .public)")
         }

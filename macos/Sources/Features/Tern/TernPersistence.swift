@@ -6,7 +6,8 @@ import GhosttyKit
 ///
 /// - `layout.json`: windows, tabs (names, colors, pins, order), split trees with each pane's
 ///   folder and name, and each tab's open editor documents;
-/// - `ui.json`: the sidebar's visibility and mode.
+/// - `ui.json`: the sidebar's visibility and mode, and the width new windows start with
+///   (each window's own width is in `layout.json`).
 ///
 /// Saving is continuous (debounced) so a crash or a kill loses at most a fraction of a
 /// second; quitting saves synchronously. `window-save-state = never` turns both saving
@@ -58,7 +59,8 @@ final class TernPersistence {
 
     func saveUINow() {
         let state = TernState.shared
-        let json: [String: Any] = ["sidebar": ["visible": state.sidebarVisible, "mode": state.sidebarMode.rawValue]]
+        let json: [String: Any] = ["sidebar": ["visible": state.sidebarVisible, "mode": state.sidebarMode.rawValue,
+                                               "width": Double(state.sidebarWidth)]]
         write(json, to: uiPath)
     }
 
@@ -83,6 +85,7 @@ final class TernPersistence {
             json["frame"] = [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height]
         }
         if let name = window.windowName { json["name"] = name }
+        json["sidebar_width"] = Double(window.sidebarWidth)
         if window === TernTopology.currentWindow { json["current"] = true }
         return json
     }
@@ -136,6 +139,7 @@ final class TernPersistence {
         let state = TernState.shared
         if let visible = sidebar["visible"] as? Bool { state.sidebarVisible = visible }
         if let mode = (sidebar["mode"] as? String).flatMap(TernState.SidebarMode.init(rawValue:)) { state.sidebarMode = mode }
+        if let width = sidebar["width"] as? Double { state.sidebarWidth = TernTheme.clampSidebarWidth(CGFloat(width)) }
     }
 
     /// Recreate the windows of the last run. Returns how many were restored.
@@ -195,6 +199,7 @@ final class TernPersistence {
                 ghostty, tabs: tabs, selected: selected ?? tabs[0], frame: frame,
                 focus: true, registerUndo: false)
             controller.windowName = windowJSON["name"] as? String
+            if let width = windowJSON["sidebar_width"] as? Double { controller.sidebarWidth = CGFloat(width) }
             if windowJSON["current"] as? Bool == true { current = controller }
             restored += 1
         }
