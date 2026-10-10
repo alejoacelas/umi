@@ -1112,4 +1112,20 @@ gets focus in the key window of the active app (UI-B's sidebar may call it too; 
   never ends then, and each window opened unattended kept a worker thread for ever; after 64 the app's
   shared thread pool was exhausted and agent commands stalled (found by the suite, which runs with the
   screen locked). With the screen in use windows open as before.
+- **A live interface counts as running everywhere it matters:** `agent resume` and every other path
+  start no headless process while it owns the conversation (messages go the usual way, AG-9); `agent
+  rm` needs `--force`; its name stays reserved; `update --now` counts its turn.
+- **Pasted text is typed text** for the draft rule (pastes go through the clipboard read, which tells
+  Tern the pane and the text).
+- **A turn the user started in the interface is the agent's own open turn.** If the app quits or
+  crashes during it, it continues by itself after the restart (a continuation note run headless; the
+  interface then comes back in its pane), like a headless turn (AG-22). If the user quits the
+  interface mid-turn, it isn't continued. A failed turn there (StopFailure) makes `agent wait` report
+  FAILED until the next turn.
+- **Stopping an agent typed in a pane ends what it started**: its process tree is captured before it's
+  ended, and what's still running 3 s later and carries the session's or the pane's identity is ended
+  too. (A process that double-forked away from the tree before the stop isn't found.)
+- **After a crash of the product, a Claude message written but never confirmed is looked up in
+  Claude's transcript before anything else**: missing there, it's sent again (no longer counted as
+  delivered first).
 
