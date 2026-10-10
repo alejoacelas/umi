@@ -628,3 +628,68 @@ def test_a_failed_turn_in_the_interface_is_not_reported_done(inst, win):
                15, message="the next turn")
     code, out = inst.wait(sid, timeout=20)
     assert (code, out["status"]) == (0, "DONE"), out
+
+
+# ---- round 7 -------------------------------------------------------------------------------------
+
+CODEX_BANNER = "Fake Codex"
+
+
+def live_in_new_tab(inst, kind):
+    sid = inst.json("agent", "start", kind, "--cwd", inst.work, *fake_args(inst), "--tab", "ECHO hi")["session"]["id"]
+    wait_until(lambda: inst.info(sid)["location"] == "live", 30, message=f"the session to be live: {inst.info(sid)}")
+    pane = inst.info(sid)["pane"]
+    wait_until(lambda: (BANNER if kind == "claude" else CODEX_BANNER) in inst.screen(pane), 30, message="its interface")
+    return sid, pane
+
+
+def continuation_notes(inst):
+    return [r for r in inst.receipts() if "previous turn was cut off" in (r.get("text") or "")]
+
+
+@pytest.mark.req("AG-22", "AG-7")
+def test_a_turn_running_in_codexs_interface_continues_after_a_quit(target, fresh):
+    """Round 7, P1: a turn started in Codex's attached interface wasn't recorded either, so a quit cut it
+    off for good."""
+    if not target.restoration_safe:
+        pytest.skip("needs a restoration-safe build")
+    other = fresh(prefix="acc-rv-codex-quit-", restore=True)
+    sid, pane = live_in_new_tab(other, "codex")
+    other.type_line(pane, f"SLEEP 30 {nonce()}")
+    wait_until(lambda: other.info(sid)["status"] == "working", 15, message="the typed turn runs")
+    other.quit_gracefully(timeout=60)
+    other.start_app()
+    wait_until(lambda: continuation_notes(other), 60, message="the cut-off turn continues")
+
+
+@pytest.mark.req("AG-22", "AG-19")
+def test_a_turn_interrupted_in_the_interface_is_not_continued_after_a_quit(target, fresh):
+    """Round 7, P1: interrupting a turn in Claude's interface (Esc) left it recorded as open, so the next
+    restart resumed the turn the user had cancelled."""
+    if not target.restoration_safe:
+        pytest.skip("needs a restoration-safe build")
+    other = fresh(prefix="acc-rv-interrupt-quit-", restore=True)
+    sid, pane = live_in_new_tab(other, "claude")
+    other.type_line(pane, f"SLEEP 30 {nonce()}")
+    wait_until(lambda: other.info(sid)["status"] == "working", 15, message="the typed turn runs")
+    other.cli("keys", "--pane", pane, "esc")
+    wait_until(lambda: other.info(sid)["status"] == "idle", 15, message="the interrupt is noticed")
+    other.quit_gracefully(timeout=60)
+    other.start_app()
+    wait_until(lambda: other.info(sid)["location"] == "live", 60, message="the session back live in its pane")
+    time.sleep(5)
+    assert not continuation_notes(other), "the turn the user cancelled was continued"
+
+
+@pytest.mark.req("AG-12", "AG-19")
+def test_a_failed_turn_in_codexs_interface_is_not_reported_done(inst, win):
+    """Round 7, P2: a turn that failed in Codex's attached interface left `agent wait` saying DONE with
+    an earlier reply (round 6 fixed it for Claude only)."""
+    sid, pane = live_in_new_tab(inst, "codex")
+    inst.wait(sid, timeout=30)
+    n = nonce()
+    inst.type_line(pane, f"FAIL {n}")
+    wait_until(lambda: any(n in (i.get("text") or "") for i in inst.transcript(sid)), 20, message="the turn starts")
+    wait_until(lambda: inst.info(sid)["status"] == "idle", 20, message="the turn ends")
+    code, out = inst.wait(sid, timeout=20)
+    assert (code, out["status"]) == (3, "FAILED") and out.get("error"), (code, out)
