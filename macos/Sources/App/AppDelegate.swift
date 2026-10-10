@@ -817,8 +817,8 @@ class AppDelegate: NSObject,
             .reduce(0) { $0 + ($1.bell ? 1 : 0) }
         let wantsBadge = ghostty.config.bellFeatures.contains(.attention) && bellCount > 0
         var label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
-        // Tern: managed sessions that need the user come first (most have no pane to show it).
-        let needingInput = MainActor.assumeIsolated { TernAgentMenu.shared.needingInput.count }
+        // Tern: agent sessions that need the user come first (TernAttention).
+        let needingInput = MainActor.assumeIsolated { TernAttention.shared.needingYouCount }
         if needingInput > 0 { label = needingInput > 99 ? "99+" : String(needingInput) }
         NSApp.dockTile.badgeLabel = label
         NSApp.dockTile.display()
