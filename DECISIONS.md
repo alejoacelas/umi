@@ -933,3 +933,123 @@ renders), drops, the drag-end handler, the row menu (`TernTabMenu.items`, which 
 renders), split drops and dividers, the open-file path, and stand in for the engine's TernAttention
 writes. `debug.ui.assume_active` counts the app as active (the CLI can't bring it to the front while
 the person uses another app). The real gestures are `ui` tests.
+
+## 47. Shortcuts from anywhere (L-10): a key monitor in front of the menu items
+
+Menu key equivalents
+alone (WARP-PARITY §2.2's suggestion) don't reach every case: a view's `performKeyEquivalent`
+(Ghostty's terminal for its own bindings, WKWebView in the preview) runs before the menu, and AppKit
+doesn't match ⇧⌘[ to a "[" + ⇧ menu item reliably (the event's character is "{"). So the items
+stay menu items (shown, discoverable, in the palette), and `TernShortcuts.dispatch` performs them
+from an app-local key-down monitor before any view sees the key. Tern's defaults also unbind
+Ghostty's bindings for these keys (⇧⌘[ ⇧⌘] ⌘1–9 both digit forms, ⌃Tab ⌃⇧Tab ⇧⌘P ⌘,), so the
+shortcuts editor shows them free; a binding the user puts in their own Ghostty config for one of
+Tern's keys loses to Tern's item (Settings shows both, and changing either moves the key). Keys
+without ⌘ or ⌃ (typing) never go to the monitor. Modal alerts and sheets keep their keys. The
+monitor refreshes the menu's validation before performing (AppKit's enabled state can be stale).
+
+## 48. ⇧⌘[ history
+
+A list of the tabs visited across windows, most recent last, each once. Back walks
+down it with a cursor without reordering (so pressing again goes further back, never ping-pongs);
+visiting a tab any other way ends the walk and counts the tab reached by walking as visited (so
+Back from the new tab returns to it, as a browser would). A visit is a selection change in the
+current window, or a window becoming current. Windows created with focus count at once, even
+while the app is in the background.
+
+## 49. ⇧⌘] / ⌃Tab, ⌘1–8 / ⌘9
+
+⇧⌘] and ⌃Tab stay within the window (as in Warp); they wrap. ⌘1–8 / ⌘9 are in a "Show Tab"
+submenu of Window, to keep the menu short.
+
+## 50. S-7: how the user's order meets pins and manual moves
+
+I took the lead's suggestion: pins
+first (explicit), then current, then last agent stop (most recent first), then never-stopped tabs
+in their existing order; the real tab order changes, so `ls`, `#N` and ⌘1–9 follow what the user
+sees. Details that weren't in the suggestion:
+- *Ping-pong:* every tab-switching key or `tab next/prev/back` freezes the order for 1.2 s after
+  the last press (one timer for the app); the reorder then runs for every window, animated.
+  Sidebar clicks and `tab focus` reorder at once (the row moves to the top, animated), which is the
+  literal ask; I considered waiting until the pointer leaves the sidebar but it needs UI-B's views
+  and hides why rows didn't move.
+- *Manual placement:* a placement (`tab move`, drag, Move Tab Up/Down, `tab new --index`) runs
+  under `TernTabOrder.hold`, so the selection it makes doesn't reorder; the next selection change
+  or agent stop does. Among tabs whose agents never stopped, a manual order survives reorders
+  (their relative order is kept); among stopped tabs, last stop wins. M-2's test (move to
+  `--index 2` and check index 2) passes because of the hold.
+- *Pin/unpin* reorders at once (the unpinned tab goes to its place by the rules).
+- *A tab with an old stop stays above a tab with no agent* that the user visited recently: the
+  user's rule ranks by agent stop; tabs without agents keep a most-recently-current order among
+  themselves because the previous current tab is first among them.
+- Not configurable. If the user wants manual order back, a `sidebar order manual` switch would be
+  the cheap door to add (one flag in `TernTabOrder`).
+
+## 51. ⌃⌘K for "back"
+
+⌃⇧⌘J was the natural pair but Ghostty binds it (`write_screen_file:copy`);
+⌃⌘K is free in Ghostty and macOS, and J/K read as next/back. "Back" returns to the pane focused
+when a *run* of jumps started (a run continues while each ⌃⌘J starts from the previous jump's
+destination), not one step back: the user's words were "goes back (to where you were before
+jumping)". A `.session` target calls `TernAttention.shared.showSession` (the lead's); a later ⌃⌘J
+from the pane that shows that session continues the run.
+
+## 52. Command palette from the CLI (L-14)
+
+One table in `macos/TernCLI/commands.swift`: each help line
+(section, usage, summary) and the palette actions it offers (title, words, values to ask). `tern
+help` prints the table; `tern help --json` prints the same table; the palette reads the JSON
+from the bundled CLI once per run and runs actions through the bundled CLI with the focused pane's
+`TERN_PANE_ID`/`TERN_INSTANCE`/`TERN_STATE_DIR` and folder, so every command defaults to "this
+pane" exactly as in a terminal. Commands that stream or block (`events`, `wait`) offer no action.
+A typed `tern …` line (first word a known command) runs as typed, so commands without curated
+actions are still reachable. Same-title entries are merged: a CLI action that asks for values
+replaces the menu item (asked inline rather than in a dialog) and shows its shortcut; otherwise
+the menu item wins, then Ghostty's action (which asks before closing a running program, unlike
+`tab close`), then the CLI's. Ghostty's own "Command Palette" menu item and `toggle_command_palette`
+open Tern's palette; Ghostty's palette remains only for non-Tern windows (Quick Terminal). The
+build script now compiles every `.swift` file in `TernCLI/`.
+
+## 53. Pane palette (L-15)
+
+A global most-recently-focused list of panes (`TernFocusHistory`), fed by
+focus changes and by `pane focus`/`tab focus`; panes never focused follow in layout order.
+
+## 54. Quick open (L-16)
+
+`git ls-files --cached --others --exclude-standard` from the repository
+root of the focused pane's folder (outside a repository, that folder only, as Warp), indexed off the
+main thread when the palette opens; up to 100 results; recency from files opened through the
+editor (any path) or the palette; changed files from `git status`. `path:line` switches a Markdown
+file to source and puts the cursor on the line (`TernDocument.revealLine`, a small editor hook).
+
+## 55. Settings (L-17)
+
+A Settings window (⌘,; Ghostty's "Preferences…" item, which opens the
+Ghostty config, is renamed "Open Ghostty Config File" and loses ⌘,). Storage: Tern items in
+`<state>/shortcuts.json`; Ghostty keybindings as `keybind = …` lines in `<state>/keybindings.conf`,
+which `Ghostty.Config.loadConfig` loads after the user's config files (so a change made in Tern wins
+over the user's file, which the UI states), applied by reloading the config. The list of Ghostty
+bindings in effect is worked out by replaying, in Tern's load order, Ghostty's built-in defaults
+(from the app's own `+list-keybinds --default`), Tern's defaults, the user's config files (and
+their `config-file` includes) and `keybindings.conf`, because libghostty has no API to list
+keybindings and no Zig changes were allowed. Menu shortcuts need ⌘ or ⌃ (or a function key);
+terminal bindings can be any key.
+
+## 56. L-18
+
+`BaseTerminalController.findNextFocusTargetAfterClosing` asks an overridable
+`previouslyFocusedSurface(excluding:)` first; `TerminalController` answers from the focus history.
+`TernTab.effectiveFocusedSurface` and the undo/hidden-tab close paths use the same history.
+
+## 57. Focus moves are guarded
+
+`TernLayout.moveFocus(to:in:)` replaces `Ghostty.moveFocus` in Tern's
+focus paths: it retries until the pane's view is in the window, but only while the window still
+wants that pane. With Ghostty's version, quick `pane focus A; pane focus B` across tabs could end
+with A focused (A's retry landed after B) — found by the L-15 test.
+
+## 58. Looking clears marks
+
+`TernFocusHistory` calls `TernAttention.shared.looked(atPane:)` when a pane
+gets focus in the key window of the active app (UI-B's sidebar may call it too; it's idempotent).

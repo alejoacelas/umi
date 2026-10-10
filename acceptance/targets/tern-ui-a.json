@@ -1,0 +1,29 @@
+{
+  "name": "Tern-ui-a",
+  "app": "/Users/alejo-m1/dev/terminal-3/.worktrees/app-ui-a/macos/build/ReleaseLocal/Tern.app",
+  "executable": "Contents/MacOS/tern-app",
+  "cli": "Contents/MacOS/tern",
+  "launch_args": ["--window-save-state=never"],
+  "restore_launch_args": [],
+  "env": {
+    "state_dir": "TERN_STATE_DIR",
+    "claude_bin": "TERN_CLAUDE_BIN",
+    "codex_bin": "TERN_CODEX_BIN",
+    "feed_url": "TERN_FEED_URL"
+  },
+  "release": {
+    "command": ["bash", "/Users/alejo-m1/dev/terminal-3/.worktrees/app-ui-a/dist/release.sh", "--version", "{version}", "--out", "{out}",
+                "--base-url", "{base_url}", "--no-publish"],
+    "feed": "appcast.json",
+    "app": "Tern.app"
+  },
+  "installer": {
+    "command": ["bash", "/Users/alejo-m1/dev/terminal-3/.worktrees/app-ui-a/dist/install.sh", "--from", "{app}"],
+    "env": {"dest": "TERN_INSTALL_DEST", "bin": "TERN_INSTALL_BIN",
+            "no_default": "TERN_INSTALL_NO_DEFAULT", "no_launch": "TERN_INSTALL_NO_LAUNCH"}
+  },
+  "build_cli": {"source": "/Users/alejo-m1/dev/terminal-3/.worktrees/app-ui-a/macos/TernCLI", "command": ["bash", "{src}/build.sh", "--out", "{out}"]},
+  "restoration_safe": true,
+  "other_products": ["com.mitchellh.ghostty", "com.mitchellh.ghostty.debug", "dev.wraith.terminal", "dev.shade.terminal"],
+  "other_names": ["Ghostty", "Wraith", "Shade"]
+}

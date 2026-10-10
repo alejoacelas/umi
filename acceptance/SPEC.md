@@ -183,19 +183,80 @@ the menu.
 - **L-8 [A]** Commands that create things accept a "don't focus it" option. The user's selected tab
   and focused pane are then unchanged, at every moment, not just eventually. If the app is in the
   background, it stays in the background: the app that was in front stays in front.
-- **L-9 [W]** Keyboard shortcuts:
-  - ⌘B toggles the sidebar;
-  - ⇧⌘E shows the project explorer;
-  - ⌘O opens a file;
+- **L-9 [A+W]** Keyboard shortcuts:
+  - ⌘B toggles the sidebar; ⇧⌘E shows the project explorer;
+  - ⌘O opens a file (quick search, L-16; File ▸ Open File… keeps the Open panel);
   - ⇧⌘M toggles the Markdown preview and source;
+  - ⌘P opens the command palette (L-14); ⇧⌘P lists panes (L-15); ⌘, opens Settings (L-17);
+  - ⇧⌘[ goes back to the tab visited before; ⇧⌘] shows the next tab in sidebar order; ⌃Tab and
+    ⌃⇧Tab cycle to the next and previous tab; ⌘1–⌘8 show that tab and ⌘9 the last one (L-11);
+  - ⌃⇧← / ⌃⇧→ move the tab up or down (L-13);
   - ⌃⌘T / ⌃⌘N move the pane to a new tab or window;
   - ⌃⌘← / ⌃⌘→ move the pane into the previous or next tab;
   - ⌃⇧⌘N moves the tab to a new window;
   - ⌃⌘P pins or unpins the tab;
   - ⌃⌘R / ⌃⇧⌘R rename the tab or pane;
-  - ⌃⌘J jumps to the agent that needs the user.
+  - ⌃⌘J goes to the next session that needs the user, and ⌃⌘K goes back (L-12);
+  - ⇧⌘T reopens the last closed pane, tab or window (L-20);
+  - ⌃⌘O takes over the focused pane's session, and ⌃⌘W removes the session from its pane, where
+    it keeps running (AG-6, AG-8).
 
-  The command palette also lists these actions.
+  Each is a menu item, and the command palette lists them. Settings changes them (L-17).
+
+- **L-10 [A+W]** Shortcuts work from anywhere: with keyboard focus in a terminal, the editor (source
+  or preview), the sidebar (its rename field and the file tree), a session's read-only view in a
+  pane, the palette or the Settings window. A terminal never takes one of these keys first.
+
+- **L-11 [A+W]** Moving between tabs:
+  - ⇧⌘[ (`<cli> tab back`) goes to the tab the user was in before, in any window. Pressed again,
+    it goes to the tab before that, and so on, like a browser's Back over the tabs visited. Tabs
+    closed since are skipped. Visiting a tab any other way ends the walk.
+  - ⇧⌘] (`<cli> tab next`) goes to the next tab in sidebar order, ⌃Tab too, and ⌃⇧Tab (`<cli> tab
+    prev`) to the previous one; both wrap around. Pressed several times in a row they walk down
+    (or up) the list as it was when the walk started (S-7 doesn't reorder it meanwhile).
+  - ⌘1–⌘8 show the Nth tab of the window and ⌘9 its last tab.
+
+- **L-12 [A+W]** ⌃⌘J (`<cli> jump`) goes to the next session that needs the user: sessions that
+  need input first, then sessions that finished while the user wasn't looking, oldest first. A
+  session shown in a pane gets that pane focused (its tab selected, its window in front); a
+  session no pane shows is shown. Pressed again, it goes to the next one. ⌃⌘K (`<cli> jump back`)
+  goes back to the pane the user was in before the first of those jumps. When nothing needs the
+  user, `jump` fails with a message saying so.
+
+- **L-13 [A+W]** ⌃⇧← and ⌃⇧→ (`<cli> tab move [TAB] --up|--down`, and the sidebar row's menu) move
+  a tab up or down the sidebar, within its group: a tab never crosses into or out of the pinned
+  tabs. At the end of its group nothing moves (the CLI fails with a message).
+
+- **L-14 [A+W]** ⌘P opens a command palette offering the CLI's commands. The palette takes them
+  from the CLI's own description of itself (`<cli> help --json`), so it follows the CLI as it
+  changes. Choosing one runs it for the focused pane (as `<cli>` typed in that pane would), asking
+  first for the values it needs (a name, a color among the allowed ones, a tab or pane among those
+  open, …). Output, and errors, show in the palette. A `<cli>` command line typed into the palette
+  runs as typed. The palette also lists the menu actions (with their shortcuts), the managed
+  sessions, and Ghostty's actions on the focused terminal; each title appears once.
+
+- **L-15 [A+W]** ⇧⌘P lists every pane of every window, the most recently used first, each with its
+  own title: its name, else its agent session's title, else what its program set as its title,
+  else its folder; then its folder and branch, what it runs (or last ran) and its tab. The pane the
+  palette was opened from is marked Current. Choosing a pane focuses it, its tab and its window.
+
+- **L-16 [A+W]** ⌘O opens a quick file search over the focused pane's git repository: its tracked
+  files and the untracked files git doesn't ignore (outside a repository: the files of that
+  folder). Fuzzy matching on the path, the file name counting most; files opened recently first,
+  then changed ones. `path:line` opens the file at that line. Enter opens the file in the tab's
+  editor; a "Browse…" entry opens the Open panel.
+
+- **L-17 [A+W]** ⌘, opens Settings, where shortcuts are edited: every Tern menu shortcut and every
+  Ghostty keybinding is listed, searchable, and each can be changed (press the new keys), cleared
+  or reset to its default, or all reset at once. A change applies at once, without a restart, and
+  is kept across restarts in Tern's state directory (`shortcuts.json`, and `keybindings.conf` for
+  Ghostty keybindings, loaded after the user's Ghostty config files). The user's Ghostty config
+  files are never changed; Settings says so and has a button that opens them. A key given to one
+  shortcut is taken from any other that had it, and Settings says which. `<cli> shortcuts` lists,
+  sets, clears and resets the same shortcuts.
+
+- **L-18 [A]** After a pane closes (⌘W, `pane close`, its program exiting), focus goes to the pane
+  of that tab the user used most recently, as in Warp; tree order only when there's no history.
 - **L-19 [A]** Panes share the space equally, as in Warp. Panes in the same row (or column) share
   it equally after every split and close:
   - splitting a pane along its row adds a pane with an equal share: two panes are 50/50, a third
@@ -302,6 +363,19 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
   Ghostty config and theme override the product's defaults.
 - **S-6 [W]** The "running/last command" line updates for commands that finish instantly.
+- **S-7 [A+W]** The sidebar's order, in the user's words: "current tab is at the top and then
+  ordered by which one had an agent last stop/deliver":
+  - pinned tabs first, in pin order (pins are explicit and stay where the user put them);
+  - then the current (selected) tab;
+  - then tabs whose agents stopped or delivered, the most recent first;
+  - then the other tabs, keeping their order.
+
+  This is the window's real tab order: `ls`, `#N` selectors and ⌘1–9 follow it. It is worked out
+  again when the window's selected tab changes, when an agent stops or delivers, and when a tab is
+  pinned or unpinned. A tab placed by hand (dragged, `tab move --index`, Move Tab Up/Down, `tab new
+  --index`) stays where it was put until then, even though placing it selects it. After ⇧⌘], ⇧⌘[,
+  ⌃Tab or ⌘1–9 the order stays as the user saw it until a moment (about a second) after the last
+  press, so repeated presses walk the list instead of bouncing between the top two tabs.
 - **S-8 [A+W]** Each window's sidebar can be made wider or narrower by dragging its edge, between
   180 points and the smaller of 600 points and half the window. The width is per window, saved and
   restored with the layout; a new window starts at the width last chosen. Double-clicking the edge

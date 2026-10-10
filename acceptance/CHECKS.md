@@ -69,14 +69,19 @@ in a fresh shell with the install destination pointed at a temporary folder.
 
 ## Moving things
 
-**L-9: shortcuts do what they say (by hand).** On a window with two tabs, one of them split, press
-each shortcut and confirm what it does:
-- ⌘B toggles the sidebar; ⇧⌘E shows Files; ⌘O opens a file; ⇧⌘M toggles the editor preview;
+**L-9: shortcuts do what they say (by hand).** On a window with three tabs, one of them split, an
+agent session in one, and focus in turn in a terminal, the editor and the sidebar's file tree,
+press each shortcut and confirm what it does:
+- ⌘B toggles the sidebar; ⇧⌘E shows Files; ⌘O opens the quick file search; ⇧⌘M toggles the editor
+  preview; ⌘P the command palette; ⇧⌘P the pane list; ⌘, Settings;
+- ⇧⌘[ goes back to the tab visited before (again: further back); ⇧⌘] and ⌃Tab the next tab in
+  sidebar order; ⌘1–9 a tab by number; ⌃⇧←/→ move the tab;
 - ⌃⌘T and ⌃⌘N move the pane to a new tab or window; ⌃⌘← and ⌃⌘→ move it into the previous or
-  next tab; ⌃⇧⌘N moves the tab to a new window;
-- ⌃⌘P pins; ⌃⌘R and ⌃⇧⌘R rename; ⌃⌘J jumps to the agent that needs input.
+  next tab; ⌃⇧⌘N moves the tab to a new window; ⇧⌘T reopens what was closed;
+- ⌃⌘P pins; ⌃⌘R and ⌃⇧⌘R rename; ⌃⌘J goes to the session that needs you and ⌃⌘K back; ⌃⌘O takes
+  over the focused pane's session and ⌃⌘W removes it from the pane.
 
-Also: the command palette lists these actions.
+Also: the command palette lists these actions, and Settings shows and changes them.
 
 **M-4: dragging (by hand).** Add: drag a pane's grab handle onto another tab's row (it moves into
 that tab) and between two rows (a new tab there, with an insertion line); drag a tab row out of

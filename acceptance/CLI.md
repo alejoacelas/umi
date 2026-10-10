@@ -37,10 +37,13 @@ present. Extra fields are fine.
 | `window focus\|close [WINDOW]` | |
 | `tab new [NAME] [--window W] [--pane P] [--cwd D] [--cmd C] [--name N] [--color C] [--index I] [--worktree W [--base REF]] [--no-focus]` | as `window new` |
 | `tab focus\|close\|equalize [TAB]` | |
+| `tab back` | the tab visited before (again: the one before that), in any window; JSON `{"tab", "window", "index", "title"}`; fails when there is none |
+| `tab next\|prev [--window W]` | the next or previous tab in sidebar order (wraps); JSON as `tab back` |
 | `tab rename [TAB] NAME` | `""` clears |
 | `tab color [TAB] COLOR` | blue purple pink red orange yellow green teal graphite none |
 | `tab pin\|unpin [TAB]` | |
-| `tab move [TAB] (--window W [--index I] \| --index I \| --new-window) [--no-focus]` | |
+| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down`: one place, within the tab's pin group; fails at the end of the group |
+| `jump [back]` | the next session that needs the user (prints the pane, or the session id when no pane shows it), or back to where the user was; JSON `{"pane", "tab", "window", …}` or `{"session"}`; fails when nothing needs the user |
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions |
 | `pane focus\|close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window` |
 | `pane rename [PANE] NAME` | |
@@ -68,6 +71,17 @@ Objects in JSON:
 
 Events: `pane.created` and `tab.created` carry `"reopened": true` when `reopen` brought them back;
 `sidebar.changed` is emitted when a window's sidebar width changes.
+
+Other commands:
+
+| Command | Notes |
+|---|---|
+| `help [--json]` | `--json`: every command for programs: `{"cli", "product", "version": 1, "commands": [{"section", "usage", "summary", "actions": [{"title", "argv", "ask": [{"name", "prompt", "option"?, "choices"?, "optional", "kind", "words"?}]}]}]}` |
+| `shortcuts [ls]` | JSON `{"shortcuts": [{"id", "title", "kind": "tern"\|"ghostty", "keys": [str], "display": [str], "default": [str], "changed": bool, "menu"?, "source"?}], "files": [str]}` |
+| `shortcuts set ID KEYS`, `shortcuts clear ID`, `shortcuts reset [ID]` | ID from `shortcuts`: a Tern item (`tab.next`) or `ghostty:ACTION`; KEYS like `cmd+shift+]`; JSON of `set` has `notes`: the shortcuts the key was taken from |
+
+Events also include `tab.reordered` `{"window", "tabs": [ids]}` when the sidebar order (SPEC S-7) changes,
+`palette.opened` and `palette.ran`.
 
 ## Editor
 
