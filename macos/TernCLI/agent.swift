@@ -624,6 +624,12 @@ func agentAttach(_ argv: [String]) {
     let arguments = spec["args"] as? [String] ?? []
     for (key, value) in spec["env"] as? [String: String] ?? [:] { setenv(key, value, 1) }
     unsetenv("TERN_HEADLESS")
+    // This app's own CLI first on PATH, so `tern` inside the session reaches this instance.
+    let ownDir = (CommandLine.arguments[0] as NSString).deletingLastPathComponent
+    if ownDir.hasPrefix("/") {
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        setenv("PATH", ([ownDir] + path.split(separator: ":").map(String.init).filter { $0 != ownDir }).joined(separator: ":"), 1)
+    }
     if let cwd = spec["cwd"] as? String, !cwd.isEmpty {
         if chdir(cwd) != 0 { fail("agent attach: can't enter \(cwd)") }
         setenv("PWD", cwd, 1)

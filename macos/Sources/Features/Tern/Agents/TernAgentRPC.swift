@@ -326,8 +326,17 @@ enum TernAgentRPC {
     /// One line about what the harness reported as failed or needing the user (MA-29).
     nonisolated static func startupWarning(_ session: TernAgentSession) -> String? {
         guard let flags = session.record.startup?.flags, !flags.isEmpty else { return nil }
-        return "\(session.record.name): " + flags.joined(separator: "; ")
-            + " (see `\(TernPaths.cliName) agent info \(session.record.name)`)"
+        // One short line: what kind of problem, how many, and where the details are.
+        let needAuth = flags.filter { $0.hasSuffix("needs authentication") }.count
+        let failed = flags.filter { $0.contains("failed to start") }.count
+        let other = flags.count - needAuth - failed
+        var parts: [String] = []
+        if failed > 0 { parts.append("\(failed) MCP server\(failed == 1 ? "" : "s") failed to start") }
+        if needAuth > 0 { parts.append("\(needAuth) MCP server\(needAuth == 1 ? "" : "s") need\(needAuth == 1 ? "s" : "") authentication") }
+        if other > 0 { parts.append(contentsOf: flags.filter { !$0.hasSuffix("needs authentication") && !$0.contains("failed to start") }) }
+        if flags.count == 1 { parts = flags }
+        return "\(session.record.name): " + parts.joined(separator: "; ")
+            + " (`\(TernPaths.cliName) agent info \(session.record.name)` lists them)"
     }
 
     // MARK: report

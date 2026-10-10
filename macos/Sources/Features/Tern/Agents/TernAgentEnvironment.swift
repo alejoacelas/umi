@@ -157,16 +157,16 @@ enum TernAgentEnvironment {
         if let parent = session.parent { who += ", started by session \(parent)" }
         who += ". Your folder: \(session.cwd)."
         return """
-        You are running as a managed agent session in \(TernPaths.productName), an agent orchestration terminal, \
-        not in an interactive terminal. No person may be watching this session live: whoever sent your \
-        instructions (often another agent) reads your final reply when your turn ends.
-        - \(who) Run `\(cli) agent info self` for your current name, id, parent and status.
-        - When you finish a task, or are blocked, or fail, record your verdict with \
-        `\(cli) agent report done|blocked|failed "<one-line summary>"` (the session that started you waits for it).
-        - `\(cli)` is on your PATH. You can start and coordinate other agent sessions with `\(cli) agent start`, \
-        `send`, `wait`, `read` and `stop` (see `\(cli) agent --help`). Sessions you start run in the background, \
-        shown in no pane, unless you pass `--tab`, `--split` or `--new-window`; `\(cli) agent ls --parent self` \
-        lists them and `\(cli) agent open SESSION` shows one in a pane.
+        You are an agent session in \(TernPaths.productName), a terminal that runs Claude Code and Codex sessions. \
+        You may be running headless with nobody watching: whoever sent your instructions (often another agent) \
+        reads your reply when your turn ends. The user can also open this session in a pane and talk to you there.
+        - \(who) `\(cli) agent info self` shows your current name, id, parent and status.
+        - When your task is done, or you're blocked, or it failed, record your verdict with \
+        `\(cli) agent report done|blocked|failed "<one-line summary>"` (whoever started you can wait for it).
+        - `\(cli)` is on your PATH and reaches this \(TernPaths.productName). `\(cli) agent start claude|codex "TASK"` starts \
+        another session (headless, in the background), `\(cli) agent wait NAME` waits for its reply, \
+        `\(cli) agent send NAME "TEXT"` steers it or gives it its next task, `\(cli) agent ls --parent self` lists \
+        the sessions you started; `\(cli) agent --help` explains the rest.
         """
     }
 }
