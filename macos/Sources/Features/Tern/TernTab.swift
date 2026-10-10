@@ -37,10 +37,11 @@ final class TernTab: ObservableObject, Identifiable {
 
     var panes: [Ghostty.SurfaceView] { tree.root?.leaves() ?? [] }
 
-    /// The focused pane if it's still in the tab, else the first pane.
+    /// The focused pane if it's still in the tab, else the one of its panes used most
+    /// recently (L-18), else the first pane.
     var effectiveFocusedSurface: Ghostty.SurfaceView? {
         if let focusedSurface, tree.contains(focusedSurface) { return focusedSurface }
-        return tree.root?.leftmostLeaf()
+        return TernFocusHistory.mostRecent(among: panes) ?? tree.root?.leftmostLeaf()
     }
 
     func contains(_ surface: Ghostty.SurfaceView) -> Bool { tree.contains(surface) }

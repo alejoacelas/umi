@@ -114,7 +114,10 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 }
                 .frame(idealWidth: idealContentSize?.width, idealHeight: idealContentSize?.height)
 
-                if let surfaceView = lastFocusedSurface?.value {
+                if let controller = viewModel as? TerminalController {
+                    // Tern's palette: commands, panes and files, whatever has focus (L-14–L-16).
+                    TernPaletteView(model: controller.palette, background: ghostty.config.backgroundColor)
+                } else if let surfaceView = lastFocusedSurface?.value {
                     TerminalCommandPaletteView(
                         surfaceView: surfaceView,
                         isPresented: $viewModel.commandPaletteIsShowing,

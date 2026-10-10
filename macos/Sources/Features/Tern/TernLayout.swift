@@ -110,6 +110,9 @@ enum TernLayout {
         let source = inheritFrom ?? TernTopology.currentPane
         let config = try surfaceConfig(options, inheritingFrom: source, context: GHOSTTY_SURFACE_CONTEXT_WINDOW)
         let controller = TerminalController.newWindow(ghostty, withBaseConfig: config, focus: focus)
+        // The window the user is in now, even before AppKit makes it key (the app may be in
+        // the background while it comes forward).
+        if focus { TernTopology.windowBecameCurrent(controller) }
         let tab = controller.selectedTab
         guard let pane = tab.effectiveFocusedSurface else { throw TernError.failed("the new window has no pane") }
         registerNewPane(pane, options: options, config: config)
@@ -128,8 +131,9 @@ enum TernLayout {
         let config = try surfaceConfig(options, inheritingFrom: source ?? window.selectedTab.effectiveFocusedSurface,
                                        context: GHOSTTY_SURFACE_CONTEXT_TAB)
         let position = index.map { $0 - 1 }
-        guard let (tab, pane) = window.addTab(config: config, at: position, select: focus, focus: focus,
-                                              name: tabName, color: color) else {
+        // An explicit index is a placement: selecting the new tab doesn't move it to the top (S-7).
+        let add = { window.addTab(config: config, at: position, select: focus, focus: focus, name: tabName, color: color) }
+        guard let (tab, pane) = position == nil ? add() : TernTabOrder.hold(add) else {
             throw TernError.failed("couldn't create the tab")
         }
         registerNewPane(pane, options: options, config: config)
@@ -206,9 +210,10 @@ enum TernLayout {
         location.tab.focusedSurface = pane
         if window.surfaceTree.contains(pane) { window.focusedSurface = pane }
         TernTopology.windowBecameCurrent(window)
+        TernFocusHistory.focused(pane)
         window.window?.makeKeyAndOrderFront(nil)
         if activate && !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
-        DispatchQueue.main.async { Ghostty.moveFocus(to: pane) }
+        moveFocus(to: pane, in: window)
         TernEvents.shared.emit("pane.focused", ["pane": pane.ternID, "tab": location.tab.idString, "window": window.ternIDString])
         TernState.shared.layoutDidChange()
     }
@@ -219,7 +224,24 @@ enum TernLayout {
         window.window?.makeKeyAndOrderFront(nil)
         if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
         if let pane = tab.effectiveFocusedSurface {
-            DispatchQueue.main.async { Ghostty.moveFocus(to: pane) }
+            TernFocusHistory.focused(pane)
+            moveFocus(to: pane, in: window)
+        }
+    }
+
+    /// Give a pane keyboard focus once its view is in the window, unless the window was asked
+    /// to focus something else meanwhile. (Ghostty's own retry would still focus a pane whose
+    /// tab was shown, hidden and shown again in quick succession, after a later request.)
+    static func moveFocus(to pane: Ghostty.SurfaceView, in window: TerminalController, attempt: Int = 0) {
+        let delay = attempt == 0 ? 0 : 0.05 * Double(1 << (attempt - 1))
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard window.focusedSurface === pane || window.selectedTab.focusedSurface === pane,
+                  window.surfaceTree.contains(pane) else { return }
+            guard let host = pane.window else {
+                if attempt < 5 { moveFocus(to: pane, in: window, attempt: attempt + 1) }
+                return
+            }
+            host.makeFirstResponder(pane)
         }
     }
 
@@ -452,7 +474,8 @@ enum TernLayout {
         var involved: [TerminalController] = [source]
         if let target, target !== source { involved.append(target) }
         var result = source
-        undoable("Move Tab", windows: involved) {
+        // A placement: selecting the moved tab doesn't move it to the top (S-7).
+        TernTabOrder.hold { undoable("Move Tab", windows: involved) {
             if newWindow {
                 let frame = source.window?.frame
                 source.detachTab(tab, focusNeighbor: false)
@@ -469,7 +492,7 @@ enum TernLayout {
                 source.moveTab(tab, to: (index ?? source.tabs.count) - 1)
                 if focus { focusTab(tab, in: source) }
             }
-        }
+        } }
         TernEvents.shared.emit("tab.moved", ["tab": tab.idString, "from_window": source.ternIDString, "window": result.ternIDString])
         return result
     }

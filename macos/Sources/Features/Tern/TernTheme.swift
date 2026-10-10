@@ -105,7 +105,30 @@ enum TernTheme {
         # ⌃⌘← / ⌃⌘→ move the pane into the previous or next tab.
         keybind = super+ctrl+arrow_left=unbind
         keybind = super+ctrl+arrow_right=unbind
+
+        # Tab switching, the palettes and Settings are Tern menu items that work whatever
+        # has focus (terminal, editor, sidebar, palette): ⇧⌘[ ⇧⌘] ⌘1–9 ⌃Tab ⌃⇧Tab ⇧⌘P ⌘,.
+        keybind = super+shift+[=unbind
+        keybind = super+shift+]=unbind
+        keybind = ctrl+tab=unbind
+        keybind = ctrl+shift+tab=unbind
+        keybind = super+shift+p=unbind
+        keybind = super+,=unbind
+        \(digitUnbinds)
         """
+    }
+
+    /// ⌘1–⌘9: Ghostty binds both the digit keys and the characters.
+    private static var digitUnbinds: String {
+        (1...9).flatMap { ["keybind = super+digit_\($0)=unbind", "keybind = super+\($0)=unbind"] }
+            .joined(separator: "\n")
+    }
+
+    /// Ghostty keybindings changed in Tern's shortcuts editor, loaded after the user's own
+    /// config files (nil when there are none).
+    static func keybindingsConfigPath() -> String? {
+        let path = TernShortcutStore.ghosttyFile
+        return FileManager.default.fileExists(atPath: path) ? path : nil
     }
 
     /// Write the defaults (and theme) files into the state directory and return the path.

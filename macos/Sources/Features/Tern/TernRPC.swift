@@ -134,6 +134,13 @@ enum TernRPC {
 
         case "tab.move":
             let (source, tab) = try TernTopology.tab(params.string("tab"), caller: caller)
+            if let by = params.int("by") {
+                // Up or down the sidebar, within the tab's pin group (L-13).
+                guard TernNavigation.moveTab(tab, by: by, in: source) else {
+                    throw TernError.badRequest("the tab is already at the \(by < 0 ? "top" : "bottom") of its \(tab.pinned ? "pinned " : "")group")
+                }
+                return ["tab": tab.idString, "window": source.ternIDString, "index": (source.index(of: tab) ?? 0) + 1]
+            }
             let focus = params.bool("focus") ?? true
             let newWindow = params.bool("new_window") ?? false
             let target = try params.string("window").map { try TernTopology.resolveWindow($0, caller: caller) }
@@ -368,6 +375,9 @@ enum TernRPC {
             return try TernAgentDebug.handle(method, params, caller: caller)
 
         default:
+            if TernNavigationRPC.methods.contains(method) {
+                return try await TernNavigationRPC.handle(method, params, caller: caller)
+            }
             if method.hasPrefix("agent.") {
                 return try await TernAgentRPC.handle(method: method, params: params, caller: caller, connection: connection)
             }

@@ -20,4 +20,4 @@ mkdir -p "$scratch/tmp"
 trap 'rm -rf "$scratch"' EXIT
 TMPDIR="$scratch/tmp/" xcrun --sdk macosx swiftc -O -target arm64-apple-macos13.0 \
     -module-cache-path "$scratch/module-cache" \
-    -o "$out" "$here/main.swift" "$here/agent.swift"
+    -o "$out" "$here"/*.swift
