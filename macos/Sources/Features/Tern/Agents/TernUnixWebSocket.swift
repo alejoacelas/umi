@@ -11,7 +11,12 @@ import Foundation
 /// every complete message in order, `onClose` once at the end.
 final class TernUnixWebSocket: @unchecked Sendable {
     private let fd: Int32
-    private let writeLock = NSLock()
+    /// Frames are written in order on the socket's own queue, never the caller's: a server that
+    /// stops reading blocks only this writer (and too much waiting closes the connection).
+    private let writeQueue = DispatchQueue(label: "dev.tern.codex.websocket.write")
+    private var fdClosed = false          // touched only on writeQueue
+    private var pendingBytes = 0          // under stateLock
+    private static let maxPendingBytes = 32 * 1024 * 1024
     private var closed = false
     private let stateLock = NSLock()
     private let onMessage: (Data) -> Void
@@ -139,13 +144,30 @@ final class TernUnixWebSocket: @unchecked Sendable {
                 for i in 0..<n { d[i] = s[i] ^ mask[i & 3] }
             }
         }
-        writeLock.lock()
-        defer { writeLock.unlock() }
+        let bytes = header + masked
         stateLock.lock()
-        let isClosed = closed
+        if closed {
+            stateLock.unlock()
+            return false
+        }
+        pendingBytes += bytes.count
+        let overflow = pendingBytes > Self.maxPendingBytes
         stateLock.unlock()
-        if isClosed { return false }
-        return Self.writeAll(fd, header + masked)
+        if overflow {
+            // The server has stopped reading: give up on it rather than queue without end.
+            close()
+            return false
+        }
+        let fd = self.fd
+        writeQueue.async { [weak self] in
+            guard let self, !self.fdClosed else { return }
+            let ok = Self.writeAll(fd, bytes)
+            self.stateLock.lock()
+            self.pendingBytes -= bytes.count
+            self.stateLock.unlock()
+            if !ok { self.close() }
+        }
+        return true
     }
 
     func close() {
@@ -214,12 +236,17 @@ final class TernUnixWebSocket: @unchecked Sendable {
                 break
             }
         }
-        writeLock.lock()
         stateLock.lock()
         closed = true
         stateLock.unlock()
-        Darwin.close(fd)
-        writeLock.unlock()
+        // A writer blocked on a full buffer is woken by the shutdown; the descriptor is closed
+        // after whatever it was doing, on its queue.
+        let descriptor = fd
+        shutdown(descriptor, SHUT_RDWR)
+        writeQueue.async { [self] in
+            fdClosed = true
+            Darwin.close(descriptor)
+        }
         onClose()
     }
 }

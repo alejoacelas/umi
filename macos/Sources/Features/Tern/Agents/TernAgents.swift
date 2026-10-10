@@ -237,8 +237,12 @@ final class TernAgents: @unchecked Sendable {
     }
 
     /// Turns running now (an update asks before cutting them off).
+    /// Turns an update now would cut off: headless ones, and work in a Claude interface Tern
+    /// shows live (it closes with the app).
     func runningTurns() -> Int {
-        Self.queue.sync { sessions.filter { $0.turnIsRunning && $0.live }.count }
+        Self.queue.sync {
+            sessions.filter { ($0.turnIsRunning && $0.live) || ($0.exclusiveLive && $0.liveState == .working) }.count
+        }
     }
 }
 

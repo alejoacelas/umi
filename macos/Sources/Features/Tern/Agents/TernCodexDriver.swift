@@ -150,9 +150,11 @@ final class TernCodexDriver: TernHarnessDriver {
                 }
                 let response = result as? [String: Any] ?? [:]
                 self.threadID = thread
-                self.readThread(response)
-                self.ready = true
-                self.session.driverReady(harnessID: thread)
+                let (received, known) = self.readThread(response)
+                self.confirmDelivery(thread: thread, summary: received, known: known) {
+                    self.ready = true
+                    self.session.driverReady(harnessID: thread)
+                }
             }
         } else {
             request("thread/start", threadParams()) { [weak self] result, error in
@@ -163,16 +165,60 @@ final class TernCodexDriver: TernHarnessDriver {
                     return
                 }
                 self.threadID = thread
-                self.readThread(response)
+                _ = self.readThread(response)
                 self.ready = true
                 self.session.driverReady(harnessID: thread)
             }
         }
     }
 
-    /// The thread's model, and (after a resume) which of our messages it really received:
+    /// Which of our unconfirmed messages the thread really has. The resumed thread's turns are
+    /// summaries (each turn's first message only), so a message steered into a turn is looked up
+    /// in the thread's items, newest first, page by page until each is found or the history ends;
+    /// an older Codex without `thread/items/list` leaves the summary.
+    private func confirmDelivery(thread: String, summary: Set<String>, known: Bool, then done: @escaping () -> Void) {
+        let wanted = session.unconfirmedMessageIDs.subtracting(summary)
+        guard !wanted.isEmpty else {
+            session.reconcileDelivery(received: summary, known: known)
+            done()
+            return
+        }
+        var received = summary
+        func page(_ cursor: String?, _ count: Int) {
+            var params: [String: Any] = ["threadId": thread, "sortDirection": "desc", "limit": 500]
+            if let cursor { params["cursor"] = cursor }
+            request("thread/items/list", params) { [weak self] result, error in
+                guard let self else { return }
+                guard error == nil, let response = result as? [String: Any],
+                      let data = response["data"] as? [[String: Any]] else {
+                    // Not answered: what the summary shows is all that's known.
+                    self.session.reconcileDelivery(received: received, known: known)
+                    done()
+                    return
+                }
+                for entry in data {
+                    guard let item = entry["item"] as? [String: Any], item["type"] as? String == "userMessage",
+                          let client = item["clientId"] as? String else { continue }
+                    received.insert(client)
+                }
+                if wanted.isSubset(of: received) || count >= 100 {
+                    self.session.reconcileDelivery(received: received, known: true)
+                    done()
+                } else if let next = response["nextCursor"] as? String, !next.isEmpty {
+                    page(next, count + 1)
+                } else {
+                    // The whole history was read: what isn't there never arrived.
+                    self.session.reconcileDelivery(received: received, known: true)
+                    done()
+                }
+            }
+        }
+        page(nil, 0)
+    }
+
+    /// The thread's model, and (after a resume) which of our messages its turns' summaries show:
     /// a message written just before a crash may or may not have reached it.
-    private func readThread(_ response: [String: Any]) {
+    private func readThread(_ response: [String: Any]) -> (received: Set<String>, known: Bool) {
         let model = response["model"] as? String
         session.updateStartup({ startup in
             if let model { startup.model = model }
@@ -189,7 +235,7 @@ final class TernCodexDriver: TernHarnessDriver {
                 if let client = item["clientId"] as? String { received.insert(client) }
             }
         }
-        session.reconcileDelivery(received: received, known: turnList != nil)
+        return (received, turnList != nil)
     }
 
     func send(_ message: TernAgentMessage) -> Bool {

@@ -249,7 +249,7 @@ final class TernPaletteModel: ObservableObject {
     private func answer(_ value: String) {
         guard var current = pending else { return }
         let ask = current.action.ask[current.answers.count]
-        if value.isEmpty && !ask.optional {
+        if value.isEmpty && !ask.optional && !ask.keepEmpty {
             NSSound.beep()
             return
         }
@@ -596,6 +596,8 @@ final class TernCLICatalog {
         let optional: Bool
         let kind: String
         let words: Bool
+        /// An empty answer is an empty argument (`tab rename ""` clears the name).
+        let keepEmpty: Bool
     }
 
     struct Action {
@@ -607,7 +609,7 @@ final class TernCLICatalog {
         /// The command line with the answers in place.
         func argv(with answers: [String]) -> [String] {
             var out = argv
-            for (ask, value) in zip(self.ask, answers) where !value.isEmpty {
+            for (ask, value) in zip(self.ask, answers) where !value.isEmpty || ask.keepEmpty {
                 if let option = ask.option { out.append(option) }
                 if ask.words { out += TernShellWords.split(value) } else { out.append(value) }
             }
@@ -663,7 +665,7 @@ final class TernCLICatalog {
                     Ask(name: ask["name"] as? String ?? "VALUE", prompt: ask["prompt"] as? String ?? "Value",
                         option: ask["option"] as? String, choices: ask["choices"] as? [String] ?? [],
                         optional: ask["optional"] as? Bool ?? false, kind: ask["kind"] as? String ?? "text",
-                        words: ask["words"] as? Bool ?? false)
+                        words: ask["words"] as? Bool ?? false, keepEmpty: ask["empty"] as? Bool ?? false)
                 }
                 actions.append(Action(title: title, argv: argv, ask: asks, usage: usage))
                 words.insert(argv[0])

@@ -202,12 +202,32 @@ final class TernConnection: @unchecked Sendable {
         processLines()
     }
 
+    /// How much of `inBuffer` is known to hold no newline: a long request arriving in many reads
+    /// is scanned once, not again from its start after every read.
+    private var scanned = 0
+
+    /// The next complete line (without its newline), if one has arrived.
+    private func nextLine() -> Data? {
+        let start = scanned
+        let offset: Int? = inBuffer.withUnsafeBytes { raw in
+            guard raw.count > start, let base = raw.baseAddress,
+                  let hit = memchr(base + start, 0x0A, raw.count - start) else { return nil }
+            return base.distance(to: UnsafeRawPointer(hit))
+        }
+        guard let offset else {
+            scanned = inBuffer.count
+            return nil
+        }
+        let line = Data(inBuffer.prefix(offset))
+        inBuffer.removeFirst(offset + 1)
+        scanned = 0
+        return line
+    }
+
     private func processLines() {
-        while let newline = inBuffer.firstIndex(of: 0x0A) {
-            let line = inBuffer[inBuffer.startIndex..<newline]
-            inBuffer.removeSubrange(inBuffer.startIndex...newline)
+        while let line = nextLine() {
             guard !line.isEmpty else { continue }
-            guard let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else {
+            guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
                 sendRaw(["id": NSNull(), "error": ["code": "bad_request", "message": "invalid JSON"]])
                 continue
             }

@@ -610,6 +610,13 @@ final class TernAgentSession {
     /// once its harness is back, a note goes first (R-10).
     var recovering = false
 
+    /// Messages whose delivery a resume must settle: put back after the process ended without
+    /// saying, or written and never confirmed.
+    var unconfirmedMessageIDs: Set<String> {
+        Set(requeuedUnconfirmed.keys).union(
+            messages.filter { $0.state == .sent && !inFlight.contains($0.id) && !queue.contains($0.id) }.map(\.id))
+    }
+
     /// After a Codex resume: which unconfirmed messages the thread really received.
     func reconcileDelivery(received: Set<String>, known: Bool) {
         // Put back in the queue when the process ended, but the thread has it: it was delivered

@@ -150,6 +150,7 @@ struct RPCError: Error {
 final class Client {
     let fd: Int32
     private var buffer = Data()
+    private var scanned = 0   // bytes of `buffer` known to hold no newline
     private var nextID = 1
 
     init?(path: String) {
@@ -201,13 +202,16 @@ final class Client {
     /// The next JSON line, or nil at end of stream.
     func readLine() -> [String: Any]? {
         while true {
-            if let newline = buffer.firstIndex(of: 0x0A) {
+            // Only bytes not looked at yet are searched: a long reply is scanned once.
+            if let newline = buffer[(buffer.startIndex + scanned)...].firstIndex(of: 0x0A) {
                 let line = buffer[buffer.startIndex..<newline]
                 buffer.removeSubrange(buffer.startIndex...newline)
+                scanned = 0
                 if line.isEmpty { continue }
                 if let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] { return object }
                 continue
             }
+            scanned = buffer.count
             var chunk = [UInt8](repeating: 0, count: 65536)
             let n = read(fd, &chunk, chunk.count)
             if n < 0 && errno == EINTR { continue }

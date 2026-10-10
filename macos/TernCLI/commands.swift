@@ -18,12 +18,15 @@ struct Ask {
     var kind = "text"
     /// The answer is several words, each its own argument (`keys ctrl+c esc`).
     var words = false
+    /// An empty answer is passed on as an empty argument (`tab rename ""` clears the name).
+    var keepEmpty = false
 
     var json: [String: Any] {
         var out: [String: Any] = ["name": name, "prompt": prompt, "optional": optional, "kind": kind]
         if let option { out["option"] = option }
         if !choices.isEmpty { out["choices"] = choices }
         if words { out["words"] = true }
+        if keepEmpty { out["empty"] = true }
         return out
     }
 }
@@ -93,7 +96,7 @@ let commandTable: [CommandHelp] = [
                           PaletteAction(title: "Show Previous Tab", argv: ["tab", "prev"])]),
     CommandHelp(section: "Layout", usage: "tab rename [TAB] NAME", summary: "(\"\" clears the name)",
                 actions: [PaletteAction(title: "Rename Tab…", argv: ["tab", "rename"],
-                                        ask: [Ask(name: "NAME", prompt: "Tab name (empty: name it after its folder)")])]),
+                                        ask: [Ask(name: "NAME", prompt: "Tab name (empty: name it after its folder)", keepEmpty: true)])]),
     CommandHelp(section: "Layout", usage: "tab color [TAB] COLOR", summary: colorNames.joined(separator: " "),
                 actions: [PaletteAction(title: "Set Tab Color…", argv: ["tab", "color"],
                                         ask: [Ask(name: "COLOR", prompt: "Color", choices: colorNames)])]),

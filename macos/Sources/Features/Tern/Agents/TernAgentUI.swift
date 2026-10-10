@@ -112,8 +112,14 @@ final class TernAgentUI: ObservableObject {
     static func publishShownPanes() {
         let map = panesBySession()
         shownLock.lock()
+        let before = shown
         shown = map
         shownLock.unlock()
+        // A session whose pane closed (or that a pane shows now): its mark moves with it, to the
+        // background list (Dock badge, ⌃⌘J) or to its new pane.
+        for id in Set(before.keys).union(map.keys) where before[id] != map[id] {
+            if let snapshot = shared.snapshot(for: id) { publishAttention(snapshot, previous: snapshot) }
+        }
     }
 
     /// Panes in a window (not closed ones) that show a session: session id → pane id.
