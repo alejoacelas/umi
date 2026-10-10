@@ -9,7 +9,7 @@ enum TernNavigationRPC {
         "tab.back", "tab.next", "tab.prev", "jump.next", "jump.back",
         "shortcuts.list", "shortcuts.set", "shortcuts.reset",
         "debug.attention.set", "debug.attention.background", "debug.navigation",
-        "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.key",
+        "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.key",
     ]
 
     static func handle(_ method: String, _ params: TernParams, caller: TernCaller) async throws -> [String: Any] {
@@ -142,6 +142,13 @@ enum TernNavigationRPC {
             guard let title = params.string("title") else { throw TernError.badRequest("give an entry title") }
             return await window.palette.perform(title: title, answers: params.strings("answers") ?? [],
                                                 timeout: params.double("timeout") ?? 20)
+
+        case "debug.palette.state":
+            // What the palette shows now, without opening or changing it.
+            let window = try TernTopology.window(params.string("window"), caller: caller)
+            let palette = window.palette
+            return ["presented": palette.isPresented, "mode": palette.mode.rawValue, "step": "\(palette.step)",
+                    "entries": palette.entries.map(\.title), "output": palette.output?.text ?? ""]
 
         case "debug.palette.close":
             let window = try TernTopology.window(params.string("window"), caller: caller)

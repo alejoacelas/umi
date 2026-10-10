@@ -32,14 +32,20 @@ extension TernAgentUI {
         shared.livePanes.insert(surface.id)
         shared.showingTerminal.remove(surface.id)
         TernState.shared.layoutDidChange()
-        let quoted = selector.allSatisfy { $0.isLetter || $0.isNumber || "-_.~".contains($0) } ? selector : "'\(selector)'"
+        // Shell-quoted: a name may hold spaces, quotes or anything else.
+        let quoted = selector.allSatisfy { $0.isLetter || $0.isNumber || "-_.~".contains($0) }
+            ? selector : "'" + selector.replacingOccurrences(of: "'", with: "'\\''") + "'"
         Task { @MainActor in
             // An interface still on its way out (Claude Code prints its resume hint after its
-            // SessionEnd hook) would swallow the line: wait for the shell to have the terminal.
+            // SessionEnd hook) would swallow the line, and so does a shell that hasn't started
+            // reading again: wait for its prompt (at most 10 s), then a moment for its line editor.
             let deadline = Date().addingTimeInterval(10)
-            while !TernPaneContext.shellInFront(surface) && Date() < deadline {
+            var waited = false
+            while !TernPaneContext.shellAtPrompt(surface) && Date() < deadline {
+                waited = true
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
+            if waited { try? await Task.sleep(nanoseconds: 300_000_000) }
             // `$TERN_CLI` is this app's own CLI (an older `tern` elsewhere on PATH must not answer).
             try? await TernInput.send(text: "\"$TERN_CLI\" agent attach \(quoted)", to: surface, enter: true)
         }

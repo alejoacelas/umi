@@ -536,10 +536,13 @@ final class TernShortcutStore {
         try encoder.encode(saved).write(to: URL(fileURLWithPath: Self.file), options: .atomic)
         var lines = ["# Written by \(TernPaths.productName)'s shortcuts editor (Settings, ⌘,). Loaded after your",
                      "# Ghostty config files; your own files aren't changed. Edit shortcuts in the app.", ""]
-        for action in saved.ghostty.keys.sorted() {
-            guard let change = saved.ghostty[action] else { continue }
-            for trigger in change.unbind { lines.append("keybind = \(trigger)=unbind") }
-            if let bind = change.bind { lines.append("keybind = \(bind)=\(action)") }
+        // Every unbind first: a key freed from one action and given to another must end up bound.
+        let actions = saved.ghostty.keys.sorted()
+        for action in actions {
+            for trigger in saved.ghostty[action]?.unbind ?? [] { lines.append("keybind = \(trigger)=unbind") }
+        }
+        for action in actions {
+            if let bind = saved.ghostty[action]?.bind { lines.append("keybind = \(bind)=\(action)") }
         }
         try (lines.joined(separator: "\n") + "\n").write(toFile: Self.ghosttyFile, atomically: true, encoding: .utf8)
         TernShortcuts.applyShortcuts()

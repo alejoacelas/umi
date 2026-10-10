@@ -39,6 +39,8 @@ final class TernPaletteModel: ObservableObject {
     /// A CLI action whose arguments are being asked, and the answers so far.
     private var pending: (action: TernCLICatalog.Action, answers: [String])?
     private var process: Process?
+    /// Which run the palette waits for: a cancelled or replaced run's completion is ignored.
+    private var runID = 0
     private var files: TernFileIndex?
     private var filesTask: Task<Void, Never>?
 
@@ -297,8 +299,10 @@ final class TernPaletteModel: ObservableObject {
         entries = []
         let pane = self.pane
         let cwd = pane.map(TernTopology.cwd(of:)).flatMap { $0.isEmpty ? nil : $0 }
+        runID += 1
+        let mine = runID
         process = TernCLIRunner.run(argv, pane: pane, cwd: cwd) { [weak self] status, out, err in
-            guard let self else { return }
+            guard let self, self.runID == mine else { return }
             self.process = nil
             self.busy = nil
             let text = (out + (err.isEmpty ? "" : (out.isEmpty ? "" : "\n") + err)).trimmingCharacters(in: .newlines)
@@ -315,6 +319,7 @@ final class TernPaletteModel: ObservableObject {
     }
 
     private func cancelRun() {
+        runID += 1
         process?.terminate()
         process = nil
     }

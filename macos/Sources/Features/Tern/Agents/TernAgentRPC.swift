@@ -545,6 +545,9 @@ enum TernAgentRPC {
                 + "elsewhere use `\(TernPaths.cliName) agent open SESSION --live`")
         }
         let session = try await agents.run { try agents.resolve(params.string("session"), caller: caller) }
+        // What the pane was before, put back if the session can't go live here.
+        let previous = TernAgentUI.shared.attachments[surface.id]
+        let wasLive = TernAgentUI.shared.livePanes.contains(surface.id)
         TernAgentUI.shared.attachments[surface.id] = session.record.id
         TernAgentUI.shared.livePanes.insert(surface.id)
         let spec: [String: Any]
@@ -555,7 +558,9 @@ enum TernAgentRPC {
                 }
             }
         } catch {
-            TernAgentUI.shared.livePanes.remove(surface.id)
+            TernAgentUI.shared.attachments[surface.id] = previous
+            if !wasLive { TernAgentUI.shared.livePanes.remove(surface.id) }
+            TernState.shared.layoutDidChange()
             throw error
         }
         TernState.shared.layoutDidChange()
@@ -591,11 +596,12 @@ enum TernAgentRPC {
                     fullAccess: payload["permission_mode"] as? String == "bypassPermissions",
                     profile: nil, env: [:], harnessArgs: [], harnessID: harnessID, parent: nil, createdAt: Date())
                 record.origin = "typed"
-                record.conversation = true
                 record.live = true
                 record.liveAttached = false
                 record.pane = paneID
                 let created = TernAgentSession(record: record)
+                // An interface that has had no prompt yet has no conversation on disk.
+                if kind == .codex || created.claudeConversationOnDisk { created.record.conversation = true }
                 created.liveState = .idle
                 created.saveRecord()
                 agents.add(created)

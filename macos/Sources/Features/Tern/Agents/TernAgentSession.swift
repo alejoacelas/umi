@@ -478,6 +478,11 @@ final class TernAgentSession {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let binary = TernAgentEnvironment.harnessBinary(snapshot.kind)
             let prepared = TernAgentEnvironment.harnessEnvironment(session: snapshot)
+            // Tests hold a launch here to reach this moment (isolated instances only).
+            if TernPaths.isIsolated, let raw = ProcessInfo.processInfo.environment["TERN_TEST_LAUNCH_DELAY"],
+               let delay = Double(raw), delay > 0 {
+                Thread.sleep(forTimeInterval: min(delay, 30))
+            }
             TernAgents.queue.async {
                 guard let self, self.generation == gen, self.phase == .launching else { return }
                 guard let binary else {
@@ -1130,7 +1135,15 @@ final class TernAgentSession {
                 let leftovers = TernProcessTree.sessionProcesses(session: id, stateDir: TernPaths.stateDirectory, harness: nil,
                                                                  exitedHarness: lastPID)
                 TernProcessTree.terminate(leftovers, grace: 1.0)
-                TernAgents.queue.async { completion?() }
+                TernAgents.queue.async { [weak self] in
+                    completion?()
+                    // Whoever waits for the process to be gone (a handoff to the live interface
+                    // that came during a launch, now cancelled) goes on.
+                    guard let self, self.process == nil else { return }
+                    let handlers = self.stoppedHandlers
+                    self.stoppedHandlers.removeAll()
+                    for handler in handlers { handler() }
+                }
             }
             if kind != .handoff && (record.ended == nil || record.ended == "exited") { record.ended = "stopped" }
             saveRecord()

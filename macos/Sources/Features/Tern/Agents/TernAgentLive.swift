@@ -226,13 +226,16 @@ extension TernAgentSession {
                 record.harnessID = id
                 notice("Its interface started a new conversation (\(id.prefix(8))).")
             }
-            record.conversation = true
+            // Claude writes a new conversation only at its first prompt: until then a headless
+            // resume would find nothing (it starts it under the same id instead).
+            if record.kind == .codex || claudeConversationOnDisk { record.conversation = true }
             saveRecord()
             if liveState == .starting || liveState == nil { liveState = .idle }
         case "UserPromptSubmit":
             liveState = .working
             liveDraft = false
             liveActivity = ""
+            if record.conversation != true { record.conversation = true; saveRecord() }
             let prompt = payload["prompt"] as? String ?? ""
             if !prompt.isEmpty {
                 addItem(kind: "user", text: prompt)
@@ -485,6 +488,12 @@ extension TernAgentSession {
 
     /// Whether Claude's transcript of this conversation has the message (as a turn's input, or
     /// taken in while a turn ran): nil when the transcript can't be read.
+    /// Claude Code has written this conversation (it does at the first prompt).
+    var claudeConversationOnDisk: Bool {
+        guard record.kind == .claude, let id = record.harnessID else { return false }
+        return TernAgentLive.claudeTranscript(session: id, cwd: record.cwd, env: record.env) != nil
+    }
+
     func claudeTranscriptHas(_ messageID: String) -> Bool? {
         guard record.kind == .claude, let id = record.harnessID else { return nil }
         guard let path = TernAgentLive.claudeTranscript(session: id, cwd: record.cwd, env: record.env),

@@ -97,11 +97,13 @@ enum TernPaneContext {
         return nil
     }
 
-    /// The pane's shell has the terminal (nothing else runs in front of it).
-    static func shellInFront(_ pane: Ghostty.SurfaceView) -> Bool {
+    /// The pane's shell has the terminal and shows its prompt (shell integration marks it;
+    /// it's what Ghostty asks before closing a pane without confirmation).
+    static func shellAtPrompt(_ pane: Ghostty.SurfaceView) -> Bool {
         guard let surface = pane.surface else { return true }
         let foreground = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
-        return foreground <= 0 || TernProcess.isShell(foreground)
+        guard foreground <= 0 || TernProcess.isShell(foreground) else { return false }
+        return !ghostty_surface_needs_confirm_quit(surface)
     }
 
     private static func display(_ args: [String]) -> String {
