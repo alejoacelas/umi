@@ -110,7 +110,8 @@ def main():
         attention = soon(lambda: (lambda a: a if any(p.get("mark") == "finished" for p in a["panes"].values()) else None)(
             ctl.call("debug.ui.attention")), 15)
         check("S-3 a session that finished out of sight gets the finished mark", attention, str(ctl.call("debug.ui.attention")))
-        check("S-3 the Dock badge counts it", attention and attention.get("badge") not in ("", None))
+        check("S-3 the Dock badge doesn't count it (it counts sessions that need the user)",
+              attention and attention.get("badge") in ("", None), str(attention and attention.get("badge")))
         shown = inst.find_agent_pane(other)
         if shown:
             inst.cli("pane", "focus", shown[2]["id"])

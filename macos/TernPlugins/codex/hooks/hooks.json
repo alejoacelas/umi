@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${PLUGIN_ROOT}/hooks/tern-hook.sh codex SessionStart",
+            "command": "\"${PLUGIN_ROOT}/hooks/tern-hook.sh\" codex SessionStart",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${PLUGIN_ROOT}/hooks/tern-hook.sh codex UserPromptSubmit",
+            "command": "\"${PLUGIN_ROOT}/hooks/tern-hook.sh\" codex UserPromptSubmit",
             "timeout": 10
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${PLUGIN_ROOT}/hooks/tern-hook.sh codex PreToolUse",
+            "command": "\"${PLUGIN_ROOT}/hooks/tern-hook.sh\" codex PreToolUse",
             "timeout": 10
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${PLUGIN_ROOT}/hooks/tern-hook.sh codex PostToolUse",
+            "command": "\"${PLUGIN_ROOT}/hooks/tern-hook.sh\" codex PostToolUse",
             "timeout": 10
           }
         ]
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${PLUGIN_ROOT}/hooks/tern-hook.sh codex PermissionRequest",
+            "command": "\"${PLUGIN_ROOT}/hooks/tern-hook.sh\" codex PermissionRequest",
             "timeout": 10
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${PLUGIN_ROOT}/hooks/tern-hook.sh codex Stop",
+            "command": "\"${PLUGIN_ROOT}/hooks/tern-hook.sh\" codex Stop",
             "timeout": 10
           }
         ]
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${PLUGIN_ROOT}/hooks/tern-hook.sh codex SessionEnd",
+            "command": "\"${PLUGIN_ROOT}/hooks/tern-hook.sh\" codex SessionEnd",
             "timeout": 10
           }
         ]

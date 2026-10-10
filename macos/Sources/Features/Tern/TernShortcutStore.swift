@@ -480,6 +480,14 @@ final class TernShortcutStore {
             for trigger in current where trigger != change.bind && !change.unbind.contains(trigger) { change.unbind.append(trigger) }
             change.bind = shortcut?.ghosttyTrigger
             saved.ghostty[action] = change
+            // Another action given this key here before loses it: the latest assignment counts.
+            if let shortcut, let trigger = change.bind {
+                for (other, var otherChange) in saved.ghostty where other != action && otherChange.bind == trigger {
+                    otherChange.bind = nil
+                    saved.ghostty[other] = otherChange
+                    notes.append("the terminal's \(Self.describe(other)) no longer has \(shortcut.display)")
+                }
+            }
             // A Tern item with this key would take it first.
             if let shortcut {
                 for item in TernShortcuts.items where item.shortcut == shortcut {
@@ -516,8 +524,11 @@ final class TernShortcutStore {
             if id.hasPrefix("ghostty:") {
                 saved.ghostty.removeValue(forKey: String(id.dropFirst("ghostty:".count)))
             } else {
-                guard TernShortcuts.item(id: id) != nil else { throw StoreError.unknown(id) }
-                saved.menu.removeValue(forKey: id)
+                guard let item = TernShortcuts.item(id: id) else { throw StoreError.unknown(id) }
+                // Its default key may have been given to something else meanwhile: setting it back
+                // takes it from there, as any assignment does.
+                try set(id, to: item.defaultShortcut)
+                return
             }
         } else {
             saved = Saved()

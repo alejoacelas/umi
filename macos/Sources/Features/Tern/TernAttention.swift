@@ -83,8 +83,10 @@ final class TernAttention: ObservableObject {
     }
 
     /// Sessions that need the user: shown ones with a mark, and background ones that need input.
+    /// The Dock badge: sessions that need the user (a question, an approval, input), the
+    /// user's words. A finish not seen yet is only the sidebar's quiet mark.
     var needingYouCount: Int {
-        panes.values.filter { $0.mark != .none }.count + background.count
+        panes.values.filter { $0.mark == .needsYou }.count + background.count
     }
 
     /// Where "next session that needs you" goes, in order: needs-input first (oldest stop

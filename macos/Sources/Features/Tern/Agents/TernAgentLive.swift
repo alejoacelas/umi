@@ -345,6 +345,8 @@ extension TernAgentSession {
         // live in its pane, so it comes back live there (AG-7).
         guard !shuttingDown else { return }
         let wasReclaiming = reclaiming
+        let endedPane = record.pane ?? endingLivePane
+        endingLivePane = nil
         record.live = nil
         record.livePID = nil
         record.liveAttached = nil
@@ -362,7 +364,7 @@ extension TernAgentSession {
             notice("Its interface closed; the session is headless again.")
         }
         saveRecord()
-        let pane = record.pane
+        let pane = record.pane ?? endedPane
         let id = record.id
         // A `claude` the user typed leaves their shell behind; a session Tern opened goes back
         // to its read-only view.
@@ -382,7 +384,7 @@ extension TernAgentSession {
         guard record.live == true else { return }
         if record.liveAttached == true {
             // Codex's interface is only a view of the server: closing it changes nothing else.
-            let pane = record.pane
+            let pane = record.pane ?? endingLivePane
             let id = record.id
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { TernAgentUI.closeLiveInterface(session: id, pane: pane) }
@@ -393,7 +395,7 @@ extension TernAgentSession {
         if let pid = record.livePID, TernAgentLive.isLiveProcess(pid, of: self) {
             kill(pid, SIGTERM)
         } else {
-            let pane = record.pane
+            let pane = record.pane ?? endingLivePane
             let id = record.id
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { TernAgentUI.closeLiveInterface(session: id, pane: pane) }
@@ -434,19 +436,25 @@ extension TernAgentSession {
     /// When nothing runs any more: go live where that was asked for, end an interface that was
     /// removed from its pane.
     func checkSettled() {
-        guard settled else { return }
-        if endLiveWhenSettled, record.live == true {
+        if endLiveWhenSettled, record.live == true, liveWorkDone {
+            // Removed from its pane while working: its interface has finished, so it ends (and
+            // its parked pane with it). Messages that waited for it then run headless.
             endLiveWhenSettled = false
-            // Its parked pane goes away with the interface.
+            endingLivePane = record.pane
             record.pane = nil
             saveRecord()
             endLiveInterface(reason: "hidden")
             return
         }
+        guard settled else { return }
         if record.goLiveWhenSettled == true, record.pane != nil, record.live != true, !goingLive, !shuttingDown {
             goLive()
         }
     }
+
+    /// The live interface has nothing running: no turn, no background work of its own (messages
+    /// waiting for it don't count; they run once it's gone).
+    var liveWorkDone: Bool { liveState == .idle && liveBackground == 0 }
 
     // MARK: Removing from a pane (AG-8)
 
@@ -467,7 +475,8 @@ extension TernAgentSession {
                 changed()
                 return .closePane
             }
-            if settled {
+            if liveWorkDone {
+                endingLivePane = record.pane
                 record.pane = nil
                 saveRecord()
                 endLiveInterface(reason: "hidden")
@@ -527,7 +536,8 @@ enum TernAgentLive {
         guard pid > 1, kill(pid, 0) == 0 else { return false }
         guard let env = TernProcessTree.environment(pid) else { return false }
         if env["TERN_SESSION_ID"] == session.record.id { return true }
-        if let pane = session.record.pane, env["TERN_PANE_ID"] == pane, env["TERN_STATE_DIR"] == TernPaths.stateDirectory {
+        if let pane = session.record.pane ?? session.endingLivePane, env["TERN_PANE_ID"] == pane,
+           env["TERN_STATE_DIR"] == TernPaths.stateDirectory {
             return true
         }
         return false

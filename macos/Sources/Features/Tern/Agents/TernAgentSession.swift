@@ -134,6 +134,9 @@ final class TernAgentSession {
     var goingLive = false
     /// Removed from its pane while live: end the interface once the session settles (AG-8).
     var endLiveWhenSettled = false
+    /// The pane a live interface ran in while it's being ended after the session left it: its
+    /// process carries that pane's id (an agent typed there has no session id).
+    var endingLivePane: String?
     /// The last time a hook reported anything (an interrupt in the interface fires none).
     var lastHookAt: Date?
     /// Waiters for the headless process to stop (taking the session over).

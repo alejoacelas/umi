@@ -327,6 +327,9 @@ extension TernLayout {
         TernEvents.shared.emit("pane.closed", ["pane": pane.ternID, "tab": source.tab.idString,
                                                "window": source.window.ternIDString, "parked": true])
         if newTree.isEmpty {
+            // The tab goes away with its last pane: its editor's unsaved edits are saved or kept
+            // as recovery copies first, as when a tab closes (E-3).
+            TernEditor.saveDirtyDocuments(of: source.tab)
             source.window.detachTab(source.tab, focusNeighbor: true)
             TernEvents.shared.emit("tab.closed", ["tab": source.tab.idString, "window": source.window.ternIDString])
         } else {
