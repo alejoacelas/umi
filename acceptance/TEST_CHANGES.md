@@ -323,3 +323,11 @@ cleanup of the user's agent folders on a made-up home folder.
   user's configuration was one trust answer per agent; the brief asks the suite to leave the user's
   agent folders as it found them, which `conftest.py` now does after every real run
   (`tests/agent_config.py`).
+
+Found by the suite: `test_chaos.py::test_random_operation_sequences` found a Codex message delivered
+again and again after a crash (start, stop, a message that crashes it: up to 39 deliveries).
+`test_review_agents.py::test_a_message_that_crashed_codex_before_its_turn_was_reported_is_not_sent_again`
+reproduces it deterministically (chaos seed 977) and fails on the build before the fix. Also new:
+`test_tern_blocks.py::test_the_mouse_selects_what_is_drawn_where_it_points_ui` (a real double-click in a
+pane whose view is moved down selects the word drawn there) and
+`test_tern_panes_ui.py::test_shift_cmd_t_is_listed_where_shortcuts_are_edited`.

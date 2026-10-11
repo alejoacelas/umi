@@ -1165,7 +1165,8 @@ untouched.
 | B. A SwiftUI or AppKit overlay over the Metal view | Draws text and shapes easily, but it isn't drawn in the same frame as the terminal: scrolling and output would make the decorations lag or jitter. |
 | C. **The shell prints the block's rows; the renderer draws over them** | Spacing comes in whole rows (Warp's 1.0 and 1.1 lines of padding become 1 and 1). Readers see the prompt rows the shell printed (two blank rows and the folder), which is what the shell printed. Everything else in the terminal (selection, search, scrollback, reflow, programs) is unchanged. |
 
-**Pick: C.** Tern's zsh integration sets the prompt to two spacer rows, the folder (`%~`) and an empty
+**Pick: C.** (Text can still be drawn a few pixels off its row, which is how Warp's spacing is kept
+within whole rows, §61.) Tern's zsh integration sets the prompt to two spacer rows, the folder (`%~`) and an empty
 command line, and starts it with `OSC 133;A;cl=line;tern=1`. The renderer, per frame, works out each
 viewport row's part in a block (spacer, header, command, output) from the rows' OSC 133 marks, and
 draws: the folder in Warp's header color with the duration after it, the command bold, a 1 pt line
@@ -1205,7 +1206,7 @@ From `~/dev/warp/app/src/terminal/block_list_element.rs`, `view.rs`, `model/bloc
 | Element | Warp | Tern |
 |---|---|---|
 | Separator | 1 px, foreground at 10%, full width, along the top of every block | same (1 pt) |
-| Padding | 1.0 line below output, 1.1 lines above the header, header slot 0.9, 0.19 to the command, 0.5 command to output | 1 row, 1 row, header 1 row, 0, 0 (whole rows, §60) |
+| Padding | 1.0 line below output, 1.1 lines above the header, header slot 0.9, 0.19 to the command, 0.5 command to output: 4.69 lines | the same proportions scaled into Tern's four prompt rows (two spacers, folder, command): the separator, the folder and the command are drawn 0.15, 0.21 and 0.28 of a row above their rows, which leaves Warp's half-line gap (0.43 of a row) before the output. The prompt being typed isn't moved. |
 | Header | monospace at 0.9×, best-contrast foreground at 60%, cwd (`~` for home), then the duration | the terminal's font and size, foreground blended 60% over the background |
 | Duration | `(16.471s)`, `(1m 8.92s)`, `(3h 4m 12s)`, `(10h 43s)`; whole seconds while running, repainted every second | same; a 1-second wake-up of the renderer only while a running block is visible |
 | Command | bold | bold (the input cells of the command rows, once it ran) |
@@ -1291,3 +1292,15 @@ last stop gave it. Now nothing is sorted:
   run in them; what was there before stays byte for byte, and isolated instances never install Tern's
   plugins into the user's folders (`TernAgentPlugins.ensureInstalledAtLaunch`). Its log is `results/agent-folders-cleanup.txt`. Evidence:
   `test_suite_hygiene.py` (on a made-up home folder), and the real run's cleanup log.
+
+- **Found by the suite: a Codex message sent again after a crash.** `test_chaos` found Codex sessions
+  (start, stop, then a message that crashes it) where the message was delivered up to 39 times. Codex
+  had taken the message in (its `userMessage` item was written) and died before its `turn/started`
+  reached Tern (under chaos the notification was still in the server's writer). Tern marks a
+  conversation as existing only when it sees a turn, so the next start opened a new thread and sent
+  the message there, which crashed it again. Now a start resumes the thread Tern last wrote to whenever
+  a message to it is unconfirmed, and looks the message up in its items (as after any crash, §59); if
+  Codex never recorded that thread ("no rollout found"), nothing reached it, and a new thread is
+  opened and the message sent there. Evidence:
+  `test_a_message_that_crashed_codex_before_its_turn_was_reported_is_not_sent_again` (fails on the build
+  before the fix: 39 deliveries), `test_chaos.py` (17 passed, and 40 random sequences).

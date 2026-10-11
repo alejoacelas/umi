@@ -897,3 +897,24 @@ def test_a_disabled_claude_plugin_is_not_current(inst):
     claude = inst.json("agent", "plugins").get("claude") or {}
     assert claude.get("installed") and claude.get("enabled") is False and claude.get("current") is False, claude
     assert "disabled" in inst.cli("agent", "plugins").stdout
+
+
+# ---- found by the suite after 0.4.0 -----------------------------------------------------------------
+
+@pytest.mark.req("AG-11")
+def test_a_message_that_crashed_codex_before_its_turn_was_reported_is_not_sent_again(inst):
+    """test_chaos found it: Codex took a message in and crashed before Tern heard that its turn started
+    (under chaos seed 977 the `turn/started` notification is still in the server's writer when it dies).
+    Tern hadn't marked the conversation as existing, so the next start opened a new thread and sent the
+    message again, which crashed it again: 39 deliveries before it gave up. The next start now resumes
+    the thread it wrote to and finds the message in its items."""
+    n = nonce()
+    sid = inst.start_agent("codex", f"ECHO start {n}", chaos=977)
+    inst.cli("agent", "stop", sid, timeout=60)
+    crash = nonce()
+    message = inst.send(sid, f"CRASH {crash}")
+    code, out = inst.wait(sid, "--message", message, timeout=60)
+    assert out["status"] in ("ERROR", "FAILED"), out
+    time.sleep(3)
+    receipts = [r for r in inst.receipts() if crash in (r.get("text") or "")]
+    assert len(receipts) == 1, f"delivered {len(receipts)} times"
