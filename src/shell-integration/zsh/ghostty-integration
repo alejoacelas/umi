@@ -128,9 +128,11 @@ _ghostty_deferred_init() {
         # prompt) and an empty command line; `tern=1` tells the terminal it
         # starts a block, which it draws around these rows. What the shell
         # prints stays plain text, so programs reading the pane see it as is.
+        # PS1 is replaced below, once the marks of the previous prompt are
+        # taken off PS1 and PS2.
+        builtin local tern_blocks=0
         if [[ "$GHOSTTY_SHELL_FEATURES" == *tern-blocks* ]] && [[ -o prompt_percent ]]; then
-            (( $+_tern_user_ps1 )) || builtin typeset -g _tern_user_ps1=$PS1
-            PS1=$'\n\n%~\n'
+            tern_blocks=1
             mark1=$'%{\e]133;A;cl=line;tern=1\a%}'
         fi
 
@@ -158,6 +160,13 @@ _ghostty_deferred_init() {
                     elif [[ $PS1 != $_ghostty_saved_ps1 ]]; then
                         ps1_changed=1
                     fi
+                fi
+
+                # Tern: the block prompt (see above). It's Tern's own, so its
+                # lines are always marked.
+                if (( tern_blocks )); then
+                    PS1=$'\n\n%~\n'
+                    ps1_changed=0
                 fi
 
                 # Save the clean PS1/PS2 before we add marks.
@@ -202,6 +211,8 @@ _ghostty_deferred_init() {
                 # position, this won't work well. We'll break them as much as
                 # they are breaking us.
                 precmd_functions=(${precmd_functions:#_ghostty_precmd} _ghostty_precmd)
+                # Tern: the rows the block is drawn around, even unmarked.
+                (( tern_blocks )) && PS1=$'\n\n%~\n'
                 # Plugins that invoke precmd hooks from zle do that before zle
                 # is trashed. This means that the cursor is in the middle of
                 # BUFFER and we cannot print our mark there. Prompt might

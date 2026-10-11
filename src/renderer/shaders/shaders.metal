@@ -451,11 +451,35 @@ fragment float4 bg_image_fragment(
 fragment float4 cell_bg_fragment(
   FullScreenVertexOut in [[stage_in]],
   constant Uniforms& uniforms [[buffer(1)]],
-  constant uchar4 *cells [[buffer(2)]]
+  constant uchar4 *cells [[buffer(2)]],
+  constant float *row_raise [[buffer(3)]]
 ) {
-  int2 grid_pos = int2(floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size));
+  float2 rel = in.position.xy - uniforms.grid_padding.wx;
+  int2 grid_pos = int2(floor(rel / uniforms.cell_size));
 
   float4 bg = float4(0.0);
+
+  // Tern: a block's folder and command rows are drawn a little above their
+  // place (Warp's spacing); their backgrounds (selection highlights) move
+  // with them. A raised row covers the bottom of the row above it, and
+  // leaves a gap with no cell below it.
+  int rows = int(uniforms.grid_size.y);
+  if (grid_pos.y >= -1 && grid_pos.y + 1 < rows) {
+    float below = row_raise[grid_pos.y + 1];
+    if (below > 0.0 && rel.y >= float(grid_pos.y + 1) * uniforms.cell_size.y - below) {
+      grid_pos.y += 1;
+    } else if (grid_pos.y >= 0) {
+      float raise = row_raise[grid_pos.y];
+      if (raise > 0.0 && rel.y >= float(grid_pos.y + 1) * uniforms.cell_size.y - raise) {
+        return bg;
+      }
+    }
+  } else if (grid_pos.y >= 0 && grid_pos.y < rows) {
+    float raise = row_raise[grid_pos.y];
+    if (raise > 0.0 && rel.y >= float(grid_pos.y + 1) * uniforms.cell_size.y - raise) {
+      return bg;
+    }
+  }
 
   // Clamp x position, extends edge bg colors in to padding on sides.
   if (grid_pos.x < 0) {

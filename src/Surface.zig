@@ -4853,13 +4853,27 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
     self.queueIo(.{ .color_scheme_report = .{ .force = false } }, .unlocked);
 }
 
-pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
-    // Tern: the renderer may have moved the view down (Warp's look); map
-    // the point to the grid as it was drawn.
+pub fn posToViewport(self: *Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
+    // Tern: the renderer may have moved the view down, and some rows' text
+    // up or right (Warp's look); map the point to the cells as drawn.
     const offset: f64 = @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic));
+    var x = xpos;
+    var y = ypos - offset;
+    tern: {
+        const rows = &self.renderer_state.tern_rows;
+        rows.lock.lockUncancelable(global.io());
+        defer rows.lock.unlock(global.io());
+        if (rows.len == 0) break :tern;
+        const cell_h: f64 = @floatFromInt(self.size.cell.height);
+        const top: f64 = @floatFromInt(self.size.padding.top);
+        const at = rows.rowAt(y - top, cell_h) orelse break :tern;
+        // The middle of the row it's drawn in, so the grid lands on it.
+        y = top + (@as(f64, @floatFromInt(at.row)) + 0.5) * cell_h;
+        x -= @floatFromInt(at.dx);
+    }
 
     // Get our grid cell
-    const coord: rendererpkg.Coordinate = .{ .surface = .{ .x = xpos, .y = ypos - offset } };
+    const coord: rendererpkg.Coordinate = .{ .surface = .{ .x = x, .y = y } };
     const grid = coord.convert(.grid, self.size).grid;
     return .{ .x = grid.x, .y = grid.y };
 }

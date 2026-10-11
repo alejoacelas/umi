@@ -290,6 +290,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         tern_glyph_dx: i32 = 0,
         tern_glyph_dy: i32 = 0,
         tern_rects: std.ArrayList(TernRect) = .empty,
+        tern_raise: std.ArrayList(f32) = .empty,
         tern_offset_px: u32 = 0,
 
         /// Tern: the decoration shape, when this graphics API draws them.
@@ -390,9 +391,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             /// Tern: the block decorations (see `tern_rects`).
             tern_rects: TernRectBuffer,
+            /// Tern: how far each row is drawn above its place (`tern_raise`).
+            tern_raise: TernRaiseBuffer,
 
             const UniformBuffer = Buffer(shaderpkg.Uniforms);
             const TernRectBuffer = if (tern_rects_supported) Buffer(TernRect) else void;
+            const TernRaiseBuffer = if (tern_rects_supported) Buffer(f32) else void;
             const CellBgBuffer = Buffer(shaderpkg.CellBg);
             const CellTextBuffer = Buffer(shaderpkg.CellText);
             const BgImageBuffer = Buffer(shaderpkg.BgImage);
@@ -426,6 +430,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     try TernRectBuffer.init(api.fgBufferOptions(), 1)
                 else {};
                 errdefer if (tern_rects_supported) tern_rects.deinit();
+                var tern_raise: TernRaiseBuffer = if (tern_rects_supported)
+                    try TernRaiseBuffer.init(api.bgBufferOptions(), 1)
+                else {};
+                errdefer if (tern_rects_supported) tern_raise.deinit();
 
                 // Initialize our textures for our font atlas.
                 //
@@ -465,6 +473,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .target = target,
                     .custom_shader_state = custom_shader_state,
                     .tern_rects = tern_rects,
+                    .tern_raise = tern_raise,
                 };
             }
 
@@ -476,7 +485,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.grayscale.deinit();
                 self.color.deinit();
                 self.bg_image_buffer.deinit();
-                if (tern_rects_supported) self.tern_rects.deinit();
+                if (tern_rects_supported) {
+                    self.tern_rects.deinit();
+                    self.tern_raise.deinit();
+                }
                 if (self.custom_shader_state) |*state| state.deinit();
             }
 
@@ -874,6 +886,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.tern.deinit(self.alloc);
             self.tern_drawn.deinit(self.alloc);
             self.tern_rects.deinit(self.alloc);
+            self.tern_raise.deinit(self.alloc);
 
             self.font_shaper.deinit();
             self.font_shaper_cache.deinit(self.alloc);
@@ -1915,6 +1928,15 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             try frame.uniforms.sync(&.{self.uniforms});
             try frame.cells_bg.sync(self.cells.bg_cells);
             const fg_count = try frame.cells.syncFromArrayLists(self.cells.fg_rows);
+            if (tern_rects_supported) {
+                const rows: usize = self.cells.size.rows;
+                if (self.tern_raise.items.len < rows) {
+                    const old = self.tern_raise.items.len;
+                    self.tern_raise.resize(self.alloc, rows) catch {};
+                    if (self.tern_raise.items.len > old) @memset(self.tern_raise.items[old..], 0);
+                }
+                if (self.tern_raise.items.len > 0) try frame.tern_raise.sync(self.tern_raise.items);
+            }
             const tern_rect_count: usize = if (tern_rects_supported) count: {
                 if (self.tern_rects.items.len == 0) break :count 0;
                 try frame.tern_rects.sync(self.tern_rects.items);
@@ -2002,7 +2024,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 pass.step(.{
                     .pipeline = self.shaders.pipelines.cell_bg,
                     .uniforms = frame.uniforms.buffer,
-                    .buffers = &.{ null, frame.cells_bg.buffer },
+                    .buffers = if (tern_rects_supported)
+                        &.{ null, frame.cells_bg.buffer, frame.tern_raise.buffer }
+                    else
+                        &.{ null, frame.cells_bg.buffer },
                     .draw = .{ .type = .triangle, .vertex_count = 3 },
                 });
 
@@ -2993,12 +3018,34 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         ) !void {
             const state = &self.terminal_state;
 
+            // Tern: this row's part in a block (tern_blocks.zig). A block's
+            // command, once it ran, is drawn bold (Warp's): from a copy of the
+            // row's cells, so the render state (whose styles are cached
+            // between frames) keeps what the terminal has.
+            const tern_row = self.tern.row(y);
+            const tern_block = self.tern.block(tern_row);
+            const tern_bold = tern_row.role == .command and
+                tern_block != null and tern_block.?.state != .active;
+            var tern_cells: ?std.MultiArrayList(terminal.RenderState.Cell) =
+                if (tern_bold) try cells.clone(self.alloc) else null;
+            defer if (tern_cells) |*c| c.deinit(self.alloc);
+
             // If our viewport is wider than our cell contents buffer,
             // we still only process cells up to the width of the buffer.
-            const cells_slice = cells.slice();
+            const cells_slice = if (tern_cells) |*c| c.slice() else cells.slice();
             const cells_len = @min(cells_slice.len, self.cells.size.columns);
             const cells_raw = cells_slice.items(.raw);
             const cells_style = cells_slice.items(.style);
+            if (tern_bold) {
+                for (cells_raw[0..cells_len], cells_style[0..cells_len]) |*raw, *st| {
+                    if (raw.semantic_content != .input or raw.isEmpty()) continue;
+                    if (!raw.hasStyling()) {
+                        st.* = .{};
+                        raw.style_id = tern_bold_style_id;
+                    }
+                    st.flags.bold = true;
+                }
+            }
 
             // On primary screen, we still apply vertical padding
             // extension under certain conditions we feel are safe.
@@ -3029,9 +3076,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 },
             }
 
-            // Tern: this row's part in a block (tern_blocks.zig).
-            const tern_row = self.tern.row(y);
-            const tern_block = self.tern.block(tern_row);
+            // Tern: a header's colors, and the folder box at the prompt.
             const tern_fg: ?terminal.color.RGB = tern: {
                 const b = tern_block orelse break :tern null;
                 if (tern_row.role != .header) break :tern null;
@@ -3041,17 +3086,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 else
                     // The header: Warp's sub-text, fg at 60%.
                     tern_blocks.mix(state.colors.background, state.colors.foreground, 0.6);
-            };
-            if (tern_row.role == .command) if (tern_block) |b| if (b.state != .active) {
-                // The command of a block that ran is bold (Warp's).
-                for (cells_raw[0..cells_len], cells_style[0..cells_len]) |*raw, *st| {
-                    if (raw.semantic_content != .input or raw.isEmpty()) continue;
-                    if (!raw.hasStyling()) {
-                        st.* = .{};
-                        raw.style_id = tern_bold_style_id;
-                    }
-                    st.flags.bold = true;
-                }
             };
             const tern_box = tern_row.role == .header and
                 tern_block != null and tern_block.?.state == .active;
@@ -3514,6 +3548,34 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.updateScreenSizeUniforms();
             }
             state.tern_offset_px.store(offset_px, .monotonic);
+
+            // How far each row's text is moved (up for a block's folder and
+            // command, right for the folder box's text): for the cell
+            // backgrounds (selection highlights move with their text) and
+            // for the surface's mouse.
+            self.tern_raise.resize(self.alloc, rows) catch {
+                self.tern_raise.clearRetainingCapacity();
+            };
+            @memset(self.tern_raise.items, 0);
+            const shared = &state.tern_rows;
+            shared.lock.lockUncancelable(global.io());
+            defer shared.lock.unlock(global.io());
+            shared.len = @min(rows, renderer.State.TernRows.max);
+            for (0..shared.len) |y| {
+                shared.raise[y] = 0;
+                shared.dx[y] = 0;
+            }
+            for (0..rows) |y| {
+                const r = self.tern.row(y);
+                const b = self.tern.block(r) orelse continue;
+                const raise: u16 = @intCast(self.ternRowRaise(r.role, b.state));
+                const dx: u16 = if (r.role == .header and b.state == .active) @intCast(self.ternBoxTextDx()) else 0;
+                if (y < self.tern_raise.items.len) self.tern_raise.items[y] = @floatFromInt(raise);
+                if (y < shared.len) {
+                    shared.raise[y] = raise;
+                    shared.dx[y] = dx;
+                }
+            }
         }
 
         /// Tern: the decorations drawn under the text: a separator along
@@ -3799,8 +3861,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
                 .bearings = .{
-                    @intCast(render.glyph.offset_x),
-                    @intCast(render.glyph.offset_y),
+                    @intCast(render.glyph.offset_x + self.tern_glyph_dx),
+                    @intCast(render.glyph.offset_y + self.tern_glyph_dy),
                 },
             });
         }
@@ -3830,8 +3892,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
                 .bearings = .{
-                    @intCast(render.glyph.offset_x),
-                    @intCast(render.glyph.offset_y),
+                    @intCast(render.glyph.offset_x + self.tern_glyph_dx),
+                    @intCast(render.glyph.offset_y + self.tern_glyph_dy),
                 },
             });
         }
@@ -3861,8 +3923,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
                 .bearings = .{
-                    @intCast(render.glyph.offset_x),
-                    @intCast(render.glyph.offset_y),
+                    @intCast(render.glyph.offset_x + self.tern_glyph_dx),
+                    @intCast(render.glyph.offset_y + self.tern_glyph_dy),
                 },
             });
         }

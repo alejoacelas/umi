@@ -39,6 +39,13 @@ mouse: Mouse = .{},
 /// as drawn. Not protected by the mutex.
 tern_offset_px: std.atomic.Value(u32) = .init(0),
 
+/// Tern: how the renderer moved each viewport row's text (Warp's look): how
+/// many pixels above its row it is drawn, and how far right (the folder box's
+/// text). Written by the renderer with each frame it builds, read by the
+/// surface so the mouse lands on the cells as drawn. Guarded by its own lock.
+tern_rows: TernRows = .{},
+
+
 /// The number of threads currently waiting to acquire `mutex` via
 /// `lockDemand`. This is not protected by the mutex; it is read by
 /// hot lock/unlock loops (the IO parse thread) in `yieldToDemand` to
@@ -239,3 +246,31 @@ test "preedit range shifts left at right edge" {
     try testing.expectEqual(@as(terminalpkg.size.CellCountInt, 9), range.end);
     try testing.expectEqual(@as(usize, 0), range.cp_offset);
 }
+
+/// Tern: see `tern_rows`.
+pub const TernRows = struct {
+    lock: std.Io.Mutex = .init,
+    raise: [max]u16 = @splat(0),
+    dx: [max]u16 = @splat(0),
+    len: usize = 0,
+
+    /// Rows past this many keep their place for the mouse.
+    pub const max = 1024;
+
+    /// The viewport row drawn at `y` pixels below the grid's top (a raised
+    /// row drawn over the bottom of the row above wins), and how far its
+    /// text is moved right. Null in the gap a raised row leaves below it.
+    /// Caller holds the lock.
+    pub fn rowAt(self: *const TernRows, y: f64, cell_h: f64) ?struct { row: usize, dx: u16 } {
+        if (y < 0) return .{ .row = 0, .dx = if (self.len > 0) self.dx[0] else 0 };
+        const k0: usize = @intFromFloat(@floor(y / cell_h));
+        const next = k0 + 1;
+        if (next < self.len and self.raise[next] > 0 and
+            y >= @as(f64, @floatFromInt(next)) * cell_h - @as(f64, @floatFromInt(self.raise[next])))
+            return .{ .row = next, .dx = self.dx[next] };
+        if (k0 < self.len and self.raise[k0] > 0 and
+            y >= @as(f64, @floatFromInt(next)) * cell_h - @as(f64, @floatFromInt(self.raise[k0])))
+            return null;
+        return .{ .row = k0, .dx = if (k0 < self.len) self.dx[k0] else 0 };
+    }
+};

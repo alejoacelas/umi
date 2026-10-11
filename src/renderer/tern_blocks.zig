@@ -180,6 +180,13 @@ pub const Layout = struct {
                 if (p.node.pageIfResident() == null) break;
                 if (isBlockStart(p)) {
                     current = try self.addBlock(alloc, screen, p, -d, now);
+                    // Its folder may wrap into the viewport.
+                    var h = p.down(2);
+                    while (h) |row_pin| {
+                        if (!row_pin.rowAndCell().row.wrap) break;
+                        header_rows += 1;
+                        h = row_pin.down(1);
+                    }
                     break;
                 }
             }
@@ -348,4 +355,44 @@ test "row duration units" {
     }
     row.ternSetDurationMs(41);
     try testing.expectEqual(@as(u64, 41), row.ternDurationMs());
+}
+
+test "a folder wrapped over rows above the viewport stays header" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try Terminal.init(testing.io, alloc, .{ .cols = 6, .rows = 5 });
+    defer t.deinit(alloc);
+    t.flags.tern_blocks = true;
+
+    {
+        var s = t.vtStream();
+        defer s.deinit();
+        // Tern's prompt: two spacers, a folder that wraps over three rows,
+        // the command; then ten lines of output and the next prompt's start.
+        s.nextSlice("\x1b]133;A;cl=line;tern=1\x07\r\n\x1b]133;P;k=s\x07\r\n\x1b]133;P;k=s\x07");
+        s.nextSlice("abcdefghijklmnopq");
+        s.nextSlice("\r\n\x1b]133;P;k=s\x07\x1b]133;B\x07ls\r\n\x1b]133;C\x07");
+        for (0..10) |i| {
+            var buf: [8]u8 = undefined;
+            s.nextSlice(std.fmt.bufPrint(&buf, "o{d}\r\n", .{i}) catch unreachable);
+        }
+    }
+
+    // Rows: S1 S2 H1 H2 H3 C o0 … o9, then the cursor's row. Show H3 first.
+    t.scrollViewport(.{ .delta = -8 });
+    const screen = t.screens.active;
+    var pins: [5]Pin = undefined;
+    var p = screen.pages.getTopLeft(.viewport);
+    for (&pins) |*pin| {
+        pin.* = p;
+        p = p.down(1) orelse p;
+    }
+
+    var layout: Layout = .{};
+    defer layout.deinit(alloc);
+    try layout.compute(alloc, &t, &pins, null, .{ .nanoseconds = 0 });
+    try testing.expect(layout.on);
+    try testing.expectEqual(Role.header, layout.row(0).role);
+    try testing.expectEqual(Role.command, layout.row(1).role);
+    try testing.expectEqual(Role.output, layout.row(2).role);
 }
