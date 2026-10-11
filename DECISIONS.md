@@ -1244,7 +1244,10 @@ actions. Warp's selected/hovered/bookmarked block styles go with block selection
   before. An empty Enter or Ctrl-C at the prompt leaves that prompt as a block without a command or
   duration, as zsh leaves a prompt line today (Warp doesn't make blocks for them; changing what Enter
   does would change zsh's editing).
-- **A long folder** that wraps keeps both rows as the header.
+- **A long folder** is shortened from the left (`…/rest`) to four columns less than the pane, which
+  leaves the folder box's icon room (zsh's `%-4<…<`, worked out each time zsh draws the prompt, so a
+  resize re-fits it; Warp's box cuts at 40 characters the same way). A folder that wraps anyway (the
+  pane narrowed after the prompt was drawn) keeps all its rows as the header.
 
 ## 63. Decorations: one small Metal pipeline
 
@@ -1267,7 +1270,8 @@ last stop gave it. Now nothing is sorted:
 - a stop first seen more than 60 s after it happened (sessions restored at launch) moves nothing, so a
   relaunch doesn't shuffle the restored order;
 - placements (drag, `tab move`, Move Tab Up/Down, `tab new --index`, reopen) still hold: the tab they
-  select stays where it was put until another tab is selected;
+  select (or the selected tab they move) stays where it was put until another tab is selected, and a
+  tab whose agent stops goes just below it (review round 5);
 - tab-switching keys still freeze the order for about a second; at the end the selected tab moves up,
   with any tab whose agent stopped meanwhile;
 - pin and unpin: `setPinned` puts a pinned tab at the end of the pinned group and an unpinned one at the

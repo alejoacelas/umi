@@ -372,6 +372,33 @@ def test_a_long_folder_is_shortened_to_fit_the_box(inst, win, tmp_path):
     assert len(header) <= b["cols"] - 4, (len(header), b["cols"])
 
 
+@pytest.mark.req("S-11")
+def test_the_folder_is_shortened_again_when_the_pane_narrows(inst, win, tmp_path):
+    """Review round 5: the folder's width was worked out when the prompt was made, so a pane made
+    narrower afterwards cut it off again. zsh works it out each time it draws the prompt."""
+    pane = win["pane"]
+    other = inst.cli("split", "right", "--pane", pane).stdout.strip()
+    time.sleep(1)
+    b = active(inst, pane)
+    deep = tmp_path / "folder-name"
+    while len(str(deep)) < b["cols"] - 6:
+        deep = deep / "folder-name"
+    deep.mkdir(parents=True, exist_ok=True)
+    run(inst, pane, f"cd '{deep}'")
+    before = active(inst, pane)
+    assert len(before["blocks"][-1]["header"]) > before["cols"] - 30, before["blocks"][-1]
+    for _ in range(4):
+        inst.cli("pane", "resize", pane, "left", "10")
+    wait_until(lambda: blocks(inst, pane)["cols"] < before["cols"] - 10, 10, message="the narrower pane")
+
+    def fits():
+        b = blocks(inst, pane)
+        header = b["blocks"][-1]["header"] if b["blocks"] else ""
+        return b if header.startswith("…") and len(header) <= b["cols"] - 4 else None
+    wait_until(fits, 10, message="the folder shortened to the new width")
+    inst.cli("pane", "close", other)
+
+
 # ---- S-12: where it applies ----------------------------------------------------------------------
 
 @pytest.mark.req("S-12")

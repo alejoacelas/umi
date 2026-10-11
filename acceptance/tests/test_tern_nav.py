@@ -541,6 +541,30 @@ def test_only_the_current_tab_and_tabs_whose_agent_stopped_move(inst, win):
             rpc(inst, "debug.attention.set", pane=pane, clear=True)
 
 
+@pytest.mark.req("S-7", "L-13")
+def test_a_selected_tab_moved_by_hand_keeps_its_place_when_an_agent_stops(inst, win):
+    """0.5.0 review round 5: moving the selected tab (Move Tab Down, a drag) doesn't change the
+    selection, so it wasn't recorded as placed by hand, and the next agent stop put it back on top; and
+    a tab whose agent stopped went to the top, above a selected tab placed lower."""
+    b = new_tab(inst, win)
+    c = new_tab(inst, win)
+    panes = {b["tab"]: b["id"], c["tab"]: c["id"]}
+    a, b, c = win["tab"], b["tab"], c["tab"]
+    try:
+        assert tab_ids(inst, win["window"]) == [c, b, a]
+        inst.cli("tab", "move", c, "--down")
+        assert tab_ids(inst, win["window"]) == [b, c, a] and selected(inst, win["window"]) == c
+        rpc(inst, "debug.attention.set", pane=win["pane"], title="a", stopped_ago=0)
+        time.sleep(1)
+        assert tab_ids(inst, win["window"]) == [b, c, a], "a goes just below the selected tab, which stays put"
+        rpc(inst, "debug.attention.set", pane=panes[b], title="b", stopped_ago=0)
+        wait_until(lambda: tab_ids(inst, win["window"]) == [c, b, a], 5,
+                   message="b just below the selected tab")
+    finally:
+        for pane in list(panes.values()) + [win["pane"]]:
+            rpc(inst, "debug.attention.set", pane=pane, clear=True)
+
+
 @pytest.mark.req("S-7", "L-2")
 def test_pinned_tabs_stay_first_and_placements_hold_until_the_next_reorder(inst, win):
     b = new_tab(inst, win)
