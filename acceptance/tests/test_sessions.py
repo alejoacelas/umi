@@ -463,7 +463,17 @@ def test_interrupt_goes_first_and_nothing_sent_before_it_is_lost(inst, started, 
     before = time.time()
     mc = redirect(inst, sid, f"ECHO redirect {c}")
     code, out = inst.wait(sid, "--message", mc, timeout=60)
-    assert out["status"] == "DONE" and c in out["reply"], out
+    assert out["status"] == "DONE", out
+    # The reply is the reply of the turn that answered the redirect. The earlier message may have been
+    # steered into that same turn (AG-10: sent while the session works, it's seen during the current
+    # turn), and then the turn's reply comes after it; the redirect's own answer is in the transcript.
+    receipt_b = receipts_with(inst, b)
+    shared = bool(receipt_b) and receipt_b[0]["turn"] == receipts_with(inst, c)[0]["turn"]
+    assert c in out["reply"] or (shared and b in out["reply"]), out
+    transcript = inst.json("agent", "read", sid, "--transcript")["items"]
+    texts = [i.get("text") or "" for i in transcript]
+    asked = next(i for i, t in enumerate(texts) if t == f"ECHO redirect {c}")
+    assert any(c in t for t in texts[asked + 1:] if t), "the redirect was answered"
     code, out = inst.wait(sid, "--message", ma, timeout=30)
     assert out["status"] == "INTERRUPTED", out
     first_new = min(session_receipts(inst, hid, before), key=lambda r: r["ts"])

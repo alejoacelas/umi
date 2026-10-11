@@ -147,6 +147,11 @@ class Snapshot:
         self.claude_trust = set((data or {}).get("projects", {}))
         projects = self.p(".claude", "projects")
         self.claude_project_dirs = set(os.listdir(projects)) if os.path.isdir(projects) else set()
+        # What each folder held: a live test's folder is reused run after run, so its transcripts
+        # are added to a folder that was already there.
+        self.claude_project_entries = {
+            name: set(os.listdir(os.path.join(projects, name)))
+            for name in self.claude_project_dirs if os.path.isdir(os.path.join(projects, name))}
         history = self.p(".claude", "history.jsonl")
         self.claude_history_size = os.path.getsize(history) if os.path.exists(history) else 0
         return self
@@ -217,30 +222,49 @@ class Snapshot:
                 _rewrite(config, remove_codex_projects(text, added))
                 self.removed.extend(f"{config}: trust of {p}" for p in sorted(added))
 
+    @staticmethod
+    def _transcript_cwd(folder, entries):
+        """The folder a Claude Code project folder's transcripts were recorded in."""
+        for entry in sorted(entries):
+            if not entry.endswith(".jsonl"):
+                continue
+            try:
+                with open(os.path.join(folder, entry), errors="replace") as f:
+                    for line in f:
+                        try:
+                            cwd = json.loads(line).get("cwd")
+                        except (ValueError, AttributeError):
+                            continue
+                        if cwd:
+                            return cwd
+            except OSError:
+                continue
+        return None
+
     def _clean_claude(self):
         projects = self.p(".claude", "projects")
         sessions = set()
         if os.path.isdir(projects):
-            for name in set(os.listdir(projects)) - self.claude_project_dirs:
+            for name in os.listdir(projects):
                 folder = os.path.join(projects, name)
-                cwd = None
-                for entry in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
-                    if not entry.endswith(".jsonl"):
-                        continue
-                    with open(os.path.join(folder, entry), errors="replace") as f:
-                        for line in f:
-                            try:
-                                cwd = json.loads(line).get("cwd")
-                            except ValueError:
-                                continue
-                            if cwd:
-                                break
-                    if cwd:
-                        break
-                if self.test_path(cwd):
-                    sessions.update(e[:-6] for e in os.listdir(folder) if e.endswith(".jsonl"))
-                    shutil.rmtree(folder, ignore_errors=True)
-                    self.removed.append(folder)
+                if not os.path.isdir(folder):
+                    continue
+                entries = set(os.listdir(folder))
+                if name not in self.claude_project_dirs:
+                    if self.test_path(self._transcript_cwd(folder, entries)):
+                        sessions.update(e[:-6] for e in entries if e.endswith(".jsonl"))
+                        shutil.rmtree(folder, ignore_errors=True)
+                        self.removed.append(folder)
+                    continue
+                added = entries - self.claude_project_entries.get(name, set())
+                if not added or not self.test_path(self._transcript_cwd(folder, entries)):
+                    continue
+                for entry in added:
+                    path = os.path.join(folder, entry)
+                    if entry.endswith(".jsonl"):
+                        sessions.add(entry[:-6])
+                    shutil.rmtree(path, ignore_errors=True) if os.path.isdir(path) else os.remove(path)
+                    self.removed.append(path)
         n = _filter_jsonl(self.p(".claude", "history.jsonl"),
                           lambda r: self.test_path(r.get("project")) or r.get("sessionId") in sessions,
                           start=self.claude_history_size)

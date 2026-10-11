@@ -331,3 +331,18 @@ reproduces it deterministically (chaos seed 977) and fails on the build before t
 `test_tern_blocks.py::test_the_mouse_selects_what_is_drawn_where_it_points_ui` (a real double-click in a
 pane whose view is moved down selects the word drawn there) and
 `test_tern_panes_ui.py::test_shift_cmd_t_is_listed_where_shortcuts_are_edited`.
+
+- **`tests/test_sessions.py::test_interrupt_goes_first_and_nothing_sent_before_it_is_lost[codex]`**.
+  **What was wrong:** it required the redirect's reply to contain the redirect's own answer. The message
+  sent just before the redirect (steered, not taken in by the interrupted turn) may be steered into the
+  redirect's turn, and then that turn's reply, which is the reply of every message it answered, comes
+  after it. With the screen locked the timing made that happen every time (it passed with the screen
+  in use). The receipts already prove the redirect was the next thing the agent saw. **Change:** the
+  reply contains the redirect's answer, or the steered message's when both share the turn; the
+  transcript must show the redirect's own answer. **Requirements:** AG-10 ("While the session works,
+  the agent sees TEXT during its current turn"; "`--interrupt` stops the running turn first, and TEXT
+  is the next thing the agent sees") and AG-12 ("waits until the turn answering the latest (or given)
+  message has ended … then the reply").
+- **`tests/agent_config.py`**: a live test's folder is reused run after run, so Claude Code adds its
+  transcripts to a project folder that already existed; those are removed too (the first real run
+  left one, removed by hand).

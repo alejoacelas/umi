@@ -57,6 +57,10 @@ def test_a_real_run_leaves_the_agents_folders_as_found(tmp_path):
     write(f"{home}/.codex/history.jsonl", json.dumps({"session_id": "old", "text": "hi"}) + "\n")
     write(f"{home}/.codex/session_index.jsonl", json.dumps({"id": "old"}) + "\n")
     write(f"{home}/.claude/projects/-Users-me-dev-project/u1.jsonl", json.dumps({"cwd": user_dir}) + "\n")
+    # A live test's folder, from an earlier run: what's in it stays, what this run adds goes.
+    live_claude = os.path.join(ROOT, ".work-real", "live-claude")
+    reused = f"{home}/.claude/projects/live-claude-folder"
+    write(f"{reused}/old.jsonl", json.dumps({"cwd": live_claude}) + "\n")
     claude_history_before = json.dumps({"project": user_dir, "sessionId": "u1", "display": "x"}) + "\n"
     write(f"{home}/.claude/history.jsonl", claude_history_before)
     write(f"{home}/.claude.json", json.dumps({"projects": {user_dir: {"hasTrustDialogAccepted": True}}}))
@@ -82,6 +86,9 @@ def test_a_real_run_leaves_the_agents_folders_as_found(tmp_path):
     write(f"{home}/.claude/projects/-private-var-folders-ab-T-acc-real-x1-work/s1.jsonl",
           json.dumps({"type": "summary"}) + "\n" + json.dumps({"cwd": work}) + "\n")
     write(f"{home}/.claude/debug/s1.txt", "log")
+    write(f"{reused}/s2.jsonl", json.dumps({"cwd": live_claude}) + "\n")
+    write(f"{reused}/s2/subagents/a.jsonl", "{}\n")
+    write(f"{home}/.claude/session-env/s2/env", "x")
     write(f"{home}/.claude/session-env/s1/env", "x")
     with open(f"{home}/.claude/history.jsonl", "a") as f:
         f.write(json.dumps({"project": work, "sessionId": "s1", "display": "/exit"}) + "\n")
@@ -103,7 +110,9 @@ def test_a_real_run_leaves_the_agents_folders_as_found(tmp_path):
     con.close()
     assert read(f"{home}/.codex/history.jsonl") == json.dumps({"session_id": "old", "text": "hi"}) + "\n"
     assert read(f"{home}/.codex/session_index.jsonl") == json.dumps({"id": "old"}) + "\n"
-    assert os.listdir(f"{home}/.claude/projects") == ["-Users-me-dev-project"]
+    assert sorted(os.listdir(f"{home}/.claude/projects")) == ["-Users-me-dev-project", "live-claude-folder"]
+    assert os.listdir(reused) == ["old.jsonl"]
+    assert not os.path.exists(f"{home}/.claude/session-env/s2")
     assert not os.path.exists(f"{home}/.claude/debug/s1.txt")
     assert not os.path.exists(f"{home}/.claude/session-env/s1")
     assert read(f"{home}/.claude/history.jsonl") == claude_history_before
