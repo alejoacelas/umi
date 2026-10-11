@@ -578,6 +578,22 @@ def _double_click(point):
     time.sleep(0.4)
 
 
+def _drag(start, end, steps=12):
+    import Quartz
+    def post(kind, point):
+        event = Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+    post(Quartz.kCGEventMouseMoved, start)
+    time.sleep(0.2)
+    post(Quartz.kCGEventLeftMouseDown, start)
+    time.sleep(0.1)
+    for i in range(1, steps + 1):
+        post(Quartz.kCGEventLeftMouseDragged, (start[0] + (end[0] - start[0]) * i / steps, start[1]))
+        time.sleep(0.02)
+    post(Quartz.kCGEventLeftMouseUp, end)
+    time.sleep(0.4)
+
+
 def _frame(ui, element):
     import ApplicationServices as AX  # noqa: N812
     p = AX.AXValueGetValue(ui.attr(element, "AXPosition"), AX.kAXValueCGPointType, None)[1]
@@ -623,9 +639,20 @@ def test_the_mouse_selects_what_is_drawn_where_it_points_ui(inst, win, ui):
     wait_until(lambda: active(inst, pane)["blocks"][-1]["header"] == "/usr/share", 10, message="the prompt in /usr/share")
     b = blocks(inst, pane)
     header_row = b["blocks"][-1]["first"] + 2
-    box_text_dx = 3.0 * cell_w  # about the border, padding, icon and gap: the last letters are past column 9
-    point = (x + b["padding_pt"]["left"] + box_text_dx + 8.5 * cell_w,
+    box_text_dx = b["box_text_dx_pt"]  # the border, padding, icon and gap: the last letters are past column 9
+    assert box_text_dx > cell_w
+    point = (x + b["padding_pt"]["left"] + box_text_dx + 9.5 * cell_w,
              y + b["padding_pt"]["top"] + (header_row + b["drawn_offset_rows"] + 0.5) * cell_h)
     _double_click(point)
     selected = wait_until(lambda: inst.rpc("debug.selection", pane=pane).get("text"), 5, message="a selection")
     assert "share" in selected, f"selected {selected!r}"
+
+    # Review round 6: a drag across the box's text, from the left part of its first letter to the right
+    # part of its last, selects all of it (the half-cell thresholds follow the drawn text too).
+    dx = b["box_text_dx_pt"]
+    left = x + b["padding_pt"]["left"] + dx + 0.2 * cell_w
+    right = x + b["padding_pt"]["left"] + dx + (len("/usr/share") - 0.2) * cell_w
+    row_y = y + b["padding_pt"]["top"] + (header_row + b["drawn_offset_rows"] + 0.5) * cell_h
+    _drag((left, row_y), (right, row_y))
+    selected = wait_until(lambda: inst.rpc("debug.selection", pane=pane).get("text"), 5, message="a selection")
+    assert selected.strip() == "/usr/share", f"selected {selected!r}"
