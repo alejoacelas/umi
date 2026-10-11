@@ -1,3 +1,192 @@
+# Tern 0.5.0: Warp's look for terminals, the sidebar order (BRIEF-blocks.md)
+
+The earlier parts follow, unchanged. Tern 0.5.0 is released and your installed copy has updated itself
+to it.
+
+## What changed
+
+**Warp's look for terminals** (SPEC S-9 to S-12), as you chose: an imitation that keeps the shell
+underneath. zsh edits the command line as before (zsh-autosuggestions included); Tern changes how the
+terminal looks.
+
+- **At the bottom.** The prompt sits at the bottom of the pane from the start, and output builds upward
+  above it. It stays there after `clear` and ⌘K; a completion list below the command line is shown.
+  With more than a screenful the pane scrolls as usual.
+- **Blocks.** Each command and its output form a block: a grey header with the folder it ran in and how
+  long it took in Warp's format (`(0.041s)`, `(1m 8.92s)`; while it runs, the seconds so far), the
+  command in bold, its output after a small gap, and a thin line with space between blocks. A command
+  that exits with an error gets Warp's mark: the theme's red at 10% over the block and a 5-point red bar
+  on its left edge. Colors and spacing come from Warp's source (`~/dev/warp`, read only).
+- **The folder box.** At the prompt, a small rounded box with an outline folder icon and the current
+  folder (`~` for home).
+- **Left out**, as you said: the "Lines: … Size: …" readout, Warp's input editor, block selection and
+  actions.
+- **Where it applies.** Only in Tern's own terminals running zsh; other terminals and zsh started
+  anywhere else keep your prompt; other shells keep the usual look; full-screen programs (vim, an
+  agent's full-screen interface) take the whole pane with no decorations. Programs and agents that read
+  a pane (`tern read`, `tern wait --pattern`) see what the shell printed (two blank rows, the folder,
+  the command line) and never what Tern draws. `shell-integration-features = no-tern-blocks` in your
+  Ghostty config turns it off.
+
+How: Tern's zsh integration prints the prompt as two spacer rows, the folder and an empty command
+line, marked as a block (OSC 133); the terminal records each block's state, failure and duration on
+its first row; the renderer moves the whole view down so the last used row sits at the bottom, and
+draws the header, the bold command, the lines, tint, bar and folder box itself (a small Metal pipeline).
+The mouse, selections and the input-method position follow what's drawn.
+
+**The sidebar order** (S-7), in your words: "other than the focused session, tabs should only move
+when an agent finishes their turn". Selecting a tab moves it to the top (after pinned tabs); the tab you
+leave stays where it is; a tab whose agent stops moves to just below the current one. Nothing is
+re-sorted any more.
+
+**Left over from 0.4.0:**
+- The live-launch test that saw the interface while the session said `starting`: the product was
+  right, and the test had two races. After the first turn a session says `starting` while it opens its
+  own interface, and again until the interface's start-up hook reaches Tern; under load the test read
+  the screen in those gaps. It now checks the order of events and waits for the status to settle.
+- ⇧⌘T is in the shortcut list ⌘, edits (and `tern shortcuts`).
+- The suite leaves your `~/.claude`, `~/.claude.json` and `~/.codex` as it found them: what the
+  real-agent tests add for the suite's own folders (trust entries, transcripts, Codex threads, history
+  lines) is removed after the run, nothing else.
+- Found by the suite on the way: a Codex message could be sent again and again after a crash (start,
+  stop, then a message that crashes Codex: up to 39 deliveries). Fixed: Tern now checks the thread it
+  wrote to before sending again.
+- Found by the final run: a harness process that outlived its session (the session removed while the
+  process was still exiting) was never reaped and stayed a zombie of the app. Tern now reaps it.
+
+Code: app commits after `dd1bc8d31` (the look: `src/renderer/tern_blocks.zig`, `src/renderer/generic.zig`,
+`src/renderer/shaders/shaders.metal`, `src/terminal/{page,Terminal,Screen}.zig`, `src/termio/`,
+`src/Surface.zig`, the zsh integration; the order: `TernNavigation.swift`; ⇧⌘T: `TernShortcuts.swift`,
+`TernReopen.swift`; the Codex fix: `TernCodexDriver.swift`, `TernAgentSession.swift`; the zombie:
+`TernHarnessProcess.swift`).
+
+## Decisions
+
+Details, candidates and evidence: DECISIONS.md §60–§65.
+
+| # | Decision |
+|---|---|
+| 60 | The blocks live in rows the shell prints (two spacers, the folder, the command line), and the renderer draws over them; nothing Tern draws is text. Per-block state, failure and duration ride on the block's first row (spare row bits), so they follow scrolling, reflow and clearing. "At the bottom" is one view offset per frame, applied to everything drawn and to the mouse. Nested shells keep their parent's block open, matched by OSC 133 `aid`. |
+| 61 | Warp's numbers from its source; spacing scaled into whole rows (text drawn a little above its row keeps Warp's half-line gap before output); header and box text at the terminal's size. |
+| 62 | Only zsh with Tern's integration (decided at spawn, or by Tern's own prompt mark), never other shells or terminals; full-screen programs untouched; the folder shortened to fit beside the box's icon. |
+| 63 | Lines, tint, bar and box: a small Metal pipeline (rounded rectangles) under the text; the debug overlay was too costly to keep on. |
+| 64 | Sidebar: selecting moves the selected tab to the top; an agent stop moves its tab to just below it; nothing else moves; hand placements hold. |
+| 65 | The flaky live test (two races, both in the test), ⇧⌘T as a shortcut item, the suite's cleanup of your agent folders, and a Codex resend found by the suite. |
+
+## Tests
+
+- **The definitive run**, on the build that was released, with the real agents (Claude `haiku`, Codex
+  `gpt-6-luna` at low effort): `ACCEPTANCE_REAL=1 uv run pytest --target targets/tern.json` under
+  `caffeinate -d -i`: **390 passed, 0 failed, 21 skipped** (26 minutes, `logs/b-suite-definitive2.log`).
+  The run before it, on the first release build, had 389 passed, 1 failed and 1 error
+  (`logs/b-suite-definitive.log`). The failure was `test_no_zombies_accumulate`, which led to the zombie
+  fix above. The error was a teardown whose `tern agent stop` took over 60 s (see "Open" below). The
+  release was rebuilt with the fix and the whole suite run again. The 21 skipped are exactly the 21 UI tests: the screen was
+  locked all afternoon and evening (checked with `conftest.py`'s `screen_locked()` before every review
+  round and before the release), so they didn't run, and they are not counted as passing. Among them is
+  the new real-mouse test of selections in a moved view.
+- **New tests:** `test_tern_blocks.py` (23: at the bottom from the start, output building up, `clear`
+  and ⌘K, a completion list, blocks with folder, duration and output, a running block's time, the
+  failed block's tint and bar, the lines between blocks and the bold command measured on screenshots,
+  the folder box and long folders, full-screen programs, other shells, readers, `no-tern-blocks`, zsh
+  sourced by hand, nested shells, wide characters, padding, and one UI test); the S-7 tests rewritten
+  to your rule; ⇧⌘T in the shortcut list; `test_suite_hygiene.py` (the agent-folder cleanup); review
+  regressions (`test_review_agents.py`, including the Codex resend, which fails on the build before the
+  fix with 39 deliveries); Zig unit tests for durations, wrapped folders and nested shells.
+- **Changed tests**, none weakened (TEST_CHANGES.md, last part): the old S-7 order test (the
+  requirement changed); the live-launch test (two races in the test, the brief's flaky failure); a
+  redirect test that assumed a steered message couldn't share the redirect's turn; a test that waited
+  for `%` or `$` on screen; the zombie test, which now fails on a zombie still there 5 s later (a
+  process is briefly a zombie between its exit and its reaping) and names it.
+- **Written checks** (CHECKS.md): S-9/S-10/S-11 (blocks, the bottom, the folder box) and S-12
+  (full-screen programs) PASS, judged against `reference/warp-blocks.png` from `tern screenshot`s of the
+  released build (`acceptance/results/checks/S-9-S-10-S-11-blocks.png`, `S-12-full-screen.png`); S-7
+  re-judged under your rule; the rest as before.
+- **Your agent folders:** after the real run, the suite removed what its sessions added for its own
+  folders, and nothing else (`acceptance/results/agent-folders-cleanup.txt`). That was 23 items. From
+  Codex: the trust entry for the live test's folder in `config.toml`, 6 threads (their rollouts and
+  their rows in `state_5.sqlite` and `logs_2.sqlite`), and one index line. From Claude Code: 5 project
+  folders, one transcript in a folder that was already there, one history line and 6 per-session
+  folders. Afterwards neither `~/.codex/config.toml` nor `~/.claude.json` has an entry for the suite's
+  folders.
+
+## Codex review
+
+`codex review --base e1b23c57f -c model_reasoning_effort="high"` (the base covers 0.4.0's last fixes
+too), logs `logs/b-review1.log` to `b-review10.log`. Every finding was fixed, with a regression test
+where a test could reach it, and the suite rerun (no failures) before the next round.
+
+| Round | High | Moderate | What they were about |
+|---|---|---|---|
+| 1 | 0 | 4 | bold drawn through cached styles, the mouse on moved text, PS2 growing on empty Enters, a long folder above the view |
+| 2 | 0 | 3 | a long folder past the pane's edge, selection highlights on the folder box, OpenGL |
+| 3 | 0 | 1 | zsh's integration sourced by hand |
+| 4 | 0 | 2 | a message waiting when `claude --resume` is typed by hand, nested shells |
+| 5 | 0 | 3 | the folder after a resize, the selected tab moved by hand, stops below a placed tab |
+| 6 | 0 | 1 | drag selection over the folder box |
+| 7 | 0 | 1 | selection autoscroll in a moved view |
+| 8 | 0 | 1 | wide characters in `debug.blocks` |
+| 9 | 0 | 1 | the top padding's color after the view fills |
+| 10 | 0 | 0 | none |
+
+The loop stopped at round 10, which found nothing. Not covered by a test: the bold copy of a styled
+command row (by construction), and selection autoscroll (needs a real drag past the pane).
+
+## Release
+
+- **Tern 0.5.0** is published at https://github.com/alejoacelas/tern/releases/tag/v0.5.0 (latest).
+  It holds `Tern-0.5.0.zip` (the app, ad-hoc signed), `appcast.json` (SHA-256 and Ed25519 signature)
+  and `install.sh`. `app/dist/release.sh` made them from app commit `972c2f68f`, the build the final
+  run tested. Nothing else was published: no source, `acceptance/`, `reference/`, logs or keys. The
+  repository's README has a new "Command blocks" paragraph, including how to turn the look off
+  (committed with your GitHub noreply address).
+- **The copy installed on this Mac updated itself.** Its `tern update` (your yes) downloaded 0.5.0, and
+  `tern update --now` installed it and relaunched. No agent turn was running: your shells were idle,
+  and your one Claude session had been idle since 11:20. Now `tern --version` → 0.5.0, the signature
+  verifies, there's no quarantine, and `update --check` → up to date. Both windows came back with all
+  6 tabs and 10 panes, with their names and folders.
+- **Your Claude session** (the one you typed in window 1's first tab, titled "hi") came back in its
+  pane. It's waiting at Claude Code's question about trusting the files in `~`. Claude Code asks this
+  whenever it starts in your home folder, because it keeps no trust for `~`
+  (`hasTrustDialogAccepted: false` in `~/.claude.json`, which the suite didn't touch). I left the
+  answer to you. Once you answer, the session continues.
+
+## Not done, and open
+
+- **The UI tests didn't run.** The screen was locked all afternoon and evening. I checked
+  `screen_locked()` before every review round and before the release, so all 21 UI tests were skipped
+  each time. They are not counted as passing. They include the new real-mouse test of a selection in a
+  moved view and the test for ⇧⌘T in the shortcut list. With the screen unlocked, this runs them:
+  `cd ~/dev/terminal-3/acceptance && caffeinate -d -i uv run pytest --target targets/tern.json -m ui`.
+- **`tern agent stop` took more than 60 s twice in about 14 full runs**, both times in a test's
+  teardown with the screen locked (the second time in the first final run, after
+  `test_placement_options_never_swallow_the_prompt[flags0]`). It didn't happen when that test was
+  rerun, while a sampler watched for it, or in the final run. I didn't find the cause.
+- **Disk space.** The disk nearly filled during the run (down to 283 MB free). I freed space only from
+  what this run had made: the Zig build cache in `app/.zig-cache`, which grows back to about 8 GB with
+  every build, and the suite's temporary folders.
+
+## Questions for you
+
+1. **Your prompt.** While the look is on, Tern's zsh shows the folder header and an empty command line
+   in place of your PS1 (Warp ignores PS1 by default too). Keep it that way, or show your PS1, or part
+   of it such as a git branch, in the header?
+2. **Empty Enter.** An empty Enter or Ctrl-C at the prompt leaves an empty block (a header with no
+   command), as zsh leaves a prompt line. Warp makes no block for these. Should Tern hide them?
+3. **`clear`.** Tern's `clear` clears the screen, as zsh's does. Warp's pushes the blocks up out of
+   view and keeps them in scrollback. Keep zsh's?
+4. **"Last login".** The line `login` prints when a pane opens shows above the first block; Warp hides
+   it. An empty `~/.hushlogin` hides it in every terminal, but I didn't create one in your home folder.
+   Should Tern hide the line itself, or should I create the file?
+5. **Older test leftovers in your agent folders.** The suite now cleans up after itself. Runs before
+   this one (October 7 to October 11 at 02:53, before the cleanup existed) left 47 folders in
+   `~/.claude/projects` (23 MB). All are named after the suite's temporary folders or
+   `acceptance/.work-real`. They also left 112 Codex threads in `~/.codex/sessions` for those folders.
+   I left them in place because they predate this brief, and your agent folders are otherwise off
+   limits. Should they be removed?
+6. **The questions in the 0.4.0 part below** are still open. Their current behavior is kept, as the
+   brief said.
+
 # Tern 0.4.0: agent sessions redone, and the app changes you decided (BRIEF-agents.md)
 
 The earlier parts follow, unchanged. Phase 2's orchestrator guide among them is superseded by the one

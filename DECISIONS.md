@@ -1310,6 +1310,9 @@ last stop gave it. Now nothing is sorted:
   run in them; what was there before stays byte for byte, and isolated instances never install Tern's
   plugins into the user's folders (`TernAgentPlugins.ensureInstalledAtLaunch`). Its log is `results/agent-folders-cleanup.txt`. Evidence:
   `test_suite_hygiene.py` (on a made-up home folder), and the real run's cleanup log.
+  What runs before this one left (47 Claude Code project folders and 112 Codex threads for the suite's
+  folders, October 7 to 11) predates the fixture and is left in place; the report asks whether to
+  remove it.
 
 - **Found by the suite: a Codex message sent again after a crash.** `test_chaos` found Codex sessions
   (start, stop, then a message that crashes it) where the message was delivered up to 39 times. Codex
@@ -1322,3 +1325,9 @@ last stop gave it. Now nothing is sorted:
   opened and the message sent there. Evidence:
   `test_a_message_that_crashed_codex_before_its_turn_was_reported_is_not_sent_again` (fails on the build
   before the fix: 39 deliveries), `test_chaos.py` (17 passed, and 40 random sequences).
+
+- **Found by the final run: a zombie.** A harness process whose session object went away while the
+  process was still exiting (the session removed during its stop) had nobody left to wait for it, so it
+  stayed a zombie of the app. `TernHarnessProcess` now hands such a process to a small reaper (a
+  dispatch process source per pid) when the object goes away first. The test that caught it now fails
+  only on a zombie still there 5 s later, and names it (TEST_CHANGES.md).
