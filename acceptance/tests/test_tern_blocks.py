@@ -416,6 +416,29 @@ def test_readers_see_what_the_shell_and_programs_printed(inst, win):
 
 
 @pytest.mark.req("S-12")
+def test_empty_enters_leave_the_shells_prompts_as_they_were(inst, win):
+    """Review round 1: an Enter on an empty line (or Ctrl-C) runs no command, and the continuation prompt
+    (PS2) gained another pair of marks with every such prompt. zsh's prompts stay the same however many
+    there are."""
+    pane = win["pane"]
+    active(inst, pane)
+
+    def ps2_length():
+        marker = uuid.uuid4().hex[:6]
+        inst.cli("send", "--pane", pane, "-e", f"echo L{marker}=${{#PS2}}")
+        found = wait_until(lambda: re.search(rf"^L{marker}=(\d+)$", inst.cli("read", "--pane", pane).stdout, re.M),
+                           10, message="PS2's length")
+        return int(found.group(1))
+    before = ps2_length()
+    for _ in range(5):
+        inst.cli("keys", "--pane", pane, "enter")
+        time.sleep(0.2)
+    inst.cli("keys", "--pane", pane, "ctrl+c")
+    time.sleep(0.3)
+    assert ps2_length() == before
+
+
+@pytest.mark.req("S-12")
 def test_it_can_be_turned_off(fresh, tmp_path):
     """`shell-integration-features = no-tern-blocks` in the user's Ghostty config: zsh's own prompt, at the
     top, no blocks."""
@@ -496,3 +519,26 @@ def test_the_mouse_selects_what_is_drawn_where_it_points_ui(inst, win, ui):
     _double_click(point)
     selected = wait_until(lambda: inst.rpc("debug.selection", pane=pane).get("text"), 5, message="a selection")
     assert selected.strip() == f"pick-{marker}", f"selected {selected!r}"
+
+    # Review round 1: a block's command is drawn a little above its row (Warp's spacing). A
+    # double-click on the upper part of the drawn word selects the command, not the folder above it.
+    lines = inst.cli("read", "--pane", pane).stdout.split("\n")
+    command_row = lines.index(f"echo pick-{marker}")
+    point = (x + b["padding_pt"]["left"] + 1.5 * cell_w,
+             y + b["padding_pt"]["top"] + (command_row + b["drawn_offset_rows"] - 0.12) * cell_h)
+    _double_click(point)
+    selected = wait_until(lambda: inst.rpc("debug.selection", pane=pane).get("text"), 5, message="a selection")
+    assert selected.strip() == "echo", f"selected {selected!r}"
+
+    # The folder box's text is drawn right of its cells (after the icon): a double-click on the drawn
+    # folder name selects it.
+    inst.cli("send", "--pane", pane, "-e", "cd /usr/share")
+    wait_until(lambda: active(inst, pane)["blocks"][-1]["header"] == "/usr/share", 10, message="the prompt in /usr/share")
+    b = blocks(inst, pane)
+    header_row = b["blocks"][-1]["first"] + 2
+    box_text_dx = 3.0 * cell_w  # about the border, padding, icon and gap: the last letters are past column 9
+    point = (x + b["padding_pt"]["left"] + box_text_dx + 8.5 * cell_w,
+             y + b["padding_pt"]["top"] + (header_row + b["drawn_offset_rows"] + 0.5) * cell_h)
+    _double_click(point)
+    selected = wait_until(lambda: inst.rpc("debug.selection", pane=pane).get("text"), 5, message="a selection")
+    assert "share" in selected, f"selected {selected!r}"
