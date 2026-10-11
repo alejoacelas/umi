@@ -1277,7 +1277,12 @@ last stop gave it. Now nothing is sorted:
   a loaded full run, waiting for the view's transcript took longer than the 3-second turn, so it read
   the screen during that hand-off and saw the interface. The product was right (the interface never
   starts before the turn ends); the test now checks the order itself: whenever the interface is on
-  screen, the first message is already done (TEST_CHANGES.md).
+  screen, the first message is already done (TEST_CHANGES.md). The same test's last check has the
+  same race the other way round: the interface draws its screen, then runs its SessionStart hook,
+  which reaches Tern through `tern agent hook` (a process of its own); until it arrives the session
+  is still `starting`, truthfully. With the screen locked a full run hit it too; the test now waits
+  for the status to settle. Nothing in the product changed: Tern learns that the interface is up
+  from the interface itself.
 - **⇧⌘T in Settings.** Reopen was a menu item Tern added on its own, outside its list of shortcut
   items, so Settings (and the key monitor that makes shortcuts work whatever has focus) didn't know it.
   It is now the shortcut item `file.reopen` (File ▸ Reopen Closed …, its title naming what it would

@@ -144,8 +144,11 @@ def test_an_interactive_launch_goes_live_after_its_first_turn(inst, win, shown, 
     text = wait_screen(inst, pane, hid, f"{USER[kind]}SLEEP 3 {n}", f"ok: SLEEP 3 {n}")
     assert text.count(BANNER[kind]) == 1
     delivered_once(inst, n)
-    info = inst.info(sid)
-    assert (info["location"], info["status"]) == ("live", "idle"), info
+    # The interface draws its screen before its own SessionStart hook reaches Tern (the hook runs
+    # `tern agent hook`, a process of its own): until then the session is still opening its interface.
+    info = wait_until(lambda: (lambda i: i if (i["location"], i["status"]) == ("live", "idle") else None)(inst.info(sid)),
+                      15, message="the live session to report idle")
+    assert info["activity"] == "idle", info
     assert focus_state(inst, win["window"]) == focus, "the user's focus moved"
 
 

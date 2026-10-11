@@ -346,3 +346,12 @@ pane whose view is moved down selects the word drawn there) and
 - **`tests/agent_config.py`**: a live test's folder is reused run after run, so Claude Code adds its
   transcripts to a project folder that already existed; those are removed too (the first real run
   left one, removed by hand).
+- **`tests/test_live.py::test_an_interactive_launch_goes_live_after_its_first_turn[claude]`**, again:
+  the failure the brief describes ("the interface was on screen while the session still said
+  `starting`") also happens at the test's last check. The agent's interface draws its screen and then
+  runs its SessionStart hook, which reaches Tern through `tern agent hook`, a process of its own; until
+  it arrives the session is `starting` ("opening its own interface"), which is true: Tern hasn't heard
+  from the interface yet. In a loaded run (here with the screen locked) that gap was long enough for
+  the test to read it. **Change:** it waits up to 15 s for `live`/`idle` after the interface shows
+  the conversation. **Requirements:** AG-2 ("then resumed live in that place") and AG-13 (truthful
+  status).
