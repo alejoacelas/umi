@@ -779,3 +779,85 @@ def test_hiding_a_live_codex_session_ends_its_interface(inst, win):
     inst.cli("agent", "hide", sid)
     wait_until(lambda: not clients(), 15, message="the interface to end")
     assert inst.info(sid)["location"] == "background"
+
+
+# ---- round 10 (the last review round; fixed after it) ---------------------------------------------
+
+@pytest.mark.req("AG-11", "AG-18")
+def test_claude_resumed_by_hand_takes_the_conversation_from_tern(inst, win):
+    """Round 10, P1: `claude --resume ID` typed in a pane for a session Tern ran headless was adopted as
+    live while Tern's headless process kept running on the same conversation."""
+    plugin = os.path.join(inst.target.app, PLUGIN["claude"])
+    sid = inst.start_agent("claude", f"SLEEP 15 {nonce()}")
+    wait_until(lambda: inst.info(sid)["status"] == "working", 15, message="the headless turn runs")
+    assert inst.info(sid)["running"]
+    hid = inst.info(sid)["harness_id"]
+    pane = inst.cli("split", "right", "--pane", win["pane"], "--cwd", inst.work).stdout.strip()
+    wait_until(lambda: inst.screen(pane).strip(), 20, message="the shell")
+    inst.type_line(pane, f"FAKE_AGENT_DIR='{inst.fake_dir}' CLAUDE_CONFIG_DIR='{inst.claude_config}' "
+                         f"FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}' --resume {hid}")
+    wait_until(lambda: inst.info(sid)["location"] == "live", 20, message="the session adopted as live")
+    wait_until(lambda: not inst.info(sid)["running"], 15, message="Tern's headless process to stop")
+    inst.type_line(pane, "/exit")
+    wait_until(lambda: inst.info(sid)["location"] != "live", 15, message="the interface to end")
+
+
+@pytest.mark.req("AG-9", "AG-17")
+def test_an_answer_typed_into_a_dialog_is_not_a_draft(inst, win):
+    """Round 10, P2: keys typed to answer a permission dialog in the interface counted as a draft on the
+    prompt, so messages waited for ever afterwards."""
+    sid, pane = live_claude(inst, win)
+    inst.type_line(pane, "ASK_PERMISSION")
+    wait_until(lambda: "proceed" in inst.screen(pane).lower(), 15, message="the permission dialog")
+    inst.type_line(pane, "y")
+    wait_until(lambda: inst.info(sid)["status"] == "idle", 20, message="the turn ends")
+    n = nonce()
+    message = inst.send(sid, f"ECHO after the dialog {n}")
+    code, out = inst.wait(sid, "--message", message, timeout=40)
+    assert (code, out.get("reply")) == (0, f"ECHO after the dialog {n}"), out
+
+
+@pytest.mark.req("AG-18", "AG-3")
+def test_a_typed_agents_config_folder_is_kept_for_its_resumes(inst, win, tmp_path):
+    """Round 10, P2: an agent typed with its own CLAUDE_CONFIG_DIR lost it when Tern adopted the session,
+    so resuming it headless looked in the default folder."""
+    root = login_fake_dir()
+    plugin = os.path.join(inst.target.app, PLUGIN["claude"])
+    config = str(tmp_path / "my claude config")
+    os.makedirs(config)
+    pane = inst.cli("split", "right", "--pane", win["pane"], "--cwd", inst.work).stdout.strip()
+    wait_until(lambda: inst.screen(pane).strip(), 20, message="the shell")
+    known = {s["id"] for s in inst.agents()}
+    inst.type_line(pane, f"CLAUDE_CONFIG_DIR='{config}' FAKE_AGENT_DIR='{root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
+    session = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
+                         message="the typed agent to become a session Tern knows")
+    sid, hid = session["id"], session.get("harness_id")
+    try:
+        wait_until(lambda: BANNER in inst.screen(pane), 20, message="its interface")
+        inst.type_line(pane, f"ECHO first {nonce()}")
+        wait_until(lambda: inst.info(sid)["status"] == "idle" and any(i["kind"] == "assistant" for i in inst.transcript(sid)),
+                   20, message="a first turn")
+        inst.type_line(pane, "/exit")
+        wait_until(lambda: inst.info(sid)["location"] != "live", 15, message="the interface to end")
+        message = inst.send(sid, "PRINTENV CLAUDE_CONFIG_DIR")
+        code, out = inst.wait(sid, "--message", message, timeout=60)
+        assert out["status"] == "DONE" and config in (out.get("reply") or ""), out
+    finally:
+        inst.cli("agent", "stop", sid, check=False, timeout=60)
+        hid = hid or inst.info(sid).get("harness_id")
+        for path in glob.glob(os.path.join(root, "claude", f"{hid}.*")):
+            os.remove(path)
+
+
+@pytest.mark.req("AG-8", "AG-5")
+def test_a_parked_session_reopens_where_asked(inst, win):
+    """Round 10, P2: a session hidden while its interface worked, then opened with `--split --pane P`,
+    came back in a new tab of the current window instead."""
+    sid, pane = live_claude(inst, win)
+    inst.type_line(pane, f"SLEEP 12 {nonce()}")
+    wait_until(lambda: inst.info(sid)["status"] == "working", 10, message="the typed turn runs")
+    inst.cli("agent", "hide", sid)
+    wait_until(lambda: not inst.find_pane(pane), 10, message="parked")
+    back = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])["pane"]
+    assert back == pane, "the same terminal comes back"
+    assert inst.find_pane(back)[1]["id"] == win["tab"], "beside the pane asked for"

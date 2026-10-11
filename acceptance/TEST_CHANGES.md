@@ -274,3 +274,7 @@ action refused; Take Over never types into another program, a message sent while
 its first turn, hiding a live Codex session ends its interface. Not covered by a test: a paste that
 waits for confirmation, and cancelled file searches (timing).
 
+Round 10 (the last review round; its findings were fixed afterwards and not reviewed again):
+`claude --resume` typed by hand for a session Tern runs headless, an answer typed into a dialog, a
+typed agent's own config folder, a parked session reopened where asked.
+
