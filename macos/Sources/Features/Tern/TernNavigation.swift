@@ -323,6 +323,12 @@ enum TernTabOrder {
         reorder(window)
     }
 
+    /// A tab was moved by hand: if it's the selected tab, it stays where it was put rather than going
+    /// back to the top (a move of the selected tab doesn't change the selection).
+    static func placed(_ tab: TernTab, in window: TerminalController) {
+        if tab === window.selectedTab { placedByHand[ObjectIdentifier(window)] = tab.id }
+    }
+
     /// A tab was pinned or unpinned (`setPinned` put it at the end of the pinned tabs, or at the
     /// top of the others).
     static func pinsChanged(in window: TerminalController) {
@@ -374,12 +380,17 @@ enum TernTabOrder {
         stopped.sort { a, b in a.stop != b.stop ? a.stop > b.stop : a.index < b.index }
         let rising = stopped.map(\.tab)
         others.removeAll { tab in rising.contains { $0 === tab } }
-        others.insert(contentsOf: rising, at: 0)
 
-        // The selected tab, unless a placement put it where it is.
-        if !selected.pinned, placedByHand[key] != selected.id {
-            others.removeAll { $0 === selected }
-            others.insert(selected, at: 0)
+        if !selected.pinned, placedByHand[key] == selected.id, let at = others.firstIndex(where: { $0 === selected }) {
+            // Placed by hand: it stays, and tabs whose agents stopped go just below it.
+            others.insert(contentsOf: rising, at: at + 1)
+        } else {
+            others.insert(contentsOf: rising, at: 0)
+            // The selected tab goes to the top.
+            if !selected.pinned {
+                others.removeAll { $0 === selected }
+                others.insert(selected, at: 0)
+            }
         }
         return pinned + others
     }

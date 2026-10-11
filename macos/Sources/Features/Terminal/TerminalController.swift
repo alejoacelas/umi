@@ -255,6 +255,8 @@ class TerminalController: BaseTerminalController {
             : min(max(index, pinnedCount), tabs.count)
         tabs.insert(tab, at: position)
         TernState.shared.layoutDidChange()
+        // A tab put somewhere by hand stays there (S-7), also when it's the selected tab.
+        TernTabOrder.placed(tab, in: self)
     }
 
     /// Pin or unpin a tab. Pinned tabs come first, in pin order; unpinning moves the tab

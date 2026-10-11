@@ -94,12 +94,11 @@ _ghostty_deferred_init() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
 
     # Tern: sets PS1 to the block prompt: two spacer rows, the folder, an
-    # empty command line. The folder is shortened from the left (`…/rest`) to leave room
-    # for the folder box's icon, so it never runs past the pane's edge.
+    # empty command line. The folder is shortened from the left (`…/rest`) to
+    # 4 columns less than the line (`%-4<`, worked out each time zsh draws the
+    # prompt, so it follows resizes), leaving room for the folder box's icon.
     _tern_block_prompt() {
-        builtin local width=$(( ${COLUMNS:-80} - 4 ))
-        (( width < 8 )) && width=8
-        PS1=$'\n\n%'${width}$'<…<%~%<<\n'
+        PS1=$'\n\n%-4<…<%~%<<\n'
     }
 
     # Enable semantic markup with OSC 133.
