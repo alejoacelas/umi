@@ -492,6 +492,29 @@ def test_zsh_integration_sourced_by_hand_gets_the_look(fresh, tmp_path):
     assert drawn_at_the_bottom(b) or wait_until(lambda: drawn_at_the_bottom(blocks(other, pane)), 10)
 
 
+@pytest.mark.req("S-10")
+def test_a_nested_shell_leaves_its_parent_block_to_finish(inst, win):
+    """Review round 4: a zsh started from the prompt that loads Tern's integration shows block prompts of
+    its own; the command that started it lost its block then, and never got its duration or its failure
+    mark when the nested shell exited."""
+    pane = win["pane"]
+    active(inst, pane)
+    inst.cli("send", "--pane", pane, "-e", "zsh -i")
+    time.sleep(1.5)
+    inst.cli("send", "--pane", pane, "-e", 'source "$GHOSTTY_RESOURCES_DIR/shell-integration/zsh/ghostty-integration"')
+    wait_until(lambda: blocks(inst, pane)["blocks"][-1]["state"] == "active" and
+               any(x["command"] == "zsh -i" and x["state"] == "running" for x in blocks(inst, pane)["blocks"]),
+               15, message="the nested shell's own block prompt")
+    run(inst, pane, "echo inside")
+    inst.cli("keys", "--pane", pane, "enter")
+    time.sleep(0.5)
+    inst.cli("send", "--pane", pane, "-e", "exit 3")
+    outer = wait_until(lambda: next((x for x in blocks(inst, pane)["blocks"]
+                                     if x["command"] == "zsh -i" and x["state"] == "done"), None),
+                       15, message="the outer command's block to finish")
+    assert outer["failed"] is True and outer["ms"] >= 1000, outer
+
+
 @pytest.mark.req("S-12")
 def test_only_inside_tern(inst, win):
     """The prompt is Tern's only in Tern's terminals: zsh started elsewhere (here, outside the app, with

@@ -1174,6 +1174,14 @@ along the top of the second spacer row, the folder box at the prompt, the tint a
 block. Nothing is written to the terminal, so `read` and `wait --pattern` see the shell's rows (the
 folder line is prompt, so `wait --pattern` never matches it).
 
+**Nested shells (review round 4).** A zsh started from the prompt that loads Tern's integration shows
+block prompts of its own while the command that started it runs. That command's block is kept (a
+small stack of open blocks, with their start times) and finishes with its own end. Tern's zsh
+integration tags each prompt and each command end with the shell's pid (OSC 133's `aid`), so the end
+reported by the outer shell is matched to its block even when the inner shell's last command
+(`exit`) never reported its own end; blocks of shells that ended inside it end then, without a
+status.
+
 **Per-block data on the block's first row.** A block's state (prompt, running, done), failure and
 duration are 23 bits in the page row's spare padding (`tern_*` fields of `page.Row`): rows are copied
 with their metadata through scrolling, reflow (`copyRowMetadata`) and clearing (reset with the row), so

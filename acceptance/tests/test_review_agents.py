@@ -918,3 +918,27 @@ def test_a_message_that_crashed_codex_before_its_turn_was_reported_is_not_sent_a
     time.sleep(3)
     receipts = [r for r in inst.receipts() if crash in (r.get("text") or "")]
     assert len(receipts) == 1, f"delivered {len(receipts)} times"
+
+
+# ---- review rounds of 0.5.0 -------------------------------------------------------------------------
+
+@pytest.mark.req("AG-9", "AG-11")
+def test_a_message_waiting_when_claude_is_resumed_by_hand_is_delivered(inst, win):
+    """0.5.0 round 4, P2: when `claude --resume ID` typed in a pane took the conversation from Tern's
+    headless process, messages that process had taken and not confirmed came back to the queue after
+    the last pump, and waited there until something else happened."""
+    plugin = os.path.join(inst.target.app, PLUGIN["claude"])
+    sid = inst.start_agent("claude", f"SLEEP 15 {nonce()}")
+    wait_until(lambda: inst.info(sid)["status"] == "working", 15, message="the headless turn runs")
+    hid = inst.info(sid)["harness_id"]
+    n = nonce()
+    message = inst.send(sid, f"ECHO steered {n}")
+    pane = inst.cli("split", "right", "--pane", win["pane"], "--cwd", inst.work).stdout.strip()
+    wait_until(lambda: inst.screen(pane).strip(), 20, message="the shell")
+    inst.type_line(pane, f"FAKE_AGENT_DIR='{inst.fake_dir}' CLAUDE_CONFIG_DIR='{inst.claude_config}' "
+                         f"FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}' --resume {hid}")
+    wait_until(lambda: inst.info(sid)["location"] == "live", 20, message="the session adopted as live")
+    code, out = inst.wait(sid, "--message", message, timeout=90)
+    assert out["status"] == "DONE", out
+    assert len([r for r in inst.receipts() if n in (r.get("text") or "")]) == 1
+    inst.type_line(pane, "/exit")
