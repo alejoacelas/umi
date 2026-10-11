@@ -2283,6 +2283,10 @@ fn ternPromptStarted(self: *Terminal, block: bool) void {
     self.flags.tern_plain_prompt = !block;
     if (!block) return;
 
+    // A Tern block prompt turns the look on, also where Tern's integration
+    // wasn't injected at launch (sourced by hand, `shell-integration = none`).
+    self.flags.tern_blocks = true;
+
     const row = screen.cursor.page_row;
     row.tern_block = true;
     row.tern_state = .prompt;
