@@ -45,7 +45,9 @@ def run(inst, pane, command, timeout=30):
         b = blocks(inst, pane)
         if not b.get("blocks") or b["blocks"][-1]["state"] != "active":
             return None
-        return next((x for x in reversed(b["blocks"]) if x["command"] == command and x["state"] == "done"), None)
+        # A command longer than the pane wraps: its rows are joined with newlines.
+        return next((x for x in reversed(b["blocks"])
+                     if x["command"].replace("\n", "") == command and x["state"] == "done"), None)
     return wait_until(done, timeout, message=f"`{command}` to finish")
 
 
@@ -351,6 +353,23 @@ def test_the_folder_box_shows_the_current_folder(inst, win):
     run(inst, pane, "cd ~")
     assert active(inst, pane)["blocks"][-1]["header"] == "~"
     assert b["on"]
+
+
+@pytest.mark.req("S-11")
+def test_a_long_folder_is_shortened_to_fit_the_box(inst, win, tmp_path):
+    """Review round 2: a folder as long as the pane ran past its edge once the box's icon moved it
+    right. zsh shortens it from the left, as Warp's box does (`…/rest`), leaving room for the icon."""
+    pane = win["pane"]
+    b = active(inst, pane)
+    deep = tmp_path
+    while len(str(deep)) < b["cols"] + 20:
+        deep = deep / "a-rather-long-folder-name"
+    deep.mkdir(parents=True)
+    run(inst, pane, f"cd '{deep}'")
+    prompt = active(inst, pane)["blocks"][-1]
+    header = prompt["header"]
+    assert header.startswith("…") and str(deep).endswith(header[1:]), header
+    assert len(header) <= b["cols"] - 4, (len(header), b["cols"])
 
 
 # ---- S-12: where it applies ----------------------------------------------------------------------
