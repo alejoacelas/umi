@@ -252,25 +252,36 @@ enum TernFocusHistory {
 
 // MARK: - Sidebar order (S-7)
 
-/// The order of each window's tabs: pinned tabs first, in pin order; then the selected tab;
-/// then tabs whose agents stopped or delivered, most recent first; then the others in their
-/// existing order. This is the window's real tab order, so `ls`, `#N` and ⌘1–9 follow it.
+/// The order of each window's tabs, as the user put it: "other than the focused session, tabs
+/// should only move when an agent finishes their turn". Pinned tabs come first, in pin order.
+/// The selected tab moves to the top of the others; a tab whose agent stops or delivers moves
+/// to just below the selected one (several at once: the most recent stop first). Nothing else
+/// moves a tab: the tab the user leaves stays where it is. This is the window's real tab order,
+/// so `ls`, `#N` and ⌘1–9 follow it.
 ///
-/// It is recomputed when a window's selection changes, when an agent stops, and when a tab
-/// is pinned or unpinned. Explicit placements (dragging, `tab move`, Move Tab Up/Down,
-/// `tab new --index`) stay where they were put until the next recompute. During a burst of
-/// tab-switching keys the order stays as the user saw it, so ⌘⇧] walks down the list instead
-/// of bouncing between the two tabs at the top; it settles a moment after the last press.
+/// Explicit placements (dragging, `tab move`, Move Tab Up/Down, `tab new --index`) stay where
+/// they were put, even though they select the tab. During a burst of tab-switching keys the
+/// order stays as the user saw it, so ⌘⇧] walks down the list instead of bouncing between the
+/// two tabs at the top; a moment after the last press the selected tab moves up, along with any
+/// tab whose agent stopped meanwhile.
 @MainActor
 enum TernTabOrder {
     /// How long the order stays as it is after a tab-switching key.
     static let settleDelay: TimeInterval = 1.2
 
+    /// A tab's first stop moves it only if it happened this recently.
+    static let recentStop: TimeInterval = 60
+
     private static var frozenUntil = Date.distantPast
     private static var settle: DispatchWorkItem?
     private static var holding = 0
-    /// Each tab's last agent stop as of the last recompute, to notice new stops.
+    /// Each tab's last agent stop as of the last look, to notice new stops.
     private static var knownStops: [UUID: Date] = [:]
+    /// Tabs whose agent stopped since their window's order last changed: they move up at the
+    /// next reorder (when the order isn't frozen).
+    private static var pendingStops: [UUID: Date] = [:]
+    /// Each window's selected tab when its order last changed: a selection that differs moves up.
+    private static var placedSelection: [ObjectIdentifier: UUID] = [:]
     private static var attentionObserver: AnyCancellable?
 
     static func start() {
@@ -280,7 +291,7 @@ enum TernTabOrder {
             .sink { _ in MainActor.assumeIsolated { attentionChanged() } }
     }
 
-    /// Run an explicit placement: the selection it makes doesn't reorder the tabs.
+    /// Run an explicit placement: the selection it makes doesn't move the tab to the top.
     static func hold<T>(_ body: () throws -> T) rethrows -> T {
         holding += 1
         defer { holding -= 1 }
@@ -300,11 +311,17 @@ enum TernTabOrder {
 
     /// A window's selected tab changed.
     static func selectionChanged(in window: TerminalController) {
-        guard holding == 0, !isFrozen else { return }
+        if holding > 0 {
+            // A placement put the tab where it is: that's its place, not the top.
+            placedSelection[ObjectIdentifier(window)] = window.selectedTab.id
+            return
+        }
+        guard !isFrozen else { return }
         reorder(window)
     }
 
-    /// A tab was pinned or unpinned.
+    /// A tab was pinned or unpinned (`setPinned` put it at the end of the pinned tabs, or at the
+    /// top of the others).
     static func pinsChanged(in window: TerminalController) {
         guard !isFrozen else { return }
         reorder(window)
@@ -315,10 +332,17 @@ enum TernTabOrder {
         for window in TernTopology.windows {
             for tab in window.tabs {
                 let stop = TernAttention.shared.lastStop(for: tab, in: window)
-                if knownStops[tab.id] != stop {
+                guard knownStops[tab.id] != stop else { continue }
+                // A newer stop moves the tab up; a mark cleared (no stop) doesn't move it, and
+                // neither does a stop first seen long after it happened (sessions restored at
+                // launch), which isn't something the user just saw happen.
+                let known = knownStops[tab.id]
+                if let stop, stop > (known ?? .distantPast),
+                   known != nil || stop.timeIntervalSinceNow > -Self.recentStop {
+                    pendingStops[tab.id] = stop
                     if !changed.contains(where: { $0 === window }) { changed.append(window) }
-                    knownStops[tab.id] = stop
                 }
+                knownStops[tab.id] = stop
             }
         }
         guard !isFrozen else { return }
@@ -330,33 +354,38 @@ enum TernTabOrder {
         for window in TernTopology.windows { reorder(window) }
     }
 
-    /// The order the rules give for a window's tabs.
+    /// The order after the moves the rules make now: the selected tab to the top of the
+    /// unpinned tabs (unless a placement put it where it is), tabs whose agents stopped since to
+    /// just below it, most recent stop first. Every other tab keeps its place.
     static func ordered(_ window: TerminalController) -> [TernTab] {
+        let selected = window.selectedTab
         let pinned = window.tabs.filter(\.pinned)
         var others = window.tabs.filter { !$0.pinned }
-        var head: [TernTab] = []
-        if let selected = others.first(where: { $0 === window.selectedTab }) {
-            head = [selected]
-            others.removeAll { $0 === selected }
-        }
-        var stops: [UUID: Date] = [:]
-        for tab in window.tabs {
-            let stop = TernAttention.shared.lastStop(for: tab, in: window)
-            knownStops[tab.id] = stop
-            if let stop { stops[tab.id] = stop }
-        }
+        let key = ObjectIdentifier(window)
+
         // A stable sort: tabs that stopped at the same moment keep their order.
-        let stopped = others.enumerated()
-            .compactMap { item in stops[item.element.id].map { (item.offset, item.element, $0) } }
-            .sorted { a, b in a.2 != b.2 ? a.2 > b.2 : a.0 < b.0 }
-            .map(\.1)
-        let never = others.filter { stops[$0.id] == nil }
-        return pinned + head + stopped + never
+        var stopped: [(index: Int, tab: TernTab, stop: Date)] = []
+        for (index, tab) in others.enumerated() where tab !== selected {
+            if let stop = pendingStops[tab.id] { stopped.append((index, tab, stop)) }
+        }
+        stopped.sort { a, b in a.stop != b.stop ? a.stop > b.stop : a.index < b.index }
+        let rising = stopped.map(\.tab)
+        others.removeAll { tab in rising.contains { $0 === tab } }
+        others.insert(contentsOf: rising, at: 0)
+
+        // The selected tab, unless a placement put it where it is.
+        if !selected.pinned, placedSelection[key] != selected.id {
+            others.removeAll { $0 === selected }
+            others.insert(selected, at: 0)
+        }
+        return pinned + others
     }
 
     static func reorder(_ window: TerminalController) {
         guard !window.isClosed else { return }
         let order = ordered(window)
+        for tab in window.tabs { pendingStops[tab.id] = nil }
+        placedSelection[ObjectIdentifier(window)] = window.selectedTab.id
         guard order.count == window.tabs.count, !zip(order, window.tabs).allSatisfy({ $0 === $1 }) else { return }
         window.reorderTabs(order)
     }

@@ -19,6 +19,7 @@ const constraintWidth = cellpkg.constraintWidth;
 const isCovering = cellpkg.isCovering;
 const rowNeverExtendBg = @import("row.zig").neverExtendBg;
 const Overlay = @import("Overlay.zig");
+const tern_blocks = @import("tern_blocks.zig");
 const imagepkg = @import("image.zig");
 const ImageState = imagepkg.State;
 const shadertoy = @import("shadertoy.zig");
@@ -280,6 +281,20 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// wakeup.
         kitty_animation_next_ms: ?u64 = null,
 
+        /// Tern: Warp's look (tern_blocks.zig). The layout worked out for
+        /// the frame being built, what each row was last drawn as (a row
+        /// whose role changed is drawn again), the decorations drawn
+        /// under the text, and how many pixels the view is moved down.
+        tern: tern_blocks.Layout = .{},
+        tern_drawn: std.ArrayList(tern_blocks.Drawn) = .empty,
+        tern_glyph_dx: i32 = 0,
+        tern_rects: std.ArrayList(TernRect) = .empty,
+        tern_offset_px: u32 = 0,
+
+        /// Tern: the decoration shape, when this graphics API draws them.
+        const TernRect = if (@hasDecl(shaderpkg, "TernRect")) shaderpkg.TernRect else void;
+        const tern_rects_supported = TernRect != void;
+
         const HighlightTag = enum(u8) {
             search_match,
             search_match_selected,
@@ -372,7 +387,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             /// Custom shader state, this is null if we have no custom shaders.
             custom_shader_state: ?CustomShaderState = null,
 
+            /// Tern: the block decorations (see `tern_rects`).
+            tern_rects: TernRectBuffer,
+
             const UniformBuffer = Buffer(shaderpkg.Uniforms);
+            const TernRectBuffer = if (tern_rects_supported) Buffer(TernRect) else void;
             const CellBgBuffer = Buffer(shaderpkg.CellBg);
             const CellTextBuffer = Buffer(shaderpkg.CellText);
             const BgImageBuffer = Buffer(shaderpkg.BgImage);
@@ -401,6 +420,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     1,
                 );
                 errdefer bg_image_buffer.deinit();
+
+                var tern_rects: TernRectBuffer = if (tern_rects_supported)
+                    try TernRectBuffer.init(api.fgBufferOptions(), 1)
+                else {};
+                errdefer if (tern_rects_supported) tern_rects.deinit();
 
                 // Initialize our textures for our font atlas.
                 //
@@ -439,6 +463,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .color = color,
                     .target = target,
                     .custom_shader_state = custom_shader_state,
+                    .tern_rects = tern_rects,
                 };
             }
 
@@ -450,6 +475,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.grayscale.deinit();
                 self.color.deinit();
                 self.bg_image_buffer.deinit();
+                if (tern_rects_supported) self.tern_rects.deinit();
                 if (self.custom_shader_state) |*state| state.deinit();
             }
 
@@ -844,6 +870,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             self.cells.deinit(self.alloc);
 
+            self.tern.deinit(self.alloc);
+            self.tern_drawn.deinit(self.alloc);
+            self.tern_rects.deinit(self.alloc);
+
             self.font_shaper.deinit();
             self.font_shaper_cache.deinit(self.alloc);
 
@@ -1145,6 +1175,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             return null;
         }
 
+        /// Tern: milliseconds until a visible running block's elapsed time
+        /// next changes, if one is visible.
+        pub fn ternTickMs(self: *const Self) ?u64 {
+            if (!self.tern.on) return null;
+            return self.tern.tick_ms;
+        }
+
         /// True if our renderer is using vsync. If true, the renderer or apprt
         /// is responsible for triggering draw_now calls to the render thread.
         /// That is the only way to trigger a drawFrame.
@@ -1440,6 +1477,26 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // cross-thread mailbox message within the IO path.
                 const scrollbar = state.terminal.screens.active.pages.scrollbar();
 
+                // Tern: where Tern's blocks are in the viewport, and how far
+                // down the view sits (tern_blocks.zig). This reads rows
+                // around the viewport, so it needs the terminal.
+                {
+                    const start = self.terminal_state.viewportStart();
+                    const pins = self.terminal_state.row_data.items(.pin);
+                    self.tern.compute(
+                        self.alloc,
+                        state.terminal,
+                        pins[start..][0..self.terminal_state.rows],
+                        if (self.terminal_state.cursor.viewport) |vp| vp.y else null,
+                        .now(global.io(), .awake),
+                    ) catch |err| {
+                        log.warn("error laying out blocks err={}", .{err});
+                        self.tern.on = false;
+                        self.tern.offset_rows = 0;
+                        self.tern.rows.clearRetainingCapacity();
+                    };
+                }
+
                 // Get our preedit state
                 const preedit: ?renderer.State.Preedit = preedit: {
                     const p = state.preedit orelse break :preedit null;
@@ -1617,6 +1674,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.draw_mutex.lockUncancelable(global.io());
                 defer self.draw_mutex.unlock(global.io());
 
+                // Tern: rows whose part in a block changed are drawn again,
+                // and the view moves when its last used row does.
+                self.ternPrepare(state);
+
                 // Build our GPU cells
                 self.rebuildCells(
                     critical.preedit,
@@ -1633,6 +1694,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     comptime assert(@TypeOf(err) == error{OutOfMemory});
                     log.warn("error rebuilding GPU cells err={}", .{err});
                 };
+
+                // Tern: the separators, tints, bars and the folder box.
+                self.ternRebuildRects();
 
                 // The scrollbar is only emitted during draws so we also
                 // check the scrollbar cache here and update if needed.
@@ -1846,6 +1910,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             try frame.uniforms.sync(&.{self.uniforms});
             try frame.cells_bg.sync(self.cells.bg_cells);
             const fg_count = try frame.cells.syncFromArrayLists(self.cells.fg_rows);
+            const tern_rect_count: usize = if (tern_rects_supported) count: {
+                if (self.tern_rects.items.len == 0) break :count 0;
+                try frame.tern_rects.sync(self.tern_rects.items);
+                break :count self.tern_rects.items.len;
+            } else 0;
 
             // If our background image buffer has changed, sync it.
             if (frame.bg_image_buffer_modified != self.bg_image_buffer_modified) {
@@ -1930,6 +1999,19 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .uniforms = frame.uniforms.buffer,
                     .buffers = &.{ null, frame.cells_bg.buffer },
                     .draw = .{ .type = .triangle, .vertex_count = 3 },
+                });
+
+                // Tern: block decorations, over the backgrounds and under
+                // the text.
+                if (tern_rects_supported and tern_rect_count > 0) pass.step(.{
+                    .pipeline = self.shaders.pipelines.tern_rect,
+                    .uniforms = frame.uniforms.buffer,
+                    .buffers = &.{frame.tern_rects.buffer},
+                    .draw = .{
+                        .type = .triangle_strip,
+                        .vertex_count = 4,
+                        .instance_count = tern_rect_count,
+                    },
                 });
 
                 // Kitty images between cell backgrounds and text.
@@ -2252,15 +2334,19 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 },
             ).add(self.size.padding);
 
+            // Tern: the view is moved down so the last used row sits at the
+            // bottom (tern_blocks.zig).
+            const offset: f32 = @floatFromInt(self.tern_offset_px);
+
             // Setup our uniforms
             self.uniforms.projection_matrix = math.ortho2d(
                 -1 * @as(f32, @floatFromInt(self.size.padding.left)),
                 @floatFromInt(terminal_size.width + self.size.padding.right),
-                @floatFromInt(terminal_size.height + self.size.padding.bottom),
-                -1 * @as(f32, @floatFromInt(self.size.padding.top)),
+                @as(f32, @floatFromInt(terminal_size.height + self.size.padding.bottom)) - offset,
+                -1 * @as(f32, @floatFromInt(self.size.padding.top)) - offset,
             );
             self.uniforms.grid_padding = .{
-                @floatFromInt(blank.top),
+                @as(f32, @floatFromInt(blank.top)) + offset,
                 @floatFromInt(blank.right),
                 @floatFromInt(blank.bottom),
                 @floatFromInt(blank.left),
@@ -2938,6 +3024,36 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 },
             }
 
+            // Tern: this row's part in a block (tern_blocks.zig).
+            const tern_row = self.tern.row(y);
+            const tern_block = self.tern.block(tern_row);
+            const tern_fg: ?terminal.color.RGB = tern: {
+                const b = tern_block orelse break :tern null;
+                if (tern_row.role != .header) break :tern null;
+                break :tern if (b.state == .active)
+                    // The folder box: fg blended with cyan (Warp's ansi_fg_cyan).
+                    tern_blocks.mix(state.colors.foreground, state.colors.palette[6], 0.5)
+                else
+                    // The header: Warp's sub-text, fg at 60%.
+                    tern_blocks.mix(state.colors.background, state.colors.foreground, 0.6);
+            };
+            if (tern_row.role == .command) if (tern_block) |b| if (b.state != .active) {
+                // The command of a block that ran is bold (Warp's).
+                for (cells_raw[0..cells_len], cells_style[0..cells_len]) |*raw, *st| {
+                    if (raw.semantic_content != .input or raw.isEmpty()) continue;
+                    if (!raw.hasStyling()) {
+                        st.* = .{};
+                        raw.style_id = tern_bold_style_id;
+                    }
+                    st.flags.bold = true;
+                }
+            };
+            const tern_box = tern_row.role == .header and
+                tern_block != null and tern_block.?.state == .active;
+            self.tern_glyph_dx = if (tern_box) self.ternBoxTextDx() else 0;
+            defer self.tern_glyph_dx = 0;
+            if (tern_box) self.ternAddFolderIcon(y, tern_fg.?);
+
             // Iterator of runs for shaping.
             var run_iter_opts: font.shape.RunOptions = .{
                 .grid = self.font_grid,
@@ -3122,7 +3238,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         bg_style,
                 };
 
-                const fg = fg: {
+                const fg_cell = fg: {
                     // Our happy-path non-selection background color
                     // is our style or our configured defaults.
                     const final_bg = bg_style orelse state.colors.background;
@@ -3156,6 +3272,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                             fg_style,
                     };
                 };
+
+                // Tern: a block's header is drawn in its own color.
+                const fg = if (tern_fg != null and selected == .false) tern_fg.? else fg_cell;
 
                 // Foreground alpha for this cell.
                 const alpha: u8 = if (style.flags.faint) self.config.faint_opacity else 255;
@@ -3336,6 +3455,276 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     );
                 };
             }
+
+            // Tern: after a block's folder, how long its command took (or
+            // has run so far), as Warp shows it.
+            if (tern_row.role == .header and tern_fg != null and !tern_box) {
+                if (tern_block.?.ms) |ms| {
+                    var buf: [48]u8 = undefined;
+                    const text = tern_blocks.formatDuration(&buf, ms);
+                    var end: usize = cells_len;
+                    while (end > 0 and cells_raw[end - 1].isEmpty()) end -= 1;
+                    self.ternAddText(y, end, text, tern_fg.?);
+                }
+            }
+        }
+
+        /// Tern: rows whose part in a block changed since they were drawn
+        /// are drawn again, and the view moves when the last used row does
+        /// (the offset is published for the surface's mouse handling).
+        /// Called with the draw mutex held, after the layout was computed.
+        fn ternPrepare(self: *Self, state: *renderer.State) void {
+            const ts = &self.terminal_state;
+            const rows: usize = ts.rows;
+            const start = ts.viewportStart();
+            const dirty = ts.row_data.items(.dirty);
+
+            const resized = self.tern_drawn.items.len != rows;
+            if (resized) {
+                self.tern_drawn.resize(self.alloc, rows) catch {
+                    self.tern_drawn.clearRetainingCapacity();
+                    return;
+                };
+                @memset(self.tern_drawn.items, .{});
+            }
+            var any = false;
+            for (0..rows) |y| {
+                const now = self.tern.drawn(y);
+                if (!resized and now.eql(self.tern_drawn.items[y])) continue;
+                self.tern_drawn.items[y] = now;
+                if (start + y < dirty.len) dirty[start + y] = true;
+                any = true;
+            }
+            if (any and ts.dirty == .false) ts.dirty = .partial;
+
+            const offset_px: u32 = @as(u32, self.tern.offset_rows) * self.grid_metrics.cell_height;
+            if (offset_px != self.tern_offset_px) {
+                self.tern_offset_px = offset_px;
+                self.updateScreenSizeUniforms();
+            }
+            state.tern_offset_px.store(offset_px, .monotonic);
+        }
+
+        /// Tern: the decorations drawn under the text: a separator along
+        /// the top of each block, the tint and bar of a block whose command
+        /// failed, and the folder box at the prompt (Warp's).
+        fn ternRebuildRects(self: *Self) void {
+            if (comptime !tern_rects_supported) return;
+            self.tern_rects.clearRetainingCapacity();
+            if (!self.tern.on) return;
+
+            const colors = &self.terminal_state.colors;
+            const fg = colors.foreground;
+            const red = colors.palette[1];
+            const scale = self.ternScale();
+            const cell_h: f32 = @floatFromInt(self.grid_metrics.cell_height);
+            const cell_w: f32 = @floatFromInt(self.grid_metrics.cell_width);
+            const pad_left: f32 = @floatFromInt(self.size.padding.left);
+            const left = -pad_left;
+            const width: f32 = @floatFromInt(self.size.screen.width);
+            const rows: f32 = @floatFromInt(self.terminal_state.rows);
+            const offset: f32 = @floatFromInt(self.tern_offset_px);
+            const pad_top: f32 = @floatFromInt(self.size.padding.top);
+            const top_limit = -offset - pad_top;
+            const bottom_limit = rows * cell_h + @as(f32, @floatFromInt(self.size.padding.bottom));
+            const line = @round(scale);
+
+            const blocks = self.tern.blocks.items;
+            for (blocks, 0..) |b, i| {
+                // A block runs from the separator along the top of its
+                // second spacer row to the next block's.
+                const y0 = @as(f32, @floatFromInt(b.first + 1)) * cell_h;
+                const y1 = if (i + 1 < blocks.len)
+                    @as(f32, @floatFromInt(blocks[i + 1].first + 1)) * cell_h
+                else
+                    bottom_limit;
+                const top = @max(y0, top_limit);
+                const bottom = @min(y1, bottom_limit);
+
+                if (b.failed and bottom > top) {
+                    // Warp: the theme's red at 10% over the whole block, and a
+                    // 5 pt bar in it along the pane's left edge.
+                    self.ternRect(left, top, width, bottom - top, .{ red.r, red.g, red.b, 25 }, .{ 0, 0, 0, 0 }, 0, 0);
+                    self.ternRect(left, top, @round(5 * scale), bottom - top, .{ red.r, red.g, red.b, 255 }, .{ 0, 0, 0, 0 }, 0, 0);
+                }
+
+                // Warp: a 1 pt line, the foreground at 10%, the full width.
+                if (y0 >= top_limit and y0 < bottom_limit) {
+                    self.ternRect(left, y0, width, line, .{ fg.r, fg.g, fg.b, 25 }, .{ 0, 0, 0, 0 }, 0, 0);
+                }
+
+                if (b.state == .active) {
+                    const header_y = b.first + 2;
+                    if (header_y < 0 or header_y >= self.terminal_state.rows) continue;
+                    // The folder box: the foreground at 5% inside, a 1 pt
+                    // border at 15%, 4 pt corners, around the icon and folder.
+                    const box = self.ternBox();
+                    const cells = self.terminal_state.row_data.items(.cells)[self.terminal_state.viewportStart() + @as(usize, @intCast(header_y))];
+                    const raws = cells.items(.raw);
+                    var end: usize = raws.len;
+                    while (end > 0 and raws[end - 1].isEmpty()) end -= 1;
+                    const text_w = @as(f32, @floatFromInt(end)) * cell_w;
+                    const box_w = box.border * 2 + box.pad_x * 2 + box.icon_w + box.gap + text_w;
+                    const font_h = @as(f32, @floatFromInt(self.grid_metrics.cell_height)) / 1.15;
+                    const box_h = @min(cell_h + 2 * box.pad_y, font_h + 2 * (box.pad_y + box.border) + 2 * scale);
+                    const row_y = @as(f32, @floatFromInt(header_y)) * cell_h;
+                    self.ternRect(
+                        0,
+                        row_y + (cell_h - box_h) / 2,
+                        box_w,
+                        box_h,
+                        .{ fg.r, fg.g, fg.b, 13 },
+                        .{ fg.r, fg.g, fg.b, 38 },
+                        box.border,
+                        box.radius,
+                    );
+                }
+            }
+        }
+
+        fn ternRect(
+            self: *Self,
+            x: f32,
+            y: f32,
+            w: f32,
+            h: f32,
+            fill: [4]u8,
+            border: [4]u8,
+            border_width: f32,
+            radius: f32,
+        ) void {
+            if (comptime !tern_rects_supported) return;
+            self.tern_rects.append(self.alloc, .{
+                .rect = .{ x, y, w, h },
+                .fill = fill,
+                .border = border,
+                .style = .{ border_width, radius },
+            }) catch {};
+        }
+
+        /// Tern: a style id no page uses, given to unstyled cells drawn
+        /// bold (a block's command) so the shaper sees a styled run.
+        const tern_bold_style_id = std.math.maxInt(terminal.size.StyleCountInt);
+
+        /// Tern: the scale of the display (points to pixels).
+        fn ternScale(self: *const Self) f32 {
+            const opts = self.font_grid.resolver.collection.load_options orelse return 1;
+            const dpi: f32 = @floatFromInt(opts.size.ydpi);
+            return @max(1, dpi / @as(f32, @floatFromInt(font.face.default_dpi)));
+        }
+
+        /// Tern: the folder box's measurements (Warp's: 1 pt border, 4 pt
+        /// horizontal and 2 pt vertical padding, a 4 pt gap after the
+        /// icon), in pixels.
+        const TernBox = struct {
+            border: f32,
+            pad_x: f32,
+            pad_y: f32,
+            icon_w: f32,
+            gap: f32,
+            radius: f32,
+        };
+
+        fn ternBox(self: *const Self) TernBox {
+            const scale = self.ternScale();
+            const cell_w: f32 = @floatFromInt(self.grid_metrics.cell_width);
+            return .{
+                .border = @round(scale),
+                .pad_x = @round(4 * scale),
+                .pad_y = @round(2 * scale),
+                .icon_w = @round(cell_w * 1.5),
+                .gap = @round(4 * scale),
+                .radius = 4 * scale,
+            };
+        }
+
+        /// Tern: how far the folder's text moves right inside the box.
+        fn ternBoxTextDx(self: *const Self) i32 {
+            const b = self.ternBox();
+            return @intFromFloat(b.border + b.pad_x + b.icon_w + b.gap);
+        }
+
+        /// Tern: the folder icon at the start of the folder box.
+        fn ternAddFolderIcon(
+            self: *Self,
+            y: terminal.size.CellCountInt,
+            color: terminal.color.RGB,
+        ) void {
+            // Codicons' outline folder, from the bundled Nerd Font symbols.
+            const cp: u21 = 0xEA83;
+            const b = self.ternBox();
+            const render_ = self.font_grid.renderCodepoint(
+                self.alloc,
+                cp,
+                .regular,
+                .text,
+                .{
+                    .grid_metrics = self.grid_metrics,
+                    .cell_width = 2,
+                    .constraint = .{
+                        .size = .fit,
+                        .align_horizontal = .center,
+                        .align_vertical = .center,
+                        .max_constraint_width = 2,
+                        .height = .icon,
+                    },
+                    .constraint_width = 2,
+                },
+            ) catch |err| {
+                log.warn("error rendering the folder icon err={}", .{err});
+                return;
+            };
+            const render = render_ orelse return;
+            const cell_w: f32 = @floatFromInt(self.grid_metrics.cell_width);
+            // Center the icon in its slot after the border and padding.
+            const slot_x = b.border + b.pad_x + (b.icon_w - 2 * cell_w) / 2;
+            self.cells.add(self.alloc, .text, .{
+                .atlas = .grayscale,
+                .grid_pos = .{ 0, @intCast(y) },
+                .color = .{ color.r, color.g, color.b, 255 },
+                .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+                .glyph_size = .{ render.glyph.width, render.glyph.height },
+                .bearings = .{
+                    @intCast(render.glyph.offset_x + @as(i32, @intFromFloat(slot_x))),
+                    @intCast(render.glyph.offset_y),
+                },
+            }) catch {};
+        }
+
+        /// Tern: text the shell didn't print (a block's duration), drawn
+        /// from column `x` on row `y`, clipped to the row.
+        fn ternAddText(
+            self: *Self,
+            y: terminal.size.CellCountInt,
+            x_start: usize,
+            text: []const u8,
+            color: terminal.color.RGB,
+        ) void {
+            var x = x_start;
+            for (text) |ch| {
+                if (x >= self.cells.size.columns) return;
+                defer x += 1;
+                if (ch == ' ') continue;
+                const render_ = self.font_grid.renderCodepoint(
+                    self.alloc,
+                    ch,
+                    .regular,
+                    .text,
+                    .{ .grid_metrics = self.grid_metrics },
+                ) catch continue;
+                const render = render_ orelse continue;
+                self.cells.add(self.alloc, .text, .{
+                    .atlas = .grayscale,
+                    .grid_pos = .{ @intCast(x), @intCast(y) },
+                    .color = .{ color.r, color.g, color.b, 255 },
+                    .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+                    .glyph_size = .{ render.glyph.width, render.glyph.height },
+                    .bearings = .{
+                        @intCast(render.glyph.offset_x),
+                        @intCast(render.glyph.offset_y),
+                    },
+                }) catch return;
+            }
         }
 
         /// Add an underline decoration to the specified cell
@@ -3498,7 +3887,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
                 .bearings = .{
-                    @intCast(render.glyph.offset_x + shaper_cell.x_offset),
+                    @intCast(render.glyph.offset_x + shaper_cell.x_offset + self.tern_glyph_dx),
                     @intCast(render.glyph.offset_y + shaper_cell.y_offset),
                 },
             });

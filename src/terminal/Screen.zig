@@ -83,6 +83,14 @@ else
 /// Semantic prompt (OSC133) state.
 semantic_prompt: SemanticPrompt = .disabled,
 
+/// Tern: the first row of the newest block of Tern's zsh prompt, until
+/// its command finishes (OSC 133;D). See Terminal.ternPromptStarted.
+tern_block_pin: ?*Pin = null,
+
+/// Tern: when the newest block's command started, while it runs (on the
+/// awake clock), so its header can show the time elapsed.
+tern_block_started: ?std.Io.Timestamp = null,
+
 /// Dirty flags for the renderer.
 dirty: Dirty = .{},
 
@@ -427,6 +435,11 @@ pub fn memoryUsage(self: *const Screen) MemoryUsage {
 /// - Disables protection mode
 ///
 pub fn reset(self: *Screen) void {
+    // Tern: the newest block is gone with everything else.
+    if (self.tern_block_pin) |pin| self.pages.untrackPin(pin);
+    self.tern_block_pin = null;
+    self.tern_block_started = null;
+
     // Reset our pages
     self.pages.reset();
 

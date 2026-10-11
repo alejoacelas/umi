@@ -1943,6 +1943,141 @@ pub const CAPI = struct {
         return readOutputLocked(screen, terminal.Selection.init(tl, br, false), result);
     }
 
+    /// Tern: Warp's look in this surface's viewport, as JSON, for tests
+    /// and diagnostics: whether it's on, how far the view is moved down
+    /// (as the renderer last drew it, and as the terminal is now), each
+    /// row's part in a block, and each block with its folder, command,
+    /// state, failure and duration.
+    export fn ghostty_surface_tern_blocks(
+        surface: *Surface,
+        result: *Text,
+    ) bool {
+        const tern_blocks = @import("../renderer/tern_blocks.zig");
+        const alloc = global.alloc();
+        const core = &surface.core_surface;
+
+        core.renderer_state.mutex.lockUncancelable(global.io());
+        defer core.renderer_state.mutex.unlock(global.io());
+
+        const t = core.renderer_state.terminal;
+        const screen = t.screens.active;
+
+        var pins: std.ArrayList(terminal.Pin) = .empty;
+        defer pins.deinit(alloc);
+        {
+            var p = screen.pages.getTopLeft(.viewport);
+            var i: usize = 0;
+            while (i < screen.pages.rows) : (i += 1) {
+                pins.append(alloc, p) catch return false;
+                p = p.down(1) orelse break;
+            }
+        }
+        const cursor_y: ?usize = cursor: {
+            const pt = screen.pages.pointFromPin(.viewport, screen.cursor.page_pin.*) orelse break :cursor null;
+            break :cursor pt.viewport.y;
+        };
+
+        var layout: tern_blocks.Layout = .{};
+        defer layout.deinit(alloc);
+        layout.compute(alloc, t, pins.items, cursor_y, .now(global.io(), .awake)) catch return false;
+
+        var out: std.Io.Writer.Allocating = .init(alloc);
+        defer out.deinit();
+        const w = &out.writer;
+        const cell_h = core.size.cell.height;
+        const drawn_px = core.renderer_state.tern_offset_px.load(.monotonic);
+        w.print("{{\"on\":{},\"offset_rows\":{d},\"drawn_offset_rows\":{d},\"rows\":{d},\"cursor_row\":", .{
+            layout.on,
+            layout.offset_rows,
+            if (cell_h > 0) drawn_px / cell_h else 0,
+            pins.items.len,
+        }) catch return false;
+        if (cursor_y) |y| w.print("{d}", .{y}) catch return false else w.writeAll("null") catch return false;
+        w.writeAll(",\"roles\":[") catch return false;
+        for (layout.rows.items, 0..) |r, i| {
+            if (i > 0) w.writeAll(",") catch return false;
+            w.print("\"{s}\"", .{@tagName(r.role)}) catch return false;
+        }
+        w.writeAll("],\"blocks\":[") catch return false;
+        for (layout.blocks.items, 0..) |b, i| {
+            if (i > 0) w.writeAll(",") catch return false;
+            w.print("{{\"first\":{d},\"state\":\"{s}\",\"failed\":{},\"ms\":", .{
+                b.first, @tagName(b.state), b.failed,
+            }) catch return false;
+            if (b.ms) |ms| w.print("{d}", .{ms}) catch return false else w.writeAll("null") catch return false;
+            if (b.ms) |ms| {
+                var buf: [48]u8 = undefined;
+                const text = tern_blocks.formatDuration(&buf, ms);
+                w.writeAll(",\"duration\":") catch return false;
+                ternWriteJsonString(w, std.mem.trim(u8, text, " ")) catch return false;
+            }
+            // The folder (header row) and the command (input cells of the
+            // command rows), read from the rows in the viewport.
+            var header: std.ArrayList(u8) = .empty;
+            defer header.deinit(alloc);
+            var command: std.ArrayList(u8) = .empty;
+            defer command.deinit(alloc);
+            for (layout.rows.items, 0..) |r, y| {
+                if (r.role == .none or r.block != i) continue;
+                switch (r.role) {
+                    .header => ternRowText(alloc, pins.items[y], false, &header) catch return false,
+                    .command => {
+                        if (command.items.len > 0) command.append(alloc, '\n') catch return false;
+                        ternRowText(alloc, pins.items[y], true, &command) catch return false;
+                    },
+                    else => {},
+                }
+            }
+            w.writeAll(",\"header\":") catch return false;
+            ternWriteJsonString(w, header.items) catch return false;
+            w.writeAll(",\"command\":") catch return false;
+            ternWriteJsonString(w, command.items) catch return false;
+            w.writeAll("}") catch return false;
+        }
+        w.writeAll("]}") catch return false;
+
+        const text = alloc.dupeZ(u8, out.written()) catch return false;
+        result.* = .{
+            .tl_px_x = -1,
+            .tl_px_y = -1,
+            .offset_start = 0,
+            .offset_len = 0,
+            .text = text.ptr,
+            .text_len = text.len,
+        };
+        return true;
+    }
+
+    fn ternRowText(
+        alloc: Allocator,
+        pin: terminal.Pin,
+        input_only: bool,
+        out: *std.ArrayList(u8),
+    ) !void {
+        const start = out.items.len;
+        for (pin.cells(.all)) |cell| {
+            if (input_only and cell.semantic_content != .input) continue;
+            const cp: u21 = if (cell.hasText()) cell.codepoint() else ' ';
+            var buf: [4]u8 = undefined;
+            const n = std.unicode.utf8Encode(cp, &buf) catch continue;
+            try out.appendSlice(alloc, buf[0..n]);
+        }
+        // Trailing blanks aren't text.
+        while (out.items.len > start and out.items[out.items.len - 1] == ' ') out.items.len -= 1;
+    }
+
+    fn ternWriteJsonString(w: *std.Io.Writer, s: []const u8) !void {
+        try w.writeByte('"');
+        for (s) |c| switch (c) {
+            '"' => try w.writeAll("\\\""),
+            '\\' => try w.writeAll("\\\\"),
+            '\n' => try w.writeAll("\\n"),
+            0...9, 11...0x1f => try w.print("\\u{x:0>4}", .{c}),
+            else => try w.writeByte(c),
+        };
+        try w.writeByte('"');
+    }
+
     fn readOutputLocked(
         screen: anytype,
         core_sel: terminal.Selection,

@@ -1245,6 +1245,7 @@ GHOSTTY_API bool ghostty_surface_read_output_tail(ghostty_surface_t,
 GHOSTTY_API bool ghostty_surface_read_output_text(ghostty_surface_t,
                                                      ghostty_selection_s,
                                                      ghostty_text_s*);
+GHOSTTY_API bool ghostty_surface_tern_blocks(ghostty_surface_t, ghostty_text_s*);
 GHOSTTY_API void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 
 #ifdef __APPLE__

@@ -150,6 +150,17 @@ flags: packed struct {
     /// True if the terminal should perform selection scrolling.
     selection_scroll: bool = false,
 
+    /// Tern: Warp's look is on for this terminal (configuration, kept
+    /// across a full reset). The primary screen's last used row is then
+    /// drawn at the bottom of the view, and the blocks Tern's zsh
+    /// integration marks are drawn as blocks.
+    tern_blocks: bool = false,
+
+    /// Tern: the newest prompt came from a shell without Tern's block
+    /// marker (another shell's integration), so the view keeps the usual
+    /// top-down look until a Tern block prompt comes again.
+    tern_plain_prompt: bool = false,
+
     /// Dirty flag used only by the search thread. The renderer is expected
     /// to set this to true if the viewport was dirty as it was rendering.
     /// This is used by the search thread to more efficiently re-search the
@@ -2161,6 +2172,9 @@ pub fn semanticPrompt(
                 self.flags.shell_redraws_prompt = v;
             }
 
+            // Tern: a prompt of Tern's zsh integration starts a block.
+            self.ternPromptStarted(cmd.readOption(.tern) orelse false);
+
             click: {
                 // Handle click_events as a priority over cl. click_events
                 // is another Kitty-specific extension that converts clicks
@@ -2253,6 +2267,77 @@ pub fn semanticPrompt(
             self.screens.active.cursorSetSemanticContent(.output);
         },
     }
+}
+
+/// Tern: a new prompt started at the cursor's row. `block` is true for
+/// Tern's own zsh prompt (OSC 133;A with tern=1): the row then starts a
+/// block, which the following C and D complete.
+fn ternPromptStarted(self: *Terminal, block: bool) void {
+    const screen: *Screen = self.screens.active;
+    if (screen.tern_block_pin) |old| {
+        screen.pages.untrackPin(old);
+        screen.tern_block_pin = null;
+    }
+    screen.tern_block_started = null;
+
+    self.flags.tern_plain_prompt = !block;
+    if (!block) return;
+
+    const row = screen.cursor.page_row;
+    row.tern_block = true;
+    row.tern_state = .prompt;
+    row.tern_failed = false;
+    row.tern_unit = .ms;
+    row.tern_duration = 0;
+    row.dirty = true;
+    screen.tern_block_pin = screen.pages.trackPin(screen.cursor.page_pin.*) catch null;
+}
+
+/// Tern: the newest block's row, if it is still a block (not erased or
+/// scrolled out of the scrollback since).
+fn ternCurrentBlockRow(self: *Terminal) ?*Row {
+    const screen: *Screen = self.screens.active;
+    const pin = screen.tern_block_pin orelse return null;
+    if (pin.garbage) return null;
+    const row = pin.rowAndCell().row;
+    if (!row.tern_block) return null;
+    return row;
+}
+
+/// Tern: the newest block's command started (OSC 133;C), at `now` on the
+/// awake clock.
+pub fn ternBlockStarted(self: *Terminal, now: std.Io.Timestamp) void {
+    const row = self.ternCurrentBlockRow() orelse return;
+    if (row.tern_state != .prompt) return;
+    row.tern_state = .running;
+    row.dirty = true;
+    self.screens.active.tern_block_started = now;
+}
+
+/// Tern: the newest block's command finished (OSC 133;D) after
+/// `duration_ms`, with `exit_code` (0 when the shell didn't say).
+pub fn ternBlockFinished(self: *Terminal, duration_ms: u64, exit_code: i32) void {
+    const screen: *Screen = self.screens.active;
+    defer {
+        if (screen.tern_block_pin) |pin| screen.pages.untrackPin(pin);
+        screen.tern_block_pin = null;
+        screen.tern_block_started = null;
+    }
+    const row = self.ternCurrentBlockRow() orelse return;
+    if (row.tern_state != .running) return;
+    row.tern_state = .done;
+    row.tern_failed = exit_code != 0;
+    row.ternSetDurationMs(duration_ms);
+    row.dirty = true;
+}
+
+/// Tern: true when Warp's look applies to what the terminal shows now:
+/// it's on, the primary screen is active and the newest prompt (if any)
+/// is Tern's.
+pub fn ternBlocksActive(self: *const Terminal) bool {
+    return self.flags.tern_blocks and
+        !self.flags.tern_plain_prompt and
+        self.screens.active_key == .primary;
 }
 
 // OSC 133;L
@@ -4982,6 +5067,9 @@ pub fn fullReset(self: *Terminal) void {
         // This is configuration based on the pty rather than terminal
         // state, so a terminal reset must not change it.
         .resize_pull_scrollback = self.flags.resize_pull_scrollback,
+
+        // Tern: configuration too.
+        .tern_blocks = self.flags.tern_blocks,
 
         .xt_checksum = self.default_xt_checksum,
     };

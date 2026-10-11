@@ -1463,18 +1463,28 @@ pub const StreamHandler = struct {
         switch (cmd.action) {
             .end_input_start_output => {
                 self.surfaceMessageWriter(.start_command);
+
+                // Tern: the newest block's command runs from now.
+                self.terminal.ternBlockStarted(.now(global.io(), .awake));
             },
 
             .end_command => {
                 // The specification seems to not specify the type but
                 // other terminals accept 32-bits, but exit codes are really
                 // bytes, so we just do our best here.
-                const code: u8 = code: {
-                    const raw: i32 = cmd.readOption(.exit_code) orelse 0;
-                    break :code std.math.cast(u8, raw) orelse 1;
-                };
+                const raw: i32 = cmd.readOption(.exit_code) orelse 0;
+                const code: u8 = std.math.cast(u8, raw) orelse 1;
 
                 self.surfaceMessageWriter(.{ .stop_command = code });
+
+                // Tern: the newest block's command is done; its header
+                // shows how long it took.
+                const ms: u64 = ms: {
+                    const started = self.terminal.screens.active.tern_block_started orelse break :ms 0;
+                    const ns = started.durationTo(.now(global.io(), .awake)).nanoseconds;
+                    break :ms @intCast(@max(0, @divTrunc(ns, std.time.ns_per_ms)));
+                };
+                self.terminal.ternBlockFinished(ms, raw);
             },
 
             // Handled by Terminal, no special handling by us

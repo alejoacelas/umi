@@ -122,6 +122,18 @@ _ghostty_deferred_init() {
         fi
 
         builtin local mark1=$'%{\e]133;A;cl=line\a%}'
+
+        # Tern: Warp's look. The prompt is two spacer rows (the line between
+        # blocks), the folder (the block's header, or the folder box at the
+        # prompt) and an empty command line; `tern=1` tells the terminal it
+        # starts a block, which it draws around these rows. What the shell
+        # prints stays plain text, so programs reading the pane see it as is.
+        if [[ "$GHOSTTY_SHELL_FEATURES" == *tern-blocks* ]] && [[ -o prompt_percent ]]; then
+            (( $+_tern_user_ps1 )) || builtin typeset -g _tern_user_ps1=$PS1
+            PS1=$'\n\n%~\n'
+            mark1=$'%{\e]133;A;cl=line;tern=1\a%}'
+        fi
+
         if [[ -o prompt_percent ]]; then
             builtin typeset -g precmd_functions
             if [[ ${precmd_functions[-1]} == _ghostty_precmd ]]; then

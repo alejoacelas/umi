@@ -505,6 +505,70 @@ fragment float4 cell_bg_fragment(
 }
 
 //-------------------------------------------------------------------
+// Tern Rect Shader
+//-------------------------------------------------------------------
+#pragma mark - Tern Rect Shader
+
+// Tern: rectangles for Warp's look (block separators, the tint and bar of
+// a failed block, the folder box): a fill, an optional border and rounded
+// corners, antialiased.
+
+struct TernRectVertexIn {
+  // x, y, width, height in pixels in the grid's space.
+  float4 rect [[attribute(0)]];
+  uchar4 fill [[attribute(1)]];
+  uchar4 border [[attribute(2)]];
+  // Border width and corner radius in pixels.
+  float2 style [[attribute(3)]];
+};
+
+struct TernRectVertexOut {
+  float4 position [[position]];
+  float2 local;
+  float2 half_size [[flat]];
+  float4 fill [[flat]];
+  float4 border [[flat]];
+  float2 style [[flat]];
+};
+
+vertex TernRectVertexOut tern_rect_vertex(
+  uint vid [[vertex_id]],
+  TernRectVertexIn in [[stage_in]],
+  constant Uniforms& uniforms [[buffer(1)]]
+) {
+  float2 corner;
+  corner.x = float(vid == 1 || vid == 3);
+  corner.y = float(vid == 2 || vid == 3);
+
+  float2 pos = in.rect.xy + in.rect.zw * corner;
+
+  TernRectVertexOut out;
+  out.position = uniforms.projection_matrix * float4(pos.x, pos.y, 0.0f, 1.0f);
+  out.local = (corner - 0.5) * in.rect.zw;
+  out.half_size = in.rect.zw * 0.5;
+  out.fill = load_color(in.fill, uniforms.use_display_p3, uniforms.use_linear_blending);
+  out.border = load_color(in.border, uniforms.use_display_p3, uniforms.use_linear_blending);
+  out.style = in.style;
+  return out;
+}
+
+fragment float4 tern_rect_fragment(TernRectVertexOut in [[stage_in]]) {
+  float border = in.style.x;
+  float radius = min(in.style.y, min(in.half_size.x, in.half_size.y));
+
+  // Signed distance to the rounded rectangle's edge (negative inside).
+  float2 q = abs(in.local) - in.half_size + radius;
+  float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+
+  // Square rectangles are drawn sharp; rounded ones are antialiased.
+  float aa = radius > 0.0 ? 0.5 : 0.0;
+  float outer = radius > 0.0 ? clamp(aa - d, 0.0, 1.0) : 1.0;
+  float inner = border > 0.0 ? clamp(aa - (d + border), 0.0, 1.0) : outer;
+
+  return in.fill * inner + in.border * (outer - inner);
+}
+
+//-------------------------------------------------------------------
 // Cell Text Shader
 //-------------------------------------------------------------------
 #pragma mark - Cell Text Shader

@@ -103,6 +103,11 @@ pub const Option = enum {
     // See: https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers
     click_events,
 
+    // Tern: `tern=1` on a prompt start (A) marks the prompt as one of
+    // Tern's blocks: its zsh integration prints the block's spacer rows
+    // and folder, and the renderer draws the block around them.
+    tern,
+
     // Not technically an option that can be set with k=v and only
     // present currently with command 'D' but its easier to just
     // parse it into our options.
@@ -117,6 +122,7 @@ pub const Option = enum {
             .redraw => Redraw,
             .special_key => bool,
             .click_events => ClickEvents,
+            .tern => bool,
             .cmdline => []const u8,
             .cmdline_url => []const u8,
             .exit_code => i32,
@@ -132,6 +138,7 @@ pub const Option = enum {
             .redraw => "redraw",
             .special_key => "special_key",
             .click_events => "click_events",
+            .tern => "tern",
             .cmdline => "cmdline",
             .cmdline_url => "cmdline_url",
 
@@ -220,6 +227,11 @@ pub const Option = enum {
                     else => null,
                 } else null,
                 .special_key => if (value.len == 1) switch (value[0]) {
+                    '0' => false,
+                    '1' => true,
+                    else => null,
+                } else null,
+                .tern => if (value.len == 1) switch (value[0]) {
                     '0' => false,
                     '1' => true,
                     else => null,

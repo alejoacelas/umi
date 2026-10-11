@@ -2099,6 +2099,9 @@ pub fn dumpTextLocked(
             // Add padding
             y += @floatFromInt(self.size.padding.top);
 
+            // Tern: the view may be moved down (Warp's look).
+            y += @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic));
+
             // Scale
             y /= content_scale.y;
 
@@ -2207,6 +2210,9 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
     const y: f64 = y: {
         // Simple y * cell height gives the top-left corner, then add padding offset
         var y: f64 = @floatFromInt(cursor.y * self.size.cell.height + self.size.padding.top);
+
+        // Tern: the view may be moved down (Warp's look).
+        y += @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic));
 
         // We want the bottom
         y += @floatFromInt(self.size.cell.height);
@@ -3814,7 +3820,8 @@ fn mouseReport(
         .mods = mods,
         .pos = .{
             .x = pos.x,
-            .y = pos.y,
+            // Tern: the view may be moved down (Warp's look).
+            .y = pos.y - @as(f32, @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic))),
         },
     }, encoding_opts) catch |err| switch (err) {
         error.WriteFailed => {
@@ -4847,8 +4854,12 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
 }
 
 pub fn posToViewport(self: Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
+    // Tern: the renderer may have moved the view down (Warp's look); map
+    // the point to the grid as it was drawn.
+    const offset: f64 = @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic));
+
     // Get our grid cell
-    const coord: rendererpkg.Coordinate = .{ .surface = .{ .x = xpos, .y = ypos } };
+    const coord: rendererpkg.Coordinate = .{ .surface = .{ .x = xpos, .y = ypos - offset } };
     const grid = coord.convert(.grid, self.size).grid;
     return .{ .x = grid.x, .y = grid.y };
 }

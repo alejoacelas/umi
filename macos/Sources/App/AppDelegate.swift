@@ -242,7 +242,6 @@ class AppDelegate: NSObject,
         // Tern: menus, saved state and updates.
         TernUndoTrace.install(undoManager)
         TernShortcuts.install()
-        TernReopen.shared.installMenu()
         TernLooking.start()
         TernPersistence.shared.restoreUI()
         undoManager.disableUndoRegistration()

@@ -63,6 +63,12 @@ cursor_h: xev.Timer,
 cursor_c: xev.Completion = .{},
 cursor_c_cancel: xev.Completion = .{},
 
+/// Tern: wakes the renderer when a running block's elapsed time (shown
+/// in its header, Warp's look) next changes.
+tern_h: xev.Timer,
+tern_c: xev.Completion = .{},
+tern_c_cancel: xev.Completion = .{},
+
 /// Incremental scrollback compression scheduling.
 compression: Compression = undefined,
 
@@ -144,6 +150,10 @@ pub fn init(
     var cursor_timer = try xev.Timer.init();
     errdefer cursor_timer.deinit();
 
+    // Tern: a timer for running blocks' elapsed time.
+    var tern_h = try xev.Timer.init();
+    errdefer tern_h.deinit();
+
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
     errdefer mailbox.destroy(alloc);
@@ -157,6 +167,7 @@ pub fn init(
         .render_h = render_h,
         .draw_now = draw_now,
         .cursor_h = cursor_timer,
+        .tern_h = tern_h,
         .surface = surface,
         .renderer = renderer_impl,
         .state = state,
@@ -180,6 +191,7 @@ pub fn deinit(self: *Thread) void {
     self.render_h.deinit();
     self.draw_now.deinit();
     self.cursor_h.deinit();
+    self.tern_h.deinit();
     if (comptime terminalpkg.compression_enabled)
         self.compression.deinit();
     self.loop.deinit();
@@ -582,7 +594,37 @@ fn renderCallback(
     // Schedule the next animation wake, if the renderer needs one.
     t.armAnimationTimer();
 
+    // Tern: and the next tick of a running block's elapsed time.
+    t.armTernTimer();
+
     return .disarm;
+}
+
+/// Tern: schedule a frame update for when a visible running block's
+/// elapsed time next changes.
+fn armTernTimer(self: *Thread) void {
+    const delay = self.renderer.ternTickMs() orelse return;
+    self.tern_h.reset(
+        &self.loop,
+        &self.tern_c,
+        &self.tern_c_cancel,
+        delay,
+        Thread,
+        self,
+        ternTimerCallback,
+    );
+}
+
+fn ternTimerCallback(
+    self_: ?*Thread,
+    _: *xev.Loop,
+    _: *xev.Completion,
+    r: xev.Timer.RunError!void,
+) xev.CallbackAction {
+    _ = r catch return .disarm;
+    const t: *Thread = self_ orelse return .disarm;
+    if (!t.flags.visible) return .disarm;
+    return renderCallback(t, undefined, undefined, {});
 }
 
 /// Schedule the animation timer for the renderer's next animation

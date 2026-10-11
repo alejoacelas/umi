@@ -325,56 +325,17 @@ final class TernReopen {
         return true
     }
 
-    // MARK: Menu (File ▸ Reopen Closed …, ⇧⌘T)
+    // MARK: Menu (File ▸ Reopen Closed …, ⇧⌘T: a Tern shortcut item, `file.reopen`)
 
-    func installMenu() {
-        guard let mainMenu = NSApp.mainMenu,
-              let file = mainMenu.items.first(where: { $0.submenu?.title == "File" })?.submenu else { return }
-        // ⇧⌘T was Ghostty's second Undo key (TernTheme unbinds it); no other item keeps it.
-        func all(_ menu: NSMenu) -> [NSMenuItem] { menu.items.flatMap { [$0] + ($0.submenu.map(all) ?? []) } }
-        for existing in all(mainMenu) where existing.keyEquivalent.lowercased() == "t"
-            && existing.keyEquivalentModifierMask == [.command, .shift] {
-            existing.keyEquivalent = ""
-        }
-        let item = NSMenuItem(title: "Reopen Closed Pane, Tab or Window", action: #selector(TernReopenMenuTarget.reopenClosed(_:)),
-                              keyEquivalent: "t")
-        item.keyEquivalentModifierMask = [.command, .shift]
-        item.target = TernReopenMenuTarget.shared
-        if #available(macOS 26.0, *) {
-            item.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: nil)
-        }
-        // After the close items.
-        let after = file.items.lastIndex { $0.action == #selector(AppDelegate.closeAllWindows(_:)) }
-            ?? file.items.lastIndex { $0.title.hasPrefix("Close") }
-        if let after {
-            file.insertItem(item, at: after + 1)
-        } else {
-            file.addItem(.separator())
-            file.addItem(item)
-        }
-    }
-}
+    static let anyTitle = "Reopen Closed Pane, Tab or Window"
 
-/// The target of File ▸ Reopen Closed …: its title names what it would reopen.
-final class TernReopenMenuTarget: NSObject, NSMenuItemValidation {
-    static let shared = TernReopenMenuTarget()
-
-    @MainActor @objc func reopenClosed(_ sender: Any?) {
-        do {
-            try TernReopen.shared.reopen()
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    @MainActor func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        let next = TernReopen.shared.next
+    /// The menu item's title: what it would reopen.
+    var menuTitle: String {
         switch next {
-        case .pane: menuItem.title = "Reopen Closed Pane"
-        case .tab: menuItem.title = "Reopen Closed Tab"
-        case .window: menuItem.title = "Reopen Closed Window"
-        case nil: menuItem.title = "Reopen Closed Pane, Tab or Window"
+        case .pane: return "Reopen Closed Pane"
+        case .tab: return "Reopen Closed Tab"
+        case .window: return "Reopen Closed Window"
+        case nil: return Self.anyTitle
         }
-        return next != nil
     }
 }

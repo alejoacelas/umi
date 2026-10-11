@@ -33,6 +33,12 @@ preedit: ?Preedit = null,
 /// need about the mouse.
 mouse: Mouse = .{},
 
+/// Tern: how many pixels the renderer moved the view down so the last
+/// used row sits at the bottom (Warp's look). Written by the renderer
+/// for each frame and read by the surface to map the mouse to the grid
+/// as drawn. Not protected by the mutex.
+tern_offset_px: std.atomic.Value(u32) = .init(0),
+
 /// The number of threads currently waiting to acquire `mutex` via
 /// `lockDemand`. This is not protected by the mutex; it is read by
 /// hot lock/unlock loops (the IO parse thread) in `yieldToDemand` to

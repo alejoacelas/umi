@@ -48,6 +48,11 @@ enum TernShortcuts {
             Item(id: "file.save", title: "Save File", key: "s", modifiers: [.command], symbol: "square.and.arrow.down", menu: "File",
                  action: { TernEditor.currentDocument?.save() },
                  enabled: { TernEditor.currentDocument != nil }),
+            // L-20. Its title names what it would reopen (see `validate`).
+            Item(id: "file.reopen", title: TernReopen.anyTitle, key: "t", modifiers: [.command, .shift],
+                 symbol: "arrow.uturn.backward", menu: "File",
+                 action: { if (try? TernReopen.shared.reopen()) == nil { NSSound.beep() } },
+                 enabled: { TernReopen.shared.next != nil }),
             Item(id: "view.palette", title: "Command Palette…", key: "p", modifiers: [.command], symbol: "command", menu: "View",
                  action: { TernPaletteModel.present(.commands) }),
             Item(id: "view.sidebar", title: "Toggle Sidebar", key: "b", modifiers: [.command], symbol: "sidebar.left", menu: "View",
@@ -248,7 +253,8 @@ enum TernShortcuts {
     }
 
     fileprivate static func validate(_ menuItem: NSMenuItem) -> Bool {
-        handlers[menuItem]?.enabled() ?? true
+        if handlers[menuItem]?.id == "file.reopen" { menuItem.title = TernReopen.shared.menuTitle }
+        return handlers[menuItem]?.enabled() ?? true
     }
 
     // MARK: Keys, whatever has focus

@@ -2977,6 +2977,12 @@ keybind: Keybinds = .{},
 ///     This is particularly useful on macOS where PATH is often overridden by
 ///     system scripts. The directory is only added if not already present.
 ///
+///   * `tern-blocks` - Tern: Warp's look for zsh. The prompt sits at the
+///     bottom of the view and each command and its output form a block, with
+///     a header saying the folder it ran in and how long it took, and a box
+///     showing the current folder at the prompt. Full-screen programs and
+///     other shells keep the usual look. On by default.
+///
 /// SSH features work independently and can be combined for optimal experience:
 /// when both `ssh-env` and `ssh-terminfo` are enabled, Ghostty will install its
 /// terminfo on remote hosts and use `xterm-ghostty` as TERM, falling back to
@@ -8896,6 +8902,7 @@ pub const ShellIntegrationFeatures = packed struct {
     @"ssh-env": bool = false,
     @"ssh-terminfo": bool = false,
     path: bool = true,
+    @"tern-blocks": bool = true,
 };
 
 /// See vt-xt-checksum-extension

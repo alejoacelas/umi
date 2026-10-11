@@ -386,6 +386,12 @@ enum TernRPC {
             json["text"] = doc.text
             json["error"] = doc.error ?? ""
             return json
+        case "debug.blocks":
+            // Warp's look in a pane (the renderer's blocks): whether it's on, how far the view is
+            // moved down, each row's part in a block, and each block's folder, command, state and
+            // duration.
+            let pane = try TernTopology.pane(params.string("pane"), caller: caller)
+            return TernInput.blocks(pane)
         case "debug.editor.focus":
             let (window, tab) = try TernTopology.tab(params.string("tab"), caller: caller)
             TernLayout.focusTab(tab, in: window)

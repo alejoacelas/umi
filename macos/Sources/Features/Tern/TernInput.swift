@@ -141,6 +141,16 @@ enum TernInput {
         return tidy(String(cString: text.text), lines: nil)
     }
 
+    /// Warp's look in the pane, as the terminal describes it (`debug.blocks`).
+    static func blocks(_ pane: Ghostty.SurfaceView) -> [String: Any] {
+        guard let surface = pane.surface else { return [:] }
+        var text = ghostty_text_s()
+        guard ghostty_surface_tern_blocks(surface, &text) else { return [:] }
+        defer { ghostty_surface_free_text(surface, &text) }
+        let data = Data(bytes: text.text, count: Int(text.text_len))
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
     /// Bytes the pane's program has written so far.
     static func outputBytes(_ pane: Ghostty.SurfaceView) -> UInt64 {
         guard let surface = pane.surface else { return 0 }

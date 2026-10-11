@@ -306,6 +306,10 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     // once the terminal owns its memory and can release it on deinit.
     try term.colors.palette.changeDefault(alloc, opts.config.palette);
 
+    // Tern: Warp's look, for the shells Tern's integration is injected into.
+    term.flags.tern_blocks = opts.full_config.@"shell-integration" != .none and
+        opts.full_config.@"shell-integration-features".@"tern-blocks";
+
     // Setup our terminal size in pixels for certain requests.
     term.width_px = term.cols * opts.size.cell.width;
     term.height_px = term.rows * opts.size.cell.height;
