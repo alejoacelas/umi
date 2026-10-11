@@ -1714,10 +1714,6 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Tern: the separators, tints, bars and the folder box.
                 self.ternRebuildRects();
 
-                // Tern: with the view moved down, the space above it is empty;
-                // it never takes the first row's background.
-                if (self.tern_offset_px > 0) self.uniforms.padding_extend.up = false;
-
                 // The scrollbar is only emitted during draws so we also
                 // check the scrollbar cache here and update if needed.
                 // This is pretty fast.
@@ -1927,7 +1923,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             try self.updateCustomShaderUniformsForFrame();
 
             // Setup our frame data
-            try frame.uniforms.sync(&.{self.uniforms});
+            // Tern: with the view moved down the space above it is empty: it
+            // never takes the first row's background (only for this frame; the
+            // rows' own choice stays in self.uniforms).
+            var uniforms = self.uniforms;
+            if (self.tern_offset_px > 0) uniforms.padding_extend.up = false;
+            try frame.uniforms.sync(&.{uniforms});
             try frame.cells_bg.sync(self.cells.bg_cells);
             const fg_count = try frame.cells.syncFromArrayLists(self.cells.fg_rows);
             if (tern_rects_supported) {
