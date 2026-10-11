@@ -499,6 +499,41 @@ def test_empty_enters_leave_the_shells_prompts_as_they_were(inst, win):
     assert ps2_length() == before
 
 
+@pytest.mark.req("S-9")
+def test_the_top_padding_extends_again_once_the_view_fills(fresh, tmp_path):
+    """Review round 9: with `window-padding-color = extend-always`, the top padding stopped taking the
+    first row's background while the view was moved down, and didn't again once output filled the pane
+    without scrolling (a redraw of some rows only)."""
+    config = tmp_path / "xdg" / "ghostty"
+    config.mkdir(parents=True)
+    (config / "config").write_text("window-padding-color = extend-always\nwindow-padding-y = 30\n")
+    other = fresh(prefix="acc-extend-", env={"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
+    created = other.json("window", "new", "--name", "extend")
+    pane = created["pane"]
+    active(other, pane)
+    other.cli("sidebar", "off")
+    # Red rows down to the last one, the cursor on it: nothing scrolls, nothing is moved down.
+    other.cli("send", "--pane", pane, "-e",
+              "clear; for i in $(seq 2 $LINES); do printf '\\033[41m\\033[K\\033[0m\\n'; done; "
+              "printf '\\033[41m\\033[K\\033[0m'; sleep 8")
+    wait_until(lambda: (lambda b: b["offset_rows"] == 0 and b["drawn_offset_rows"] == 0)(blocks(other, pane)), 10,
+               message="the pane filled")
+    time.sleep(1)
+    other.cli("screenshot", "--window", created["window"], str(tmp_path / "extend.png"))
+    w, h, buf = load_png(tmp_path / "extend.png")
+    px = lambda x, y: tuple(buf[(y * w + x) * 4:(y * w + x) * 4 + 3])
+    red = lambda c: c[0] > 120 and c[1] < 90 and c[2] < 90
+    x = w // 2
+    reds = [y for y in range(h) if red(px(x, y))]
+    assert reds, "the red rows are drawn"
+    # extend-always extends the edge rows' red into the padding above and below: the red covers the
+    # pane's whole height (its top padding is 30 points).
+    frame = other.json("pane", "info", pane)["frame"]
+    scale = w / frame["width"]
+    assert len(reds) >= frame["height"] * scale - 4, (len(reds), frame["height"] * scale)
+    other.cli("sidebar", "on")
+
+
 @pytest.mark.req("S-12")
 def test_it_can_be_turned_off(fresh, tmp_path):
     """`shell-integration-features = no-tern-blocks` in the user's Ghostty config: zsh's own prompt, at the
