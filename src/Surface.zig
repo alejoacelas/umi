@@ -1231,8 +1231,10 @@ fn selectionScrollTick(self: *Surface) !void {
 
     const selection = self.mouse.selection_gesture.autoscrollTick(t, .{
         .viewport = pos_vp,
+        // Tern: x as the grid is laid out (cell edges); y as on the surface
+        // (the autoscroll edges are the pane's).
         .xpos = self.ternUnmove(pos.x, pos.y).x,
-        .ypos = self.ternUnmove(pos.x, pos.y).y,
+        .ypos = pos.y,
         .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
         .word_boundary_codepoints = self.config.selection_word_chars,
         .geometry = .{
@@ -4092,8 +4094,10 @@ pub fn mouseButtonCallback(
         var press_selection = try self.mouse.selection_gesture.press(t, .{
             .time = std.Io.Timestamp.now(global.io(), .awake),
             .pin = pin,
+            // Tern: x as the grid is laid out (cell edges); y as on the surface
+            // (the autoscroll edges are the pane's).
             .xpos = self.ternUnmove(pos.x, pos.y).x,
-            .ypos = self.ternUnmove(pos.x, pos.y).y,
+            .ypos = pos.y,
             .max_distance = @floatFromInt(self.size.cell.width),
             .repeat_interval = self.config.mouse_interval,
             .word_boundary_codepoints = self.config.selection_word_chars,
@@ -4797,8 +4801,10 @@ pub fn cursorPosCallback(
         // Perform our drag behavior in our gesture handler.
         const drag_selection = self.mouse.selection_gesture.drag(t, .{
             .pin = pin,
+            // Tern: x as the grid is laid out (cell edges); y as on the surface
+            // (the autoscroll edges are the pane's).
             .xpos = self.ternUnmove(pos.x, pos.y).x,
-            .ypos = self.ternUnmove(pos.x, pos.y).y,
+            .ypos = pos.y,
             .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
             .word_boundary_codepoints = self.config.selection_word_chars,
             .geometry = .{
