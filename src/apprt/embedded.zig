@@ -2082,15 +2082,26 @@ pub const CAPI = struct {
         out: *std.ArrayList(u8),
     ) !void {
         const start = out.items.len;
-        for (pin.cells(.all)) |cell| {
+        const page = pin.node.page();
+        for (pin.cells(.all)) |*cell| {
             if (input_only and cell.semantic_content != .input) continue;
+            // A wide character's spacer cells aren't text of their own.
+            if (cell.wide == .spacer_tail or cell.wide == .spacer_head) continue;
             const cp: u21 = if (cell.hasText()) cell.codepoint() else ' ';
-            var buf: [4]u8 = undefined;
-            const n = std.unicode.utf8Encode(cp, &buf) catch continue;
-            try out.appendSlice(alloc, buf[0..n]);
+            try ternAppendCodepoint(alloc, out, cp);
+            // The rest of a grapheme (combining marks, emoji sequences).
+            if (cell.hasGrapheme()) if (page.lookupGrapheme(cell)) |rest| {
+                for (rest) |more| try ternAppendCodepoint(alloc, out, more);
+            };
         }
         // Trailing blanks aren't text.
         while (out.items.len > start and out.items[out.items.len - 1] == ' ') out.items.len -= 1;
+    }
+
+    fn ternAppendCodepoint(alloc: Allocator, out: *std.ArrayList(u8), cp: u21) !void {
+        var buf: [4]u8 = undefined;
+        const n = std.unicode.utf8Encode(cp, &buf) catch return;
+        try out.appendSlice(alloc, buf[0..n]);
     }
 
     fn ternWriteJsonString(w: *std.Io.Writer, s: []const u8) !void {
