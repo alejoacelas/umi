@@ -1231,8 +1231,8 @@ fn selectionScrollTick(self: *Surface) !void {
 
     const selection = self.mouse.selection_gesture.autoscrollTick(t, .{
         .viewport = pos_vp,
-        .xpos = pos.x,
-        .ypos = pos.y,
+        .xpos = self.ternUnmove(pos.x, pos.y).x,
+        .ypos = self.ternUnmove(pos.x, pos.y).y,
         .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
         .word_boundary_codepoints = self.config.selection_word_chars,
         .geometry = .{
@@ -3819,9 +3819,9 @@ fn mouseReport(
         .action = action,
         .mods = mods,
         .pos = .{
-            .x = pos.x,
-            // Tern: the view may be moved down (Warp's look).
-            .y = pos.y - @as(f32, @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic))),
+            // Tern: where the point is in the grid's layout (Warp's look).
+            .x = @floatCast(self.ternUnmove(pos.x, pos.y).x),
+            .y = @floatCast(self.ternUnmove(pos.x, pos.y).y),
         },
     }, encoding_opts) catch |err| switch (err) {
         error.WriteFailed => {
@@ -4092,8 +4092,8 @@ pub fn mouseButtonCallback(
         var press_selection = try self.mouse.selection_gesture.press(t, .{
             .time = std.Io.Timestamp.now(global.io(), .awake),
             .pin = pin,
-            .xpos = pos.x,
-            .ypos = pos.y,
+            .xpos = self.ternUnmove(pos.x, pos.y).x,
+            .ypos = self.ternUnmove(pos.x, pos.y).y,
             .max_distance = @floatFromInt(self.size.cell.width),
             .repeat_interval = self.config.mouse_interval,
             .word_boundary_codepoints = self.config.selection_word_chars,
@@ -4797,8 +4797,8 @@ pub fn cursorPosCallback(
         // Perform our drag behavior in our gesture handler.
         const drag_selection = self.mouse.selection_gesture.drag(t, .{
             .pin = pin,
-            .xpos = pos.x,
-            .ypos = pos.y,
+            .xpos = self.ternUnmove(pos.x, pos.y).x,
+            .ypos = self.ternUnmove(pos.x, pos.y).y,
             .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
             .word_boundary_codepoints = self.config.selection_word_chars,
             .geometry = .{
@@ -4854,28 +4854,35 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
 }
 
 pub fn posToViewport(self: *Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
-    // Tern: the renderer may have moved the view down, and some rows' text
-    // up or right (Warp's look); map the point to the cells as drawn.
+    // Tern: the point as the grid is laid out, under Warp's look's moves.
+    const p = self.ternUnmove(xpos, ypos);
+
+    // Get our grid cell
+    const coord: rendererpkg.Coordinate = .{ .surface = .{ .x = p.x, .y = p.y } };
+    const grid = coord.convert(.grid, self.size).grid;
+    return .{ .x = grid.x, .y = grid.y };
+}
+
+/// Tern: a point on the surface where it would be if Warp's look didn't move
+/// the view down and some rows' text up or right (as the renderer last drew
+/// them). Mouse positions go through this before anything maps them to cells
+/// or measures them against cell edges.
+fn ternUnmove(self: *Surface, xpos: f64, ypos: f64) struct { x: f64, y: f64 } {
     const offset: f64 = @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic));
     var x = xpos;
     var y = ypos - offset;
-    tern: {
-        const rows = &self.renderer_state.tern_rows;
-        rows.lock.lockUncancelable(global.io());
-        defer rows.lock.unlock(global.io());
-        if (rows.len == 0) break :tern;
+    const rows = &self.renderer_state.tern_rows;
+    rows.lock.lockUncancelable(global.io());
+    defer rows.lock.unlock(global.io());
+    if (rows.len > 0) {
         const cell_h: f64 = @floatFromInt(self.size.cell.height);
         const top: f64 = @floatFromInt(self.size.padding.top);
-        const at = rows.rowAt(y - top, cell_h) orelse break :tern;
-        // The middle of the row it's drawn in, so the grid lands on it.
-        y = top + (@as(f64, @floatFromInt(at.row)) + 0.5) * cell_h;
-        x -= @floatFromInt(at.dx);
+        if (rows.rowAt(y - top, cell_h)) |at| {
+            y += @floatFromInt(at.raise);
+            x -= @floatFromInt(at.dx);
+        }
     }
-
-    // Get our grid cell
-    const coord: rendererpkg.Coordinate = .{ .surface = .{ .x = x, .y = y } };
-    const grid = coord.convert(.grid, self.size).grid;
-    return .{ .x = grid.x, .y = grid.y };
+    return .{ .x = x, .y = y };
 }
 
 /// Scroll to the bottom of the viewport.

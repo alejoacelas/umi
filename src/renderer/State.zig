@@ -261,16 +261,22 @@ pub const TernRows = struct {
     /// row drawn over the bottom of the row above wins), and how far its
     /// text is moved right. Null in the gap a raised row leaves below it.
     /// Caller holds the lock.
-    pub fn rowAt(self: *const TernRows, y: f64, cell_h: f64) ?struct { row: usize, dx: u16 } {
-        if (y < 0) return .{ .row = 0, .dx = if (self.len > 0) self.dx[0] else 0 };
+    pub const Moved = struct { row: usize, raise: u16, dx: u16 };
+
+    pub fn rowAt(self: *const TernRows, y: f64, cell_h: f64) ?Moved {
+        if (y < 0) return if (self.len > 0)
+            .{ .row = 0, .raise = self.raise[0], .dx = self.dx[0] }
+        else
+            null;
         const k0: usize = @intFromFloat(@floor(y / cell_h));
         const next = k0 + 1;
         if (next < self.len and self.raise[next] > 0 and
             y >= @as(f64, @floatFromInt(next)) * cell_h - @as(f64, @floatFromInt(self.raise[next])))
-            return .{ .row = next, .dx = self.dx[next] };
+            return .{ .row = next, .raise = self.raise[next], .dx = self.dx[next] };
         if (k0 < self.len and self.raise[k0] > 0 and
             y >= @as(f64, @floatFromInt(next)) * cell_h - @as(f64, @floatFromInt(self.raise[k0])))
             return null;
-        return .{ .row = k0, .dx = if (k0 < self.len) self.dx[k0] else 0 };
+        if (k0 >= self.len) return null;
+        return .{ .row = k0, .raise = self.raise[k0], .dx = self.dx[k0] };
     }
 };

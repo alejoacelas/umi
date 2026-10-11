@@ -2045,11 +2045,21 @@ pub const CAPI = struct {
         {
             // Where rows are drawn, in points, for tests that point at them.
             const scale = surface.getContentScale() catch apprt.ContentScale{ .x = 1, .y = 1 };
-            w.print(",\"cell_pt\":[{d:.3},{d:.3}],\"padding_pt\":{{\"top\":{d:.3},\"left\":{d:.3}}}}}", .{
+            // How far the folder box's text is drawn right of its cells, as last drawn.
+            const box_dx: f32 = dx: {
+                const rows = &core.renderer_state.tern_rows;
+                rows.lock.lockUncancelable(global.io());
+                defer rows.lock.unlock(global.io());
+                var most: u16 = 0;
+                for (rows.dx[0..rows.len]) |v| most = @max(most, v);
+                break :dx @floatFromInt(most);
+            };
+            w.print(",\"cell_pt\":[{d:.3},{d:.3}],\"padding_pt\":{{\"top\":{d:.3},\"left\":{d:.3}}},\"box_text_dx_pt\":{d:.3}}}", .{
                 @as(f32, @floatFromInt(core.size.cell.width)) / scale.x,
                 @as(f32, @floatFromInt(cell_h)) / scale.y,
                 @as(f32, @floatFromInt(core.size.padding.top)) / scale.y,
                 @as(f32, @floatFromInt(core.size.padding.left)) / scale.x,
+                box_dx / scale.x,
             }) catch return false;
         }
 
