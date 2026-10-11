@@ -230,6 +230,9 @@ extension TernAgentSession {
                 // Tern was running it headless: the interface owns the conversation now (one
                 // process per conversation), as with Take Over.
                 if turnIsRunning { notice("Taken over in an interface typed in a pane; the running turn was interrupted.") }
+                // Messages it had taken and not confirmed come back to the queue once it has
+                // stopped: they go to the interface then (AG-9).
+                stoppedHandlers.append { [weak self] in self?.pump() }
                 stopProcess(kind: .handoff, completion: nil)
             }
             record.live = true

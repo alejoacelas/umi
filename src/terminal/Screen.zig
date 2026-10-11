@@ -91,8 +91,27 @@ tern_block_pin: ?*Pin = null,
 /// awake clock), so its header can show the time elapsed.
 tern_block_started: ?std.Io.Timestamp = null,
 
+/// Tern: which shell printed the newest block's prompt (OSC 133 `aid`, the
+/// shell's pid), to match the end of its command.
+tern_block_aid: ?u32 = null,
+
+/// Tern: blocks whose commands still run while a shell they started shows
+/// prompts of its own (a nested zsh), innermost last. Each finishes with its
+/// own command's end (OSC 133;D with a status) once the inner shell is gone.
+tern_outer: [tern_outer_max]TernOuter = undefined,
+tern_outer_len: u8 = 0,
+
+
 /// Dirty flags for the renderer.
 dirty: Dirty = .{},
+
+/// Tern: see `tern_outer`.
+pub const TernOuter = struct {
+    pin: *Pin,
+    started: ?std.Io.Timestamp,
+    aid: ?u32,
+};
+pub const tern_outer_max = 8;
 
 /// See Terminal.Dirty. This behaves the same way.
 pub const Dirty = packed struct {
@@ -439,6 +458,9 @@ pub fn reset(self: *Screen) void {
     if (self.tern_block_pin) |pin| self.pages.untrackPin(pin);
     self.tern_block_pin = null;
     self.tern_block_started = null;
+    self.tern_block_aid = null;
+    for (self.tern_outer[0..self.tern_outer_len]) |outer| self.pages.untrackPin(outer.pin);
+    self.tern_outer_len = 0;
 
     // Reset our pages
     self.pages.reset();

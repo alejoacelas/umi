@@ -2173,7 +2173,7 @@ pub fn semanticPrompt(
             }
 
             // Tern: a prompt of Tern's zsh integration starts a block.
-            self.ternPromptStarted(cmd.readOption(.tern) orelse false);
+            self.ternPromptStarted(cmd.readOption(.tern) orelse false, ternAid(cmd.readOption(.aid)));
 
             click: {
                 // Handle click_events as a priority over cl. click_events
@@ -2272,13 +2272,36 @@ pub fn semanticPrompt(
 /// Tern: a new prompt started at the cursor's row. `block` is true for
 /// Tern's own zsh prompt (OSC 133;A with tern=1): the row then starts a
 /// block, which the following C and D complete.
-fn ternPromptStarted(self: *Terminal, block: bool) void {
+/// Tern: an OSC 133 `aid` as Tern's zsh integration gives it (the shell's pid).
+pub fn ternAid(raw: ?[]const u8) ?u32 {
+    const text = raw orelse return null;
+    return std.fmt.parseInt(u32, text, 10) catch null;
+}
+
+fn ternPromptStarted(self: *Terminal, block: bool, aid: ?u32) void {
     const screen: *Screen = self.screens.active;
     if (screen.tern_block_pin) |old| {
-        screen.pages.untrackPin(old);
+        if (ternPinRow(old)) |row| if (row.tern_state == .running) {
+            // A shell its command started shows a prompt of its own (a
+            // nested zsh): the command's block waits for its own end.
+            if (screen.tern_outer_len == Screen.tern_outer_max) {
+                screen.pages.untrackPin(screen.tern_outer[0].pin);
+                std.mem.copyForwards(Screen.TernOuter, screen.tern_outer[0 .. Screen.tern_outer_max - 1], screen.tern_outer[1..]);
+                screen.tern_outer_len -= 1;
+            }
+            screen.tern_outer[screen.tern_outer_len] = .{
+                .pin = old,
+                .started = screen.tern_block_started,
+                .aid = screen.tern_block_aid,
+            };
+            screen.tern_outer_len += 1;
+            screen.tern_block_pin = null;
+        };
+        if (screen.tern_block_pin) |pin| screen.pages.untrackPin(pin);
         screen.tern_block_pin = null;
     }
     screen.tern_block_started = null;
+    screen.tern_block_aid = aid;
 
     self.flags.tern_plain_prompt = !block;
     if (!block) return;
@@ -2297,15 +2320,19 @@ fn ternPromptStarted(self: *Terminal, block: bool) void {
     screen.tern_block_pin = screen.pages.trackPin(screen.cursor.page_pin.*) catch null;
 }
 
-/// Tern: the newest block's row, if it is still a block (not erased or
+/// Tern: a block's first row, if it is still a block (not erased or
 /// scrolled out of the scrollback since).
-fn ternCurrentBlockRow(self: *Terminal) ?*Row {
-    const screen: *Screen = self.screens.active;
-    const pin = screen.tern_block_pin orelse return null;
+fn ternPinRow(pin: *PageList.Pin) ?*Row {
     if (pin.garbage) return null;
     const row = pin.rowAndCell().row;
     if (!row.tern_block) return null;
     return row;
+}
+
+/// Tern: the newest block's row, if it is still a block.
+fn ternCurrentBlockRow(self: *Terminal) ?*Row {
+    const pin = self.screens.active.tern_block_pin orelse return null;
+    return ternPinRow(pin);
 }
 
 /// Tern: the newest block's command started (OSC 133;C), at `now` on the
@@ -2318,20 +2345,77 @@ pub fn ternBlockStarted(self: *Terminal, now: std.Io.Timestamp) void {
     self.screens.active.tern_block_started = now;
 }
 
-/// Tern: the newest block's command finished (OSC 133;D) after
-/// `duration_ms`, with `exit_code` (0 when the shell didn't say).
-pub fn ternBlockFinished(self: *Terminal, duration_ms: u64, exit_code: i32) void {
+/// Tern: a command finished (OSC 133;D) at `now`, with `exit_code` when the
+/// shell gave one, from the shell `aid` names when it says. Its block is the
+/// newest one if that runs; otherwise the newest prompt was a nested shell's.
+/// A shell that ended inside a command (its last command was `exit`) never
+/// reports its own end: the command it ran inside reports the end, matched by
+/// `aid`, and blocks of the shells nested in it end with it.
+pub fn ternBlockFinished(self: *Terminal, now: std.Io.Timestamp, exit_code: ?i32, aid: ?u32) void {
     const screen: *Screen = self.screens.active;
-    defer {
-        if (screen.tern_block_pin) |pin| screen.pages.untrackPin(pin);
-        screen.tern_block_pin = null;
-        screen.tern_block_started = null;
+
+    if (aid != null and screen.tern_block_aid != aid) {
+        // Find the outer block of the shell that reported.
+        var i: usize = screen.tern_outer_len;
+        while (i > 0) {
+            i -= 1;
+            const outer = screen.tern_outer[i];
+            if (outer.aid != aid) continue;
+            // The newest block and blocks nested deeper ended with their shells.
+            self.ternAbandonCurrent(now);
+            for (screen.tern_outer[i + 1 .. screen.tern_outer_len]) |inner| {
+                if (ternPinRow(inner.pin)) |row| if (row.tern_state == .running) ternFinishRow(row, inner.started, now, null);
+                screen.pages.untrackPin(inner.pin);
+            }
+            screen.tern_outer_len = @intCast(i);
+            defer screen.pages.untrackPin(outer.pin);
+            const row = ternPinRow(outer.pin) orelse return;
+            if (row.tern_state == .running) ternFinishRow(row, outer.started, now, exit_code orelse 0);
+            return;
+        }
     }
-    const row = self.ternCurrentBlockRow() orelse return;
+
+    if (self.ternCurrentBlockRow()) |row| if (row.tern_state == .running) {
+        ternFinishRow(row, screen.tern_block_started, now, exit_code orelse 0);
+        self.ternAbandonCurrent(now);
+        return;
+    };
+    self.ternAbandonCurrent(now);
+
+    // No aid (another integration): a status after a nested shell's prompt
+    // ends the command that started it.
+    if (aid != null) return;
+    const code = exit_code orelse return;
+    if (screen.tern_outer_len == 0) return;
+    screen.tern_outer_len -= 1;
+    const outer = screen.tern_outer[screen.tern_outer_len];
+    defer screen.pages.untrackPin(outer.pin);
+    const row = ternPinRow(outer.pin) orelse return;
     if (row.tern_state != .running) return;
+    ternFinishRow(row, outer.started, now, code);
+}
+
+/// Tern: forget the newest block; one whose command still runs ends now,
+/// without a status (its shell is gone).
+fn ternAbandonCurrent(self: *Terminal, now: std.Io.Timestamp) void {
+    const screen: *Screen = self.screens.active;
+    if (screen.tern_block_pin) |pin| {
+        if (ternPinRow(pin)) |row| if (row.tern_state == .running) ternFinishRow(row, screen.tern_block_started, now, null);
+        screen.pages.untrackPin(pin);
+    }
+    screen.tern_block_pin = null;
+    screen.tern_block_started = null;
+    screen.tern_block_aid = null;
+}
+
+fn ternFinishRow(row: *Row, started: ?std.Io.Timestamp, now: std.Io.Timestamp, exit_code: ?i32) void {
+    const ms: u64 = if (started) |t| ms: {
+        const ns = t.durationTo(now).nanoseconds;
+        break :ms @intCast(@max(0, @divTrunc(ns, std.time.ns_per_ms)));
+    } else 0;
     row.tern_state = .done;
-    row.tern_failed = exit_code != 0;
-    row.ternSetDurationMs(duration_ms);
+    row.tern_failed = if (exit_code) |code| code != 0 else false;
+    row.ternSetDurationMs(ms);
     row.dirty = true;
 }
 

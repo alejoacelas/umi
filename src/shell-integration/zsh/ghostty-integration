@@ -122,11 +122,13 @@ _ghostty_deferred_init() {
             if (( _ghostty_state == 1 )); then
                 # The last written OSC 133 C has not been closed with D yet.
                 # Close it and supply status.
-                builtin print -nu $_ghostty_fd '\e]133;D;'$cmd_status'\a'
+                # Tern: aid says which shell's command ended (a nested shell's
+                # prompts may have come since).
+                builtin print -nu $_ghostty_fd '\e]133;D;'$cmd_status';aid='$$'\a'
                 (( _ghostty_state = 2 ))
             elif (( _ghostty_state == 2 )); then
                 # There might be an unclosed OSC 133 C. Close that.
-                builtin print -nu $_ghostty_fd '\e]133;D\a'
+                builtin print -nu $_ghostty_fd '\e]133;D;aid='$$'\a'
             fi
         fi
 
@@ -142,7 +144,7 @@ _ghostty_deferred_init() {
         builtin local tern_blocks=0
         if [[ "$GHOSTTY_SHELL_FEATURES" == *tern-blocks* ]] && [[ -o prompt_percent ]]; then
             tern_blocks=1
-            mark1=$'%{\e]133;A;cl=line;tern=1\a%}'
+            mark1=$'%{\e]133;A;cl=line;tern=1;aid='$$$'\a%}'
         fi
 
         if [[ -o prompt_percent ]]; then

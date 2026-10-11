@@ -1477,14 +1477,13 @@ pub const StreamHandler = struct {
 
                 self.surfaceMessageWriter(.{ .stop_command = code });
 
-                // Tern: the newest block's command is done; its header
-                // shows how long it took.
-                const ms: u64 = ms: {
-                    const started = self.terminal.screens.active.tern_block_started orelse break :ms 0;
-                    const ns = started.durationTo(.now(global.io(), .awake)).nanoseconds;
-                    break :ms @intCast(@max(0, @divTrunc(ns, std.time.ns_per_ms)));
-                };
-                self.terminal.ternBlockFinished(ms, raw);
+                // Tern: a block's command is done; its header shows how
+                // long it took.
+                self.terminal.ternBlockFinished(
+                    .now(global.io(), .awake),
+                    cmd.readOption(.exit_code),
+                    terminal.Terminal.ternAid(cmd.readOption(.aid)),
+                );
             },
 
             // Handled by Terminal, no special handling by us

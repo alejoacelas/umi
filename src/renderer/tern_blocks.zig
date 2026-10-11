@@ -252,13 +252,20 @@ pub const Layout = struct {
             },
             .running => {
                 b.state = .running;
-                if (newest) if (screen.tern_block_started) |started| {
-                    const ns = started.durationTo(now).nanoseconds;
+                // The newest block, or one whose command started a nested shell.
+                const started: ?std.Io.Timestamp = if (newest) screen.tern_block_started else outer: {
+                    for (screen.tern_outer[0..screen.tern_outer_len]) |o| {
+                        if (!o.pin.garbage and o.pin.node == pin.node and o.pin.y == pin.y) break :outer o.started;
+                    }
+                    break :outer null;
+                };
+                if (started) |started_at| {
+                    const ns = started_at.durationTo(now).nanoseconds;
                     const ms: u64 = @intCast(@max(0, @divTrunc(ns, std.time.ns_per_ms)));
                     b.ms = ms / 1000 * 1000;
                     const next = 1000 - ms % 1000;
                     self.tick_ms = if (self.tick_ms) |t| @min(t, next) else next;
-                };
+                }
             },
             .done => {
                 b.state = .done;
@@ -395,4 +402,88 @@ test "a folder wrapped over rows above the viewport stays header" {
     try testing.expectEqual(Role.header, layout.row(0).role);
     try testing.expectEqual(Role.command, layout.row(1).role);
     try testing.expectEqual(Role.output, layout.row(2).role);
+}
+
+test "a command that starts a nested shell keeps its block until it ends" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try Terminal.init(testing.io, alloc, .{ .cols = 20, .rows = 30 });
+    defer t.deinit(alloc);
+    t.flags.tern_blocks = true;
+    const t0: std.Io.Timestamp = .{ .nanoseconds = 0 };
+    const prompt = "\x1b]133;A;cl=line;tern=1\x07\r\n\x1b]133;P;k=s\x07\r\n\x1b]133;P;k=s\x07~\r\n\x1b]133;P;k=s\x07\x1b]133;B\x07";
+
+    var s = t.vtStream();
+    defer s.deinit();
+    // The outer shell runs `zsh`.
+    s.nextSlice(prompt);
+    s.nextSlice("zsh\r\n\x1b]133;C\x07");
+    t.ternBlockStarted(t0);
+    // The inner shell: a prompt, an empty Enter (a D without a status), another prompt.
+    s.nextSlice(prompt);
+    t.ternBlockFinished(.{ .nanoseconds = std.time.ns_per_s }, null, null);
+    s.nextSlice("\r\n");
+    s.nextSlice(prompt);
+    // It exits; the outer shell reports its command's end with a status.
+    s.nextSlice("exit\r\n");
+    t.ternBlockFinished(.{ .nanoseconds = 3 * std.time.ns_per_s }, 1, null);
+    s.nextSlice(prompt);
+
+    const screen = t.screens.active;
+    var pins: [30]Pin = undefined;
+    var p = screen.pages.getTopLeft(.viewport);
+    for (&pins) |*pin| {
+        pin.* = p;
+        p = p.down(1) orelse p;
+    }
+    var layout: Layout = .{};
+    defer layout.deinit(alloc);
+    try layout.compute(alloc, &t, &pins, null, t0);
+    const outer = layout.blocks.items[0];
+    try testing.expectEqual(State.done, outer.state);
+    try testing.expect(outer.failed);
+    try testing.expectEqual(@as(?u64, 3000), outer.ms);
+}
+
+test "the end of a command is matched to its shell by aid" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try Terminal.init(testing.io, alloc, .{ .cols = 20, .rows = 30 });
+    defer t.deinit(alloc);
+    t.flags.tern_blocks = true;
+    const t0: std.Io.Timestamp = .{ .nanoseconds = 0 };
+    const outer_prompt = "\x1b]133;A;cl=line;tern=1;aid=100\x07\r\n\x1b]133;P;k=s\x07\r\n\x1b]133;P;k=s\x07~\r\n\x1b]133;P;k=s\x07\x1b]133;B\x07";
+    const inner_prompt = "\x1b]133;A;cl=line;tern=1;aid=200\x07\r\n\x1b]133;P;k=s\x07\r\n\x1b]133;P;k=s\x07~\r\n\x1b]133;P;k=s\x07\x1b]133;B\x07";
+
+    var s = t.vtStream();
+    defer s.deinit();
+    s.nextSlice(outer_prompt);
+    s.nextSlice("zsh\r\n\x1b]133;C\x07");
+    t.ternBlockStarted(t0);
+    s.nextSlice(inner_prompt);
+    // The inner shell runs `exit 3`: its command starts and the shell is gone
+    // without reporting that command's end.
+    s.nextSlice("exit 3\r\n\x1b]133;C\x07");
+    t.ternBlockStarted(.{ .nanoseconds = std.time.ns_per_s });
+    // The outer shell reports `zsh`'s end.
+    t.ternBlockFinished(.{ .nanoseconds = 2 * std.time.ns_per_s }, 3, 100);
+    s.nextSlice(outer_prompt);
+
+    const screen = t.screens.active;
+    var pins: [30]Pin = undefined;
+    var p = screen.pages.getTopLeft(.viewport);
+    for (&pins) |*pin| {
+        pin.* = p;
+        p = p.down(1) orelse p;
+    }
+    var layout: Layout = .{};
+    defer layout.deinit(alloc);
+    try layout.compute(alloc, &t, &pins, null, t0);
+    const outer = layout.blocks.items[0];
+    try testing.expectEqual(State.done, outer.state);
+    try testing.expect(outer.failed);
+    try testing.expectEqual(@as(?u64, 2000), outer.ms);
+    const inner = layout.blocks.items[1];
+    try testing.expectEqual(State.done, inner.state);
+    try testing.expect(!inner.failed);
 }
