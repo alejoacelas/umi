@@ -263,6 +263,41 @@ final class TernHarnessProcess: @unchecked Sendable {
 
     // MARK: Exit
 
+    deinit {
+        // The process can outlive this object (a session removed while its harness is still
+        // exiting): it's reaped anyway, or it would stay a zombie of the app (AG-21).
+        stateLock.lock()
+        let reaped = exitStatus != nil
+        stateLock.unlock()
+        exitSource?.cancel()
+        if !reaped { Self.reapLater(pid) }
+    }
+
+    /// Exit sources for processes whose objects are gone, until each has been reaped.
+    nonisolated(unsafe) private static var orphanSources: [pid_t: DispatchSourceProcess] = [:]
+    private static let reaperQueue = DispatchQueue(label: "dev.tern.harness.reaper")
+
+    private static func reapLater(_ pid: pid_t) {
+        reaperQueue.async {
+            var status: Int32 = 0
+            if waitpid(pid, &status, WNOHANG) != 0 { return }
+            let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: reaperQueue)
+            source.setEventHandler {
+                var status: Int32 = 0
+                guard waitpid(pid, &status, WNOHANG) != 0 else { return }
+                orphanSources[pid]?.cancel()
+                orphanSources[pid] = nil
+            }
+            orphanSources[pid] = source
+            source.resume()
+            // It may have exited before the source was armed.
+            if waitpid(pid, &status, WNOHANG) != 0 {
+                source.cancel()
+                orphanSources[pid] = nil
+            }
+        }
+    }
+
     private func watchExit() {
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
         source.setEventHandler { [weak self] in self?.reap() }
