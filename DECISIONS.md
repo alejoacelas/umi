@@ -1128,4 +1128,10 @@ gets focus in the key window of the active app (UI-B's sidebar may call it too; 
 - **After a crash of the product, a Claude message written but never confirmed is looked up in
   Claude's transcript before anything else**: missing there, it's sent again (no longer counted as
   delivered first).
+- **Whether a pane's shell has its terminal** is read from the processes on the pane's tty (the
+  terminal's foreground group, `kinfo_proc.e_tpgid`, and its leader's name), because the pty's master
+  side can't say on macOS and the shell's environment can't be read (it's started through the setuid
+  `login`). Tern types its one line (`tern agent attach`) only when the shell is at its prompt or
+  known to be in front; otherwise it gives up and the pane keeps its read-only view. Found on the way:
+  process names were read with a buffer `proc_name` refuses, so every process looked like a shell.
 

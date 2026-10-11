@@ -725,3 +725,57 @@ def test_an_unknown_terminal_action_is_refused_and_the_app_stays_up(inst, win, a
             os.path.join(inst.dir, "keybindings.conf")) else True
     finally:
         inst.cli("shortcuts", "reset", check=False)
+
+
+# ---- round 9 -------------------------------------------------------------------------------------
+
+@pytest.mark.req("AG-6")
+def test_take_over_never_types_into_another_program(inst, win, tmp_path):
+    """Round 9, P1: when the pane's shell wasn't back at its prompt within 10 s, the attach line was
+    typed anyway, into whatever ran there (here `cat > file`, which would have written it to the file)."""
+    sid = inst.start_agent("claude", f"ECHO hi {nonce()}")
+    inst.wait(sid)
+    pane = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])["pane"]
+    wait_until(lambda: inst.session_view(pane).get("showing") == "agent", 10, message="the read-only view")
+    wait_until(lambda: "%" in inst.screen(pane) or "$" in inst.screen(pane), 20, message="the shell under the view")
+    target = tmp_path / "typed.txt"
+    inst.cli("send", "--pane", pane, "--enter", f"cat > '{target}'")
+    time.sleep(1)
+    inst.json("agent", "open", sid, "--live")
+    time.sleep(14)
+    inst.cli("keys", "--pane", pane, "ctrl+d")
+    time.sleep(1)
+    assert "agent attach" not in (target.read_text() if target.exists() else ""), "typed into another program"
+    assert inst.info(sid)["location"] != "live"
+    wait_until(lambda: inst.session_view(pane).get("showing") == "agent", 10, message="the read-only view again")
+
+
+def receipt(inst, marker):
+    return next((r for r in inst.receipts() if marker in (r.get("text") or "")), None)
+
+
+@pytest.mark.req("AG-10")
+def test_a_message_sent_while_codex_starts_steers_its_first_turn(inst):
+    """Round 9, P2: a message sent while Codex was still starting waited in the queue through the whole
+    first turn instead of steering it once it began."""
+    a, b = nonce(), nonce()
+    sid = inst.start_agent("codex", f"SLEEP 4 {a}", env={"FAKE_SLOW_START": "1.5"})
+    inst.send(sid, f"ECHO steer {b}")
+    wait_until(lambda: receipt(inst, b), 20, message="the second message delivered")
+    first = wait_until(lambda: receipt(inst, a), 5, message="the first message delivered")
+    assert receipt(inst, b)["turn"] == first["turn"], "the message didn't steer the running turn"
+
+
+@pytest.mark.req("AG-8", "L-20")
+def test_hiding_a_live_codex_session_ends_its_interface(inst, win):
+    """Round 9, P2: hiding a session live in Codex's attached interface closed its pane but left the
+    interface running in the pane kept for reopening, untracked."""
+    sid, pane = live_in_new_tab(inst, "codex")
+    thread = inst.info(sid)["harness_id"]
+    def clients():
+        out = subprocess.run(["pgrep", "-f", f"fake_codex.py resume {thread}"], capture_output=True, text=True).stdout
+        return [int(p) for p in out.split()]
+    wait_until(clients, 10, message="the interface's process")
+    inst.cli("agent", "hide", sid)
+    wait_until(lambda: not clients(), 15, message="the interface to end")
+    assert inst.info(sid)["location"] == "background"

@@ -269,3 +269,8 @@ change (a race of a few milliseconds).
   went there first (it passes on its own). **Change:** it clears other panes' marks before setting its
   own; what it checks is unchanged. **Requirement:** L-12, "the next session that needs the user".
 
+Round 8 and 9 regression tests: background work from the interface across a quit, an unknown terminal
+action refused; Take Over never types into another program, a message sent while Codex starts steers
+its first turn, hiding a live Codex session ends its interface. Not covered by a test: a paste that
+waits for confirmation, and cancelled file searches (timing).
+
