@@ -97,12 +97,31 @@ enum TernPaneContext {
         return nil
     }
 
+    /// Whether the process group in front of the pane's terminal is its shell's (nil: unknown).
+    static func shellHasTerminal(_ pane: Ghostty.SurfaceView) -> Bool? {
+        guard let tty = pane.surfaceModel?.ttyName, let group = TernProcessTree.foregroundGroup(ofTerminal: tty) else { return nil }
+        return TernProcess.isShell(group)
+    }
+
+    /// The pane's shell is known to have the terminal (its foreground process is a shell; an
+    /// unknown foreground doesn't count).
+    static func shellInFront(_ pane: Ghostty.SurfaceView) -> Bool {
+        if let has = shellHasTerminal(pane) { return has }
+        guard let surface = pane.surface else { return false }
+        let foreground = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
+        return foreground > 0 && TernProcess.isShell(foreground)
+    }
+
     /// The pane's shell has the terminal and shows its prompt (shell integration marks it;
     /// it's what Ghostty asks before closing a pane without confirmation).
     static func shellAtPrompt(_ pane: Ghostty.SurfaceView) -> Bool {
         guard let surface = pane.surface else { return true }
-        let foreground = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
-        guard foreground <= 0 || TernProcess.isShell(foreground) else { return false }
+        if let has = shellHasTerminal(pane) {
+            guard has else { return false }
+        } else {
+            let foreground = pid_t(truncatingIfNeeded: ghostty_surface_foreground_pid(surface))
+            guard foreground <= 0 || TernProcess.isShell(foreground) else { return false }
+        }
         return !ghostty_surface_needs_confirm_quit(surface)
     }
 

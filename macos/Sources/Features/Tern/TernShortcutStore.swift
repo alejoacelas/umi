@@ -476,7 +476,7 @@ final class TernShortcutStore {
             let action = String(id.dropFirst("ghostty:".count))
             // Only an action Ghostty has (bound by default or in the user's config): anything else
             // would be written into the configuration as a broken binding.
-            guard Self.knownGhosttyActions.contains(action) else { throw StoreError.unknown(id) }
+            guard Self.isKnownGhosttyAction(action) else { throw StoreError.unknown(id) }
             let current = TernGhosttyBindings.effective().filter { $0.action == action }.map(\.trigger)
             var change = saved.ghostty[action] ?? GhosttyChange(unbind: [], bind: nil)
             // Unbind what's bound now (except what this change itself bound).
@@ -521,8 +521,13 @@ final class TernShortcutStore {
         return notes
     }
 
-    static var knownGhosttyActions: Set<String> {
-        Set(TernGhosttyBindings.builtInDefaults().map { $0.1 }).union(TernGhosttyBindings.effective().map(\.action))
+    /// An action Ghostty has: its name (before any `:parameter`) is one bound by default or in the
+    /// user's config, and nothing in it would break the binding line.
+    static func isKnownGhosttyAction(_ action: String) -> Bool {
+        let name = String(action.split(separator: ":", maxSplits: 1).first ?? "")
+        guard !name.isEmpty, !action.contains(where: { $0.isWhitespace || $0 == "=" }) else { return false }
+        let known = TernGhosttyBindings.builtInDefaults().map { $0.1 } + TernGhosttyBindings.effective().map(\.action)
+        return known.contains { $0 == action || $0.split(separator: ":", maxSplits: 1).first.map(String.init) == name }
     }
 
     /// Back to the default (nil: everything).

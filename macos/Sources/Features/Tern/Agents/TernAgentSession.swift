@@ -810,6 +810,8 @@ final class TernAgentSession {
             driver?.interrupt(turnID: turn?.id, cancelQueued: false)
         }
         changed()
+        // Messages that waited for a turn to steer into can go now (after whatever started it).
+        if !queue.isEmpty { TernAgents.queue.async { [weak self] in self?.pump() } }
     }
 
     /// Interrupt the turn now running for a redirect; restart the harness if it doesn't stop.

@@ -18,7 +18,9 @@ enum TernProcess {
     }
 
     static func name(_ pid: pid_t) -> String? {
-        var buffer = [CChar](repeating: 0, count: Int(MAXCOMLEN) + 1)
+        // proc_name fails outright with a buffer of MAXCOMLEN + 1 (it wants room for the longer
+        // name it may return).
+        var buffer = [CChar](repeating: 0, count: 2 * Int(MAXCOMLEN) + 1)
         guard proc_name(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
         return String(cString: buffer)
     }

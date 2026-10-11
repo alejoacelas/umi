@@ -944,7 +944,8 @@ final class TernFileIndex {
         let candidates = self.candidates
         let q = Array(query.lowercased().utf8)
         let limit = Self.limit
-        return await Task.detached(priority: .userInitiated) {
+        // Off the caller's actor, and stopped when the caller is cancelled (a newer keystroke).
+        let worker = Task.detached(priority: .userInitiated) { () -> [Result] in
             guard !q.isEmpty else {
                 return candidates.prefix(limit).map { Result(path: $0.path, line: line, recent: $0.recent, changed: $0.changed) }
             }
@@ -965,7 +966,12 @@ final class TernFileIndex {
                 let c = candidates[item.1]
                 return Result(path: c.path, line: line, recent: c.recent, changed: c.changed)
             }
-        }.value
+        }
+        return await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     /// The repository's files (or the folder's), and the changed ones; paths relative to root.

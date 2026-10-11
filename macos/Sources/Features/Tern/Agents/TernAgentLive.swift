@@ -552,10 +552,12 @@ extension TernAgentSession {
         goingLive = false
         if record.live == true {
             if record.liveAttached == true {
-                // Codex: the server keeps the turn going; its interface just closes.
-                liveEnded()
+                // Codex: the server keeps the turn going; its interface (a client of the server)
+                // is ended, not left running in a pane kept for reopening.
+                endingLivePane = record.pane
                 record.pane = nil
                 saveRecord()
+                endLiveInterface(reason: "hidden")
                 changed()
                 return .closePane
             }

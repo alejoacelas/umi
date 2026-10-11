@@ -46,6 +46,20 @@ extension TernAgentUI {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
             if waited { try? await Task.sleep(nanoseconds: 300_000_000) }
+            // Still another program in front (an editor, `cat > file`…): never type into it.
+            // (A shell without shell integration shows no prompt mark but is in front.)
+            guard TernPaneContext.shellAtPrompt(surface) || TernPaneContext.shellInFront(surface) else {
+                shared.livePanes.remove(surface.id)
+                TernState.shared.layoutDidChange()
+                TernAgents.queue.async {
+                    guard let s = TernAgents.shared.session(id: session) else { return }
+                    s.goingLive = false
+                    s.notice("Couldn't open its interface here: another program is running in the pane's terminal.")
+                    s.changed()
+                    s.pump()
+                }
+                return
+            }
             // `$TERN_CLI` is this app's own CLI (an older `tern` elsewhere on PATH must not answer).
             try? await TernInput.send(text: "\"$TERN_CLI\" agent attach \(quoted)", to: surface, enter: true)
         }

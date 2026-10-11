@@ -10,6 +10,11 @@ enum TernAgentDebug {
         switch method {
         case "debug.agent.pane":
             var out: [String: Any] = ["pane": pane.ternID,
+                                      "shell_at_prompt": TernPaneContext.shellAtPrompt(pane),
+                                      "shell_in_front": TernPaneContext.shellInFront(pane),
+                                      "shell_has_terminal": TernPaneContext.shellHasTerminal(pane).map { $0 as Any } ?? NSNull(),
+                                      "shell_tty": pane.surfaceModel?.ttyName ?? "",
+                                      "shell_group": pane.surfaceModel?.ttyName.flatMap { TernProcessTree.foregroundGroup(ofTerminal: $0) }.map { Int($0) } ?? -1,
                                       "showing": ui.livePanes.contains(pane.id) ? "live"
                                           : (ui.showingTerminal.contains(pane.id) ? "terminal" : "agent")]
             guard let session = ui.session(forPane: pane.id) else {
