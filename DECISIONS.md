@@ -1139,3 +1139,155 @@ gets focus in the key window of the active app (UI-B's sidebar may call it too; 
   also treats `~/.claude/settings.json` as project settings). Found while updating this Mac's copy;
   fixed after the 0.4.0 release.
 
+
+===================================================================================================
+
+# Decisions for Warp's look for terminals and the sidebar order (BRIEF-blocks.md)
+
+The user chose an imitation that keeps the shell underneath: zsh keeps editing the command line, Tern
+changes how the terminal looks (SPEC S-9 to S-12). Warp's colors and spacing were taken from its source
+(`~/dev/warp`, read only); the numbers are in §61. Code: `src/renderer/tern_blocks.zig` (the layout),
+`src/renderer/generic.zig` (drawing), `src/renderer/shaders/shaders.metal` (`tern_rect`),
+`src/terminal/{page,Terminal,Screen}.zig` (per-block data), `src/termio/{stream_handler,Exec}.zig`, the
+zsh integration (`src/shell-integration/zsh/ghostty-integration`), `src/Surface.zig` (mouse and IME).
+Tests: `acceptance/tests/test_tern_blocks.py`.
+
+## 60. Where the blocks live: rows the shell prints, drawn over by the renderer
+
+What it has to serve: Warp's look (a header above each command with the folder and the duration, the
+command in bold, a line and space between blocks, the prompt at the bottom), with programs and agents
+that read the pane seeing what the shell and programs printed (S-12), and full-screen programs
+untouched.
+
+| Candidate | Cost |
+|---|---|
+| A. The renderer inserts space that isn't in the grid (a pixel offset per row) | Pixel-exact spacing, but every shader that maps rows to pixels changes (text, backgrounds, images, the cursor), and so do the mouse, selection and IME mappings, per row. Rows added visually push others off the top: a program that draws by absolute position (Claude Code's inline interface, progress bars) would be cut. |
+| B. A SwiftUI or AppKit overlay over the Metal view | Draws text and shapes easily, but it isn't drawn in the same frame as the terminal: scrolling and output would make the decorations lag or jitter. |
+| C. **The shell prints the block's rows; the renderer draws over them** | Spacing comes in whole rows (Warp's 1.0 and 1.1 lines of padding become 1 and 1). Readers see the prompt rows the shell printed (two blank rows and the folder), which is what the shell printed. Everything else in the terminal (selection, search, scrollback, reflow, programs) is unchanged. |
+
+**Pick: C.** Tern's zsh integration sets the prompt to two spacer rows, the folder (`%~`) and an empty
+command line, and starts it with `OSC 133;A;cl=line;tern=1`. The renderer, per frame, works out each
+viewport row's part in a block (spacer, header, command, output) from the rows' OSC 133 marks, and
+draws: the folder in Warp's header color with the duration after it, the command bold, a 1 pt line
+along the top of the second spacer row, the folder box at the prompt, the tint and bar of a failed
+block. Nothing is written to the terminal, so `read` and `wait --pattern` see the shell's rows (the
+folder line is prompt, so `wait --pattern` never matches it).
+
+**Per-block data on the block's first row.** A block's state (prompt, running, done), failure and
+duration are 23 bits in the page row's spare padding (`tern_*` fields of `page.Row`): rows are copied
+with their metadata through scrolling, reflow (`copyRowMetadata`) and clearing (reset with the row), so
+the data stays with the block as long as the block exists, scrollback included, with no side table to
+keep in step. The newest block is a tracked pin on the screen until its OSC 133;D; the stream handler
+times C to D and records the exit status. Durations are stored in the finest unit that fits 17 bits
+(ms to 2 min, then cs, ds, s), so Warp's formats show the right digits (`(0.041s)`, `(1m 8.92s)`,
+`(3h 4m 12s)`); past 21 min the hundredths are tenths.
+
+**At the bottom (S-9).** The whole view is moved down by the empty rows below the cursor's row (or
+below the last row with anything on it under the cursor: a completion list, a program's status line).
+It's one offset for the frame, applied in the projection and the background shader's padding, so text,
+backgrounds, images and the cursor move together; the space above is plain background. The surface
+maps the mouse (clicks, selection, mouse reports to programs) and the IME position through the same
+offset, which the renderer publishes for each frame it draws. Moving the view rather than printing
+blank lines keeps the prompt at the bottom through `clear`, ⌘K, resizes and anything that clears the
+screen, and adds no rows for readers. Scrolled into history the offset shrinks row for row, so older
+lines appear above without a jump.
+
+**Evidence:** `test_the_prompt_sits_at_the_bottom_from_the_start`, `test_output_builds_upward_above_the_prompt`,
+`test_it_stays_at_the_bottom_after_clear_and_cmd_k`, `test_a_list_below_the_prompt_is_shown`,
+`test_each_command_is_a_block_with_its_folder_its_duration_and_its_output`,
+`test_readers_see_what_the_shell_and_programs_printed`, and the screenshot checks below.
+
+## 61. Warp's numbers, and where Tern differs
+
+From `~/dev/warp/app/src/terminal/block_list_element.rs`, `view.rs`, `model/block.rs`,
+`context_chips/display_chip.rs`, `warp_core/src/ui/theme/color.rs` (Dark theme):
+
+| Element | Warp | Tern |
+|---|---|---|
+| Separator | 1 px, foreground at 10%, full width, along the top of every block | same (1 pt) |
+| Padding | 1.0 line below output, 1.1 lines above the header, header slot 0.9, 0.19 to the command, 0.5 command to output | 1 row, 1 row, header 1 row, 0, 0 (whole rows, §60) |
+| Header | monospace at 0.9×, best-contrast foreground at 60%, cwd (`~` for home), then the duration | the terminal's font and size, foreground blended 60% over the background |
+| Duration | `(16.471s)`, `(1m 8.92s)`, `(3h 4m 12s)`, `(10h 43s)`; whole seconds while running, repainted every second | same; a 1-second wake-up of the renderer only while a running block is visible |
+| Command | bold | bold (the input cells of the command rows, once it ran) |
+| Failed block (non-zero exit only; never a running one) | the theme's red at 10% over the whole block, a 5 px bar in red at the element's left edge | same, the terminal palette's red (color 1), 5 pt, at the pane's left edge |
+| Folder box | `surface_1` fill (foreground at 5%), 1 px border at 15%, radius 4, padding 2/4, outline folder icon, 4 px gap, text in foreground blended 50% with cyan | same; the icon is Codicons' outline folder from the bundled Nerd Font symbols; text at the terminal's size |
+| Input | pinned to the bottom (Warp's default) | the prompt is pinned to the bottom (§60) |
+| Full-screen programs | drawn without any decoration | same: the alternate screen turns the look off |
+| `clear` | inserts a screenful of gap | zsh's `clear` clears; the prompt is redrawn at the bottom |
+
+Not drawn (the brief): the "Lines: … Size: …" readout, Warp's input editor, block selection and
+actions. Warp's selected/hovered/bookmarked block styles go with block selection.
+
+## 62. Which terminals get the look
+
+- **zsh only, and only Tern's integration.** The look is on for a terminal when Ghostty's shell
+  integration injected into it is zsh's and the shell integration feature `tern-blocks` is on (the
+  default; `shell-integration-features = no-tern-blocks` turns it off). The zsh integration prints the
+  block prompt only when `GHOSTTY_SHELL_FEATURES` has `tern-blocks`, so zsh started anywhere else
+  (another terminal, a nested `zsh`) keeps the user's prompt, and the user's `~/.zshrc` is untouched.
+  Other shells (bash, fish …) keep the usual look: macOS's bash 3.2 gets no integration at all, so the
+  terminal decides at spawn time rather than from the shell's marks. A prompt from another shell's
+  integration (no `tern=1`) turns the look off until Tern's prompt comes back.
+- **Full-screen programs:** the alternate screen has no blocks and no offset.
+- **The prompt the shell prints:** the user's PS1 is replaced while the look is on (as Warp ignores
+  PS1 by default); zsh's own line editing, completion, `PROMPT_SP`, PS2 and zsh-autosuggestions are as
+  before. An empty Enter or Ctrl-C at the prompt leaves that prompt as a block without a command or
+  duration, as zsh leaves a prompt line today (Warp doesn't make blocks for them; changing what Enter
+  does would change zsh's editing).
+- **A long folder** that wraps keeps both rows as the header.
+
+## 63. Decorations: one small Metal pipeline
+
+The separators, tints, bars and the folder box are rectangles with optional border and rounded
+corners, drawn by a new `tern_rect` pipeline between the cell backgrounds and the text (instanced quads,
+a rounded-rectangle distance in the fragment shader, colors through the same `load_color` as the
+cells). The debug overlay (`Overlay.zig`, CPU-drawn into a full-window image) was the other candidate:
+it redraws and uploads a full-window image on every change, too costly to have on all the time. Text
+Tern adds (durations, the folder icon) goes through the same glyph atlas as the terminal's text. The
+OpenGL renderer (Linux) doesn't have the pipeline; the generic renderer skips it there at compile time.
+
+## 64. S-7: only the current tab and tabs whose agent stopped move
+
+The user: "other than the focused session, tabs should only move when an agent finishes their turn".
+§50 sorted the whole window on every selection, so a tab the user left dropped back to the place its
+last stop gave it. Now nothing is sorted:
+- selecting a tab moves it to the top of the unpinned tabs; the others keep their places;
+- a tab whose agent stops (a newer stop than Tern knew) moves to just below the current tab; several at
+  once go most recent first; a stop in the current tab, a mark cleared, or a pinned tab move nothing;
+- a stop first seen more than 60 s after it happened (sessions restored at launch) moves nothing, so a
+  relaunch doesn't shuffle the restored order;
+- placements (drag, `tab move`, Move Tab Up/Down, `tab new --index`, reopen) still hold: the tab they
+  select stays where it was put until another tab is selected;
+- tab-switching keys still freeze the order for about a second; at the end the selected tab moves up,
+  with any tab whose agent stopped meanwhile;
+- pin and unpin: `setPinned` puts a pinned tab at the end of the pinned group and an unpinned one at the
+  top of the others; then the current tab moves up as usual.
+
+**Evidence:** `test_only_the_current_tab_and_tabs_whose_agent_stopped_move`,
+`test_next_tab_walks_the_sidebar_order_as_seen`,
+`test_pinned_tabs_stay_first_and_placements_hold_until_the_next_reorder`.
+
+## 65. Left over from 0.4.0
+
+- **The live launch that looked live while `starting`.** After a session's first turn ends, Tern
+  stops its headless process and opens the agent's own interface in the pane; until the interface
+  reports, the session says `starting` (activity "opening its own interface") with location `pane`.
+  The test read `info` and then the screen, and took `starting` to mean the first turn hadn't ended. In
+  a loaded full run, waiting for the view's transcript took longer than the 3-second turn, so it read
+  the screen during that hand-off and saw the interface. The product was right (the interface never
+  starts before the turn ends); the test now checks the order itself: whenever the interface is on
+  screen, the first message is already done (TEST_CHANGES.md).
+- **⇧⌘T in Settings.** Reopen was a menu item Tern added on its own, outside its list of shortcut
+  items, so Settings (and the key monitor that makes shortcuts work whatever has focus) didn't know it.
+  It is now the shortcut item `file.reopen` (File ▸ Reopen Closed …, its title naming what it would
+  reopen), listed in Settings, `tern shortcuts` and the palette.
+- **The user's agent folders.** Real-agent tests run the user's own `claude` and `codex` (their logins
+  are there), and the agents record those runs: Codex's trust answer for the live test's folder in
+  `config.toml`, its threads (rollouts, rows in `state_5.sqlite` and `logs_2.sqlite`, index and history
+  lines); Claude Code's transcripts, history lines, per-session files and folder trust in
+  `~/.claude.json`. A session fixture (`acceptance/tests/agent_config.py`, from `conftest.py` when
+  `ACCEPTANCE_REAL` is set) notes what exists first and removes afterwards only what the run added for
+  the suite's own folders (the acceptance folder, temporary `acc-*` and pytest folders) and the sessions
+  run in them; what was there before stays byte for byte, and isolated instances never install Tern's
+  plugins into the user's folders (`TernAgentPlugins.ensureInstalledAtLaunch`). Its log is `results/agent-folders-cleanup.txt`. Evidence:
+  `test_suite_hygiene.py` (on a made-up home folder), and the real run's cleanup log.

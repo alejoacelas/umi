@@ -127,8 +127,15 @@ def test_an_interactive_launch_goes_live_after_its_first_turn(inst, win, shown, 
     wait_until(lambda: f"SLEEP 3 {n}" in inst.session_view(pane).get("transcript", ""), 10,
                message="the view to show the prompt")
     info = inst.info(sid)
-    assert info["location"] == "pane" and info["pane"] == pane and info["status"] in ("starting", "working"), info
-    assert BANNER[kind] not in screen(inst, pane), "the interface ran before the first turn finished"
+    if info.get("last_message", {}).get("state") != "done":
+        assert info["location"] == "pane" and info["pane"] == pane and info["status"] in ("starting", "working"), info
+    # The interface comes only after the first turn: whenever it is on screen, that turn has ended.
+    # ("starting" also covers opening the interface once the turn is over, so the status alone
+    # can't say which side of the turn's end the screen was read on.)
+    if BANNER[kind] in screen(inst, pane):
+        after = inst.info(sid)
+        assert after.get("last_message", {}).get("state") == "done", \
+            f"the interface ran before the first turn finished: {after}"
     code, out = inst.wait(sid)
     assert (code, out["status"]) == (0, "DONE"), out
     # Then it's resumed live in that place, on the same conversation.

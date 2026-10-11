@@ -81,6 +81,23 @@ def win(inst, request):
     time.sleep(0.2)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def users_agent_folders():
+    """Real-agent tests run the user's own Claude Code and Codex: leave ~/.claude, ~/.claude.json and
+    ~/.codex as the suite found them (tests/agent_config.py). What was removed goes to
+    results/agent-folders-cleanup.txt."""
+    if not os.environ.get("ACCEPTANCE_REAL"):
+        yield
+        return
+    from agent_config import Snapshot
+    snapshot = Snapshot().take()
+    yield
+    removed = snapshot.clean()
+    os.makedirs(os.path.join(ROOT, "results"), exist_ok=True)
+    with open(os.path.join(ROOT, "results", "agent-folders-cleanup.txt"), "w") as f:
+        f.write("\n".join(removed) + ("\n" if removed else ""))
+
+
 def screen_locked():
     """True while the login session's screen is locked. macOS then resolves every window's
     accessibility element to the application itself, so UI tests can't see anything (and a

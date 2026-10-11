@@ -157,3 +157,21 @@ Asked whether quits requested by scripts should confirm, whether updates should 
 without asking, whether the MIT license in the user's name is right, and whether `agent start` should
 show workers by default:
 > script quits should not ask, updates should ask. license is good. default workers to backgroudn
+
+## After 0.4.0: Warp's look for terminals, and the sidebar order (BRIEF-blocks.md)
+
+> would it be easy to implement the look and placement from warp of terminals? notice that the
+> terminal shows at the bottom, when it returns it does so in a block above, and it has a nice
+> autocomplete suggestions feature
+
+> also the box thing telling you the directory you're on
+
+Their screenshot from Warp is `reference/warp-blocks.png`. After hearing the options they chose an
+imitation that keeps the shell underneath: zsh keeps editing the command line as it does today, and
+Tern changes how the terminal looks (the prompt at the bottom, blocks with a header, the command in
+bold, its output and a line between blocks, the folder box). Suggestions are done already: their
+`~/.zshrc` loads zsh-autosuggestions.
+
+On the sidebar order:
+> my idea was that other than the focused session, tabs should only move when an agent finishes
+> their turn

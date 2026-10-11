@@ -222,6 +222,31 @@ def setup_agents(inst, base):
     return {"AG-5": [("pending approval", approval, n1), ("finished", done, n2), ("transcript from the CLI", transcript, None)]}
 
 
+def setup_blocks(inst, base):
+    """Warp's look (S-9 to S-12): blocks in one pane, a fresh pane beside it, then a full-screen program."""
+    w = inst.json("window", "new", "--name", "check-blocks", "--cwd", base)
+    pane = w["pane"]
+    fresh = inst.cli("split", "right", "--pane", pane, "--ratio", "0.35", "--cwd", base).stdout.strip()
+    inst.cli("sidebar", "on")
+    inst.cli("sidebar", "tabs")
+    time.sleep(1.5)
+    for command, marker in (("ls /", "Applications"), ('echo "echo example"', "^echo example"),
+                            ("ls /no-such-folder", "No such file"), ("sleep 2; echo slept", "^slept")):
+        run(inst, pane, command, marker)
+        time.sleep(0.6)
+    inst.cli("pane", "focus", pane)
+    time.sleep(1.5)
+    blocks, note = screenshot(inst, w["window"], "S-9-S-10-S-11-blocks")
+    inst.cli("send", "--pane", fresh, "-e",
+             "printf '\\033[?1049h\\033[H\\033[2JA full-screen program: top line\\n\\nsecond line'; sleep 8; printf '\\033[?1049l'")
+    time.sleep(2)
+    full, note2 = screenshot(inst, w["window"], "S-12-full-screen")
+    time.sleep(7)
+    return {"S-9, S-10, S-11": [("blocks, prompt and folder box (left); a fresh pane (right)", blocks, note),
+                                ("the user's Warp screenshot", os.path.join(ROOT, "..", "reference", "warp-blocks.png"), None)],
+            "S-12": [("a full-screen program (right pane)", full, note2)]}
+
+
 def setup_theme(target, base):
     shots = []
     for name, theme in (("light", "background = #fafafa\nforeground = #202020\n"),
@@ -242,7 +267,7 @@ def setup_theme(target, base):
     return {"S-5": shots}
 
 
-SETUPS = [setup_layout, setup_editor, setup_agents]
+SETUPS = [setup_layout, setup_blocks, setup_editor, setup_agents]
 PHASE = "all"
 PHASE_TWO_CHECKS = ("AG-",)   # SPEC.md, Delivery phases
 

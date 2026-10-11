@@ -345,6 +345,25 @@ def test_shift_cmd_t_is_reopen_in_the_file_menu(inst, win):
     wait_until(lambda: inst.find_pane(b) is not None, 5, message="reopened from the menu")
 
 
+@pytest.mark.req("L-17", "L-20")
+def test_shift_cmd_t_is_listed_where_shortcuts_are_edited(inst, win):
+    """⇧⌘T is one of the shortcuts ⌘, (and `tern shortcuts`) edits: it can be given another key, which the
+    menu item then shows, and reset."""
+    listed = {s["id"]: s for s in inst.json("shortcuts")["shortcuts"]}
+    reopen = listed.get("file.reopen")
+    assert reopen is not None, "Reopen isn't in the shortcut list"
+    assert reopen["kind"] == "tern" and reopen["default"] == reopen["keys"] and len(reopen["keys"]) == 1
+    assert set(reopen["keys"][0].split("+")) == {"cmd", "shift", "t"}, reopen
+    try:
+        inst.cli("shortcuts", "set", "file.reopen", "ctrl+cmd+y")
+        item = next(i for i in rpc(inst, "debug.menu")["items"] if i["title"].startswith("Reopen Closed"))
+        assert item["key"].lower() == "y" and set(item["modifiers"]) == {"ctrl", "cmd"}, item
+    finally:
+        inst.cli("shortcuts", "reset", "file.reopen")
+    item = next(i for i in rpc(inst, "debug.menu")["items"] if i["title"].startswith("Reopen Closed"))
+    assert item["key"].lower() == "t" and set(item["modifiers"]) == {"shift", "cmd"}, item
+
+
 @pytest.mark.req("L-20")
 @pytest.mark.slow
 def test_closed_items_expire_after_60_seconds_and_their_programs_end(inst, win):

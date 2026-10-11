@@ -286,3 +286,40 @@ showed that the agents' plugin commands, run from the home folder, changed the u
 the plugin the installed copy had just enabled; Tern now runs them from an empty folder of its own,
 and the test passes with the user's plugin enabled before and after.
 
+
+## Warp's look for terminals, the sidebar order, and what 0.4.0 left (BRIEF-blocks.md)
+
+New: `tests/test_tern_blocks.py` (S-9 to S-12: at the bottom, through `clear` and ⌘K, a completion
+list below the prompt; blocks with their folder, duration and output, a running block's time, failed
+blocks' tint and bar, lines between blocks, the bold command; the folder box; full-screen programs,
+other shells, readers, only inside Tern). They read the app's internal `debug.blocks` method and decode
+`tern screenshot` images with Quartz (no new dependency). `tests/test_suite_hygiene.py` checks the
+cleanup of the user's agent folders on a made-up home folder.
+
+- **`tests/test_tern_nav.py::test_current_tab_first_then_by_last_agent_stop`**, replaced by
+  `test_only_the_current_tab_and_tabs_whose_agent_stopped_move`. **What changed:** the requirement.
+  The user replaced the order it checked ("current tab is at the top and then ordered by which one had
+  an agent last stop/deliver", re-sorted on every selection) with "other than the focused session, tabs
+  should only move when an agent finishes their turn". The old test expected the tab the user left to
+  drop back to its stop's place; the new one checks that it stays, that the selected tab moves to the
+  top, that a tab whose agent stops moves to just below it (the latest stop first), and that a stop in
+  the current tab, a cleared mark or a stop first seen long after it happened move nothing.
+  **Requirement:** S-7 as rewritten.
+- **`tests/test_live.py::test_an_interactive_launch_goes_live_after_its_first_turn`**. **What was
+  wrong:** it read `agent info`, then the screen, and took `starting` to mean the first turn hadn't
+  ended. After the first turn ends the session also says `starting` while it opens its own interface
+  ("opening its own interface"). In a loaded full run, waiting for the view's transcript outlasted the
+  3-second turn, so the screen was read during that hand-off, showed the interface, and the test failed
+  (once in a full run; it passed alone). **Change:** it checks the order of events: whenever the
+  interface is on screen, the first message is already `done`. The status check stays for the case
+  where the turn hasn't ended. **Requirement:** AG-2, "the session runs headless until its first turn
+  finishes, and is then resumed live in that place".
+- **`tests/test_review_agents.py::test_take_over_never_types_into_another_program`**. **What was
+  wrong:** it waited for the shell under the view by looking for `%` or `$` on screen, which zsh's
+  default prompt shows and Tern's block prompt (the folder, then an empty command line) doesn't.
+  **Change:** it also accepts the pane's prompt being ready as `debug.blocks` reports it. What it checks
+  is unchanged. **Requirement:** AG-6.
+- **`tests/test_sessions_real.py`** (the module's description). It said the only lasting change to the
+  user's configuration was one trust answer per agent; the brief asks the suite to leave the user's
+  agent folders as it found them, which `conftest.py` now does after every real run
+  (`tests/agent_config.py`).

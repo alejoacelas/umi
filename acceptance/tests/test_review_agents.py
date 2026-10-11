@@ -737,7 +737,10 @@ def test_take_over_never_types_into_another_program(inst, win, tmp_path):
     inst.wait(sid)
     pane = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])["pane"]
     wait_until(lambda: inst.session_view(pane).get("showing") == "agent", 10, message="the read-only view")
-    wait_until(lambda: "%" in inst.screen(pane) or "$" in inst.screen(pane), 20, message="the shell under the view")
+    # The shell under the view is at its prompt (Tern's zsh prompt shows the folder, not "%" or "$").
+    wait_until(lambda: "%" in inst.screen(pane) or "$" in inst.screen(pane) or
+               (inst.rpc("debug.blocks", pane=pane).get("blocks") or [{}])[-1].get("state") == "active", 20,
+               message="the shell under the view")
     target = tmp_path / "typed.txt"
     inst.cli("send", "--pane", pane, "--enter", f"cat > '{target}'")
     time.sleep(1)

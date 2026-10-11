@@ -52,8 +52,8 @@ present. Extra fields are fine.
 | `pane resize [PANE] up\|down\|left\|right [AMOUNT]` | |
 | `send [--pane P] [--enter\|-e] TEXT…` | no TEXT plus a piped stdin sends stdin |
 | `keys [--pane P] KEY…` | enter esc tab backspace up down left right ctrl+c shift+tab … |
-| `read [--pane P] [--scrollback] [--lines N]` | prints text |
-| `wait [--pane P] (--pattern RE \| --idle SECS) [--timeout T]` | prints the matched text; 124 on timeout |
+| `read [--pane P] [--scrollback] [--lines N]` | prints the text as the shell and programs printed it. With Tern's look (SPEC S-9 to S-12) a zsh prompt is two blank rows, the folder, and the command line; durations, lines and the folder box are drawn, not text |
+| `wait [--pane P] (--pattern RE \| --idle SECS) [--timeout T]` | prints the matched text; 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
 | `events [--filter PREFIX]… [--pane P]` | a filter keeps events whose name starts with PREFIX; JSON lines `{"event": name, "data": {…}}`, names like `pane.created`, `pane.closed`, `pane.moved`, `pane.focused`, `tab.created`, `tab.renamed`, `tab.selected`, `window.created` |
 | `notify [--pane P] TITLE [BODY]` | |
 | `sidebar [on\|off\|toggle\|status\|tabs\|files] [--window W]` | JSON: `{"visible": bool, "mode": "tabs"\|"files", "width": points, "window": id}` |

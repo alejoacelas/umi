@@ -95,13 +95,34 @@ record a new key for one, see it take effect at once, reset it; the window says 
 file isn't changed.
 
 **S-7: sidebar order (by hand, plus a screenshot).** Four tabs, two with agents that stopped at
-different times: the current tab is at the top (after pinned ones), then the most recent stop.
-Press ⇧⌘] three times quickly: the selection walks down the list, which reorders about a second
-after the last press.
+different times. Select a tab: it goes to the top (after pinned ones), and the tab you left stays where
+it was. When an agent stops in another tab, that tab moves to just below the current one; nothing else
+moves. Press ⇧⌘] three times quickly: the selection walks down the list, and about a second after the
+last press the selected tab moves to the top.
 
 **M-4: dragging (by hand).** Add: drag a pane's grab handle onto another tab's row (it moves into
 that tab) and between two rows (a new tab there, with an insertion line); drag a tab row out of
 the window and let go over the desktop (a new window there).
+
+## Warp's look for terminals
+
+**S-9, S-10, S-11: blocks at the bottom, and the folder box.** Setup: a window whose pane ran, in zsh,
+`ls /`, `echo "echo example"`, a command that fails, and `sleep 2`, and now shows its prompt; a fresh
+pane split beside it. Compare with the user's Warp screenshot, `reference/warp-blocks.png`.
+- The prompt sits at the bottom of the pane, the output above it; the fresh pane's prompt is at its
+  bottom too, with empty space above.
+- Each command is a block, as in the screenshot: a grey header with the folder it ran in and how long
+  it took (`(0.016s)`), the command in bold, its output, and a thin line with some space between
+  blocks.
+- The failed command's block has a red bar along its left edge and a faint red tint over it, like the
+  screenshot's last block. The other blocks aren't marked.
+- At the prompt, a small rounded box with a folder icon and the current folder, as at the bottom of
+  the screenshot.
+- No "Lines: … Size: …" line under the blocks.
+
+**S-12: full-screen programs.** Setup: a full-screen program (the alternate screen) in a pane that had
+blocks.
+- The program takes the whole pane from its top: no header, line, folder box or tint.
 
 ## Editor
 

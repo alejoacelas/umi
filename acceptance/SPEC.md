@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-8, E-1 to E-10.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-10.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -363,24 +363,57 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
   Ghostty config and theme override the product's defaults.
 - **S-6 [W]** The "running/last command" line updates for commands that finish instantly.
-- **S-7 [A+W]** The sidebar's order, in the user's words: "current tab is at the top and then
-  ordered by which one had an agent last stop/deliver":
+- **S-7 [A+W]** The sidebar's order, in the user's words: "other than the focused session, tabs should
+  only move when an agent finishes their turn":
   - pinned tabs first, in pin order (pins are explicit and stay where the user put them);
-  - then the current (selected) tab;
-  - then tabs whose agents stopped or delivered, the most recent first;
-  - then the other tabs, keeping their order.
+  - selecting a tab moves it to the top of the other tabs, so the current tab is at the top;
+  - when a tab's agent stops or delivers, the tab moves to just below the current tab (several: the
+    most recent stop first);
+  - nothing else moves a tab: the tab the user leaves stays where it is. A stop first seen long after
+    it happened (sessions restored at launch) moves nothing.
 
-  This is the window's real tab order: `ls`, `#N` selectors and ⌘1–9 follow it. It is worked out
-  again when the window's selected tab changes, when an agent stops or delivers, and when a tab is
-  pinned or unpinned. A tab placed by hand (dragged, `tab move --index`, Move Tab Up/Down, `tab new
-  --index`) stays where it was put until then, even though placing it selects it. After ⇧⌘], ⇧⌘[,
-  ⌃Tab or ⌘1–9 the order stays as the user saw it until a moment (about a second) after the last
-  press, so repeated presses walk the list instead of bouncing between the top two tabs.
+  This is the window's real tab order: `ls`, `#N` selectors and ⌘1–9 follow it. A tab placed by hand
+  (dragged, `tab move --index`, Move Tab Up/Down, `tab new --index`) stays where it was put, even
+  though placing it selects it. After ⇧⌘], ⇧⌘[, ⌃Tab or ⌘1–9 the order stays as the user saw it until a
+  moment (about a second) after the last press, so repeated presses walk the list instead of bouncing
+  between the top two tabs; then the selected tab moves up, and so do tabs whose agents stopped
+  meanwhile.
 - **S-8 [A+W]** Each window's sidebar can be made wider or narrower by dragging its edge, between
   180 points and the smaller of 600 points and half the window. The width is per window, saved and
   restored with the layout; a new window starts at the width last chosen. Double-clicking the edge
   goes back to the default. `<cli> sidebar width [N]` shows or sets it; `sidebar status` still
   answers `visible` and `mode` (and now the window's `width`).
+
+### Warp's look for terminals
+
+The user's request, their Warp screenshot (`reference/warp-blocks.png`) and their choice: an
+imitation that keeps the shell underneath. zsh keeps editing the command line as it does today; Tern
+changes how the terminal looks. Colors and spacing come from Warp's own source.
+
+- **S-9 [A+W]** At the bottom. The prompt sits at the bottom of the pane from the start, and output
+  builds upward above it, as in Warp. With more than a screenful the pane scrolls as usual. It stays at
+  the bottom after `clear` and ⌘K. What the shell shows below the command line (a completion list) is
+  shown.
+- **S-10 [A+W]** Blocks. Each command and its output form a block, as in Warp:
+  - a header with the folder it ran in and how long it took, in Warp's format (`(0.041s)`,
+    `(1m 8.92s)`, `(3h 4m 12s)`; while it runs, the whole seconds so far);
+  - the command, in bold;
+  - its output;
+  - a thin line and some space between blocks.
+
+  A command that exits with an error is marked as Warp marks it: the theme's red at 10% over the block
+  and a 5-point red bar along the pane's left edge. Not shown: the "Lines: … Size: …" line of the
+  user's Warp build, Warp's input editor, and block selection, copying and other block actions.
+- **S-11 [A+W]** The folder box. At the prompt, a small rounded box with a folder icon and the current
+  folder (`~` for the home folder), as at the bottom of the screenshot.
+- **S-12 [A+W]** Where it applies:
+  - only inside Tern: other terminals, and zsh started anywhere else, look as they did;
+  - zsh only: other shells keep the usual look;
+  - full-screen programs (the alternate screen: vim, an agent's full-screen interface) take the whole
+    pane as before, with no block decorations;
+  - programs and agents that read a pane (`read`, `wait --pattern`) see what the shell and programs
+    printed (the folder line and the command line as the shell printed them), never what Tern draws;
+  - `shell-integration-features = no-tern-blocks` in the user's Ghostty config turns it off.
 
 ## E. Editor and Markdown
 

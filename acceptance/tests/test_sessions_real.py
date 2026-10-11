@@ -4,9 +4,11 @@ ACCEPTANCE_CODEX_MODEL (default gpt-6-luna, low effort).
 
 They cost money: few and cheap. Headless sessions run in a fresh folder that isn't a git project (Codex
 marks a git project it runs in with a writable sandbox as trusted, in the user's own config). Live
-sessions run in one fixed folder per agent, `acceptance/.work-real/live-claude` and `live-codex`, so the
-only lasting change to the user's configuration is one "trust this folder" answer per agent, given once,
-as the user would.
+sessions run in one fixed folder per agent, `acceptance/.work-real/live-claude` and `live-codex`, where
+the agent asks once whether to trust the folder; the test answers yes, as the user would. The agents run
+with the user's own folders (their logins are there), so after the run conftest.py removes what these
+sessions left there, trust answers included (tests/agent_config.py): the suite leaves ~/.claude,
+~/.claude.json and ~/.codex as it found them.
 
 The AG-20 tests give a real agent nothing but a task that needs other agents and the name of the CLI.
 """

@@ -3,8 +3,8 @@
 Shortcuts work whatever has focus; ⌘⇧[ goes back through the tabs visited; ⌘⇧] walks the
 sidebar order; ⌃⌘J / ⌃⌘K go to the sessions that need the user and back; ⌃⇧←/→ move tabs;
 ⌘P, ⇧⌘P and ⌘O open the command, pane and file palettes; ⌘, opens Settings, where shortcuts
-are edited; a close returns focus to the pane used before; the sidebar puts the current tab
-first, then tabs by their agents' last stop.
+are edited; a close returns focus to the pane used before; in the sidebar only the current tab
+(to the top) and tabs whose agent stopped (to just below it) move.
 
 Most checks go through the CLI. Behavior that only the UI shows is checked through the app's
 internal `debug.*` control methods (menus, the palettes, a key press delivered inside the app,
@@ -502,25 +502,42 @@ def test_closing_a_pane_focuses_the_pane_used_before(inst, win):
 # ---- S-7: the sidebar order ----------------------------------------------------------------------
 
 @pytest.mark.req("S-7")
-def test_current_tab_first_then_by_last_agent_stop(inst, win):
+def test_only_the_current_tab_and_tabs_whose_agent_stopped_move(inst, win):
+    """The user: "other than the focused session, tabs should only move when an agent finishes their
+    turn". Selecting a tab moves it to the top; the tab the user leaves stays where it is; a tab whose
+    agent stops or delivers moves to just below the current one."""
+    a = win["tab"]
     b = new_tab(inst, win)
     c = new_tab(inst, win)
     d = new_tab(inst, win)
-    rpc(inst, "debug.attention.set", pane=b["id"], title="b", stopped_ago=300)
-    rpc(inst, "debug.attention.set", pane=d["id"], title="d", stopped_ago=20)
+    panes = {b["tab"]: b["id"], c["tab"]: c["id"], d["tab"]: d["id"], a: win["pane"]}
+    b, c, d = b["tab"], c["tab"], d["tab"]
     try:
-        inst.cli("tab", "focus", win["tab"])
-        assert tab_ids(inst, win["window"]) == [win["tab"], d["tab"], b["tab"], c["tab"]]
-        inst.cli("tab", "focus", c["tab"])
-        assert tab_ids(inst, win["window"]) == [c["tab"], d["tab"], b["tab"], win["tab"]]
-        # An agent stopping or delivering moves its tab up at once.
-        rpc(inst, "debug.attention.set", pane=win["pane"], title="a", stopped_ago=1)
-        wait_until(lambda: tab_ids(inst, win["window"]) == [c["tab"], win["tab"], d["tab"], b["tab"]], 5,
+        # Each new tab took the top when it was selected.
+        assert tab_ids(inst, win["window"]) == [d, c, b, a]
+        inst.cli("tab", "focus", a)
+        assert tab_ids(inst, win["window"]) == [a, d, c, b], "the tab left (d) stays where it was"
+        inst.cli("tab", "focus", c)
+        assert tab_ids(inst, win["window"]) == [c, a, d, b], "a stays just where it was"
+        # An agent stops in b: b moves to just below the current tab, nothing else moves.
+        rpc(inst, "debug.attention.set", pane=panes[b], title="b", stopped_ago=1)
+        wait_until(lambda: tab_ids(inst, win["window"]) == [c, b, a, d], 5,
                    message="the tab whose agent just stopped comes right after the current one")
-        # `#N` selectors and `ls` follow the order.
-        assert inst.json("tab", "focus", "#2")["tab"] == win["tab"]
+        # Then one in d: d goes there, above b (the most recent stop first).
+        rpc(inst, "debug.attention.set", pane=panes[d], title="d", stopped_ago=0)
+        wait_until(lambda: tab_ids(inst, win["window"]) == [c, d, b, a], 5, message="d's stop")
+        # A stop in the current tab, a mark cleared, or a stop first seen long after it happened (a
+        # session restored at launch) moves nothing.
+        rpc(inst, "debug.attention.set", pane=panes[c], title="c", stopped_ago=0)
+        rpc(inst, "debug.attention.set", pane=panes[b], clear=True)
+        rpc(inst, "debug.attention.set", pane=panes[a], title="a", stopped_ago=600)
+        time.sleep(1)
+        assert tab_ids(inst, win["window"]) == [c, d, b, a]
+        # `#N` selectors and `ls` follow the order; selecting moves only the selected tab.
+        assert inst.json("tab", "focus", "#3")["tab"] == b
+        assert tab_ids(inst, win["window"]) == [b, c, d, a]
     finally:
-        for pane in (b["id"], d["id"], win["pane"]):
+        for pane in panes.values():
             rpc(inst, "debug.attention.set", pane=pane, clear=True)
 
 
