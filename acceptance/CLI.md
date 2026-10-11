@@ -125,7 +125,7 @@ headless; a session can be shown in a pane read-only, taken over live there, and
 | `agent report done\|blocked\|failed SUMMARY… [--session S]` | inside a session S defaults to `self`; JSON `{"report": Report}` |
 | `agent watch SESSION --notify OTHER [--message ID] [--text T]` | |
 | `agent approve SESSION [REQUEST] [--always] [--message TEXT]`, `agent deny SESSION [REQUEST] [--message TEXT]`, `agent answer SESSION [TEXT…] [--answer N=TEXT]…` | approvals and questions (sessions without full access) |
-| `agent plugins [status\|install\|remove]` | Tern's plugins in Claude Code and Codex (AG-18) |
+| `agent plugins [status\|install [--force]\|remove]` | Tern's plugins in Claude Code and Codex (AG-18); JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}`; current means this app's version, from this copy of the app, enabled and (Codex) its hooks trusted; `--force` reinstalls even when current |
 | `agent hook EVENT` | used by Tern's plugins: reads the agent's hook input on stdin; prints nothing |
 | `doctor` | exit 0 when everything needed is present |
 
