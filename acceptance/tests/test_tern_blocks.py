@@ -339,6 +339,21 @@ def test_the_command_of_a_block_that_ran_is_bold(inst, win, tmp_path):
 
 # ---- S-11: the folder box -------------------------------------------------------------------------
 
+@pytest.mark.req("S-10", "S-11")
+def test_blocks_report_wide_and_combined_characters_as_typed(inst, win, tmp_path):
+    """Review round 8: the app's report of a block's folder and command (what these tests read) turned a
+    wide character's second cell into a space and dropped the rest of a grapheme."""
+    pane = win["pane"]
+    active(inst, pane)
+    folder = tmp_path / "日本語-é"
+    folder.mkdir()
+    run(inst, pane, f"cd '{folder}'")
+    command = "echo 日本 é"
+    block = run(inst, pane, command)
+    assert block["command"] == command, block
+    assert active(inst, pane)["blocks"][-1]["header"].endswith("日本語-é")
+
+
 @pytest.mark.req("S-11")
 def test_the_folder_box_shows_the_current_folder(inst, win):
     pane = win["pane"]
