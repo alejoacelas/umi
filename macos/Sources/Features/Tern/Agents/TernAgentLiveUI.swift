@@ -296,13 +296,39 @@ extension TernAgentUI {
     }
 
     /// A parked live interface shown again (`agent open` before it finished).
-    static func unpark(_ sessionID: String, placement: TernAgentRPC.Placement) throws -> Ghostty.SurfaceView? {
+    static func unpark(_ sessionID: String, placement: TernAgentRPC.Placement, caller: TernCaller) throws -> Ghostty.SurfaceView? {
         guard let surface = shared.parked.removeValue(forKey: sessionID) else { return nil }
-        guard let window = TernTopology.currentWindow ?? TernTopology.windows.first else {
+        // Where it was asked to go, worked out before anything changes (a bad target leaves it
+        // parked): beside a pane, in a new window, or a new tab of a window.
+        var destination: TernLayout.PaneDestination?
+        var window: TerminalController?
+        do {
+            let callerPane = (try? TernTopology.callerPane(caller)) ?? nil
+            switch placement.kind {
+            case .split:
+                let target = try placement.pane.map { try TernTopology.resolvePane($0, caller: caller) } ?? callerPane
+                    ?? TernTopology.currentPane
+                if let target { destination = .besidePane(target, try TernLayout.direction(placement.direction)) }
+                else { destination = .newWindow }
+            case .window:
+                destination = .newWindow
+            case .tab:
+                window = try placement.window.map { try TernTopology.resolveWindow($0, caller: caller) }
+                    ?? callerPane.flatMap { TernTopology.locate($0)?.window }
+            }
+        } catch {
+            shared.parked[sessionID] = surface
+            throw error
+        }
+        guard let home = window ?? TernTopology.currentWindow ?? TernTopology.windows.first else {
             shared.parked[sessionID] = surface
             return nil
         }
-        TernLayout.adopt(surface, intoNewTabOf: window, focus: placement.focus)
+        TernLayout.adopt(surface, intoNewTabOf: home, focus: placement.focus && destination == nil)
+        if let destination {
+            // From its new tab to the place asked for (the tab goes away with it).
+            _ = try? TernLayout.move(surface, to: destination, focus: placement.focus)
+        }
         TernAgents.queue.async {
             guard let s = TernAgents.shared.session(id: sessionID) else { return }
             s.endLiveWhenSettled = false

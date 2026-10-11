@@ -537,8 +537,8 @@ enum TernAgentRPC {
     static func open(_ params: TernParams, caller: TernCaller) async throws -> [String: Any] {
         let session = try await agents.run { try agents.resolve(params.string("session"), caller: caller) }
         let placement = try Placement(params, caller: caller) ?? Placement(kind: .tab, focus: params.bool("focus") ?? false)
-        // A live interface removed from its pane and still finishing: back in a tab.
-        if let surface = try TernAgentUI.unpark(session.record.id, placement: placement) {
+        // A live interface removed from its pane and still finishing: back where asked.
+        if let surface = try TernAgentUI.unpark(session.record.id, placement: placement, caller: caller) {
             return try await agents.run { ["session": info(session, pane: surface.ternID), "pane": surface.ternID] }
         }
         let pane = try TernAgentUI.open(session.record.id, placement: placement, caller: caller)
@@ -617,6 +617,11 @@ enum TernAgentRPC {
                     fullAccess: payload["permission_mode"] as? String == "bypassPermissions",
                     profile: nil, env: [:], harnessArgs: [], harnessID: harnessID, parent: nil, createdAt: Date())
                 record.origin = "typed"
+                // Where its configuration lives, if the command or the pane chose (a later resume
+                // must find the conversation there).
+                if let pid, let env = TernProcessTree.environment(pid) {
+                    for key in ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] { if let value = env[key], !value.isEmpty { record.env[key] = value } }
+                }
                 record.live = true
                 record.liveAttached = false
                 record.pane = paneID

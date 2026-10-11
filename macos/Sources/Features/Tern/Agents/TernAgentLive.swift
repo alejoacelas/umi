@@ -226,6 +226,12 @@ extension TernAgentSession {
             // A hook from an interface Tern didn't attach (the user typed `claude` in a pane
             // where this conversation lives, or the attach raced): it's live now.
             guard event != "SessionEnd" else { return }
+            if live || phase == .launching || phase == .starting {
+                // Tern was running it headless: the interface owns the conversation now (one
+                // process per conversation), as with Take Over.
+                if turnIsRunning { notice("Taken over in an interface typed in a pane; the running turn was interrupted.") }
+                stopProcess(kind: .handoff, completion: nil)
+            }
             record.live = true
             record.liveAttached = false
             if let pane { record.pane = pane }
@@ -347,6 +353,11 @@ extension TernAgentSession {
     func liveKey(interrupt: Bool, typed: Int) {
         lastLiveKey = Date()
         if !interrupt {
+            // Keys typed into a permission or question dialog answer it: no draft on the prompt.
+            if liveState == .needsInput {
+                changed()
+                return
+            }
             liveDraftChars = max(0, liveDraftChars + typed)
             let had = liveDraft
             if typed > 0 { liveDraft = true } else if typed < 0 && liveDraftChars == 0 { liveDraft = false }
