@@ -705,7 +705,9 @@ func agentPlugins(_ argv: [String]) {
         }
         let installed = info["installed"] as? Bool ?? false
         var line = "\(name): " + (installed ? "Tern's plugin \(info["version"] as? String ?? "?") installed" : "Tern's plugin not installed")
-        if let bundled = info["bundled_version"] as? String, installed, info["current"] as? Bool != true {
+        if installed, info["enabled"] as? Bool == false {
+            line += " but disabled (`\(cliName) agent plugins install` enables it)"
+        } else if let bundled = info["bundled_version"] as? String, installed, info["current"] as? Bool != true {
             line += " (this app has \(bundled); `\(cliName) agent plugins install` updates it)"
         }
         if info["hooks_trusted"] as? Bool == false { line += ", its hooks not trusted yet" }

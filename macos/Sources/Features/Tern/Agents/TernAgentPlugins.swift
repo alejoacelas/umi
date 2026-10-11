@@ -72,14 +72,23 @@ enum TernAgentPlugins {
         var bundled: String?
         var hooksTrusted: Bool?
         var detail: String?
+        /// Installed from this copy of the app (another copy, a moved app or an old build may have
+        /// installed it: then it's brought over to this one).
+        var fromThisApp = true
+        /// Claude Code can have it installed but disabled (its settings were rewritten, or the
+        /// user disabled it): then it reports nothing.
+        var enabled: Bool?
 
-        var current: Bool { installed && version != nil && version == bundled && hooksTrusted != false }
+        var current: Bool {
+            installed && version != nil && version == bundled && hooksTrusted != false && fromThisApp && enabled != false
+        }
 
         var json: [String: Any] {
             var out: [String: Any] = ["agent_installed": agentInstalled, "installed": installed, "current": current]
             if let version { out["version"] = version }
             if let bundled { out["bundled_version"] = bundled }
             if let hooksTrusted { out["hooks_trusted"] = hooksTrusted }
+            if let enabled { out["enabled"] = enabled }
             if let detail { out["detail"] = detail }
             return out
         }
@@ -95,7 +104,14 @@ enum TernAgentPlugins {
             let object = FileManager.default.contents(atPath: path).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             let entries = (object?["plugins"] as? [String: Any])?[pluginID] as? [[String: Any]] ?? []
             let version = entries.first?["version"] as? String
-            return Status(agentInstalled: agent, installed: !entries.isEmpty, version: version, bundled: bundled, hooksTrusted: nil)
+            var status = Status(agentInstalled: agent, installed: !entries.isEmpty, version: version, bundled: bundled, hooksTrusted: nil)
+            if let root = bundledRoot { status.fromThisApp = claudeMarketplacePoints(at: root, env: env) }
+            if status.installed {
+                let settings = FileManager.default.contents(atPath: claudeConfigDir(env) + "/settings.json")
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                status.enabled = (settings?["enabledPlugins"] as? [String: Any])?[pluginID] as? Bool ?? false
+            }
+            return status
         case .codex:
             let home = codexHome(env)
             let config = (try? String(contentsOfFile: home + "/config.toml", encoding: .utf8)) ?? ""
@@ -105,8 +121,10 @@ enum TernAgentPlugins {
                 $0.compare($1, options: .numeric) == .orderedAscending
             }
             let trusted = installed ? config.contains("[hooks.state.\"\(pluginID):") : nil
-            return Status(agentInstalled: agent, installed: installed, version: versions.last, bundled: bundled,
-                          hooksTrusted: trusted)
+            var status = Status(agentInstalled: agent, installed: installed, version: versions.last, bundled: bundled,
+                                hooksTrusted: trusted)
+            if let root = bundledRoot { status.fromThisApp = codexMarketplacePoints(at: root, config: config) }
+            return status
         }
     }
 
@@ -159,9 +177,10 @@ enum TernAgentPlugins {
                     _ = run(["plugin", "update", pluginID])
                 }
             }
+            if status(kind, env: env).enabled == false { _ = run(["plugin", "enable", pluginID]) }
         case .codex:
             let config = (try? String(contentsOfFile: codexHome(env) + "/config.toml", encoding: .utf8)) ?? ""
-            if !config.contains("source = \"\(root)\"") {
+            if !codexMarketplacePoints(at: root, config: config) {
                 if config.contains("[marketplaces.tern]") { _ = run(["plugin", "marketplace", "remove", "tern"]) }
                 _ = run(["plugin", "marketplace", "add", root])
             }
@@ -180,6 +199,12 @@ enum TernAgentPlugins {
         return object["tern"] != nil
     }
 
+    /// Codex records the marketplace's folder with symlinks resolved (/tmp → /private/tmp).
+    private static func codexMarketplacePoints(at root: String, config: String) -> Bool {
+        let resolved = (root as NSString).resolvingSymlinksInPath
+        return [root, resolved, "/private" + root].contains { config.contains("source = \"\($0)\"") }
+    }
+
     private static func claudeMarketplacePoints(at root: String, env: [String: String]) -> Bool {
         let path = claudeConfigDir(env) + "/plugins/known_marketplaces.json"
         guard let data = FileManager.default.contents(atPath: path),
@@ -196,7 +221,9 @@ enum TernAgentPlugins {
         process.executableURL = URL(fileURLWithPath: bin)
         process.arguments = ["app-server", "--listen", "stdio://"]
         process.environment = env
-        process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+        // Not the home folder: there Claude Code takes ~/.claude/settings.json for the folder's
+        // project settings and changes it too, whatever CLAUDE_CONFIG_DIR says.
+        process.currentDirectoryURL = neutralFolder
         let input = Pipe(), output = Pipe()
         process.standardInput = input
         process.standardOutput = output
@@ -274,13 +301,22 @@ enum TernAgentPlugins {
 
     // MARK: Running the agents' commands
 
+    /// An empty folder of Tern's own to run the agents' commands in (no project settings there).
+    static let neutralFolder: URL = {
+        let url = URL(fileURLWithPath: TernPaths.directory("agent-commands"))
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }()
+
     static func runCommand(_ bin: String, _ args: [String], env: [String: String], timeout: TimeInterval = 60)
         -> (ok: Bool, output: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: bin)
         process.arguments = args
         process.environment = env
-        process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+        // Not the home folder: there Claude Code takes ~/.claude/settings.json for the folder's
+        // project settings and changes it too, whatever CLAUDE_CONFIG_DIR says.
+        process.currentDirectoryURL = neutralFolder
         let output = Pipe()
         process.standardOutput = output
         process.standardError = output
