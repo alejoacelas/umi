@@ -355,3 +355,10 @@ pane whose view is moved down selects the word drawn there) and
   the test to read it. **Change:** it waits up to 15 s for `live`/`idle` after the interface shows
   the conversation. **Requirements:** AG-2 ("then resumed live in that place") and AG-13 (truthful
   status).
+- **`tests/test_robustness.py::test_no_zombies_accumulate`**. **What was wrong:** it failed on any
+  zombie child of the product at one instant, 2 s after its sessions were removed; in two full runs a
+  shared instance that had run ~200 tests had one at that instant. A process caught between its exit
+  and its parent's wait is a zombie for that moment without accumulating. **Change:** it fails on a
+  zombie still there 5 s later, and says which process and parent it was. Looking for the cause, a real
+  way to leak one was found and fixed: a harness process outliving its session's object (removed while
+  the harness was still exiting) was never reaped. **Requirement:** AG-21 ("No zombies accumulate").

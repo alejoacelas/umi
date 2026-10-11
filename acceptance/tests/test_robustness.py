@@ -89,7 +89,15 @@ def test_no_zombies_accumulate(inst):
         inst.cli("agent", "rm", sid, "--force")
     time.sleep(2)
     product = set(processes_of_bundle(inst.target.app))
-    assert not [z for z in zombies() if z[1] in product], "zombie children of the product"
+    first = {z for z in zombies() if z[1] in product}
+    # A child caught between its exit and its parent's wait isn't accumulating: what counts is a zombie
+    # still there a few seconds later.
+    time.sleep(5)
+    left = first & set(zombies())
+    details = subprocess.run(["ps", "-o", "pid=,ppid=,stat=,lstart=,command=", "-p",
+                              ",".join(str(p) for z in left for p in z) or "1"],
+                             capture_output=True, text=True).stdout
+    assert not left, f"zombie children of the product:\n{details}"
 
 
 @pytest.mark.req("AG-21")
