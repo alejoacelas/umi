@@ -290,7 +290,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         tern_glyph_dx: i32 = 0,
         tern_glyph_dy: i32 = 0,
         tern_rects: std.ArrayList(TernRect) = .empty,
-        tern_raise: std.ArrayList(f32) = .empty,
+        /// Tern: per row, how many pixels its text is drawn above its place
+        /// and to the right (see ternPrepare).
+        tern_shift: std.ArrayList([2]f32) = .empty,
         tern_offset_px: u32 = 0,
 
         /// Tern: the decoration shape, when this graphics API draws them.
@@ -391,12 +393,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             /// Tern: the block decorations (see `tern_rects`).
             tern_rects: TernRectBuffer,
-            /// Tern: how far each row is drawn above its place (`tern_raise`).
-            tern_raise: TernRaiseBuffer,
+            /// Tern: how far each row is moved (`tern_shift`).
+            tern_shift: TernShiftBuffer,
 
             const UniformBuffer = Buffer(shaderpkg.Uniforms);
             const TernRectBuffer = if (tern_rects_supported) Buffer(TernRect) else void;
-            const TernRaiseBuffer = if (tern_rects_supported) Buffer(f32) else void;
+            const TernShiftBuffer = if (tern_rects_supported) Buffer([2]f32) else void;
             const CellBgBuffer = Buffer(shaderpkg.CellBg);
             const CellTextBuffer = Buffer(shaderpkg.CellText);
             const BgImageBuffer = Buffer(shaderpkg.BgImage);
@@ -430,10 +432,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     try TernRectBuffer.init(api.fgBufferOptions(), 1)
                 else {};
                 errdefer if (tern_rects_supported) tern_rects.deinit();
-                var tern_raise: TernRaiseBuffer = if (tern_rects_supported)
-                    try TernRaiseBuffer.init(api.bgBufferOptions(), 1)
+                var tern_shift: TernShiftBuffer = if (tern_rects_supported)
+                    try TernShiftBuffer.init(api.bgBufferOptions(), 1)
                 else {};
-                errdefer if (tern_rects_supported) tern_raise.deinit();
+                errdefer if (tern_rects_supported) tern_shift.deinit();
 
                 // Initialize our textures for our font atlas.
                 //
@@ -473,7 +475,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .target = target,
                     .custom_shader_state = custom_shader_state,
                     .tern_rects = tern_rects,
-                    .tern_raise = tern_raise,
+                    .tern_shift = tern_shift,
                 };
             }
 
@@ -487,7 +489,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.bg_image_buffer.deinit();
                 if (tern_rects_supported) {
                     self.tern_rects.deinit();
-                    self.tern_raise.deinit();
+                    self.tern_shift.deinit();
                 }
                 if (self.custom_shader_state) |*state| state.deinit();
             }
@@ -886,7 +888,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.tern.deinit(self.alloc);
             self.tern_drawn.deinit(self.alloc);
             self.tern_rects.deinit(self.alloc);
-            self.tern_raise.deinit(self.alloc);
+            self.tern_shift.deinit(self.alloc);
 
             self.font_shaper.deinit();
             self.font_shaper_cache.deinit(self.alloc);
@@ -1930,12 +1932,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const fg_count = try frame.cells.syncFromArrayLists(self.cells.fg_rows);
             if (tern_rects_supported) {
                 const rows: usize = self.cells.size.rows;
-                if (self.tern_raise.items.len < rows) {
-                    const old = self.tern_raise.items.len;
-                    self.tern_raise.resize(self.alloc, rows) catch {};
-                    if (self.tern_raise.items.len > old) @memset(self.tern_raise.items[old..], 0);
+                if (self.tern_shift.items.len < rows) {
+                    const old = self.tern_shift.items.len;
+                    self.tern_shift.resize(self.alloc, rows) catch {};
+                    if (self.tern_shift.items.len > old) @memset(self.tern_shift.items[old..], .{ 0, 0 });
                 }
-                if (self.tern_raise.items.len > 0) try frame.tern_raise.sync(self.tern_raise.items);
+                if (self.tern_shift.items.len > 0) try frame.tern_shift.sync(self.tern_shift.items);
             }
             const tern_rect_count: usize = if (tern_rects_supported) count: {
                 if (self.tern_rects.items.len == 0) break :count 0;
@@ -2025,7 +2027,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .pipeline = self.shaders.pipelines.cell_bg,
                     .uniforms = frame.uniforms.buffer,
                     .buffers = if (tern_rects_supported)
-                        &.{ null, frame.cells_bg.buffer, frame.tern_raise.buffer }
+                        &.{ null, frame.cells_bg.buffer, frame.tern_shift.buffer }
                     else
                         &.{ null, frame.cells_bg.buffer },
                     .draw = .{ .type = .triangle, .vertex_count = 3 },
@@ -3095,7 +3097,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.tern_glyph_dx = 0;
                 self.tern_glyph_dy = 0;
             }
-            if (tern_box) self.ternAddFolderIcon(y, tern_fg.?);
+            if (tern_box and tern_rects_supported) self.ternAddFolderIcon(y, tern_fg.?);
 
             // Iterator of runs for shaping.
             var run_iter_opts: font.shape.RunOptions = .{
@@ -3553,10 +3555,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // command, right for the folder box's text): for the cell
             // backgrounds (selection highlights move with their text) and
             // for the surface's mouse.
-            self.tern_raise.resize(self.alloc, rows) catch {
-                self.tern_raise.clearRetainingCapacity();
+            self.tern_shift.resize(self.alloc, rows) catch {
+                self.tern_shift.clearRetainingCapacity();
             };
-            @memset(self.tern_raise.items, 0);
+            @memset(self.tern_shift.items, .{ 0, 0 });
             const shared = &state.tern_rows;
             shared.lock.lockUncancelable(global.io());
             defer shared.lock.unlock(global.io());
@@ -3570,7 +3572,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 const b = self.tern.block(r) orelse continue;
                 const raise: u16 = @intCast(self.ternRowRaise(r.role, b.state));
                 const dx: u16 = if (r.role == .header and b.state == .active) @intCast(self.ternBoxTextDx()) else 0;
-                if (y < self.tern_raise.items.len) self.tern_raise.items[y] = @floatFromInt(raise);
+                if (y < self.tern_shift.items.len) self.tern_shift.items[y] = .{ @floatFromInt(raise), @floatFromInt(dx) };
                 if (y < shared.len) {
                     shared.raise[y] = raise;
                     shared.dx[y] = dx;
@@ -3715,6 +3717,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
         /// Tern: how far the folder's text moves right inside the box.
         fn ternBoxTextDx(self: *const Self) i32 {
+            if (comptime !tern_rects_supported) return 0;
             const b = self.ternBox();
             return @intFromFloat(b.border + b.pad_x + b.icon_w + b.gap);
         }
@@ -3817,6 +3820,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
         /// Tern: how many pixels a row's text is drawn above its row.
         fn ternRowRaise(self: *const Self, role: tern_blocks.Role, state: tern_blocks.State) i32 {
+            // Backgrounds follow moved text only where the backend draws
+            // Tern's shapes; elsewhere nothing moves.
+            if (comptime !tern_rects_supported) return 0;
             if (state == .active) return 0;
             const cell_h: f32 = @floatFromInt(self.grid_metrics.cell_height);
             return switch (role) {

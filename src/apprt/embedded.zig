@@ -1986,11 +1986,12 @@ pub const CAPI = struct {
         const w = &out.writer;
         const cell_h = core.size.cell.height;
         const drawn_px = core.renderer_state.tern_offset_px.load(.monotonic);
-        w.print("{{\"on\":{},\"offset_rows\":{d},\"drawn_offset_rows\":{d},\"rows\":{d},\"cursor_row\":", .{
+        w.print("{{\"on\":{},\"offset_rows\":{d},\"drawn_offset_rows\":{d},\"rows\":{d},\"cols\":{d},\"cursor_row\":", .{
             layout.on,
             layout.offset_rows,
             if (cell_h > 0) drawn_px / cell_h else 0,
             pins.items.len,
+            screen.pages.cols,
         }) catch return false;
         if (cursor_y) |y| w.print("{d}", .{y}) catch return false else w.writeAll("null") catch return false;
         w.writeAll(",\"roles\":[") catch return false;

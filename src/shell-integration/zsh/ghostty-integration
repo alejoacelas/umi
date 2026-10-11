@@ -93,6 +93,15 @@ _entrypoint() {
 _ghostty_deferred_init() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
 
+    # Tern: sets PS1 to the block prompt: two spacer rows, the folder, an
+    # empty command line. The folder is shortened from the left (`…/rest`) to leave room
+    # for the folder box's icon, so it never runs past the pane's edge.
+    _tern_block_prompt() {
+        builtin local width=$(( ${COLUMNS:-80} - 4 ))
+        (( width < 8 )) && width=8
+        PS1=$'\n\n%'${width}$'<…<%~%<<\n'
+    }
+
     # Enable semantic markup with OSC 133.
     _ghostty_precmd() {
         builtin local -i cmd_status=$?
@@ -165,7 +174,7 @@ _ghostty_deferred_init() {
                 # Tern: the block prompt (see above). It's Tern's own, so its
                 # lines are always marked.
                 if (( tern_blocks )); then
-                    PS1=$'\n\n%~\n'
+                    _tern_block_prompt
                     ps1_changed=0
                 fi
 
@@ -212,7 +221,7 @@ _ghostty_deferred_init() {
                 # they are breaking us.
                 precmd_functions=(${precmd_functions:#_ghostty_precmd} _ghostty_precmd)
                 # Tern: the rows the block is drawn around, even unmarked.
-                (( tern_blocks )) && PS1=$'\n\n%~\n'
+                (( tern_blocks )) && _tern_block_prompt
                 # Plugins that invoke precmd hooks from zle do that before zle
                 # is trashed. This means that the cursor is in the middle of
                 # BUFFER and we cannot print our mark there. Prompt might
