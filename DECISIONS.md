@@ -1228,7 +1228,8 @@ actions. Warp's selected/hovered/bookmarked block styles go with block selection
   (another terminal, a nested `zsh`) keeps the user's prompt, and the user's `~/.zshrc` is untouched.
   Other shells (bash, fish …) keep the usual look: macOS's bash 3.2 gets no integration at all, so the
   terminal decides at spawn time rather than from the shell's marks. A prompt from another shell's
-  integration (no `tern=1`) turns the look off until Tern's prompt comes back.
+  integration (no `tern=1`) turns the look off until Tern's prompt comes back, and a Tern block prompt
+  turns it on (zsh's integration sourced by hand with `shell-integration = none`; review round 3).
 - **Full-screen programs:** the alternate screen has no blocks and no offset.
 - **The prompt the shell prints:** the user's PS1 is replaced while the look is on (as Warp ignores
   PS1 by default); zsh's own line editing, completion, `PROMPT_SP`, PS2 and zsh-autosuggestions are as

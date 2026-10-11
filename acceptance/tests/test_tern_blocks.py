@@ -475,6 +475,24 @@ def test_it_can_be_turned_off(fresh, tmp_path):
 
 
 @pytest.mark.req("S-12")
+def test_zsh_integration_sourced_by_hand_gets_the_look(fresh, tmp_path):
+    """Review round 3: with `shell-integration = none`, sourcing Ghostty's zsh integration by hand (as its
+    documentation describes) printed Tern's block prompt but the terminal never drew the blocks."""
+    config = tmp_path / "xdg" / "ghostty"
+    config.mkdir(parents=True)
+    (config / "config").write_text("shell-integration = none\n")
+    other = fresh(prefix="acc-manual-", env={"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
+    pane = other.json("window", "new", "--name", "manual")["pane"]
+    wait_until(lambda: other.cli("read", "--pane", pane).stdout.strip(), 20, message="the prompt")
+    assert not blocks(other, pane)["blocks"], "no integration yet"
+    other.cli("send", "--pane", pane, "-e",
+              'source "$GHOSTTY_RESOURCES_DIR/shell-integration/zsh/ghostty-integration"')
+    b = wait_until(lambda: (lambda x: x if x["on"] and x["blocks"] and x["blocks"][-1]["state"] == "active" else None)(
+        blocks(other, pane)), 20, message="the block prompt, drawn")
+    assert drawn_at_the_bottom(b) or wait_until(lambda: drawn_at_the_bottom(blocks(other, pane)), 10)
+
+
+@pytest.mark.req("S-12")
 def test_only_inside_tern(inst, win):
     """The prompt is Tern's only in Tern's terminals: zsh started elsewhere (here, outside the app, with
     the user's own startup files) prints the user's own prompt, without Tern's block marker."""
