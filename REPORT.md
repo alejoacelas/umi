@@ -1,3 +1,242 @@
+# Tern 0.4.0: agent sessions redone, and the app changes you decided (BRIEF-agents.md)
+
+The earlier parts follow, unchanged. Phase 2's orchestrator guide among them is superseded by the one
+at the end of this part (steering replaced queued follow-ups; `--drop-queued` is gone). Tern 0.4.0 is
+released and your installed copy has updated itself to it.
+
+## What changed
+
+**Agent sessions** (SPEC.md AG-1 to AG-23, replacing MA, AP, IA and R-1, R-2, R-8 to R-10):
+
+- **Always run headless, shown when asked.** `tern agent start claude|codex "TASK"` runs the agent
+  headless (Claude's stream-json mode; a private `codex app-server` per session on a Unix socket).
+  Nothing appears on screen. `tern agent open S` shows a session read-only in a pane: the
+  conversation, tool activity, status, approval and question cards, and a **Take Over** button.
+- **Live and back.** Take Over (⌃⌘O, or `agent open S --live`) runs the agent's own interface in
+  that pane on the same conversation, at once. Claude's headless process stops first: one process
+  per conversation, always. Codex's interface attaches to the session's own server. When the
+  interface quits, the session is headless and idle again, and the pane shows the read-only view.
+  ⌃⌘W (`agent hide`) takes a session out of its pane without stopping it; a live interface finishes
+  its turn out of sight first.
+- **Easy launch for yourself.** `tern claude "TASK"` (or `agent start … --tab|--split|--new-window`)
+  runs the first turn headless in a new pane, then opens the agent's own interface there once the
+  session has settled (background work included). With no task it opens live at once.
+- **Messages reach live sessions.** Codex: through its server. Claude: when its interface is idle
+  and nothing is typed there, Tern takes the session back, runs the messages headless, and brings
+  the interface back in the same pane. Text typed, pasted or sent with `tern send` holds them back.
+- **Supervising and steering.** A message to a working session steers the running turn (Claude's
+  injection, Codex's `turn/steer`), each delivered exactly once, `--interrupt` goes first. `agent
+  wait` waits until the session has settled (Warp's "every stop is done" bug avoided). Also:
+  `watch --notify`, `report`, and `ls --parent self`.
+- **Observability as Warp does it, without its failures.** Tern's plugins for Claude Code and Codex
+  report hooks to the app through Tern's CLI over its socket, not through the terminal. They stay
+  silent outside Tern and in headless sessions. The app installs and updates them in your own
+  `~/.claude` and `~/.codex` at launch, as you approved. `claude`/`codex` typed in a pane become
+  sessions Tern knows.
+
+**The app changes you decided** (SPEC.md L-9 to L-20, M-4, S-3, S-4, S-7, S-8, E-10):
+
+- Sidebar rows show the folder, then the session's title, with a quiet Claude or Codex mark that
+  takes a muted color when a session finished and you haven't looked, or needs you. Looking clears
+  it. There are no desktop notifications. The Dock badge counts the sessions that need you.
+- Sidebar order: pinned tabs, then the current tab, then by last agent stop. Repeated presses walk
+  the list before it re-sorts.
+- Keys:
+  - ⌘, Settings, where shortcuts are edited.
+  - ⇧⌘[ back, ⇧⌘] and ⌃Tab next, ⌘1–9, from anywhere.
+  - ⌃⌘J the next session that needs you, ⌃⌘K back.
+  - ⌃⇧←/→ move the tab.
+  - ⇧⌘T reopens a closed pane, tab or window in place for 60 s.
+- Palettes: ⌘O quick open; ⌘P a command palette built from `tern help --json`, so it follows the
+  CLI; ⇧⌘P panes, most recent first.
+- Panes share their row equally, as in Warp. Panes can be dragged onto sidebar rows or between them;
+  a tab dragged out of the window makes a new window. Each window has its own sidebar width. Rows
+  have Warp's right-click menu. Markdown files open in the closest folder's tab.
+
+Code: app commits after `2fa4d48ed` (agents: `Sources/Features/Tern/Agents/`, `TernPlugins/`, `TernCLI/agent.swift`;
+the app changes: UI-A and UI-B merges, `TernNavigation*`, `TernTabOrder`, `TernReopen`, `TernSidebar*`,
+`Command Palette/TernPalette.swift`, `TernShortcutStore.swift`).
+
+## Decisions
+
+Details, candidates and evidence: DECISIONS.md §20–§59.
+
+| # | Decision |
+|---|---|
+| 20 | Control is always headless: each agent's own headless protocol (Claude's stream-json; a private Codex app server per session on a Unix socket, spoken over WebSocket). |
+| 21 | Live is the agent's own interface started by one line Tern types, `"$TERN_CLI" agent attach S`; Claude's headless process stops first, Codex's interface attaches to the session's server. Typed only when the pane's shell has its terminal. |
+| 22 | Messages to a live Claude wait until its interface is idle with nothing typed, then run headless and the interface comes back. Codex goes through its server. |
+| 23 | Steering by default, every message delivered exactly once (Claude's `cancel_queued`, Codex's thread items checked after a crash). |
+| 24 | "Finished" means settled: background work that will wake the agent keeps it working (Warp's bug). |
+| 25 | Observability through Tern's own plugins and CLI over the socket, not terminal escape sequences (where Warp's status broke on agent updates). |
+| 26 | ⌃⌘W removes a session from its pane; a working interface finishes out of sight first. |
+| 27 | The CLI is written for agents with no instructions: one screen of help, a worked example, errors that say what to do. |
+| 28, 59 | No desktop notifications; `stopped` means someone stopped it (a session with no process is idle); the Dock badge counts sessions that need you; a turn running in the interface continues after a quit; one interface per conversation everywhere. |
+| 29–58 | The app changes (UI-B §29–46, UI-A §47–58): equal panes, reopen, row menu and drops, sidebar width, order (pins, then the current tab, then last agent stop; placements hold about a second), shortcuts from anywhere through a key monitor, palettes from `tern help --json`. |
+
+## Tests
+
+- **The definitive run**, on the build that was released, with the real agents (Claude `haiku`, Codex
+  `gpt-6-luna` at low effort): `ACCEPTANCE_REAL=1 uv run pytest --target targets/tern.json` under
+  `caffeinate -d -i`: **359 passed, 0 failed, 20 skipped**. The 20 skipped are exactly the 20 UI tests:
+  the screen was locked throughout (checked with `conftest.py`'s `screen_locked()` before every review
+  round and before the release), so they didn't run. They are not counted as passing. What they cover
+  was also checked without the accessibility tree: `verify_ui_paths.py` 56/56 and
+  `verify_agent_panes.py` 17/17, plus the internal `debug.*` methods the scripted tests use.
+- **A final run** on the source as it is now (with the plugin fixes made after the release), the same
+  way: **361 passed, 0 failed, 20 skipped** (the same 20 UI tests).
+- **New tests:** `test_sessions.py` (107, AG-1 to AG-17, AG-22), `test_live.py` (51, the agents' own
+  interfaces through the fakes' TUI modes: live and back, Take Over, hide, messages to live
+  sessions, typed agents, plugins silent outside Tern), `test_sessions_real.py` (10 real-agent tests,
+  among them three where an agent given only a task and the CLI's name orchestrates another),
+  `test_review_agents.py` (45, one per review finding a test can reach, each failing on the build
+  before its fix), `test_tern_nav.py` (29, L-9 to L-18, S-7) and `test_tern_panes_ui.py` (34, L-19,
+  L-20, M-4, S-3, S-4, S-8, E-10). The fakes gained the live modes, Codex's socket server and
+  `thread/items/list`.
+- **Changed tests**, none weakened (TEST_CHANGES.md, last part): the replaced MA/AP/IA tests removed
+  or ported. Six tests were wrong and are fixed, each explained:
+  - an upstream split-ratio expectation (L-19);
+  - a pin-group check that assumed the old order (S-7);
+  - a stale `MA-13` tag;
+  - two badge checks that counted finished sessions;
+  - a jump test that assumed it owned every mark in the shared instance;
+  - a view test that read buttons before they were built.
+- **Written checks** (CHECKS.md): all 23 have verdicts in `acceptance/results/checks/REPORT.md`,
+  judged from screenshots taken with `tern screenshot` (which now includes open palettes):
+  - PASS for what screenshots show: S-1 to S-3, S-5 to S-8, L-14 to L-16, E-1, E-2, E-4, E-7, AG-5,
+    and P-2, I-3, I-5 from before.
+  - NOT JUDGED where a person must act, with steps (S-4, L-17, M-4, E-8, the keyboard side of L-9, the
+    hover controls of S-3).
+- **Found by the tests, not by the reviews:**
+  - Every window opened while the screen is locked held a thread for ever (AppKit's opening animation
+    never ends without frames). After 64 windows, agent commands stalled.
+  - A 4 MB message took 17 s to send: the control connection rescanned it after every read.
+  - A message steered into a Codex turn just before a crash could be delivered twice.
+  - Process names were read with a buffer `proc_name` refuses, so every process looked like a shell.
+  - A read-only view dropped out of its pane when the window got another split.
+  - A test leak disabled the user's Claude plugin. Tern's plugin commands ran from the home folder,
+    where Claude Code treats `~/.claude/settings.json` as project settings. Fixed, and the plugin
+    re-enabled.
+
+## Codex review
+
+`codex review --base 2fa4d48ed -c model_reasoning_effort="high"`, ten rounds (logs
+`logs/agents-review1.log` to `agents-review10.log`). Every high and moderate finding was fixed, with a
+regression test where a test could reach it, and the suite rerun before the next round.
+
+| Round | High | Moderate | What they were about |
+|---|---|---|---|
+| 1 | 1 | 4 | Take Over during a launch, a failed attach, quoting, shortcut order, palette races |
+| 2 | 3 | 3 | parked sessions with waiting messages, typed agents' panes, editor edits of a parked tab, shortcuts, hook paths with spaces |
+| 3 | 1 | 4 | Codex socket writes blocking every session, update protection, attention after a close, paged delivery checks, empty rename |
+| 4 | 1 | 3 | one interface per conversation across a closed pane, drafts, reopen after a resize |
+| 5 | 1 | 5 | resume while live, pastes, `rm` and names of live sessions, a failed Take Over, stale file results |
+| 6 | 3 | 1 | crash delivery for Claude, live turns across a quit, typed agents' children, failed live turns |
+| 7 | 2 | 1 | the same for Codex's attached interface, interrupted live turns |
+| 8 | 0 | 3 | background work across a quit, paste confirmation, unknown terminal actions |
+| 9 | 1 | 3 | never typing into another program, steering at turn start, hiding a live Codex, search cancellation |
+| 10 | 1 | 3 | `claude --resume` typed by hand, dialog answers, typed agents' config folders, parked placement |
+
+The loop stopped at ten rounds. Round 10's four findings were fixed and tested afterwards, but no
+review round looked at those fixes. What remains, not reviewed again: those fixes and the plugin
+fixes made after the release. Not covered by a test: a paste that waits for confirmation, cancelled
+file searches, and paging through more than 500 newer items of a Codex thread.
+
+## Release and update
+
+- **Release v0.4.0** (a new minor version) published with `app/dist/release.sh --version 0.4.0`
+  from the reviewed build, after building it with `--build --no-publish` and running the definitive
+  run on it: https://github.com/alejoacelas/tern/releases/tag/v0.4.0 with `Tern-0.4.0.zip` (22.9 MB,
+  ad-hoc signed), `appcast.json` (SHA-256 and Ed25519 signature) and `install.sh`. Nothing else: no
+  source, `acceptance/`, logs or keys. The repository's README now describes agent sessions and Tern's
+  plugins, and the uninstall line removes the plugins first (committed with your GitHub noreply
+  address).
+- **The copy installed on this Mac updated itself:** its `tern update` (your yes) found and
+  downloaded 0.4.0, and `tern update --now` installed it and relaunched. Only idle shells were running,
+  in two windows. Now: `tern --version` → 0.4.0, a release build, the signature verifies, no
+  quarantine, `update --status` → up to date. Both windows came back, with all 8 panes.
+- **Tern's plugins on this Mac** (installed by the app at launch, as you approved): Claude Code's
+  `tern@tern` 1.0.1 (enabled) and Codex's (7 hooks trusted). Both come from
+  `/Applications/Tern.app/Contents/Resources/agent-plugins`. A test run during development had
+  installed the Codex one pointing at a development build, and 0.4.0 didn't re-point it because the
+  version matched; I re-pointed it with the installed copy's `tern agent plugins install --force`.
+  The source fix comes with the next version.
+- **Your configuration otherwise:** the trust entries our test runs had added to
+  `~/.codex/config.toml` over the phases (nine throwaway `acc-*` folders and one probe folder, plus
+  the live test's folder) are removed. Nothing else in it changed. A copy from before the cleanup is
+  in `logs/codex-config-before-cleanup.toml`. `/Applications/Shade.app` and your `~/.local/bin`
+  entries are untouched.
+
+## Questions for the user
+
+1. **Claude's "trust this folder?" prompt.** When a session goes live in a folder Claude Code was
+   never opened in, its own interface asks this, although the session already ran there headless.
+   Tern leaves the answer to you, because answering writes `~/.claude.json`. Warp writes
+   `hasTrustDialogAccepted` itself for its runs. Should Tern do the same for folders it starts
+   sessions in?
+2. **Dock badge.** It counts sessions that need you (a question, an approval, input), as you wrote,
+   not ones that finished while you weren't looking; those get only the quiet sidebar mark. ⌃⌘J visits
+   both, needing-you first. Should the badge count finished-unseen sessions too?
+3. **Take Over interrupts a running Claude turn.** Claude Code can't share a running turn between two
+   processes, so "taking over is immediate" interrupts it; Codex's turn carries on. Acceptable?
+4. **Agents you type yourself** (`claude`, `codex` in a pane) become sessions Tern knows, through its
+   plugin. You can supervise them, and they show in the sidebar and on the badge. Keep that, or only
+   sessions Tern starts?
+5. **⌃⌘K** for "back" after ⌃⌘J (my choice; ⌃⌘J was already taken). Fine?
+6. **Real-agent tests and `~/.codex`.** The live Codex test answers Codex's folder-trust prompt for
+   one fixed test folder, which writes an entry to `~/.codex/config.toml`. I remove it after the run.
+   Would you rather the tests leave that one entry in place?
+
+## How an agent supervises other agents with the CLI
+
+Inside any Tern session (or any Tern terminal), `tern` is on PATH and reaches this instance. Workers
+run headless and appear nowhere unless shown. `tern agent --help` says all of this in one screen.
+
+```sh
+# Start a worker (prints its id; nothing appears on screen). A name, a folder or worktree, a model
+# and effort, full access, environment, and the agent's own flags after --.
+tern agent start codex "Fix the failing test in tests/test_api.py" --name fix-api --worktree fix-api --full-access
+
+# Wait until it has settled (background work included): DONE 0, NEEDS_INPUT 2,
+# STOPPED/ERROR/FAILED/INTERRUPTED/CANCELLED 3, TIMEOUT 124. Prints the status, then the reply.
+tern agent wait fix-api --timeout 1800
+
+# Steer it while it works (the message goes into the running turn), or give it a new task when idle.
+# --interrupt stops the current turn first and makes this next. Prints the message id.
+tern agent send fix-api "Also run the linter before you finish"
+tern agent wait fix-api --message MESSAGE_ID          # that message's own outcome
+
+# Read: the last reply, one message's reply, or everything in order.
+tern agent read fix-api [--message ID] [--transcript]
+
+# What every worker of mine is doing, and what one is waiting on.
+tern agent ls --parent self
+tern agent info fix-api
+
+# Answer what it asks (sessions without --full-access): approvals and questions.
+tern agent approve fix-api [REQUEST] [--always]   |   tern agent deny fix-api [REQUEST]   |   tern agent answer fix-api "the answer"
+
+# Be woken instead of polling: a message arrives in my own session when the worker finishes.
+tern agent watch fix-api --notify self
+
+# A worker reports its own verdict, and the supervisor can wait for that instead.
+tern agent report done "Fixed: the fixture used the wrong port"      # inside the worker
+tern agent wait fix-api --report
+
+# Show a worker to the person (read-only, with Take Over), or put it in front of them live.
+tern agent open fix-api [--split right] [--live]
+
+# Interrupt, stop (everything it started ends; a message resumes it), remove.
+tern agent interrupt fix-api   |   tern agent stop fix-api   |   tern agent rm fix-api
+```
+
+A Claude Code orchestrator in a pane can run `tern agent wait …` with `run_in_background`, or use
+`watch --notify self` and carry on. The three zero-instruction tests in `test_sessions_real.py`
+(Claude orchestrating Codex, Codex orchestrating Claude, and redirecting a worker mid-task) passed,
+each finding these commands from `--help` alone.
+
+===================================================================================================
+
 # Tern: after phase 2 (the user's answers)
 
 Phase 2's report and phase 1's follow this part. They're unchanged, except phase 2's orchestrator
