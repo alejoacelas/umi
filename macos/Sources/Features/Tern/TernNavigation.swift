@@ -280,8 +280,9 @@ enum TernTabOrder {
     /// Tabs whose agent stopped since their window's order last changed: they move up at the
     /// next reorder (when the order isn't frozen).
     private static var pendingStops: [UUID: Date] = [:]
-    /// Each window's selected tab when its order last changed: a selection that differs moves up.
-    private static var placedSelection: [ObjectIdentifier: UUID] = [:]
+    /// Each window's tab placed by hand (and selected by the placement): it stays where it was put
+    /// until another tab is selected.
+    private static var placedByHand: [ObjectIdentifier: UUID] = [:]
     private static var attentionObserver: AnyCancellable?
 
     static func start() {
@@ -311,11 +312,13 @@ enum TernTabOrder {
 
     /// A window's selected tab changed.
     static func selectionChanged(in window: TerminalController) {
+        let key = ObjectIdentifier(window)
         if holding > 0 {
             // A placement put the tab where it is: that's its place, not the top.
-            placedSelection[ObjectIdentifier(window)] = window.selectedTab.id
+            placedByHand[key] = window.selectedTab.id
             return
         }
+        if placedByHand[key] != window.selectedTab.id { placedByHand[key] = nil }
         guard !isFrozen else { return }
         reorder(window)
     }
@@ -374,7 +377,7 @@ enum TernTabOrder {
         others.insert(contentsOf: rising, at: 0)
 
         // The selected tab, unless a placement put it where it is.
-        if !selected.pinned, placedSelection[key] != selected.id {
+        if !selected.pinned, placedByHand[key] != selected.id {
             others.removeAll { $0 === selected }
             others.insert(selected, at: 0)
         }
@@ -385,7 +388,6 @@ enum TernTabOrder {
         guard !window.isClosed else { return }
         let order = ordered(window)
         for tab in window.tabs { pendingStops[tab.id] = nil }
-        placedSelection[ObjectIdentifier(window)] = window.selectedTab.id
         guard order.count == window.tabs.count, !zip(order, window.tabs).allSatisfy({ $0 === $1 }) else { return }
         window.reorderTabs(order)
     }

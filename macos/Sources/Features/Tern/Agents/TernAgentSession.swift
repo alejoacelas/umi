@@ -475,6 +475,13 @@ final class TernAgentSession {
     /// Whether the harness has a conversation to resume (it has taken a message before).
     var conversationExists: Bool { record.conversation == true }
 
+    /// A Codex thread Tern wrote a message to without learning whether it arrived (the process
+    /// ended before Codex said the turn started). The next start resumes that thread to find out
+    /// from its items, rather than opening a new one and sending the message again (AG-11).
+    var codexThreadToCheck: Bool {
+        record.kind == .codex && record.harnessID != nil && !unconfirmedMessageIDs.isEmpty
+    }
+
     func launch() {
         guard phase == .stopped else { return }
         startFailedNow = false
@@ -502,7 +509,7 @@ final class TernAgentSession {
         phase = .launching
         generation += 1
         let gen = generation
-        let resume = conversationExists
+        let resume = conversationExists || codexThreadToCheck
         let driver: TernHarnessDriver = record.kind == .claude
             ? TernClaudeDriver(session: self) : TernCodexDriver(session: self)
         self.driver = driver
@@ -560,6 +567,13 @@ final class TernAgentSession {
         saveRecord()
         notice("Couldn't start \(record.kind.rawValue): \(reason)")
         changed()
+    }
+
+    /// The harness resumed the conversation: it exists (Codex had recorded it).
+    func conversationConfirmed() {
+        guard record.conversation != true else { return }
+        record.conversation = true
+        saveRecord()
     }
 
     /// The harness answered and has its conversation open.

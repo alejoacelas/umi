@@ -144,12 +144,21 @@ final class TernCodexDriver: TernHarnessDriver {
             request("thread/resume", params) { [weak self] result, error in
                 guard let self else { return }
                 if let error {
+                    if error.contains("no rollout found"), !self.session.conversationExists {
+                        // Only resumed to check a message written before a crash: Codex never
+                        // recorded the thread, so nothing reached it. A new conversation is
+                        // right (this one never existed), and the message is sent there.
+                        self.session.reconcileDelivery(received: [], known: true)
+                        self.openThread(resume: false)
+                        return
+                    }
                     self.session.startFailed(error.contains("no rollout found")
                         ? "Codex no longer has this conversation (\(error))" : "Codex couldn't resume the conversation: \(error)")
                     return
                 }
                 let response = result as? [String: Any] ?? [:]
                 self.threadID = thread
+                self.session.conversationConfirmed()
                 let (received, known) = self.readThread(response)
                 self.confirmDelivery(thread: thread, summary: received, known: known) {
                     self.ready = true

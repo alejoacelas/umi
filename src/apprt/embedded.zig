@@ -2011,21 +2011,27 @@ pub const CAPI = struct {
                 w.writeAll(",\"duration\":") catch return false;
                 ternWriteJsonString(w, std.mem.trim(u8, text, " ")) catch return false;
             }
-            // The folder (header row) and the command (input cells of the
-            // command rows), read from the rows in the viewport.
+            // The folder (header rows) and the command (input cells of the
+            // command rows), read from the block's own rows (also when they
+            // are above the viewport).
             var header: std.ArrayList(u8) = .empty;
             defer header.deinit(alloc);
             var command: std.ArrayList(u8) = .empty;
             defer command.deinit(alloc);
-            for (layout.rows.items, 0..) |r, y| {
-                if (r.role == .none or r.block != i) continue;
-                switch (r.role) {
-                    .header => ternRowText(alloc, pins.items[y], false, &header) catch return false,
-                    .command => {
-                        if (command.items.len > 0) command.append(alloc, '\n') catch return false;
-                        ternRowText(alloc, pins.items[y], true, &command) catch return false;
-                    },
-                    else => {},
+            if (b.start) |start| rows: {
+                var p = start.down(2) orelse break :rows;
+                ternRowText(alloc, p, false, &header) catch return false;
+                while (p.rowAndCell().row.wrap) {
+                    p = p.down(1) orelse break :rows;
+                    ternRowText(alloc, p, false, &header) catch return false;
+                }
+                var n: usize = 0;
+                while (n < 64) : (n += 1) {
+                    p = p.down(1) orelse break;
+                    const row = p.rowAndCell().row;
+                    if (row.semantic_prompt == .none or row.tern_block) break;
+                    if (n > 0) command.append(alloc, '\n') catch return false;
+                    ternRowText(alloc, p, true, &command) catch return false;
                 }
             }
             w.writeAll(",\"header\":") catch return false;
@@ -2034,7 +2040,17 @@ pub const CAPI = struct {
             ternWriteJsonString(w, command.items) catch return false;
             w.writeAll("}") catch return false;
         }
-        w.writeAll("]}") catch return false;
+        w.writeAll("]") catch return false;
+        {
+            // Where rows are drawn, in points, for tests that point at them.
+            const scale = surface.getContentScale() catch apprt.ContentScale{ .x = 1, .y = 1 };
+            w.print(",\"cell_pt\":[{d:.3},{d:.3}],\"padding_pt\":{{\"top\":{d:.3},\"left\":{d:.3}}}}}", .{
+                @as(f32, @floatFromInt(core.size.cell.width)) / scale.x,
+                @as(f32, @floatFromInt(cell_h)) / scale.y,
+                @as(f32, @floatFromInt(core.size.padding.top)) / scale.y,
+                @as(f32, @floatFromInt(core.size.padding.left)) / scale.x,
+            }) catch return false;
+        }
 
         const text = alloc.dupeZ(u8, out.written()) catch return false;
         result.* = .{

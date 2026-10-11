@@ -52,6 +52,8 @@ pub const Block = struct {
     /// How long the command took (done) or has run so far in whole
     /// seconds (running). Null when unknown.
     ms: ?u64,
+    /// The block's first row. Valid only while the terminal stays locked.
+    start: ?Pin = null,
 };
 
 pub const Row = struct {
@@ -164,12 +166,18 @@ pub const Layout = struct {
         // The block the viewport starts in may start above it.
         var current: ?u16 = null;
         var in_command = false;
+        // How many rows the block's folder took (a long one wraps), so the
+        // command starts after it.
+        var header_rows: i32 = 1;
         {
             var p = pins[0];
             var d: i32 = 0;
             while (d < lookback_rows) {
                 p = p.up(1) orelse break;
                 d += 1;
+                // Scrollback compressed out of view isn't restored for this:
+                // the block starting above it stays unknown.
+                if (p.node.pageIfResident() == null) break;
                 if (isBlockStart(p)) {
                     current = try self.addBlock(alloc, screen, p, -d, now);
                     break;
@@ -182,19 +190,20 @@ pub const Layout = struct {
             const page_row = pin.rowAndCell().row;
             if (isBlockStart(pin)) {
                 current = try self.addBlock(alloc, screen, pin, y, now);
+                header_rows = 1;
             }
             const index = current orelse continue;
             const b = self.blocks.items[index];
             const rel = y - b.first;
+            // A row continuing a wrapped folder is header too.
+            if (rel == 2 + header_rows and page_row.wrap_continuation) header_rows += 1;
             const role: Role = switch (rel) {
                 0 => .spacer_top,
                 1 => .spacer,
-                2 => .header,
-                3 => command: {
+                else => if (rel < 2 + header_rows) .header else if (rel == 2 + header_rows) command: {
                     in_command = true;
                     break :command .command;
-                },
-                else => role: {
+                } else role: {
                     // Continuation lines of the command are prompt rows;
                     // the command ends at the first row of output.
                     if ((in_command or y == 0) and page_row.semantic_prompt != .none) {
@@ -228,6 +237,7 @@ pub const Layout = struct {
             .state = .prompt,
             .failed = false,
             .ms = null,
+            .start = pin,
         };
         switch (page_row.tern_state) {
             .prompt => if (newest and screen.cursor.semantic_content != .output) {

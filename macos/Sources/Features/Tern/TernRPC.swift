@@ -392,6 +392,10 @@ enum TernRPC {
             // duration.
             let pane = try TernTopology.pane(params.string("pane"), caller: caller)
             return TernInput.blocks(pane)
+        case "debug.selection":
+            // The text the user selected in a pane (no clipboard involved).
+            let pane = try TernTopology.pane(params.string("pane"), caller: caller)
+            return ["text": TernInput.selection(pane) ?? NSNull()]
         case "debug.editor.focus":
             let (window, tab) = try TernTopology.tab(params.string("tab"), caller: caller)
             TernLayout.focusTab(tab, in: window)

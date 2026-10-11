@@ -141,6 +141,15 @@ enum TernInput {
         return tidy(String(cString: text.text), lines: nil)
     }
 
+    /// The pane's selected text, if any.
+    static func selection(_ pane: Ghostty.SurfaceView) -> String? {
+        guard let surface = pane.surface else { return nil }
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_selection(surface, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        return String(cString: text.text)
+    }
+
     /// Warp's look in the pane, as the terminal describes it (`debug.blocks`).
     static func blocks(_ pane: Ghostty.SurfaceView) -> [String: Any] {
         guard let surface = pane.surface else { return [:] }

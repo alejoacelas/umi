@@ -288,6 +288,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         tern: tern_blocks.Layout = .{},
         tern_drawn: std.ArrayList(tern_blocks.Drawn) = .empty,
         tern_glyph_dx: i32 = 0,
+        tern_glyph_dy: i32 = 0,
         tern_rects: std.ArrayList(TernRect) = .empty,
         tern_offset_px: u32 = 0,
 
@@ -1698,6 +1699,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Tern: the separators, tints, bars and the folder box.
                 self.ternRebuildRects();
 
+                // Tern: with the view moved down, the space above it is empty;
+                // it never takes the first row's background.
+                if (self.tern_offset_px > 0) self.uniforms.padding_extend.up = false;
+
                 // The scrollbar is only emitted during draws so we also
                 // check the scrollbar cache here and update if needed.
                 // This is pretty fast.
@@ -2535,7 +2540,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Top edge, relative to the top of the
                 // screen, of the cell the cursor is in.
                 var pixel_y: f32 = @floatFromInt(
-                    cursor.grid_pos[1] * cell.height + padding.top,
+                    cursor.grid_pos[1] * cell.height + padding.top + self.tern_offset_px,
                 );
 
                 // If +Y is up in our shaders, we need to flip the coordinate
@@ -3051,7 +3056,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const tern_box = tern_row.role == .header and
                 tern_block != null and tern_block.?.state == .active;
             self.tern_glyph_dx = if (tern_box) self.ternBoxTextDx() else 0;
-            defer self.tern_glyph_dx = 0;
+            self.tern_glyph_dy = if (tern_block) |b| self.ternRowRaise(tern_row.role, b.state) else 0;
+            defer {
+                self.tern_glyph_dx = 0;
+                self.tern_glyph_dy = 0;
+            }
             if (tern_box) self.ternAddFolderIcon(y, tern_fg.?);
 
             // Iterator of runs for shaping.
@@ -3458,7 +3467,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             // Tern: after a block's folder, how long its command took (or
             // has run so far), as Warp shows it.
-            if (tern_row.role == .header and tern_fg != null and !tern_box) {
+            const tern_next = self.tern.row(@as(usize, y) + 1);
+            const tern_last_header = tern_next.role != .header or tern_next.block != tern_row.block;
+            if (tern_row.role == .header and tern_last_header and tern_fg != null and !tern_box) {
                 if (tern_block.?.ms) |ms| {
                     var buf: [48]u8 = undefined;
                     const text = tern_blocks.formatDuration(&buf, ms);
@@ -3531,11 +3542,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
             const blocks = self.tern.blocks.items;
             for (blocks, 0..) |b, i| {
-                // A block runs from the separator along the top of its
-                // second spacer row to the next block's.
-                const y0 = @as(f32, @floatFromInt(b.first + 1)) * cell_h;
+                // A block runs from its separator (near the top of its second
+                // spacer row) to the next block's.
+                const raise = @round(cell_h * tern_raise_separator);
+                const y0 = @as(f32, @floatFromInt(b.first + 1)) * cell_h - raise;
                 const y1 = if (i + 1 < blocks.len)
-                    @as(f32, @floatFromInt(blocks[i + 1].first + 1)) * cell_h
+                    @as(f32, @floatFromInt(blocks[i + 1].first + 1)) * cell_h - raise
                 else
                     bottom_limit;
                 const top = @max(y0, top_limit);
@@ -3565,7 +3577,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     while (end > 0 and raws[end - 1].isEmpty()) end -= 1;
                     const text_w = @as(f32, @floatFromInt(end)) * cell_w;
                     const box_w = box.border * 2 + box.pad_x * 2 + box.icon_w + box.gap + text_w;
-                    const font_h = @as(f32, @floatFromInt(self.grid_metrics.cell_height)) / 1.15;
+                    // The font's own line height (the cell may be taller).
+                    const font_h: f32 = @min(cell_h, @as(f32, @floatCast(self.grid_metrics.face_height)));
                     const box_h = @min(cell_h + 2 * box.pad_y, font_h + 2 * (box.pad_y + box.border) + 2 * scale);
                     const row_y = @as(f32, @floatFromInt(header_y)) * cell_h;
                     self.ternRect(
@@ -3721,10 +3734,34 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .glyph_size = .{ render.glyph.width, render.glyph.height },
                     .bearings = .{
                         @intCast(render.glyph.offset_x),
-                        @intCast(render.glyph.offset_y),
+                        @intCast(render.glyph.offset_y + self.tern_glyph_dy),
                     },
                 }) catch return;
             }
+        }
+
+        /// Tern: Warp's block spacing in whole rows. Warp puts 1.0 line
+        /// below a block's output, 1.1 above its header, a 0.9-line header,
+        /// 0.19 before the command and 0.5 between the command and its
+        /// output: 4.69 lines where Tern's prompt has four rows (two spacers,
+        /// the folder, the command). Scaled into those rows, the separator
+        /// sits 0.15 of a row above the second spacer's top, the folder 0.21
+        /// of a row and the command 0.28 of a row above their rows, which
+        /// leaves Warp's half-line gap before the output. At the prompt (the
+        /// folder box and the command being typed) nothing moves.
+        const tern_raise_separator = 0.147;
+        const tern_raise_header = 0.209;
+        const tern_raise_command = 0.279;
+
+        /// Tern: how many pixels a row's text is drawn above its row.
+        fn ternRowRaise(self: *const Self, role: tern_blocks.Role, state: tern_blocks.State) i32 {
+            if (state == .active) return 0;
+            const cell_h: f32 = @floatFromInt(self.grid_metrics.cell_height);
+            return switch (role) {
+                .header => @intFromFloat(@round(cell_h * tern_raise_header)),
+                .command => @intFromFloat(@round(cell_h * tern_raise_command)),
+                else => 0,
+            };
         }
 
         /// Add an underline decoration to the specified cell
@@ -3888,7 +3925,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 .glyph_size = .{ render.glyph.width, render.glyph.height },
                 .bearings = .{
                     @intCast(render.glyph.offset_x + shaper_cell.x_offset + self.tern_glyph_dx),
-                    @intCast(render.glyph.offset_y + shaper_cell.y_offset),
+                    @intCast(render.glyph.offset_y + shaper_cell.y_offset + self.tern_glyph_dy),
                 },
             });
         }
