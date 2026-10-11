@@ -1134,4 +1134,8 @@ gets focus in the key window of the active app (UI-B's sidebar may call it too; 
   `login`). Tern types its one line (`tern agent attach`) only when the shell is at its prompt or
   known to be in front; otherwise it gives up and the pane keeps its read-only view. Found on the way:
   process names were read with a buffer `proc_name` refuses, so every process looked like a shell.
+- **Tern's plugin counts as current only if it comes from this copy of the app and is enabled**, and
+  the agents' plugin commands run from an empty folder of Tern's (run from the home folder, Claude Code
+  also treats `~/.claude/settings.json` as project settings). Found while updating this Mac's copy;
+  fixed after the 0.4.0 release.
 

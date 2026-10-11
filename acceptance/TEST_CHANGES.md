@@ -278,3 +278,11 @@ Round 10 (the last review round; its findings were fixed afterwards and not revi
 `claude --resume` typed by hand for a session Tern runs headless, an answer typed into a dialog, a
 typed agent's own config folder, a parked session reopened where asked.
 
+Found while updating this Mac's copy to 0.4.0 (fixed after the release, in the next version):
+`test_a_plugin_installed_from_another_copy_of_tern_is_not_current`,
+`test_a_disabled_claude_plugin_is_not_current`. And `test_sessions_real.py::test_plugins_install_into_the_agents_configuration`
+showed that the agents' plugin commands, run from the home folder, changed the user's
+`~/.claude/settings.json` (Claude Code reads it as that folder's project settings), which disabled
+the plugin the installed copy had just enabled; Tern now runs them from an empty folder of its own,
+and the test passes with the user's plugin enabled before and after.
+

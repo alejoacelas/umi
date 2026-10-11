@@ -861,3 +861,36 @@ def test_a_parked_session_reopens_where_asked(inst, win):
     back = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])["pane"]
     assert back == pane, "the same terminal comes back"
     assert inst.find_pane(back)[1]["id"] == win["tab"], "beside the pane asked for"
+
+
+# ---- found while updating the installed copy -------------------------------------------------------
+
+@pytest.mark.req("AG-18")
+def test_a_plugin_installed_from_another_copy_of_tern_is_not_current(inst):
+    """Found while updating this Mac's copy to 0.4.0: Codex's Tern plugin had been installed from a
+    development build of the same plugin version, and the installed app took it as current, so its
+    marketplace kept pointing at that build."""
+    home = os.path.join(inst.fake_dir, "codex-home")
+    os.makedirs(os.path.join(home, "plugins", "cache", "tern", "tern", "1.0.1"), exist_ok=True)
+    with open(os.path.join(home, "config.toml"), "w") as f:
+        f.write('[marketplaces.tern]\nsource_type = "local"\nsource = "/somewhere/else/Tern.app/Contents/Resources/agent-plugins"\n\n'
+                '[plugins."tern@tern"]\nenabled = true\n\n'
+                '[hooks.state."tern@tern:hooks/hooks.json:stop:0:0"]\ntrusted_hash = "x"\n')
+    status = inst.json("agent", "plugins")
+    codex = status.get("codex") or {}
+    assert codex.get("installed") and codex.get("current") is False, status
+
+
+@pytest.mark.req("AG-18")
+def test_a_disabled_claude_plugin_is_not_current(inst):
+    """Found while updating this Mac's copy: Claude Code had Tern's plugin installed but disabled (its
+    settings had been rewritten), and Tern took it as current, so it reported nothing."""
+    config = inst.claude_config
+    os.makedirs(os.path.join(config, "plugins"), exist_ok=True)
+    with open(os.path.join(config, "plugins", "installed_plugins.json"), "w") as f:
+        json.dump({"version": 2, "plugins": {"tern@tern": [{"scope": "user", "version": "1.0.1"}]}}, f)
+    with open(os.path.join(config, "settings.json"), "w") as f:
+        json.dump({"enabledPlugins": {}}, f)
+    claude = inst.json("agent", "plugins").get("claude") or {}
+    assert claude.get("installed") and claude.get("enabled") is False and claude.get("current") is False, claude
+    assert "disabled" in inst.cli("agent", "plugins").stdout
