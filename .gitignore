@@ -1,5 +1,6 @@
-app/
+# Kept out of git: earlier runs' logs, agent worktrees, local reference copies.
 .ref/
 logs/
-release-repo/
 .worktrees/
+.DS_Store
+__pycache__/
