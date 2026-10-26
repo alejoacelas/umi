@@ -112,7 +112,8 @@ enum UmiAgentEnvironment {
                                   "UMI_TAB_ID", "UMI_WINDOW_ID", "UMI_SESSION_ID", "UMI_INSTANCE",
                                   "UMI_STATE_DIR", "UMI_SESSION_NAME", "TERM_SESSION_ID", "ITERM_SESSION_ID",
                                   "UMI_HEADLESS", "UMI_PLUGIN_ROOT", "UMI_CLI"]
-        return exact.contains(key)
+        // TERN_*: the same markers under Umi's name before 0.6.0 (a Tern pane's identity).
+        return exact.contains(key) || key.hasPrefix("TERN_")
     }
 
     /// The full environment for a session's harness process.

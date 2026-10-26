@@ -13,6 +13,9 @@ class LastWindowPosition {
         // with the wrong one when window decorations change while creating,
         // e.g. adding a toolbar affects the window's frame.
         guard let window, window.isVisible else { return false }
+        // Umi: an isolated instance (the tests, a second copy) shares the user's defaults; its
+        // windows don't decide where the user's next window opens, and the other way round.
+        guard !UmiPaths.isIsolated else { return false }
         let frame = window.frame
         let rect = [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height]
         UserDefaults.ghostty.set(rect, forKey: positionKey)
@@ -30,7 +33,7 @@ class LastWindowPosition {
     /// - Returns: `true` if the frame was modified, `false` if there was nothing to restore.
     @discardableResult
     func restore(_ window: NSWindow, origin restoreOrigin: Bool = true, size restoreSize: Bool = true) -> Bool {
-        guard restoreOrigin || restoreSize else { return false }
+        guard restoreOrigin || restoreSize, !UmiPaths.isIsolated else { return false }
 
         guard let values = UserDefaults.ghostty.array(forKey: positionKey) as? [Double],
               values.count >= 2 else { return false }

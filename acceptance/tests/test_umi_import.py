@@ -121,3 +121,44 @@ def test_nothing_is_copied_when_umi_has_state_of_its_own(fresh):
     umi = fresh(prefix="acc-import-has-", env={"UMI_IMPORT_STATE_DIR": tern.dir})
     assert not os.path.exists(os.path.join(umi.dir, "imported-from-tern.json"))
     assert "only-in-tern" not in [t.get("name") for t in tabs(umi)]
+
+
+@pytest.mark.req("R-11")
+def test_links_in_terns_folder_are_not_followed(fresh, tmp_path):
+    """Only Tern's own files are copied: a symbolic link in its folder (say, sessions kept
+    elsewhere) is left out, so nothing Umi later writes can reach the files it points to."""
+    tern = fresh(prefix="acc-tern-link-")
+    tern.cli("tab", "new", "--name", "beside-a-link")
+    tern.quit_app()
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "abc").mkdir(parents=True)
+    (elsewhere / "abc" / "session.json").write_text("{}")
+    sessions = os.path.join(tern.dir, "sessions")
+    os.makedirs(sessions, exist_ok=True)
+    os.symlink(elsewhere / "abc", os.path.join(sessions, "linked"))
+    before = snapshot(str(elsewhere))
+
+    umi, state = importing(fresh, tern)
+    umi.start_app()
+    assert not os.path.lexists(os.path.join(state, "sessions", "linked")), "the link wasn't copied"
+    for root, dirs, files in os.walk(state):
+        for name in dirs + files:
+            assert not os.path.islink(os.path.join(root, name)), f"a link in Umi's copy: {name}"
+    assert snapshot(str(elsewhere)) == before
+
+
+@pytest.mark.req("P-1")
+def test_another_apps_ghostty_resources_are_not_used(fresh, tmp_path):
+    """Launched from one of Tern's (or Ghostty's) terminals, Umi inherits GHOSTTY_RESOURCES_DIR
+    pointing into that app. Umi's terminals must still get Umi's own shell integration."""
+    foreign = tmp_path / "Tern.app" / "Contents" / "Resources" / "ghostty"
+    foreign.mkdir(parents=True)
+    umi = fresh(prefix="acc-foreign-res-", env={"GHOSTTY_RESOURCES_DIR": str(foreign),
+                                                 "GHOSTTY_BIN_DIR": str(foreign.parent.parent / "MacOS")})
+    pane = umi.cli("tab", "new").stdout.strip()
+    wait_until(lambda: umi.screen(pane).strip(), 20, message="the shell prompt")
+    umi.type_line(pane, '[[ "$GHOSTTY_RESOURCES_DIR" == */Umi.app/Contents/Resources/* ]] && echo res-own || echo res-other')
+    verdict = wait_until(lambda: next((line.strip() for line in umi.screen(pane).splitlines()
+                                       if line.strip() in ("res-own", "res-other")), None), 20,
+                         message="the pane's answer")
+    assert verdict == "res-own", "the pane got another app's GHOSTTY_RESOURCES_DIR"

@@ -11,8 +11,13 @@ import Foundation
 /// sessions are copied as stopped: nothing in the copy is live, running or waiting to be
 /// delivered, so Umi never starts a second process on a conversation Tern is driving, and never
 /// sends a message Tern is already handling. The panes still show those sessions, and Take Over
-/// continues one in Umi. When Tern isn't running the copy is taken as is, and Umi resumes it the
-/// way Tern would have on its next launch (a session that was live comes back live).
+/// continues one in Umi. A session that can't be made stopped isn't copied at all. When Tern isn't
+/// running the copy is taken as is, and Umi resumes it the way Tern would have on its next launch
+/// (a session that was live comes back live).
+///
+/// Only regular files and folders are copied (never a symbolic link, so nothing in Umi's copy
+/// leads back into Tern's files or anywhere else). What couldn't be copied after a few tries is
+/// listed in `imported-from-tern.json`; to copy again, quit Umi and remove its state directory.
 ///
 /// Isolated instances (`UMI_STATE_DIR`) copy nothing unless `UMI_IMPORT_STATE_DIR` names a
 /// folder to copy from (the tests' way in).
@@ -44,31 +49,41 @@ enum UmiTernImport {
         // Copy into a folder next to the destination and move it into place at the end, so an
         // interrupted copy leaves no half-made state directory behind (the next launch retries).
         let staging = dest + ".importing-\(getpid())"
-        try? fm.removeItem(atPath: staging)
-        do {
-            try fm.createDirectory(atPath: staging, withIntermediateDirectories: true)
-        } catch {
-            return false
-        }
-        let running = isRunning(stateDirectory: source)
+        removeStaleStaging(next: dest)
         var names: [String] = []
-        for name in copied {
-            let from = (source as NSString).appendingPathComponent(name)
-            guard fm.fileExists(atPath: from) else { continue }
-            do {
-                try fm.copyItem(atPath: from, toPath: (staging as NSString).appendingPathComponent(name))
-                names.append(name)
-            } catch {
-                NSLog("Umi: couldn't copy \(from) from Tern: \(error)")
+        var failed: [String] = []
+        var runningBefore = false
+        // A running Tern rewrites files while they're copied; a failed copy is tried again.
+        for attempt in 1...3 {
+            try? fm.removeItem(atPath: staging)
+            guard mkdir(staging, 0o755) == 0 else { return false }
+            runningBefore = isRunning(stateDirectory: source)
+            names = []
+            failed = []
+            for name in copied {
+                let from = (source as NSString).appendingPathComponent(name)
+                var st = stat()
+                guard lstat(from, &st) == 0 else { continue }
+                let errors = copyTree(from, (staging as NSString).appendingPathComponent(name))
+                if errors.isEmpty { names.append(name) } else { failed += errors }
             }
+            if failed.isEmpty { break }
+            NSLog("Umi: copying Tern's state, attempt \(attempt): couldn't copy \(failed)")
+            if attempt < 3 { usleep(300_000) }
         }
-        if running { stopSessions(in: (staging as NSString).appendingPathComponent("sessions")) }
-        let note: [String: Any] = [
+
+        // Tern running at any point of the copy counts (it may have started meanwhile).
+        let running = runningBefore || isRunning(stateDirectory: source)
+        var dropped: [String] = []
+        if running { dropped = stopSessions(in: (staging as NSString).appendingPathComponent("sessions")) }
+        var note: [String: Any] = [
             "from": source,
             "at": ISO8601DateFormatter().string(from: Date()),
             "tern_running": running,
             "copied": names,
         ]
+        if !failed.isEmpty { note["failed"] = failed }
+        if !dropped.isEmpty { note["sessions_not_copied"] = dropped }
         if let data = try? JSONSerialization.data(withJSONObject: note, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL(fileURLWithPath: (staging as NSString).appendingPathComponent("imported-from-tern.json")))
         }
@@ -78,6 +93,46 @@ enum UmiTernImport {
             return false
         }
         return true
+    }
+
+    /// Copy a file or folder: regular files and folders only (symbolic links and anything else
+    /// are left out), and a file that disappears meanwhile (Tern replaces some through temporary
+    /// files) is skipped. Copies are owner-writable, since stopping sessions rewrites some.
+    /// Returns what couldn't be copied.
+    private static func copyTree(_ from: String, _ to: String) -> [String] {
+        var st = stat()
+        guard lstat(from, &st) == 0 else { return errno == ENOENT ? [] : [from] }
+        switch st.st_mode & S_IFMT {
+        case S_IFDIR:
+            guard mkdir(to, (st.st_mode & 0o777) | 0o700) == 0 else { return [from] }
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: from) else {
+                return access(from, F_OK) != 0 ? [] : [from]
+            }
+            return names.flatMap {
+                copyTree((from as NSString).appendingPathComponent($0), (to as NSString).appendingPathComponent($0))
+            }
+        case S_IFREG:
+            guard let data = FileManager.default.contents(atPath: from) else {
+                return access(from, F_OK) != 0 ? [] : [from]
+            }
+            let mode = Int((st.st_mode & 0o777) | 0o600)
+            return FileManager.default.createFile(atPath: to, contents: data, attributes: [.posixPermissions: mode]) ? [] : [from]
+        default:
+            NSLog("Umi: not copying \(from) from Tern (not a file or folder)")
+            return []
+        }
+    }
+
+    /// Staging folders of launches that died while copying (their process is gone).
+    private static func removeStaleStaging(next dest: String) {
+        let parent = (dest as NSString).deletingLastPathComponent
+        let prefix = (dest as NSString).lastPathComponent + ".importing-"
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: parent)) ?? [] where name.hasPrefix(prefix) {
+            guard let pid = Int32(name.dropFirst(prefix.count)), pid > 0 else { continue }
+            if kill(pid, 0) != 0 && errno == ESRCH {
+                try? FileManager.default.removeItem(atPath: (parent as NSString).appendingPathComponent(name))
+            }
+        }
     }
 
     /// Whether an app holds the instance lock of this state directory (Tern takes it for its
@@ -102,68 +157,94 @@ enum UmiTernImport {
 
     /// Make every copied session stopped: no live interface, no harness, no queue, and the
     /// messages Tern was still handling end as interrupted in the copy (Tern goes on with them).
-    static func stopSessions(in root: String) {
+    /// A session that can't be rewritten is removed from the copy, so Umi never resumes it.
+    /// Returns the ids of the sessions removed.
+    static func stopSessions(in root: String) -> [String] {
         let fm = FileManager.default
-        guard let ids = try? fm.contentsOfDirectory(atPath: root) else { return }
+        guard let ids = try? fm.contentsOfDirectory(atPath: root) else { return [] }
+        var dropped: [String] = []
         for id in ids where !id.hasPrefix(".") {
             let folder = (root as NSString).appendingPathComponent(id)
-            let recordPath = (folder as NSString).appendingPathComponent("session.json")
-            guard let data = fm.contents(atPath: recordPath),
-                  var record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
-            for field in runningFields { record.removeValue(forKey: field) }
-            record["openSelfTurn"] = false
-
-            let logPath = (folder as NSString).appendingPathComponent("log.jsonl")
-            var log = fm.contents(atPath: logPath) ?? Data()
-            // Tern may have been writing the last line: drop a partial one.
-            if let last = log.last, last != 0x0A {
-                log = log.prefix((log.lastIndex(of: 0x0A).map { $0 + 1 }) ?? 0)
-            }
-            var messages: [String: [String: Any]] = [:]
-            var order: [String] = []
-            var lastItem = 0
-            for line in log.split(separator: 0x0A) where !line.isEmpty {
-                guard let entry = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
-                if let message = entry["m"] as? [String: Any], let mid = message["id"] as? String {
-                    if messages[mid] == nil { order.append(mid) }
-                    messages[mid] = message
+            if !stopSession(id: id, folder: folder) {
+                try? fm.removeItem(atPath: folder)
+                if fm.fileExists(atPath: folder) {
+                    // Couldn't remove it either: hide it from Umi (sessions starting with "." aren't loaded).
+                    _ = rename(folder, (root as NSString).appendingPathComponent(".not-copied-\(id)"))
                 }
-                if let item = entry["i"] as? [String: Any], let iid = item["id"] as? String,
-                   let n = iid.split(separator: "-").last.flatMap({ Int($0) }) {
-                    lastItem = max(lastItem, n)
-                }
-            }
-            let now = Date().timeIntervalSince1970
-            var appended = Data()
-            func append(_ entry: [String: Any]) {
-                guard let line = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]) else { return }
-                appended.append(line)
-                appended.append(0x0A)
-            }
-            for mid in order {
-                guard var message = messages[mid], let state = message["state"] as? String,
-                      ["queued", "sent", "delivered"].contains(state) else { continue }
-                message["state"] = "interrupted"
-                message["error"] = "Tern was still handling this message when Umi copied the session"
-                message["finishedAt"] = now
-                message.removeValue(forKey: "cutOff")
-                append(["m": message])
-            }
-            let next = max(record["nextItem"] as? Int ?? 1, lastItem + 1)
-            append(["i": [
-                "id": "\(id.prefix(8))-\(next)",
-                "kind": "notice",
-                "text": "Copied from Tern, which was still running this session. Take Over continues it in Umi.",
-                "at": now,
-            ]])
-            record["nextItem"] = next + 1
-            log.append(appended)
-            try? log.write(to: URL(fileURLWithPath: logPath))
-            chmod(logPath, 0o600)
-            if let out = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) {
-                try? out.write(to: URL(fileURLWithPath: recordPath))
-                chmod(recordPath, 0o600)
+                dropped.append(id)
             }
         }
+        return dropped
+    }
+
+    private static func stopSession(id: String, folder: String) -> Bool {
+        let fm = FileManager.default
+        let recordPath = (folder as NSString).appendingPathComponent("session.json")
+        guard let data = fm.contents(atPath: recordPath),
+              var record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        for field in runningFields { record.removeValue(forKey: field) }
+        record["openSelfTurn"] = false
+
+        let logPath = (folder as NSString).appendingPathComponent("log.jsonl")
+        var log = fm.contents(atPath: logPath) ?? Data()
+        // Tern may have been writing the last line: drop a partial one.
+        if let last = log.last, last != 0x0A {
+            log = log.prefix((log.lastIndex(of: 0x0A).map { $0 + 1 }) ?? 0)
+        }
+        var messages: [String: [String: Any]] = [:]
+        var order: [String] = []
+        var lastItem = 0
+        for line in log.split(separator: 0x0A) where !line.isEmpty {
+            guard let entry = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
+            if let message = entry["m"] as? [String: Any], let mid = message["id"] as? String {
+                if messages[mid] == nil { order.append(mid) }
+                messages[mid] = message
+            }
+            if let item = entry["i"] as? [String: Any], let iid = item["id"] as? String,
+               let n = iid.split(separator: "-").last.flatMap({ Int($0) }) {
+                lastItem = max(lastItem, n)
+            }
+        }
+        let now = Date().timeIntervalSince1970
+        var appended = Data()
+        func append(_ entry: [String: Any]) -> Bool {
+            guard let line = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]) else { return false }
+            appended.append(line)
+            appended.append(0x0A)
+            return true
+        }
+        for mid in order {
+            guard var message = messages[mid], let state = message["state"] as? String,
+                  ["queued", "sent", "delivered"].contains(state) else { continue }
+            message["state"] = "interrupted"
+            message["error"] = "Tern was still handling this message when Umi copied the session"
+            message["finishedAt"] = now
+            message.removeValue(forKey: "cutOff")
+            guard append(["m": message]) else { return false }
+        }
+        let next = max(record["nextItem"] as? Int ?? 1, lastItem + 1)
+        _ = append(["i": [
+            "id": "\(id.prefix(8))-\(next)",
+            "kind": "notice",
+            "text": "Copied from Tern, which was still running this session. Take Over continues it in Umi.",
+            "at": now,
+        ]])
+        record["nextItem"] = next + 1
+        log.append(appended)
+        guard let out = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { return false }
+        // Whole files, replaced in one step: the log first, so a record never claims more than it.
+        return replace(logPath, with: log) && replace(recordPath, with: out)
+    }
+
+    private static func replace(_ path: String, with data: Data) -> Bool {
+        let tmp = path + ".stopping"
+        guard FileManager.default.createFile(atPath: tmp, contents: data, attributes: [.posixPermissions: 0o600]) else {
+            return false
+        }
+        if rename(tmp, path) != 0 {
+            unlink(tmp)
+            return false
+        }
+        return true
     }
 }

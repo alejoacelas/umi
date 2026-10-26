@@ -362,3 +362,25 @@ pane whose view is moved down selects the word drawn there) and
   zombie still there 5 s later, and says which process and parent it was. Looking for the cause, a real
   way to leak one was found and fixed: a harness process outliving its session's object (removed while
   the harness was still exiting) was never reaped. **Requirement:** AG-21 ("No zombies accumulate").
+
+## Umi: the rename (BRIEF-umi.md)
+
+- **Everything renamed with the product**: `targets/tern.json` is `targets/umi.json` (with `UMI_*`
+  variables, `Umi.app`, `umi-app`, `umi`), `test_tern_*.py` are `test_umi_*.py`, `checks/tern_*.py`
+  are `checks/umi_*.py`, and the tests' texts and fake plugin names follow. No assertion changed.
+  The targets for the old ui-a/ui-b worktrees were removed.
+- **`targets/umi.json` and `tests/harness.py`**: the target's paths are relative to the target file
+  (`../../app/...`), and the harness resolves command words starting with `./` or `../` the same way,
+  so the suite runs from any checkout (the old target pointed into `~/dev/terminal-3`).
+  `other_products`/`other_names` list Tern (P-1: Umi must coexist with its former self).
+- **New, `tests/test_umi_import.py`** (SPEC R-11, coming from Tern): the first launch copies a
+  "Tern" folder's tabs, pins, splits and sessions and leaves the folder byte-identical, and copies
+  nothing again; a turn "Tern" is still running is delivered once and never run by Umi; nothing is
+  copied when Umi has state of its own; a symbolic link in Tern's folder isn't copied or followed;
+  and (P-1) an inherited `GHOSTTY_RESOURCES_DIR` of another app doesn't reach Umi's terminals.
+- **Not a test change, but it changed results**: four blocks tests (S-10, S-11) failed after the
+  rename because new windows were 65 columns wide. They had passed because isolated instances share
+  the app's user defaults, and `dev.tern.app` remembered the size of Alejo's own Tern window
+  (`NSWindowLastPosition`); `dev.umi.app` had none, so windows took the nib's 800 points minus the
+  sidebar. Umi's window now starts at 1180 × 740 points, and isolated instances neither use nor
+  save the remembered frame, so the suite no longer depends on how the user last sized a window.

@@ -178,6 +178,13 @@ enum UmiEnvironment {
             && (exact.contains(key) || prefixes.contains(where: { key.hasPrefix($0) })) {
             unsetenv(key)
         }
+        // Another Ghostty-based app's resources (Tern's, Ghostty's): release builds would take
+        // its shell integration and helpers instead of this bundle's. Without the variables,
+        // Ghostty finds this bundle's own next to the executable.
+        let bundle = Bundle.main.bundlePath + "/"
+        for key in ["GHOSTTY_RESOURCES_DIR", "GHOSTTY_BIN_DIR"] {
+            if let value = env[key], !value.hasPrefix(bundle) { unsetenv(key) }
+        }
     }
 
     /// Variables every pane gets: who it is and how to reach this instance.
