@@ -1403,7 +1403,8 @@ session that can't be rewritten is left out. What failed is listed in the note a
 copy, in an alert at launch with the way to retry (quit Umi, remove its state directory, open it).
 Round 3: watches aren't copied either (a copied watch would message its supervising session when
 the watched one finishes, resuming a conversation Tern may be driving; `umi agent watch` sets one up
-again), and the copy is created with the permissions of Tern's folder, never looser.
+again), and the copy is created with the permissions of Tern's folder, never looser (round 4: those of the
+folder a link leads to, when Tern's folder is itself a link; a moved folder is still copied).
 
 Evidence: `acceptance/tests/test_umi_import.py` (R-11): tabs, pins, splits, sessions and transcripts
 copied, Tern's folder byte-identical, nothing copied twice; a turn "Tern" is still running is

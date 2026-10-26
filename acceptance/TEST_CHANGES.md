@@ -395,3 +395,8 @@ pane whose view is moved down selects the word drawn there) and
   (`test_a_copied_watch_never_resumes_its_supervisor`, fails on the build before the fix with the
   watch's message delivered), and a private Tern folder stays private
   (`test_a_private_tern_folder_stays_private`).
+- **Review round 4**: `test_a_private_tern_folder_stays_private` also checks a Tern folder reached
+  through a link (the link's own mode is looser than the folder's).
+- **Not a test change**: a full run had 7 failures and errors from a full disk ("No space left on
+  device", pytest unable to make its temporary folders); the same tests passed once space was freed.
+  Full runs now keep one pytest temporary folder (`-o tmp_path_retention_count=1`).

@@ -180,6 +180,18 @@ def test_a_private_tern_folder_stays_private(fresh):
     umi.start_app()
     assert os.stat(state).st_mode & 0o077 == 0, oct(os.stat(state).st_mode)
 
+    # Review round 4: the same when Tern's folder is reached through a link (the link's own mode
+    # is 0755): the folder's permissions count.
+    link = tern.dir + "-link"
+    os.symlink(tern.dir, link)
+    try:
+        umi2, state2 = importing(fresh, tern)
+        umi2.env["UMI_IMPORT_STATE_DIR"] = link
+        umi2.start_app()
+        assert os.stat(state2).st_mode & 0o077 == 0, oct(os.stat(state2).st_mode)
+    finally:
+        os.unlink(link)
+
 
 @pytest.mark.req("R-11")
 def test_nothing_is_copied_when_umi_has_state_of_its_own(fresh):

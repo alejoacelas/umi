@@ -61,9 +61,11 @@ enum UmiTernImport {
         // A running Tern rewrites files while they're copied; a failed copy is tried again.
         for attempt in 1...3 {
             try? fm.removeItem(atPath: staging)
-            // Tern's folder's own permissions (it may have been made private), never looser.
+            // Tern's folder's own permissions (it may have been made private), never looser. `stat`,
+            // not `lstat`: if the folder itself is a link (moved elsewhere by the user), what counts
+            // is the folder it leads to, never the link's own mode.
             var sourceStat = stat()
-            let mode = lstat(source, &sourceStat) == 0 ? (sourceStat.st_mode & 0o777) | 0o700 : 0o700
+            let mode = stat(source, &sourceStat) == 0 ? (sourceStat.st_mode & 0o777) | 0o700 : 0o700
             guard mkdir(staging, mode) == 0 else { return false }
             chmod(staging, mode)
             runningBefore = isRunning(stateDirectory: source)
