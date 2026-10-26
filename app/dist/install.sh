@@ -9,12 +9,15 @@
 # Markdown files and opens it. Nothing else needs to be installed first.
 #
 # Options and environment:
-#   --from PATH                     install this Umi.app instead of downloading one
+#   --from PATH                    install this Umi.app instead of downloading one
 #   UMI_INSTALL_DEST=PATH          where the app goes (default /Applications/Umi.app)
 #   UMI_INSTALL_BIN=DIR            where `umi` is linked (default ~/.local/bin)
 #   UMI_INSTALL_NO_DEFAULT=1       don't make Umi the default app for Markdown
 #   UMI_INSTALL_NO_LAUNCH=1        don't open Umi afterwards
 #   UMI_INSTALL_FEED=URL           the release feed to install from (default: the latest release)
+#
+# Umi was called Tern before 0.6.0. Tern can stay installed: Umi copies its tabs and agent
+# sessions the first time it opens and leaves Tern's own files alone.
 set -euo pipefail
 
 repo="alejoacelas/umi"
@@ -23,7 +26,7 @@ from=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --from) from="$2"; shift 2 ;;
-        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
         *) echo "install.sh: unknown argument $1" >&2; exit 2 ;;
     esac
 done

@@ -1331,3 +1331,110 @@ last stop gave it. Now nothing is sorted:
   stayed a zombie of the app. `TernHarnessProcess` now hands such a process to a small reaper (a
   dispatch process source per pid) when the object goes away first. The test that caught it now fails
   only on a zombie still there 5 s later, and names it (TEST_CHANGES.md).
+
+---------------------------------------------------------------------------------------------------
+
+# Decisions for Umi: the rename and one repository (BRIEF-umi.md)
+
+Product identity from here on: **Umi** (`Umi.app`, bundle id `dev.umi.app`, CLI `umi`, state directory
+`~/Library/Application Support/Umi` or `$UMI_STATE_DIR`, control socket `<per-user temp dir>/umi-<hash>.sock`,
+user config `~/.config/umi/config`, release repository `alejoacelas/umi`). Everything above this part
+says Tern and stays that way.
+
+## 66. One repository: a subtree merge, not a rewritten history
+
+Candidates: (a) `git subtree add --prefix=app` (the app's commits keep their ids; one merge commit
+moves the tree under `app/`); (b) rewrite the app's 18,148 commits with an `app/` prefix
+(`filter-repo --to-subdirectory-filter`) and merge them. (b) makes `git log -- app/x` reach back, but
+every Ghostty commit gets a new id, so upstream Ghostty could never be merged again without
+rewriting it too. (a) keeps `git subtree pull --prefix=app` against upstream working, and `git blame`
+still follows files into the old history (checked on `UmiPaths.swift` and `Terminal.zig`). Pick (a).
+The release repository (4 commits, `alejoacelas/tern`'s README and licenses) was merged the same way
+and its files moved to the root (`README.md`, `LICENSE`, `licenses/`). The outer repository's ignore
+rules for `app/` and `release-repo/` went; `logs/`, `.worktrees/` and `.ref/` (local Wraith reference
+copies, not needed by anything) stay out. Largest blob in the whole history: 22 MB
+(`pkg/harfbuzz/libharfbuzz.a`, Ghostty's). No secret in the Tern-era commits (searched for the
+signing key itself and common token shapes). The two targets for the old ui-a/ui-b worktrees were
+removed (they pointed at `~/dev/terminal-3/.worktrees`).
+
+## 67. What the rename covers
+
+"Everything user-facing" was read as everything a person or a future agent working here sees: not
+only the bundle, CLI, state folder, variables, feed, installer, plugins and docs, but the source's own
+names too (`Features/Umi`, `UmiPaths`, `umi_blocks.zig`, `ghostty_surface_umi_blocks`, the
+`umi-blocks` shell feature and the `umi=1` mark in OSC 133), because a codebase full of `Tern*` types
+would keep the old name alive in every future change and review. A script did it with rules that
+leave `pattern`, `internal`, `alternate` and `ternary` alone; the diff was checked for any
+substitution inside a word. Nothing needs backward compatibility with Tern's names: the shell
+integration and the terminal ship together, and the one user setting that changed
+(`no-tern-blocks`) wasn't set on this Mac. Kept as Tern on purpose: `DECISIONS.md` up to 65,
+`REPORT.md`, `COMPROMISES.md`, `WARP-PARITY.md`, the old briefs, `acceptance/TEST_CHANGES.md`,
+`acceptance/spec-drafts/`, `acceptance/reference/` (recorded logs), `acceptance/REQUESTS.md` (the user's
+words), and the places that must name Tern: the import (68), the release script's fallbacks to the
+key's old keychain name and backup file (71), and `TERN_*` in the variables Umi clears at launch
+(Umi started from one of Tern's terminals must not claim to be Tern's pane). P-1 now lists Tern
+among the products Umi must coexist with, and the target file lists `dev.tern.app`.
+
+## 68. Coming from Tern: a copy at first launch, and Tern's running sessions stay Tern's
+
+When: while Umi's state directory is being made (before the instance lock, the socket or anything
+else exists), only if Umi has no state directory and Tern's exists. Isolated instances copy nothing
+unless `UMI_IMPORT_STATE_DIR` names a folder (the tests' way in). What: `layout.json`, `ui.json`,
+`shortcuts.json`, `keybindings.conf`, `recovery/` and `sessions/`; not the generated defaults and
+theme, the update answers and downloads, logs or the instance files. How: into a staging folder next
+to the destination, renamed into place at the end, so a crash mid-copy leaves nothing and the next
+launch retries; Tern's folder is only read. A note `imported-from-tern.json` says what was copied.
+
+The risk: Tern may be running (it is on this Mac, with a live Claude session). Copied as is, Umi would
+resume that session live in its pane (`claude --resume` on the same conversation as Tern's process)
+and recover any turn Tern was in the middle of (delivering its message a second time). Umi detects
+Tern running by its instance lock (Tern holds an exclusive `flock` for its whole life; a shared,
+non-blocking attempt fails while it does). Then every copied session is made stopped: no live
+interface, harness pid, queue or self-started turn, and messages still queued, sent or delivered end
+as interrupted in the copy, with a notice in the transcript ("Copied from Tern, which was still
+running this session. Take Over continues it in Umi."). Tern goes on with them. When Tern isn't
+running, the copy is taken as is and Umi resumes it as Tern would have. Evidence:
+`acceptance/tests/test_umi_import.py` (R-11): tabs, pins, splits, sessions and transcripts copied,
+Tern's folder byte-identical, nothing copied twice; and with "Tern" in the middle of a turn, the
+message has exactly one receipt, the fakes saw no second process on the conversation, Umi started no
+harness, and "Tern" finished the turn. A manual run on a copy of this Mac's Tern state with its lock
+held restored the 2 windows and 6 tabs and showed the live session idle with the notice.
+
+## 69. The icon: an original one ships, the poster only on Alejo's Macs
+
+The brief changed mid-run: the poster's art is Studio Ghibli's, so it must stay out of the
+repository, its history and the release. Public build: an original icon drawn in code
+(`app/dist/icon/icon.swift`: a prompt over a night sea), on Apple's macOS grid (1024 canvas, 824 body,
+corner radius 185.4 with 60% corner smoothing, shadow inside the margin), written to every size of
+`UmiIcon.appiconset` and to `AppIconImage` (About, Settings, the Dock tile plugin) by
+`make-app-icon.sh`. Ghostty's `Ghostty.icon` no longer goes into the bundle, and the About window shows
+Umi (its icon, name, a line about it, links to this repository, its releases and Ghostty) instead of
+cycling Ghostty's icons. Ghostty's alternate icons (`macos-icon = blueprint` and so on) stay
+available as settings.
+
+Local: `macos-icon = custom` still works in the fork (it reads the file and sets it as the bundle's
+Finder icon and the Dock tile, re-applied at every launch, so updates keep it). It goes in Umi's own
+config file (70) so Ghostty doesn't pick it up. `app/dist/local-icon.sh` fetches the crop from
+1Password, shapes it with `icon.swift shape` into `~/.config/umi/icon.png` and writes the two settings;
+it was run on this Mac. Ghostty's mechanism writes a Finder icon file (`Icon\r`) into the bundle's
+root; `release.sh` deletes it from the copy it signs, so a dev build that ran with a custom icon still
+releases cleanly. Isolated instances never change the icon (they share the bundle id's defaults with
+the user's copy and would reset its Dock tile), and Umi's icon notification has its own name. The
+source image, `poster.*` and generated local icons are in `.gitignore`.
+
+## 70. `~/.config/umi/config`: settings only Umi reads
+
+Umi reads the user's Ghostty config, which Ghostty itself also reads; Umi-only settings there (the
+custom icon, `no-umi-blocks`) would leak into Ghostty or make it report unknown values. Umi now loads
+`$XDG_CONFIG_HOME/umi/config` (default `~/.config/umi/config`) right after Ghostty's files and before
+the command line, and the shortcuts editor counts it among the user's files.
+
+## 71. The signing key in 1Password
+
+Stored as API Credential "UMI_UPDATE_SIGNING_KEY — umi" in `mac-agents` (field `credential`, plus the
+public key and a note), created from a JSON template on stdin so the key never appeared in a command
+line, and read back to check it matches the keychain and the backup (compared, never printed).
+`release.sh` takes `$UMI_UPDATE_SIGNING_KEY`, then 1Password (`op-agent`/`op`, reference
+`$UMI_SIGNING_KEY_REF` or the item's id), then the old keychain item and backup file. It now also
+refuses to publish when the key's public half isn't the app's `UmiUpdatePublicKey`, which would make
+every installed copy reject the update.
