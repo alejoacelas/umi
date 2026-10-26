@@ -384,3 +384,14 @@ pane whose view is moved down selects the word drawn there) and
   (`NSWindowLastPosition`); `dev.umi.app` had none, so windows took the nib's 800 points minus the
   sidebar. Umi's window now starts at 1180 × 740 points, and isolated instances neither use nor
   save the remembered frame, so the suite no longer depends on how the user last sized a window.
+- **`tests/test_editor.py::test_edit_targets_the_calling_pane_and_never_falls_back`** (and the same
+  pattern in `tests/test_layout.py::test_cli_inside_panes_defaults_to_this_pane`). **What was
+  wrong:** it waited for `EDIT-OK` on screen after typing `umi edit … && echo EDIT-OK`, and the
+  typed command line itself contains `EDIT-OK`, so the wait could end before `umi edit` had run;
+  in loaded full runs the check then found no document (twice in a row after the rename).
+  **Change:** the waits match the whole output line (`^EDIT-OK$`, `^RENAMED-OK$`, `^TAB-OK$`).
+  **Requirements:** E-9, P-4.
+- **New, review round 3**: a watch copied from Tern never messages its supervisor
+  (`test_a_copied_watch_never_resumes_its_supervisor`, fails on the build before the fix with the
+  watch's message delivered), and a private Tern folder stays private
+  (`test_a_private_tern_folder_stays_private`).

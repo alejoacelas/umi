@@ -53,6 +53,10 @@ The Swift tests run inside the app (their host), so always give it its own state
 (`TEST_RUNNER_*` variables reach the host): without one it is the user's own Umi, which would copy
 Tern's state into `~/Library/Application Support/Umi` and register a Debug build's agent plugins.
 
+- `zig build test` rebuilds `macos/GhosttyKit.xcframework` in Debug mode (and runs the Swift tests
+  too). Rebuild the library with `-Doptimize=ReleaseFast` before building an app to test or release,
+  or the app shows "You're running a debug build of Ghostty!" across the top of every pane (which
+  also breaks the suite's screenshot and size tests). `release.sh --build` always does.
 - The suite tests the build at `app/macos/build/ReleaseLocal/Umi.app` (`targets/umi.json`; paths in
   it are relative to the file). `results/traceability.md` maps each SPEC requirement to its tests.
 - UI tests need the terminal running pytest to have the Accessibility permission and an unlocked

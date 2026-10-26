@@ -143,6 +143,45 @@ def test_a_turn_cut_off_in_tern_is_not_continued_by_umi(fresh):
 
 
 @pytest.mark.req("R-11")
+@pytest.mark.harness
+def test_a_copied_watch_never_resumes_its_supervisor(fresh):
+    """Review round 3: Tern's supervisor watches a worker. Continuing the worker in Umi must not
+    message the supervisor (its conversation may still be Tern's): watches aren't copied."""
+    tern = fresh(prefix="acc-tern-watch-")
+    supervisor = tern.start_agent("claude", "ECHO supervising", name="sup")
+    tern.wait(supervisor)
+    worker = tern.start_agent("claude", "ECHO working", name="wrk")
+    tern.wait(worker)
+    tern.send(worker, f"SLEEP 20 {uuid.uuid4().hex[:6]}")
+    tern.cli("agent", "watch", worker, "--notify", supervisor)
+    tern.quit_gracefully()
+    receipts = os.path.join(tern.fake_dir, "receipts.jsonl")
+    before = len(read_jsonl(receipts))
+
+    umi, state = importing(fresh, tern)
+    umi.start_app()
+    again = umi.send(worker, "ECHO again")
+    code, out = umi.wait(worker, "--message", again, timeout=60)
+    assert out["status"] == "DONE", out
+    time.sleep(5)
+    after = read_jsonl(receipts)[before:]
+    assert [r["text"] for r in after] == ["ECHO again"], "only the worker's own message reached an agent"
+    assert umi.info(supervisor)["status"] not in ("running", "starting")
+
+
+@pytest.mark.req("R-11")
+def test_a_private_tern_folder_stays_private(fresh):
+    """Review round 3: the copy is never more readable than Tern's folder was."""
+    tern = fresh(prefix="acc-tern-private-")
+    tern.cli("tab", "new", "--name", "private")
+    tern.quit_app()
+    os.chmod(tern.dir, 0o700)
+    umi, state = importing(fresh, tern)
+    umi.start_app()
+    assert os.stat(state).st_mode & 0o077 == 0, oct(os.stat(state).st_mode)
+
+
+@pytest.mark.req("R-11")
 def test_nothing_is_copied_when_umi_has_state_of_its_own(fresh):
     tern = fresh(prefix="acc-tern-has-")
     tern.cli("tab", "new", "--name", "only-in-tern")

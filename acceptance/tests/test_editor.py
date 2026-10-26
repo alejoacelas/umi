@@ -146,7 +146,7 @@ def test_edit_targets_the_calling_pane_and_never_falls_back(inst, win, files):
     _, md, _ = files
     other = inst.cli("tab", "new", "--window", win["window"]).stdout.strip()
     inst.cli("send", "--pane", other, "-e", f"{inst.target.cli_name} edit '{md}' && echo EDIT-OK")
-    inst.cli("wait", "--pane", other, "--pattern", "EDIT-OK", "--timeout", "15")
+    inst.cli("wait", "--pane", other, "--pattern", "^EDIT-OK$", "--timeout", "15")
     assert doc(inst, other, md) is not None
     assert doc(inst, win["pane"], md) is None, "opened in the caller's tab, not the focused one"
     before = docs(inst, win["pane"])

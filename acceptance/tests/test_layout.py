@@ -473,14 +473,14 @@ def test_cli_inside_panes_defaults_to_this_pane(inst, win):
     name = "from-inside-" + uuid.uuid4().hex[:4]
     cli = inst.target.cli_name
     inst.cli("send", "--pane", win["pane"], "-e", f"{cli} pane rename {name} && echo RENAMED-OK")
-    inst.cli("wait", "--pane", win["pane"], "--pattern", "RENAMED-OK", "--timeout", "15")
+    inst.cli("wait", "--pane", win["pane"], "--pattern", "^RENAMED-OK$", "--timeout", "15")
     assert pane_info(inst, win["pane"]).get("name") == name
     # A tab created from a background window's pane lands in that window.
     other = inst.json("window", "new")
     inst.cli("pane", "focus", other["pane"])
     time.sleep(0.3)
     inst.cli("send", "--pane", win["pane"], "-e", f"{cli} tab new >/dev/null && echo TAB-OK")
-    inst.cli("wait", "--pane", win["pane"], "--pattern", "TAB-OK", "--timeout", "15")
+    inst.cli("wait", "--pane", win["pane"], "--pattern", "^TAB-OK$", "--timeout", "15")
     assert len(window_of(inst, win["window"])["tabs"]) == 2
     # `window close` from inside closes the caller's own window.
     inst.cli("send", "--pane", other["pane"], "-e", f"{cli} window close")
