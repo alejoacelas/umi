@@ -49,9 +49,11 @@ cd app/macos && env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
     -skip-testing GhosttyUITests test                     # Swift unit tests
 ```
 
-The Swift tests run inside the app (their host), so always give it its own state directory as above
-(`TEST_RUNNER_*` variables reach the host): without one it is the user's own Umi, which would copy
-Tern's state into `~/Library/Application Support/Umi` and register a Debug build's agent plugins.
+The Swift tests run inside the app (their host). The app detects that it hosts XCTest and then uses a
+temporary state directory of its own (`UmiPaths.isTestHost`), so it never acts as the user's Umi (no
+copy of Tern's state, no agent plugins registered); the `TEST_RUNNER_*` variables above (they reach the
+host) only choose that directory and are optional. Keep it that way: before this guard, `zig build test`
+made the user's `~/Library/Application Support/Umi`.
 
 - `zig build test` rebuilds `macos/GhosttyKit.xcframework` in Debug mode (and runs the Swift tests
   too). Rebuild the library with `-Doptimize=ReleaseFast` before building an app to test or release,

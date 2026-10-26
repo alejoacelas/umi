@@ -54,6 +54,7 @@ Decisions 66–74 in `DECISIONS.md` give the reasons; `AGENTS.md` says how to bu
 | 3 | 2 | copied watches resuming a supervisor, staging permissions |
 | 4 | 1 | permissions of a symlinked Tern folder |
 | 5 | 0 | none |
+| 6 | 0 | none (on the released state; one low note on AGENTS.md's test-host wording, fixed) |
 
 Each finding was checked against the code, fixed, and given a regression test where one could reach
 it (the watch test fails on the build before its fix).
