@@ -85,6 +85,9 @@ trap 'rm -rf "$work"' EXIT
 # A stamped copy of the app.
 rm -rf "$out/Umi.app"
 ditto "$app" "$out/Umi.app"
+# A custom icon (`macos-icon`) the built app gave itself is a Finder icon file in the bundle's
+# root: it isn't part of the release.
+rm -f "$out/Umi.app/Icon"$'\r'
 plist="$out/Umi.app/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$version" "$plist"
 plutil -replace CFBundleVersion -string "$version" "$plist"

@@ -68,7 +68,7 @@ tab or window they choose; second, agents supervising and steering other agents.
 - **A CLI agents can use with no instructions.**
 - **Robustness:** crashes, restarts, upgrades, isolation, long runs, no orphans.
 
-Requirements: AG-1 to AG-23, R-3 to R-7.
+Requirements: AG-1 to AG-23, R-3 to R-7, R-11.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
@@ -122,8 +122,8 @@ and agents reaching the app from their own processes.
 ## P. Product and identity
 
 - **P-1 [A]** The app, its bundle id, its state directory, its control endpoints and its CLI name are
-  distinct from Ghostty's, from "Wraith"'s and from "Shade"'s. It can be installed and run next to
-  them without either one affecting the other.
+  distinct from Ghostty's, from Tern's (its own former name), from "Wraith"'s and from "Shade"'s.
+  It can be installed and run next to them without either one affecting the other.
 - **P-2 [A]** The app never offers another product's updates, upstream Ghostty's included. Its
   updates come only from the product's own release feed (I-4).
 - **P-3 [A]** Only one instance of a given build runs at a time. A second launch of the same build,
@@ -596,6 +596,11 @@ runs, it is the same session: same id, conversation, folder and settings.
   other: CLI calls, agents and the panes of one never reach the other.
 - **R-6 [A]** The app and its CLI keep working, and tell the truth, while sessions are busy,
   approvals are pending, or event consumers are slow.
+- **R-11 [A]** Coming from Tern. The product was called Tern before 0.6.0. The first time it runs
+  without state of its own, it opens with Tern's windows, tabs, panes, sidebar and agent sessions:
+  a copy, and Tern's folder is never changed. A session Tern is still running when the copy is made
+  stays Tern's: the product neither delivers its messages again nor starts a second process on its
+  conversation, and Tern finishes what it was doing. Later launches copy nothing.
 - **R-7 [A]** Stale environments. A CLI run with stale pane, socket or agent variables (for example
   from a terminal that outlived its app) either reaches the right instance or fails clearly. It
   never acts on the wrong one.

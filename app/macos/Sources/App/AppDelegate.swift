@@ -909,6 +909,9 @@ class AppDelegate: NSObject,
     }
 
     private func updateAppIcon(from config: Ghostty.Config) {
+        // Umi: an isolated instance (the tests, a second copy) leaves the icon alone: the
+        // bundle's Finder icon, the Dock tile and the icon defaults belong to the user's copy.
+        guard !UmiPaths.isIsolated else { return }
         Task.detached {
             await self.appIconUpdater.update(icon: AppIcon(config: config))
         }

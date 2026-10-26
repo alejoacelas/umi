@@ -84,6 +84,15 @@ enum UmiPaths {
     }
 
     static var cliPath: String { executableDirectory + "/\(cliName)" }
+
+    /// Umi's own config file: Ghostty settings that only Umi reads (Ghostty itself never
+    /// sees them), loaded right after the user's Ghostty config, so it wins over it.
+    /// `$XDG_CONFIG_HOME/umi/config`, by default ~/.config/umi/config.
+    static var userConfigFile: String {
+        let env = ProcessInfo.processInfo.environment
+        let xdg = env["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? (NSHomeDirectory() + "/.config")
+        return xdg + "/umi/config"
+    }
 }
 
 /// One instance per state directory (P-3). The lock is held for the life of the process

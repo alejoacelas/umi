@@ -280,12 +280,13 @@ enum UmiGhosttyBindings {
         }.joined(separator: ">")
     }
 
-    /// The user's Ghostty config files, in the order Ghostty loads them.
+    /// The user's config files, in the order Umi loads them: Ghostty's, then Umi's own.
     static var userConfigFiles: [String] {
         let env = ProcessInfo.processInfo.environment
         let xdg = env["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? (NSHomeDirectory() + "/.config")
         let support = NSHomeDirectory() + "/Library/Application Support/com.mitchellh.ghostty"
-        return [xdg + "/ghostty/config", xdg + "/ghostty/config.ghostty", support + "/config", support + "/config.ghostty"]
+        return [xdg + "/ghostty/config", xdg + "/ghostty/config.ghostty", support + "/config", support + "/config.ghostty",
+                UmiPaths.userConfigFile]
     }
 
     /// Every binding in effect, in load order.

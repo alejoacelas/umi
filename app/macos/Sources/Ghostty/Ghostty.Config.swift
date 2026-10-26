@@ -74,6 +74,11 @@ extension Ghostty {
                 ghostty_config_load_file(cfg, path)
             } else {
                 ghostty_config_load_default_files(cfg)
+                // Umi: settings only Umi reads (a custom icon, say), after the user's Ghostty
+                // config and before the command line's.
+                if FileManager.default.fileExists(atPath: UmiPaths.userConfigFile) {
+                    ghostty_config_load_file(cfg, UmiPaths.userConfigFile)
+                }
             }
 
             // We only load CLI args when not running in Xcode because in Xcode we
