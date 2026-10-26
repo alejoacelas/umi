@@ -16,6 +16,7 @@ The AG-20 tests give a real agent nothing but a task that needs other agents and
 import json
 import os
 import re
+import subprocess
 import tempfile
 import time
 import uuid
@@ -29,6 +30,16 @@ pytestmark = [pytest.mark.real, pytest.mark.slow, pytest.mark.harness]
 CLAUDE_MODEL = os.environ.get("ACCEPTANCE_CLAUDE_MODEL", "haiku")
 CODEX_MODEL = os.environ.get("ACCEPTANCE_CODEX_MODEL", "gpt-6-luna")
 LIVE_DIR = {kind: os.path.join(ROOT, ".work-real", f"live-{kind}") for kind in ("claude", "codex")}
+
+
+def live_dir(kind):
+    """The live test's folder, made the way earlier runs set it up by hand: an empty folder for
+    Claude Code, an empty git repository for Codex (a fresh checkout has neither)."""
+    folder = LIVE_DIR[kind]
+    os.makedirs(folder, exist_ok=True)
+    if kind == "codex" and not os.path.exists(os.path.join(folder, ".git")):
+        subprocess.run(["git", "init", "-q", folder], check=True)
+    return folder
 
 
 def model_args(kind):
@@ -113,24 +124,34 @@ def test_project_instructions_are_loaded(real, started, kind, filename):
 
 def answer_trust_prompt(real, pane, timeout=60, ready=()):
     """Wait for the agent's interface. A folder it has never seen first asks whether to trust it: answer
-    yes, as the user would (arrow keys to the "Yes" choice, then Enter). Returns once one of `ready`
-    shows."""
+    yes, as the user would (arrow keys to the "Yes" choice, then Enter). An agent whose own CLI is out of
+    date may first offer to update itself: skip that with Esc (its footer's "esc skip"), never Enter,
+    which would run the agent's installer. Returns once one of `ready` shows."""
     deadline = time.time() + timeout
     answered = False
+    skipped_update = False
+    option = re.compile(r"^\s*(❯|›)?\s*(\d\.\s+)?(yes|no)\b", re.I)
     while time.time() < deadline:
         screen = real.screen(pane)
         if any(r in screen for r in ready):
             return screen
-        if not answered and re.search(r"trust", screen, re.I) and re.search(r"\b(1|2)\.", screen):
-            lines = [line for line in screen.splitlines() if re.search(r"\b\d\.\s", line)]
+        if not skipped_update and re.search(r"update available", screen, re.I) and re.search(r"esc skip", screen, re.I):
+            real.cli("keys", "--pane", pane, "esc")
+            skipped_update = True
+            time.sleep(1)
+            continue
+        if not answered and re.search(r"trust", screen, re.I):
+            # The choices: numbered ("1. Yes, proceed") or not ("❯ No, exit" / "  Yes, I trust this folder").
+            lines = [line for line in screen.splitlines() if option.search(line)]
             cursor = next((i for i, line in enumerate(lines) if "❯" in line or "›" in line.lstrip()[:2]), None)
             yes = next((i for i, line in enumerate(lines) if re.search(r"\byes\b", line, re.I)), None)
-            if cursor is None or yes is None:
-                keys = ["down", "enter"]
-            else:
-                keys = (["down"] * (yes - cursor) if yes >= cursor else ["up"] * (cursor - yes)) + ["enter"]
-            real.cli("keys", "--pane", pane, *keys)
-            answered = True
+            if lines and yes is not None:
+                if cursor is None:
+                    keys = ["down", "enter"]
+                else:
+                    keys = (["down"] * (yes - cursor) if yes >= cursor else ["up"] * (cursor - yes)) + ["enter"]
+                real.cli("keys", "--pane", pane, *keys)
+                answered = True
         time.sleep(1)
     raise AssertionError(f"the agent's interface never showed {ready}: {real.screen(pane)[-1500:]}")
 
@@ -150,7 +171,7 @@ def test_a_session_goes_live_takes_messages_and_is_handed_back_and_taken_over(re
     window = real.json("window", "new", "--name", f"real-live-{kind}")
     try:
         sid, pane = started(kind, "Reply with exactly the word: alpha", "--split", "right", "--pane",
-                            window["pane"], cwd=LIVE_DIR[kind])
+                            window["pane"], cwd=live_dir(kind))
         assert pane
         code, out = wait(real, sid)
         assert out["status"] == "DONE" and "alpha" in words(out["reply"]), out

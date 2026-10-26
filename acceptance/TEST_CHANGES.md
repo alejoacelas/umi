@@ -400,3 +400,12 @@ pane whose view is moved down selects the word drawn there) and
 - **Not a test change**: a full run had 7 failures and errors from a full disk ("No space left on
   device", pytest unable to make its temporary folders); the same tests passed once space was freed.
   Full runs now keep one pytest temporary folder (`-o tmp_path_retention_count=1`).
+- **`tests/test_sessions_real.py::test_a_session_goes_live_takes_messages_and_is_handed_back_and_taken_over`**.
+  **What was wrong:** (1) it ran in `.work-real/live-claude` and `live-codex`, folders made by hand in
+  the old checkout (the Codex one an empty git repository), so a fresh checkout failed with "no such
+  folder"; (2) answering the agent's first-run trust question expected numbered choices, and Claude
+  Code now asks with unnumbered ones, "No, exit" preselected; (3) the installed Codex CLI, being one
+  version behind, first offered to update itself. **Change:** the test makes the folders as they were;
+  the trust answer finds the "Yes" choice numbered or not; Codex's update offer is skipped with Esc
+  (never Enter, which would run Codex's installer). The checks are unchanged. **Requirements:** AG-2,
+  AG-6, AG-7, AG-9.

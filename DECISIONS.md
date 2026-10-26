@@ -1472,3 +1472,9 @@ this was hidden on this Mac because `dev.tern.app` remembered Alejo's own window
 Umi's window nib now starts at 1180 × 740 (about 110 columns with the sidebar; `constrainToScreen`
 keeps it on small screens), and isolated instances neither restore nor save the remembered frame, so
 tests don't depend on the user's windows and don't move where the user's next window opens.
+
+## 74. CLAUDE.md points to AGENTS.md in words, not with an import
+
+A root `CLAUDE.md` with `@AGENTS.md` made Claude Code, started by the real-agent tests in a folder
+inside this repository, stop on "Allow external CLAUDE.md file imports?". It now says in one sentence
+to read AGENTS.md, which Claude agents working here still see, with no import to approve.
