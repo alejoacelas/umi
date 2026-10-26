@@ -598,9 +598,10 @@ runs, it is the same session: same id, conversation, folder and settings.
   approvals are pending, or event consumers are slow.
 - **R-11 [A]** Coming from Tern. The product was called Tern before 0.6.0. The first time it runs
   without state of its own, it opens with Tern's windows, tabs, panes, sidebar and agent sessions:
-  a copy, and Tern's folder is never changed. A session Tern is still running when the copy is made
-  stays Tern's: the product neither delivers its messages again nor starts a second process on its
-  conversation, and Tern finishes what it was doing. Later launches copy nothing.
+  a copy, and Tern's folder is never changed. Copied sessions don't resume by themselves (Tern may
+  be running them, now or later): the product never delivers a message again or starts a process
+  on a copied conversation until the user takes the session over, and Tern finishes what it was
+  doing. Later launches copy nothing.
 - **R-7 [A]** Stale environments. A CLI run with stale pane, socket or agent variables (for example
   from a terminal that outlived its app) either reaches the right instance or fails clearly. It
   never acts on the wrong one.

@@ -114,6 +114,35 @@ def test_a_session_tern_is_still_running_is_copied_stopped(fresh):
 
 
 @pytest.mark.req("R-11")
+@pytest.mark.harness
+def test_a_turn_cut_off_in_tern_is_not_continued_by_umi(fresh):
+    """Tern was killed mid-turn and isn't running. Tern would continue that turn at its next launch,
+    so Umi's copy must not: the message stays delivered once, and Umi runs nothing until the user
+    takes the session over."""
+    tern = fresh(prefix="acc-tern-cut-")
+    marker = uuid.uuid4().hex[:8]
+    sid = tern.start_agent("claude", "ECHO warm-up")
+    tern.wait(sid)
+    mid = tern.send(sid, f"SLEEP 30 {marker}")
+    receipts = os.path.join(tern.fake_dir, "receipts.jsonl")
+    wait_until(lambda: any(marker in r.get("text", "") for r in read_jsonl(receipts)), 20,
+               message="Tern's turn to start")
+    tern.kill_everything()
+
+    umi, state = importing(fresh, tern)
+    umi.start_app()
+    with open(os.path.join(state, "imported-from-tern.json")) as f:
+        assert json.load(f)["tern_running"] is False
+    code, out = umi.wait(sid, "--message", mid, timeout=10)
+    assert out["status"] == "INTERRUPTED", out
+    time.sleep(5)
+    assert sum(marker in r.get("text", "") for r in read_jsonl(receipts)) == 1, "delivered once"
+    children = set(descendants(umi.app_pid))
+    assert not [cmd for pid, _, _, cmd in ps_rows() if pid in children and "fake_claude" in cmd]
+    assert umi.info(sid)["status"] not in ("running", "starting")
+
+
+@pytest.mark.req("R-11")
 def test_nothing_is_copied_when_umi_has_state_of_its_own(fresh):
     tern = fresh(prefix="acc-tern-has-")
     tern.cli("tab", "new", "--name", "only-in-tern")

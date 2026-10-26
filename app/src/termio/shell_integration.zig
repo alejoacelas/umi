@@ -249,7 +249,7 @@ test "setup features" {
         defer env.deinit();
 
         try setupFeatures(&env, .{ .cursor = true, .sudo = true, .title = true, .@"ssh-env" = true, .@"ssh-terminfo" = true, .path = true, .@"umi-blocks" = true }, true);
-        try testing.expectEqualStrings("cursor:blink,path,ssh-env,ssh-terminfo,sudo,umi-blocks,title", env.get("GHOSTTY_SHELL_FEATURES").?);
+        try testing.expectEqualStrings("cursor:blink,path,ssh-env,ssh-terminfo,sudo,title,umi-blocks", env.get("GHOSTTY_SHELL_FEATURES").?);
     }
 
     // Test: all features disabled

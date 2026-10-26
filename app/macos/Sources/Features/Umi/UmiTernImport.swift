@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 
@@ -7,17 +8,18 @@ import Foundation
 /// (`shortcuts.json`, `keybindings.conf`), the editor's unsaved changes (`recovery/`) and agent
 /// sessions (`sessions/`). Tern's folder is only read, never changed.
 ///
-/// Tern may still be running while Umi copies (both apps can be installed at once). Then its
-/// sessions are copied as stopped: nothing in the copy is live, running or waiting to be
-/// delivered, so Umi never starts a second process on a conversation Tern is driving, and never
-/// sends a message Tern is already handling. The panes still show those sessions, and Take Over
-/// continues one in Umi. A session that can't be made stopped isn't copied at all. When Tern isn't
-/// running the copy is taken as is, and Umi resumes it the way Tern would have on its next launch
-/// (a session that was live comes back live).
+/// Sessions are copied stopped: nothing in the copy is live, running or waiting to be delivered,
+/// and messages Tern hadn't finished end as interrupted in the copy. Copying (not moving) leaves
+/// every conversation with Tern too, and Tern may be running now or start at any moment, so Umi
+/// never resumes a copied session by itself: it never starts a second process on a conversation
+/// Tern is driving, or sends a message again that Tern already handled. The panes show those
+/// sessions as before, and Take Over continues one in Umi when the user decides to. A session that
+/// can't be made stopped isn't copied at all.
 ///
 /// Only regular files and folders are copied (never a symbolic link, so nothing in Umi's copy
 /// leads back into Tern's files or anywhere else). What couldn't be copied after a few tries is
-/// listed in `imported-from-tern.json`; to copy again, quit Umi and remove its state directory.
+/// listed in `imported-from-tern.json` and shown in an alert at launch; to copy again, quit Umi
+/// and remove its state directory.
 ///
 /// Isolated instances (`UMI_STATE_DIR`) copy nothing unless `UMI_IMPORT_STATE_DIR` names a
 /// folder to copy from (the tests' way in).
@@ -27,6 +29,9 @@ import Foundation
 enum UmiTernImport {
     /// What is copied, relative to the state directory.
     static let copied = ["layout.json", "ui.json", "shortcuts.json", "keybindings.conf", "recovery", "sessions"]
+
+    /// What this launch's copy couldn't copy (empty when it copied everything or didn't run).
+    nonisolated(unsafe) static var failures: [String] = []
 
     /// Where Tern kept its state, or nil when nothing should be copied into this instance.
     static func source(isolated: Bool) -> String? {
@@ -63,7 +68,11 @@ enum UmiTernImport {
             for name in copied {
                 let from = (source as NSString).appendingPathComponent(name)
                 var st = stat()
-                guard lstat(from, &st) == 0 else { continue }
+                guard lstat(from, &st) == 0 else {
+                    // Missing is fine (Tern never wrote it); anything else (unreadable) is a failure.
+                    if errno != ENOENT { failed.append(from) }
+                    continue
+                }
                 let errors = copyTree(from, (staging as NSString).appendingPathComponent(name))
                 if errors.isEmpty { names.append(name) } else { failed += errors }
             }
@@ -72,10 +81,9 @@ enum UmiTernImport {
             if attempt < 3 { usleep(300_000) }
         }
 
-        // Tern running at any point of the copy counts (it may have started meanwhile).
+        // Recorded for the note only: copied sessions are stopped whether Tern runs or not.
         let running = runningBefore || isRunning(stateDirectory: source)
-        var dropped: [String] = []
-        if running { dropped = stopSessions(in: (staging as NSString).appendingPathComponent("sessions")) }
+        let dropped = stopSessions(in: (staging as NSString).appendingPathComponent("sessions"), ternRunning: running)
         var note: [String: Any] = [
             "from": source,
             "at": ISO8601DateFormatter().string(from: Date()),
@@ -92,6 +100,7 @@ enum UmiTernImport {
             try? fm.removeItem(atPath: staging)
             return false
         }
+        failures = failed + dropped.map { "session \($0)" }
         return true
     }
 
@@ -120,6 +129,30 @@ enum UmiTernImport {
         default:
             NSLog("Umi: not copying \(from) from Tern (not a file or folder)")
             return []
+        }
+    }
+
+    /// Say what the first launch couldn't copy from Tern, and how to try again.
+    @MainActor
+    static func reportFailures() {
+        guard !failures.isEmpty else { return }
+        // An isolated instance (the tests) never stops on a dialog: the note and the log say it.
+        guard !UmiPaths.isIsolated else {
+            NSLog("Umi: couldn't copy from Tern: \(failures)")
+            return
+        }
+        let listed = failures.prefix(8).map { "• \($0)" }.joined(separator: "\n")
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Umi couldn't copy everything from Tern"
+            alert.informativeText = """
+            Tern's tabs and sessions were copied, except:
+            \(listed)\(failures.count > 8 ? "\n…" : "")
+
+            Tern's own files weren't changed. To copy again, quit Umi, remove \
+            ~/Library/Application Support/Umi and open Umi.
+            """
+            alert.runModal()
         }
     }
 
@@ -156,16 +189,16 @@ enum UmiTernImport {
     ]
 
     /// Make every copied session stopped: no live interface, no harness, no queue, and the
-    /// messages Tern was still handling end as interrupted in the copy (Tern goes on with them).
-    /// A session that can't be rewritten is removed from the copy, so Umi never resumes it.
+    /// messages Tern hadn't finished end as interrupted in the copy (Tern goes on with them if it
+    /// runs). A session that can't be rewritten is removed from the copy, so Umi never resumes it.
     /// Returns the ids of the sessions removed.
-    static func stopSessions(in root: String) -> [String] {
+    static func stopSessions(in root: String, ternRunning: Bool) -> [String] {
         let fm = FileManager.default
         guard let ids = try? fm.contentsOfDirectory(atPath: root) else { return [] }
         var dropped: [String] = []
         for id in ids where !id.hasPrefix(".") {
             let folder = (root as NSString).appendingPathComponent(id)
-            if !stopSession(id: id, folder: folder) {
+            if !stopSession(id: id, folder: folder, ternRunning: ternRunning) {
                 try? fm.removeItem(atPath: folder)
                 if fm.fileExists(atPath: folder) {
                     // Couldn't remove it either: hide it from Umi (sessions starting with "." aren't loaded).
@@ -177,7 +210,7 @@ enum UmiTernImport {
         return dropped
     }
 
-    private static func stopSession(id: String, folder: String) -> Bool {
+    private static func stopSession(id: String, folder: String, ternRunning: Bool) -> Bool {
         let fm = FileManager.default
         let recordPath = (folder as NSString).appendingPathComponent("session.json")
         guard let data = fm.contents(atPath: recordPath),
@@ -217,7 +250,7 @@ enum UmiTernImport {
             guard var message = messages[mid], let state = message["state"] as? String,
                   ["queued", "sent", "delivered"].contains(state) else { continue }
             message["state"] = "interrupted"
-            message["error"] = "Tern was still handling this message when Umi copied the session"
+            message["error"] = "Tern hadn't finished this message when Umi copied the session"
             message["finishedAt"] = now
             message.removeValue(forKey: "cutOff")
             guard append(["m": message]) else { return false }
@@ -226,7 +259,9 @@ enum UmiTernImport {
         _ = append(["i": [
             "id": "\(id.prefix(8))-\(next)",
             "kind": "notice",
-            "text": "Copied from Tern, which was still running this session. Take Over continues it in Umi.",
+            "text": ternRunning
+                ? "Copied from Tern, which was still running. Take Over continues this session in Umi."
+                : "Copied from Tern. Take Over continues this session in Umi.",
             "at": now,
         ]])
         record["nextItem"] = next + 1

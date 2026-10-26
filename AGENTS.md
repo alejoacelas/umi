@@ -43,9 +43,15 @@ uv run python ../app/macos/UmiTests/verify_ui_paths.py      # UI paths without t
 uv run python ../app/macos/UmiTests/verify_agent_panes.py   # agent panes, the same way
 
 cd app && zig build test -Dtest-filter=<name>            # Zig unit tests (the full set is slow)
-cd app/macos && env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin xcodebuild -project Ghostty.xcodeproj \
-    -scheme Ghostty -configuration Debug SYMROOT="$PWD/build" -skip-testing GhosttyUITests test   # Swift unit tests
+cd app/macos && env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+    TEST_RUNNER_UMI_STATE_DIR="$(mktemp -d)/state" TEST_RUNNER_UMI_NO_PLUGIN_INSTALL=1 \
+    xcodebuild -project Ghostty.xcodeproj -scheme Ghostty -configuration Debug SYMROOT="$PWD/build" \
+    -skip-testing GhosttyUITests test                     # Swift unit tests
 ```
+
+The Swift tests run inside the app (their host), so always give it its own state directory as above
+(`TEST_RUNNER_*` variables reach the host): without one it is the user's own Umi, which would copy
+Tern's state into `~/Library/Application Support/Umi` and register a Debug build's agent plugins.
 
 - The suite tests the build at `app/macos/build/ReleaseLocal/Umi.app` (`targets/umi.json`; paths in
   it are relative to the file). `results/traceability.md` maps each SPEC requirement to its tests.

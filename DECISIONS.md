@@ -1375,30 +1375,39 @@ key's old keychain name and backup file (71), and `TERN_*` in the variables Umi 
 (Umi started from one of Tern's terminals must not claim to be Tern's pane). P-1 now lists Tern
 among the products Umi must coexist with, and the target file lists `dev.tern.app`.
 
-## 68. Coming from Tern: a copy at first launch, and Tern's running sessions stay Tern's
+## 68. Coming from Tern: a copy at first launch, with every session stopped
 
 When: while Umi's state directory is being made (before the instance lock, the socket or anything
 else exists), only if Umi has no state directory and Tern's exists. Isolated instances copy nothing
-unless `UMI_IMPORT_STATE_DIR` names a folder (the tests' way in). What: `layout.json`, `ui.json`,
-`shortcuts.json`, `keybindings.conf`, `recovery/` and `sessions/`; not the generated defaults and
-theme, the update answers and downloads, logs or the instance files. How: into a staging folder next
-to the destination, renamed into place at the end, so a crash mid-copy leaves nothing and the next
-launch retries; Tern's folder is only read. A note `imported-from-tern.json` says what was copied.
+unless `UMI_IMPORT_STATE_DIR` names a folder (the tests' way in); an app hosting unit tests is
+isolated too (72). What: `layout.json`, `ui.json`, `shortcuts.json`, `keybindings.conf`, `recovery/`
+and `sessions/`; not the generated defaults and theme, the update answers and downloads, logs or the
+instance files. How: regular files and folders only (a symbolic link is never copied or followed),
+files Tern replaces mid-copy are skipped, a failed copy is retried, everything goes into a staging
+folder next to the destination that is renamed into place at the end (a crash mid-copy leaves
+nothing; staging folders of dead launches are removed). Tern's folder is only read. A note
+`imported-from-tern.json` says what was copied, whether Tern was running, and what failed.
 
-The risk: Tern may be running (it is on this Mac, with a live Claude session). Copied as is, Umi would
-resume that session live in its pane (`claude --resume` on the same conversation as Tern's process)
-and recover any turn Tern was in the middle of (delivering its message a second time). Umi detects
-Tern running by its instance lock (Tern holds an exclusive `flock` for its whole life; a shared,
-non-blocking attempt fails while it does). Then every copied session is made stopped: no live
-interface, harness pid, queue or self-started turn, and messages still queued, sent or delivered end
-as interrupted in the copy, with a notice in the transcript ("Copied from Tern, which was still
-running this session. Take Over continues it in Umi."). Tern goes on with them. When Tern isn't
-running, the copy is taken as is and Umi resumes it as Tern would have. Evidence:
-`acceptance/tests/test_umi_import.py` (R-11): tabs, pins, splits, sessions and transcripts copied,
-Tern's folder byte-identical, nothing copied twice; and with "Tern" in the middle of a turn, the
-message has exactly one receipt, the fakes saw no second process on the conversation, Umi started no
-harness, and "Tern" finished the turn. A manual run on a copy of this Mac's Tern state with its lock
-held restored the 2 windows and 6 tabs and showed the live session idle with the notice.
+Sessions: copying (not moving) leaves every conversation with Tern as well, and Tern may be running
+(it is on this Mac, with a live Claude session) or start at any moment. Copied as is, Umi would bring
+a live session back live in its pane (`claude --resume` on the conversation Tern's process is using)
+and continue a turn Tern was in the middle of (delivering its message a second time). Review round 1
+narrowed this to "only when Tern is running" (detected by its instance lock, before and after the
+copy); round 2 showed that sampling a lock can't close the window where Tern starts right after.
+Pick: every copied session is stopped, whether Tern runs or not: no live interface, harness pid,
+queue or self-started turn; messages Tern hadn't finished end as interrupted in the copy; a notice in
+the transcript says it was copied and that Take Over continues it in Umi. The panes show the sessions
+as before. The cost: a session that was live in a Tern that is no longer running doesn't come back
+live by itself, and a turn a crash cut off isn't continued by itself; one Take Over does either. A
+session that can't be rewritten is left out. What failed is listed in the note and, for the user's own
+copy, in an alert at launch with the way to retry (quit Umi, remove its state directory, open it).
+
+Evidence: `acceptance/tests/test_umi_import.py` (R-11): tabs, pins, splits, sessions and transcripts
+copied, Tern's folder byte-identical, nothing copied twice; a turn "Tern" is still running is
+delivered once, run by no second process, and finished by "Tern"; a turn cut off by killing "Tern"
+isn't continued by Umi; nothing is copied over existing state; links aren't followed. A manual run on
+a copy of this Mac's Tern state with its lock held restored the 2 windows and 6 tabs and showed the
+live session idle with the notice.
 
 ## 69. The icon: an original one ships, the poster only on Alejo's Macs
 
@@ -1438,3 +1447,24 @@ line, and read back to check it matches the keychain and the backup (compared, n
 `$UMI_SIGNING_KEY_REF` or the item's id), then the old keychain item and backup file. It now also
 refuses to publish when the key's public half isn't the app's `UmiUpdatePublicKey`, which would make
 every installed copy reject the update.
+
+## 72. An app hosting unit tests is never the user's own copy
+
+`zig build test` on macOS also runs `xcodebuild test`, whose host is the app itself with no
+`UMI_STATE_DIR`: it was the user's own Umi. The first time it ran here it copied Tern's state into
+`~/Library/Application Support/Umi` (a watchdog stopped it within a second, before it registered any
+agent plugin; the folder was removed, and Tern and its session were untouched). Asking every caller
+to set `TEST_RUNNER_UMI_STATE_DIR` is easy to forget, so the app now detects that it hosts XCTest
+(`XCTestConfigurationFilePath`, `XCTestSessionIdentifier`, `XCTestBundlePath`, or XCTest injected
+through `DYLD_INSERT_LIBRARIES`) and then behaves as an isolated instance with a temporary state
+directory. Checked by running the Swift tests with no isolation variables: 359 passed, the host used
+`$TMPDIR/umi-test-host-<pid>`, and no state appeared in Application Support.
+
+## 73. A roomier first window, and isolated instances keep out of the user's window frame
+
+New windows took the nib's 800 × 600 points, which leaves 65 columns beside the sidebar. Under Tern
+this was hidden on this Mac because `dev.tern.app` remembered Alejo's own window frame
+(`NSWindowLastPosition`), which isolated test instances share; four blocks tests expected that width.
+Umi's window nib now starts at 1180 × 740 (about 110 columns with the sidebar; `constrainToScreen`
+keeps it on small screens), and isolated instances neither restore nor save the remembered frame, so
+tests don't depend on the user's windows and don't move where the user's next window opens.

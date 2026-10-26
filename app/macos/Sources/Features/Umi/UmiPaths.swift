@@ -15,16 +15,30 @@ enum UmiPaths {
     static let productName = "Umi"
     static let cliName = "umi"
 
-    /// True when the state directory was given explicitly (an isolated instance).
+    /// The app is hosting unit tests (Xcode, `xcodebuild test`, `zig build test`). Then it is
+    /// never the user's own copy: it gets a state directory of its own, like an isolated instance,
+    /// so tests never copy Tern's state, register agent plugins or touch the user's windows.
+    static let isTestHost: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        if ["XCTestConfigurationFilePath", "XCTestSessionIdentifier", "XCTestBundlePath"].contains(where: { env[$0] != nil }) {
+            return true
+        }
+        return (env["DYLD_INSERT_LIBRARIES"] ?? "").contains("XCTest")
+    }()
+
+    /// True when the state directory was given explicitly (an isolated instance), or the app
+    /// hosts unit tests.
     static let isIsolated: Bool = {
-        guard let dir = ProcessInfo.processInfo.environment["UMI_STATE_DIR"] else { return false }
-        return !dir.isEmpty
+        if let dir = ProcessInfo.processInfo.environment["UMI_STATE_DIR"], !dir.isEmpty { return true }
+        return isTestHost
     }()
 
     static let stateDirectory: String = {
         let raw: String
         if let dir = ProcessInfo.processInfo.environment["UMI_STATE_DIR"], !dir.isEmpty {
             raw = (dir as NSString).expandingTildeInPath
+        } else if isTestHost {
+            raw = NSTemporaryDirectory() + "umi-test-host-\(getpid())"
         } else {
             raw = NSHomeDirectory() + "/Library/Application Support/\(productName)"
         }
