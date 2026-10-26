@@ -1,0 +1,6 @@
+{
+  "name": "umi",
+  "description": "Reports a Codex session's state to Umi when it runs inside Umi. Silent anywhere else.",
+  "version": "1.0.1",
+  "author": { "name": "Umi" }
+}

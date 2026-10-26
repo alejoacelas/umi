@@ -66,5 +66,5 @@ test {
     _ = size;
     _ = Thread;
     _ = State;
-    _ = @import("renderer/tern_blocks.zig");
+    _ = @import("renderer/umi_blocks.zig");
 }

@@ -58,15 +58,15 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     @FocusedValue(\.ghosttySurfacePwd) private var surfacePwd
     @FocusedValue(\.ghosttySurfaceCellSize) private var cellSize
 
-    // Tern: the sidebar and editor around a window's terminals.
-    @ObservedObject private var ternState = TernState.shared
+    // Umi: the sidebar and editor around a window's terminals.
+    @ObservedObject private var umiState = UmiState.shared
 
     /// The focused terminal's initial size plus the sidebar.
     private var idealContentSize: CGSize? {
         guard let initial = lastFocusedSurface?.value?.initialSize else { return nil }
         let controller = viewModel as? TerminalController
-        let chrome = TernTheme.chromeSize(sidebar: ternState.sidebarVisible && controller != nil,
-                                          width: controller?.sidebarWidth ?? TernTheme.sidebarWidth)
+        let chrome = UmiTheme.chromeSize(sidebar: umiState.sidebarVisible && controller != nil,
+                                          width: controller?.sidebarWidth ?? UmiTheme.sidebarWidth)
         return CGSize(width: initial.width + chrome.width, height: initial.height + chrome.height)
     }
 
@@ -89,19 +89,19 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     // full height and the terminals start below the titlebar band.
                     let topInset = geometry.safeAreaInsets.top
                     let controller = viewModel as? TerminalController
-                    let _ = TernTheme.adopt(background: ghostty.config.backgroundColor)
+                    let _ = UmiTheme.adopt(background: ghostty.config.backgroundColor)
 
                     HStack(spacing: 0) {
-                        if ternState.sidebarVisible, let controller {
-                            TernSidebar(controller: controller, topInset: topInset)
+                        if umiState.sidebarVisible, let controller {
+                            UmiSidebar(controller: controller, topInset: topInset)
                                 .frame(width: controller.sidebarWidth)
-                                .overlay(alignment: .trailing) { TernSidebarResizeEdge(controller: controller) }
+                                .overlay(alignment: .trailing) { UmiSidebarResizeEdge(controller: controller) }
                                 .transition(.move(edge: .leading))
                         }
 
                         Group {
                             if let controller {
-                                TernEditorSplit(group: controller.selectedTab.editor,
+                                UmiEditorSplit(group: controller.selectedTab.editor,
                                                 background: ghostty.config.backgroundColor) {
                                     terminals
                                 }
@@ -112,14 +112,14 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         }
                         .padding(.top, topInset)
                     }
-                    .animation(.easeInOut(duration: 0.16), value: ternState.sidebarVisible)
+                    .animation(.easeInOut(duration: 0.16), value: umiState.sidebarVisible)
                     .ignoresSafeArea(.container, edges: .top)
                 }
                 .frame(idealWidth: idealContentSize?.width, idealHeight: idealContentSize?.height)
 
                 if let controller = viewModel as? TerminalController {
-                    // Tern's palette: commands, panes and files, whatever has focus (L-14–L-16).
-                    TernPaletteView(model: controller.palette, background: ghostty.config.backgroundColor)
+                    // Umi's palette: commands, panes and files, whatever has focus (L-14–L-16).
+                    UmiPaletteView(model: controller.palette, background: ghostty.config.backgroundColor)
                 } else if let surfaceView = lastFocusedSurface?.value {
                     TerminalCommandPaletteView(
                         surfaceView: surfaceView,
@@ -149,7 +149,7 @@ extension TerminalView {
                 tree: viewModel.surfaceTree,
                 action: { delegate?.performSplitAction($0) })
                 .background(GeometryReader { geo in
-                    // Tern: the panes' area, for the frames `ls` reports (L-19).
+                    // Umi: the panes' area, for the frames `ls` reports (L-19).
                     let controller = viewModel as? TerminalController
                     Color.clear
                         .onAppear { controller?.terminalAreaSize = geo.size }

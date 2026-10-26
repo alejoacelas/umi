@@ -64,8 +64,8 @@ extension Ghostty {
                 return nil
             }
 
-            // Tern: our defaults load first so the user's Ghostty config overrides them.
-            if path == nil, let defaults = TernTheme.defaultsConfigPath() {
+            // Umi: our defaults load first so the user's Ghostty config overrides them.
+            if path == nil, let defaults = UmiTheme.defaultsConfigPath() {
                 ghostty_config_load_file(cfg, defaults)
             }
 
@@ -84,8 +84,8 @@ extension Ghostty {
 
             ghostty_config_load_recursive_files(cfg)
 
-            // Tern: shortcuts changed in Tern's shortcuts editor, after the user's own files.
-            if path == nil, let keybindings = TernTheme.keybindingsConfigPath() {
+            // Umi: shortcuts changed in Umi's shortcuts editor, after the user's own files.
+            if path == nil, let keybindings = UmiTheme.keybindingsConfigPath() {
                 ghostty_config_load_file(cfg, keybindings)
             }
 

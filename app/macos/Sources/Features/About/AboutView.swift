@@ -3,8 +3,8 @@ import SwiftUI
 struct AboutView: View {
     @Environment(\.openURL) var openURL
 
-    private let githubURL = URL(string: "https://github.com/ghostty-org/ghostty")
-    private let docsURL = URL(string: "https://ghostty.org/docs")
+    private let githubURL = URL(string: "https://github.com/alejoacelas/umi")
+    private let ghosttyURL = URL(string: "https://ghostty.org")
 
     /// Read the commit from the bundle.
     private var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
@@ -33,8 +33,7 @@ struct AboutView: View {
         var url: URL? {
             switch self {
             case .stable(let version):
-                let slug = version.replacingOccurrences(of: ".", with: "-")
-                return URL(string: "https://ghostty.org/docs/install/release-notes/\(slug)")
+                return URL(string: "https://github.com/alejoacelas/umi/releases/tag/v\(version)")
             default:
                 return nil
             }
@@ -74,14 +73,19 @@ struct AboutView: View {
 
     var body: some View {
         VStack(alignment: .center) {
-            CyclingIconView()
+            // Umi's icon as it shows in the Dock (a custom `macos-icon` included).
+            ghosttyIconImage()
+                .resizable()
+                .scaledToFit()
+                .frame(height: 128)
+                .accessibilityLabel("Umi Application Icon")
 
             VStack(alignment: .center, spacing: 32) {
                 VStack(alignment: .center, spacing: 8) {
-                    Text("Ghostty")
+                    Text("Umi")
                         .bold()
                         .font(.title)
-                    Text("Fast, native, feature-rich terminal \nemulator pushing modern features.")
+                    Text("A terminal for working with coding agents,\nbuilt on Ghostty.")
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .font(.caption)
@@ -105,20 +109,20 @@ struct AboutView: View {
                         PropertyRow(label: "Build", text: build)
                     }
                     if let commit, commit != "",
-                       let url = githubURL?.appendingPathComponent("/commits/\(commit)") {
+                       let url = githubURL?.appendingPathComponent("/commit/\(commit)") {
                         PropertyRow(label: "Commit", text: commit, url: url)
                     }
                 }
                 .frame(maxWidth: .infinity)
 
                 HStack(spacing: 8) {
-                    if let url = docsURL {
-                        Button("Docs") {
+                    if let url = githubURL {
+                        Button("GitHub") {
                             openURL(url)
                         }
                     }
-                    if let url = githubURL {
-                        Button("GitHub") {
+                    if let url = ghosttyURL {
+                        Button("Ghostty") {
                             openURL(url)
                         }
                     }

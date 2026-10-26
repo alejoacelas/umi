@@ -1231,9 +1231,9 @@ fn selectionScrollTick(self: *Surface) !void {
 
     const selection = self.mouse.selection_gesture.autoscrollTick(t, .{
         .viewport = pos_vp,
-        // Tern: x as the grid is laid out (cell edges); y as on the surface
+        // Umi: x as the grid is laid out (cell edges); y as on the surface
         // (the autoscroll edges are the pane's).
-        .xpos = self.ternUnmove(pos.x, pos.y).x,
+        .xpos = self.umiUnmove(pos.x, pos.y).x,
         .ypos = pos.y,
         .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
         .word_boundary_codepoints = self.config.selection_word_chars,
@@ -2101,8 +2101,8 @@ pub fn dumpTextLocked(
             // Add padding
             y += @floatFromInt(self.size.padding.top);
 
-            // Tern: the view may be moved down (Warp's look).
-            y += @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic));
+            // Umi: the view may be moved down (Warp's look).
+            y += @floatFromInt(self.renderer_state.umi_offset_px.load(.monotonic));
 
             // Scale
             y /= content_scale.y;
@@ -2213,8 +2213,8 @@ pub fn imePoint(self: *const Surface) apprt.IMEPos {
         // Simple y * cell height gives the top-left corner, then add padding offset
         var y: f64 = @floatFromInt(cursor.y * self.size.cell.height + self.size.padding.top);
 
-        // Tern: the view may be moved down (Warp's look).
-        y += @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic));
+        // Umi: the view may be moved down (Warp's look).
+        y += @floatFromInt(self.renderer_state.umi_offset_px.load(.monotonic));
 
         // We want the bottom
         y += @floatFromInt(self.size.cell.height);
@@ -3821,9 +3821,9 @@ fn mouseReport(
         .action = action,
         .mods = mods,
         .pos = .{
-            // Tern: where the point is in the grid's layout (Warp's look).
-            .x = @floatCast(self.ternUnmove(pos.x, pos.y).x),
-            .y = @floatCast(self.ternUnmove(pos.x, pos.y).y),
+            // Umi: where the point is in the grid's layout (Warp's look).
+            .x = @floatCast(self.umiUnmove(pos.x, pos.y).x),
+            .y = @floatCast(self.umiUnmove(pos.x, pos.y).y),
         },
     }, encoding_opts) catch |err| switch (err) {
         error.WriteFailed => {
@@ -4094,9 +4094,9 @@ pub fn mouseButtonCallback(
         var press_selection = try self.mouse.selection_gesture.press(t, .{
             .time = std.Io.Timestamp.now(global.io(), .awake),
             .pin = pin,
-            // Tern: x as the grid is laid out (cell edges); y as on the surface
+            // Umi: x as the grid is laid out (cell edges); y as on the surface
             // (the autoscroll edges are the pane's).
-            .xpos = self.ternUnmove(pos.x, pos.y).x,
+            .xpos = self.umiUnmove(pos.x, pos.y).x,
             .ypos = pos.y,
             .max_distance = @floatFromInt(self.size.cell.width),
             .repeat_interval = self.config.mouse_interval,
@@ -4801,9 +4801,9 @@ pub fn cursorPosCallback(
         // Perform our drag behavior in our gesture handler.
         const drag_selection = self.mouse.selection_gesture.drag(t, .{
             .pin = pin,
-            // Tern: x as the grid is laid out (cell edges); y as on the surface
+            // Umi: x as the grid is laid out (cell edges); y as on the surface
             // (the autoscroll edges are the pane's).
-            .xpos = self.ternUnmove(pos.x, pos.y).x,
+            .xpos = self.umiUnmove(pos.x, pos.y).x,
             .ypos = pos.y,
             .rectangle = SurfaceMouse.isRectangleSelectState(self.mouse.mods),
             .word_boundary_codepoints = self.config.selection_word_chars,
@@ -4860,8 +4860,8 @@ pub fn colorSchemeCallback(self: *Surface, scheme: apprt.ColorScheme) !void {
 }
 
 pub fn posToViewport(self: *Surface, xpos: f64, ypos: f64) terminal.point.Coordinate {
-    // Tern: the point as the grid is laid out, under Warp's look's moves.
-    const p = self.ternUnmove(xpos, ypos);
+    // Umi: the point as the grid is laid out, under Warp's look's moves.
+    const p = self.umiUnmove(xpos, ypos);
 
     // Get our grid cell
     const coord: rendererpkg.Coordinate = .{ .surface = .{ .x = p.x, .y = p.y } };
@@ -4869,15 +4869,15 @@ pub fn posToViewport(self: *Surface, xpos: f64, ypos: f64) terminal.point.Coordi
     return .{ .x = grid.x, .y = grid.y };
 }
 
-/// Tern: a point on the surface where it would be if Warp's look didn't move
+/// Umi: a point on the surface where it would be if Warp's look didn't move
 /// the view down and some rows' text up or right (as the renderer last drew
 /// them). Mouse positions go through this before anything maps them to cells
 /// or measures them against cell edges.
-fn ternUnmove(self: *Surface, xpos: f64, ypos: f64) struct { x: f64, y: f64 } {
-    const offset: f64 = @floatFromInt(self.renderer_state.tern_offset_px.load(.monotonic));
+fn umiUnmove(self: *Surface, xpos: f64, ypos: f64) struct { x: f64, y: f64 } {
+    const offset: f64 = @floatFromInt(self.renderer_state.umi_offset_px.load(.monotonic));
     var x = xpos;
     var y = ypos - offset;
-    const rows = &self.renderer_state.tern_rows;
+    const rows = &self.renderer_state.umi_rows;
     rows.lock.lockUncancelable(global.io());
     defer rows.lock.unlock(global.io());
     if (rows.len > 0) {

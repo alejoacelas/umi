@@ -84,13 +84,13 @@ press each shortcut and confirm what it does:
 Also: the command palette lists these actions, and Settings shows and changes them.
 
 **L-14, L-15, L-16: the palettes.** Setup: a window with a few tabs, sessions and a git repository.
-Screenshots of ⌘P (CLI entries with their `tern …` line, menu actions with their shortcuts), of ⇧⌘P
+Screenshots of ⌘P (CLI entries with their `umi …` line, menu actions with their shortcuts), of ⇧⌘P
 (each pane with its own title, the current one marked) and of ⌘O in the repository (its files,
 recent and changed ones first).
 - Each palette is quiet (no heavy borders), legible, and shows what the requirement lists.
 - Choosing an entry does what it says, and a command that needs a value asks for it (by hand).
 
-**L-17: Settings (by hand).** ⌘, opens Settings with Tern's shortcuts and Ghostty's keybindings;
+**L-17: Settings (by hand).** ⌘, opens Settings with Umi's shortcuts and Ghostty's keybindings;
 record a new key for one, see it take effect at once, reset it; the window says the Ghostty config
 file isn't changed.
 

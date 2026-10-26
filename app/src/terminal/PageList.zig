@@ -1758,8 +1758,8 @@ const ReflowCursor = struct {
                 try self.cursorScrollOrNewPage(list, cap);
                 self.copyRowMetadata(src_row);
                 self.page_row.wrap_continuation = true;
-                // Tern: a block starts on one row only.
-                self.page_row.tern_block = false;
+                // Umi: a block starts on one row only.
+                self.page_row.umi_block = false;
             }
 
             // Fast path: bulk-copy a run of simple cells directly
@@ -2789,12 +2789,12 @@ const ReflowCursor = struct {
     fn copyRowMetadata(self: *ReflowCursor, other: *const Row) void {
         self.page_row.semantic_prompt = other.semantic_prompt;
 
-        // Tern: a block's description lives on its first row.
-        self.page_row.tern_block = other.tern_block;
-        self.page_row.tern_state = other.tern_state;
-        self.page_row.tern_failed = other.tern_failed;
-        self.page_row.tern_unit = other.tern_unit;
-        self.page_row.tern_duration = other.tern_duration;
+        // Umi: a block's description lives on its first row.
+        self.page_row.umi_block = other.umi_block;
+        self.page_row.umi_state = other.umi_state;
+        self.page_row.umi_failed = other.umi_failed;
+        self.page_row.umi_unit = other.umi_unit;
+        self.page_row.umi_duration = other.umi_duration;
     }
 };
 

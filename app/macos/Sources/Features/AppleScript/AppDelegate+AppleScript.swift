@@ -273,7 +273,7 @@ extension NSApplication {
             return nil
         }
 
-        // Tern: the new tab is the window's selected tab.
+        // Umi: the new tab is the window's selected tab.
         let createdTabID = createdController.tabs.isEmpty
             ? ScriptTab.stableID(controller: createdController)
             : ScriptTab.stableID(tab: createdController.selectedTab)

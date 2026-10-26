@@ -74,7 +74,7 @@ struct TerminalCommandPaletteView: View {
         // Sort the rest. We replace ":" with a character that sorts before space
         // so that "Foo:" sorts before "Foo Bar:". Use sortKey as a tie-breaker
         // for stable ordering when titles are equal.
-        options.append(contentsOf: sortedTerminalPaletteOptions(jumpOptions + terminalOptions + TernShortcuts.paletteOptions()))
+        options.append(contentsOf: sortedTerminalPaletteOptions(jumpOptions + terminalOptions + UmiShortcuts.paletteOptions()))
         return options
     }
 

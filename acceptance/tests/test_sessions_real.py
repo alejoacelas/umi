@@ -177,7 +177,7 @@ def test_a_session_goes_live_takes_messages_and_is_handed_back_and_taken_over(re
         real.cli("window", "close", window["window"], check=False)
 
 
-# ---- AG-18: Tern's plugins, installed into the given configuration ------------------------------------
+# ---- AG-18: Umi's plugins, installed into the given configuration ------------------------------------
 
 USER_CONFIG = [os.path.expanduser(p) for p in ("~/.claude/settings.json", "~/.claude/plugins/installed_plugins.json",
                                                "~/.claude/plugins/known_marketplaces.json", "~/.codex/config.toml")]
@@ -194,7 +194,7 @@ def snapshot(paths):
 
 @pytest.mark.req("AG-18", "AG-4")
 def test_plugins_install_into_the_agents_configuration(fresh, tmp_path):
-    """`agent plugins install` installs Tern's plugins with the agents' own commands, into the
+    """`agent plugins install` installs Umi's plugins with the agents' own commands, into the
     configuration the app is pointed at (here temporary folders, never the user's), and `status` says
     so. No model is called."""
     claude_dir, codex_dir = tmp_path / "claude-config", tmp_path / "codex-home"
@@ -209,9 +209,9 @@ def test_plugins_install_into_the_agents_configuration(fresh, tmp_path):
     probe = "0.0.0-probe"
     (claude_dir / "plugins").mkdir()
     (claude_dir / "plugins" / "installed_plugins.json").write_text(json.dumps(
-        {"version": 2, "plugins": {"tern@tern": [{"scope": "user", "version": probe, "installPath": str(tmp_path)}]}}))
-    (codex_dir / "config.toml").write_text('[plugins."tern@tern"]\nenabled = true\n')
-    (codex_dir / "plugins" / "cache" / "tern" / "tern" / probe).mkdir(parents=True)
+        {"version": 2, "plugins": {"umi@umi": [{"scope": "user", "version": probe, "installPath": str(tmp_path)}]}}))
+    (codex_dir / "config.toml").write_text('[plugins."umi@umi"]\nenabled = true\n')
+    (codex_dir / "plugins" / "cache" / "umi" / "umi" / probe).mkdir(parents=True)
     status = other.json("agent", "plugins", "status", timeout=120)
     assert status["claude"].get("version") == probe, \
         f"the app doesn't read CLAUDE_CONFIG_DIR; not installing (it would change ~/.claude): {status['claude']}"
@@ -219,7 +219,7 @@ def test_plugins_install_into_the_agents_configuration(fresh, tmp_path):
         f"the app doesn't read CODEX_HOME; not installing (it would change ~/.codex): {status['codex']}"
     for path in ((claude_dir / "plugins" / "installed_plugins.json"), (codex_dir / "config.toml")):
         path.unlink()
-    (codex_dir / "plugins" / "cache" / "tern" / "tern" / probe).rmdir()
+    (codex_dir / "plugins" / "cache" / "umi" / "umi" / probe).rmdir()
     status = other.json("agent", "plugins", "status", timeout=120)
     assert status["claude"]["installed"] is False and status["codex"]["installed"] is False, status
     installed = other.json("agent", "plugins", "install", timeout=300)
@@ -229,9 +229,9 @@ def test_plugins_install_into_the_agents_configuration(fresh, tmp_path):
     assert status["codex"]["installed"] and status["codex"]["current"], status
     assert status["codex"].get("hooks_trusted") is True, "Codex runs no plugin hook until it's trusted"
     with open(claude_dir / "plugins" / "installed_plugins.json") as f:
-        assert "tern@" in f.read()
+        assert "umi@" in f.read()
     with open(codex_dir / "config.toml") as f:
-        assert "tern@" in f.read()
+        assert "umi@" in f.read()
     text = other.cli("agent", "plugins").stdout
     assert "Claude Code" in text and "Codex" in text and "installed" in text, text
     other.json("agent", "plugins", "remove", timeout=300)

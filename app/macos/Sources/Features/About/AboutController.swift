@@ -20,7 +20,6 @@ class AboutController: NSWindowController, NSWindowDelegate {
 
     func show() {
         window?.makeKeyAndOrderFront(nil)
-        viewModel.startCyclingIcons()
     }
 
     func hide() {

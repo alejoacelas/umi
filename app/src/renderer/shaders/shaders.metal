@@ -459,7 +459,7 @@ fragment float4 cell_bg_fragment(
 
   float4 bg = float4(0.0);
 
-  // Tern: a block's folder and command rows are drawn a little above their
+  // Umi: a block's folder and command rows are drawn a little above their
   // place (Warp's spacing), and the folder box's text a little right; their
   // backgrounds (selection highlights) move with them. A raised row covers
   // the bottom of the row above it, and leaves a gap with no cell below it.
@@ -533,15 +533,15 @@ fragment float4 cell_bg_fragment(
 }
 
 //-------------------------------------------------------------------
-// Tern Rect Shader
+// Umi Rect Shader
 //-------------------------------------------------------------------
-#pragma mark - Tern Rect Shader
+#pragma mark - Umi Rect Shader
 
-// Tern: rectangles for Warp's look (block separators, the tint and bar of
+// Umi: rectangles for Warp's look (block separators, the tint and bar of
 // a failed block, the folder box): a fill, an optional border and rounded
 // corners, antialiased.
 
-struct TernRectVertexIn {
+struct UmiRectVertexIn {
   // x, y, width, height in pixels in the grid's space.
   float4 rect [[attribute(0)]];
   uchar4 fill [[attribute(1)]];
@@ -550,7 +550,7 @@ struct TernRectVertexIn {
   float2 style [[attribute(3)]];
 };
 
-struct TernRectVertexOut {
+struct UmiRectVertexOut {
   float4 position [[position]];
   float2 local;
   float2 half_size [[flat]];
@@ -559,9 +559,9 @@ struct TernRectVertexOut {
   float2 style [[flat]];
 };
 
-vertex TernRectVertexOut tern_rect_vertex(
+vertex UmiRectVertexOut umi_rect_vertex(
   uint vid [[vertex_id]],
-  TernRectVertexIn in [[stage_in]],
+  UmiRectVertexIn in [[stage_in]],
   constant Uniforms& uniforms [[buffer(1)]]
 ) {
   float2 corner;
@@ -570,7 +570,7 @@ vertex TernRectVertexOut tern_rect_vertex(
 
   float2 pos = in.rect.xy + in.rect.zw * corner;
 
-  TernRectVertexOut out;
+  UmiRectVertexOut out;
   out.position = uniforms.projection_matrix * float4(pos.x, pos.y, 0.0f, 1.0f);
   out.local = (corner - 0.5) * in.rect.zw;
   out.half_size = in.rect.zw * 0.5;
@@ -580,7 +580,7 @@ vertex TernRectVertexOut tern_rect_vertex(
   return out;
 }
 
-fragment float4 tern_rect_fragment(TernRectVertexOut in [[stage_in]]) {
+fragment float4 umi_rect_fragment(UmiRectVertexOut in [[stage_in]]) {
   float border = in.style.x;
   float radius = min(in.style.y, min(in.half_size.x, in.half_size.y));
 

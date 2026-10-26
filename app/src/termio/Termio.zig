@@ -69,7 +69,7 @@ terminal_stream: StreamHandler.Stream,
 /// flooding with cursor resets.
 last_cursor_reset: ?std.Io.Timestamp = null,
 
-/// Bytes read from the child process so far (Tern: `wait --idle` measures output, and
+/// Bytes read from the child process so far (Umi: `wait --idle` measures output, and
 /// `wait --pattern` bounds how much scrollback new output can have filled). Protected by
 /// the renderer state mutex, like the terminal.
 output_bytes: u64 = 0,

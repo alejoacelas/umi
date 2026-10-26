@@ -70,6 +70,9 @@ the tests stay independent of any implementation.
 }
 ```
 
+- **Paths:** `app` and `build_cli.source` may be relative to the target file, and so may words of
+  `release.command` and `installer.command` that start with `./` or `../` (`targets/umi.json` uses
+  this, so the suite runs from any checkout).
 - **`executable`, `cli`:** relative to `app`, or absolute.
 - **`launch_args`:** how the tests launch an isolated instance. It must not restore or save windows.
 - **`restore_launch_args`:** for restart tests that need window restoration. Only used when

@@ -329,7 +329,7 @@ notifications carry no `turnId` and may land inside a turn, as in the real logs.
 
 ## Live sessions: TUI, hooks, transcripts
 
-Tern runs every session headless (`claude -p` stream-json, a private `codex app-server`) and lets the user
+Umi runs every session headless (`claude -p` stream-json, a private `codex app-server`) and lets the user
 take one over live: the agent's own interface in a pane, on the same conversation, and back. It observes live
 agents through hooks in its plugins. The fakes support all of it: Codex's app server on a unix socket with
 several clients, a line-oriented TUI for each harness, plugin hooks in every mode, Claude's transcript file,
@@ -354,7 +354,7 @@ stayed usable for A.
 | `thread/unsubscribe` | the client gets no more notifications for that thread; the thread stays loaded and keeps its writer lock (X5). This applies to stdio as well. | the lock part is X5; the notification part is inferred |
 | server requests (approvals, questions, permissions, elicitations) | sent with the same id to every subscriber of the thread. The first answer wins; later answers are ignored; `serverRequest/resolved` goes to all subscribers. A client that subscribes while a request is pending gets it right after its `thread/resume` answer. | **inferred** (not probed) |
 | clients leaving | the server, its threads and their running turns carry on; pending requests stay pending for the others | X16 |
-| lifetime | stdin is not read. The server runs until SIGTERM, SIGINT or SIGHUP, even with no client left; it then kills RUN commands, releases its thread locks, removes the socket file and dies of the signal. `EXIT_CLEAN` also removes the file; `CRASH` leaves it, as a crash would. A stale socket file (nobody listening) is replaced; a socket with a live listener makes the fake exit 1 (`address already in use`). | X16 (kept running; Tern kills it); the rest inferred |
+| lifetime | stdin is not read. The server runs until SIGTERM, SIGINT or SIGHUP, even with no client left; it then kills RUN commands, releases its thread locks, removes the socket file and dies of the signal. `EXIT_CLEAN` also removes the file; `CRASH` leaves it, as a crash would. A stale socket file (nobody listening) is replaced; a socket with a live listener makes the fake exit 1 (`address already in use`). | X16 (kept running; Umi kills it); the rest inferred |
 | timing | `FAKE_SLOW_START` delays creating the socket. Under chaos each message waits 0 to 40 ms in its client's writer thread and is sometimes split over two socket writes. | |
 
 Not reproduced from X16: `thread/settings/updated` before the TUI's turns, the ephemeral title-generation
@@ -364,8 +364,8 @@ socket path to 103 bytes.
 
 ### TUI mode (live sessions)
 
-Both TUIs are line-oriented, so tests can read the screen (`tern read --pane`) and type
-(`tern send --pane … --enter`). The terminal is put in a raw-ish mode (no echo, no line buffering, signals on).
+Both TUIs are line-oriented, so tests can read the screen (`umi read --pane`) and type
+(`umi send --pane … --enter`). The terminal is put in a raw-ish mode (no echo, no line buffering, signals on).
 The input line stays at the bottom with a prompt (`> ` Claude, `› ` Codex); everything else is printed above
 it, each line as `\r\x1b[K<text>\n`, after which the prompt and what is being typed are redrawn. Keys: printable
 characters, Backspace, Ctrl-U (clear), Enter (`\r` or `\n`) submits, Ctrl-D on an empty line ends the TUI, Esc
@@ -472,7 +472,7 @@ Running a hook, both fakes:
   and `CLAUDE_PROJECT_DIR` (Claude) on top of the fake's own environment.
 * `/bin/sh -c <command>` is started by the fake itself, so the hook's parent is the fake (C14: `$PPID` is the
   `claude` process), with the session's folder as cwd and one JSON object on stdin. Its stdout and stderr are
-  captured and ignored, and so are exit codes and JSON decisions (Tern's hooks print nothing).
+  captured and ignored, and so are exit codes and JSON decisions (Umi's hooks print nothing).
 * Claude keeps hooks in its own session and process group, so in the TUI a hook can open `/dev/tty`. Codex
   runs them detached with `setsid`, as Codex 0.155 and later do; a hook then finds the terminal through its
   parent chain (as Warp's codex-warp plugin does).
@@ -606,7 +606,7 @@ interleaving still depends on thread timing, so treat a seed as reproducible in 
 
 These hold with or without chaos:
 * An answer to a server request must carry the request's id with its type: `false` for request `0` is ignored
-  and the request stays pending, as the real 0.160.0 server did (2026-10-08, a Tern trace).
+  and the request stays pending, as the real 0.160.0 server did (2026-10-08, an Umi trace).
 * A `turn/start`, `turn/steer` or `turn/interrupt` that arrives while a turn is closing is answered after that
   turn's `turn/completed`. That is the X9 ordering.
 * Steer responses are written before the steered input's `userMessage` item.

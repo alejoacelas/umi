@@ -7,7 +7,7 @@ import SwiftUI
 enum TerminalSplitOperation {
     case resize(Resize)
     case drop(Drop)
-    /// Tern: give the panes of a divider's row (or column) equal shares (double-click).
+    /// Umi: give the panes of a divider's row (or column) equal shares (double-click).
     case equalize(SplitTree<Ghostty.SurfaceView>.Node)
 
     struct Resize {
@@ -80,7 +80,7 @@ private struct TerminalSplitSubtreeView: View {
                     TerminalSplitSubtreeView(node: split.right, action: action)
                 },
                 onEqualize: {
-                    // Tern: only this divider's row or column, as in Warp (⌃⌘= still
+                    // Umi: only this divider's row or column, as in Warp (⌃⌘= still
                     // equalizes the whole tab).
                     action(.equalize(node))
                 }
@@ -102,8 +102,8 @@ private struct TerminalSplitLeaf: View {
             Ghostty.InspectableSurface(
                 surfaceView: surfaceView,
                 isSplit: isSplit)
-            // Tern: a managed session shown in this pane is drawn over its terminal.
-            .overlay { TernAgentPaneOverlay(surfaceView: surfaceView) }
+            // Umi: a managed session shown in this pane is drawn over its terminal.
+            .overlay { UmiAgentPaneOverlay(surfaceView: surfaceView) }
             .background {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly

@@ -33,17 +33,17 @@ preedit: ?Preedit = null,
 /// need about the mouse.
 mouse: Mouse = .{},
 
-/// Tern: how many pixels the renderer moved the view down so the last
+/// Umi: how many pixels the renderer moved the view down so the last
 /// used row sits at the bottom (Warp's look). Written by the renderer
 /// for each frame and read by the surface to map the mouse to the grid
 /// as drawn. Not protected by the mutex.
-tern_offset_px: std.atomic.Value(u32) = .init(0),
+umi_offset_px: std.atomic.Value(u32) = .init(0),
 
-/// Tern: how the renderer moved each viewport row's text (Warp's look): how
+/// Umi: how the renderer moved each viewport row's text (Warp's look): how
 /// many pixels above its row it is drawn, and how far right (the folder box's
 /// text). Written by the renderer with each frame it builds, read by the
 /// surface so the mouse lands on the cells as drawn. Guarded by its own lock.
-tern_rows: TernRows = .{},
+umi_rows: UmiRows = .{},
 
 
 /// The number of threads currently waiting to acquire `mutex` via
@@ -247,8 +247,8 @@ test "preedit range shifts left at right edge" {
     try testing.expectEqual(@as(usize, 0), range.cp_offset);
 }
 
-/// Tern: see `tern_rows`.
-pub const TernRows = struct {
+/// Umi: see `umi_rows`.
+pub const UmiRows = struct {
     lock: std.Io.Mutex = .init,
     raise: [max]u16 = @splat(0),
     dx: [max]u16 = @splat(0),
@@ -263,7 +263,7 @@ pub const TernRows = struct {
     /// Caller holds the lock.
     pub const Moved = struct { row: usize, raise: u16, dx: u16 };
 
-    pub fn rowAt(self: *const TernRows, y: f64, cell_h: f64) ?Moved {
+    pub fn rowAt(self: *const UmiRows, y: f64, cell_h: f64) ?Moved {
         if (y < 0) return if (self.len > 0)
             .{ .row = 0, .raise = self.raise[0], .dx = self.dx[0] }
         else

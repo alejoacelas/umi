@@ -93,11 +93,11 @@ _entrypoint() {
 _ghostty_deferred_init() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
 
-    # Tern: sets PS1 to the block prompt: two spacer rows, the folder, an
+    # Umi: sets PS1 to the block prompt: two spacer rows, the folder, an
     # empty command line. The folder is shortened from the left (`…/rest`) to
     # 4 columns less than the line (`%-4<`, worked out each time zsh draws the
     # prompt, so it follows resizes), leaving room for the folder box's icon.
-    _tern_block_prompt() {
+    _umi_block_prompt() {
         PS1=$'\n\n%-4<…<%~%<<\n'
     }
 
@@ -121,7 +121,7 @@ _ghostty_deferred_init() {
             if (( _ghostty_state == 1 )); then
                 # The last written OSC 133 C has not been closed with D yet.
                 # Close it and supply status.
-                # Tern: aid says which shell's command ended (a nested shell's
+                # Umi: aid says which shell's command ended (a nested shell's
                 # prompts may have come since).
                 builtin print -nu $_ghostty_fd '\e]133;D;'$cmd_status';aid='$$'\a'
                 (( _ghostty_state = 2 ))
@@ -133,17 +133,17 @@ _ghostty_deferred_init() {
 
         builtin local mark1=$'%{\e]133;A;cl=line\a%}'
 
-        # Tern: Warp's look. The prompt is two spacer rows (the line between
+        # Umi: Warp's look. The prompt is two spacer rows (the line between
         # blocks), the folder (the block's header, or the folder box at the
-        # prompt) and an empty command line; `tern=1` tells the terminal it
+        # prompt) and an empty command line; `umi=1` tells the terminal it
         # starts a block, which it draws around these rows. What the shell
         # prints stays plain text, so programs reading the pane see it as is.
         # PS1 is replaced below, once the marks of the previous prompt are
         # taken off PS1 and PS2.
-        builtin local tern_blocks=0
-        if [[ "$GHOSTTY_SHELL_FEATURES" == *tern-blocks* ]] && [[ -o prompt_percent ]]; then
-            tern_blocks=1
-            mark1=$'%{\e]133;A;cl=line;tern=1;aid='$$$'\a%}'
+        builtin local umi_blocks=0
+        if [[ "$GHOSTTY_SHELL_FEATURES" == *umi-blocks* ]] && [[ -o prompt_percent ]]; then
+            umi_blocks=1
+            mark1=$'%{\e]133;A;cl=line;umi=1;aid='$$$'\a%}'
         fi
 
         if [[ -o prompt_percent ]]; then
@@ -172,10 +172,10 @@ _ghostty_deferred_init() {
                     fi
                 fi
 
-                # Tern: the block prompt (see above). It's Tern's own, so its
+                # Umi: the block prompt (see above). It's Umi's own, so its
                 # lines are always marked.
-                if (( tern_blocks )); then
-                    _tern_block_prompt
+                if (( umi_blocks )); then
+                    _umi_block_prompt
                     ps1_changed=0
                 fi
 
@@ -221,8 +221,8 @@ _ghostty_deferred_init() {
                 # position, this won't work well. We'll break them as much as
                 # they are breaking us.
                 precmd_functions=(${precmd_functions:#_ghostty_precmd} _ghostty_precmd)
-                # Tern: the rows the block is drawn around, even unmarked.
-                (( tern_blocks )) && _tern_block_prompt
+                # Umi: the rows the block is drawn around, even unmarked.
+                (( umi_blocks )) && _umi_block_prompt
                 # Plugins that invoke precmd hooks from zle do that before zle
                 # is trashed. This means that the cursor is in the middle of
                 # BUFFER and we cannot print our mark there. Prompt might
@@ -352,9 +352,9 @@ _ghostty_deferred_init() {
         local flags=()
         [[ "$GHOSTTY_SHELL_FEATURES" != *ssh-env* ]] && flags+=(--forward-env=false)
         [[ "$GHOSTTY_SHELL_FEATURES" != *ssh-terminfo* ]] && flags+=(--terminfo=false)
-        # Tern: the core executable is named tern-app.
+        # Umi: the core executable is named umi-app.
         local ghostty="$GHOSTTY_BIN_DIR/ghostty"
-        [[ -x "$ghostty" ]] || ghostty="$GHOSTTY_BIN_DIR/tern-app"
+        [[ -x "$ghostty" ]] || ghostty="$GHOSTTY_BIN_DIR/umi-app"
         "$ghostty" +ssh $flags -- "$@"
       }
     fi

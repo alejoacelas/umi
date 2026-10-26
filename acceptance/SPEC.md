@@ -246,10 +246,10 @@ the menu.
   then changed ones. `path:line` opens the file at that line. Enter opens the file in the tab's
   editor; a "Browse…" entry opens the Open panel.
 
-- **L-17 [A+W]** ⌘, opens Settings, where shortcuts are edited: every Tern menu shortcut and every
+- **L-17 [A+W]** ⌘, opens Settings, where shortcuts are edited: every Umi menu shortcut and every
   Ghostty keybinding is listed, searchable, and each can be changed (press the new keys), cleared
   or reset to its default, or all reset at once. A change applies at once, without a restart, and
-  is kept across restarts in Tern's state directory (`shortcuts.json`, and `keybindings.conf` for
+  is kept across restarts in Umi's state directory (`shortcuts.json`, and `keybindings.conf` for
   Ghostty keybindings, loaded after the user's Ghostty config files). The user's Ghostty config
   files are never changed; Settings says so and has a button that opens them. A key given to one
   shortcut is taken from any other that had it, and Settings says which. `<cli> shortcuts` lists,
@@ -345,8 +345,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
   - Line 1: the tab's folder (its focused pane's), or the name the user gave the tab. Then the git
     branch, a linked worktree shown differently from a normal checkout; a pane count when split;
     and close and pin affordances on hover.
-  - Line 2: the title of the tab's agent session, when it has one (a session Tern started, or a
-    `claude`/`codex` typed in the pane and reported by Tern's plugin, AG-18). Otherwise what the
+  - Line 2: the title of the tab's agent session, when it has one (a session Umi started, or a
+    `claude`/`codex` typed in the pane and reported by Umi's plugin, AG-18). Otherwise what the
     focused pane is doing: the running command or the last one it ran; else the folder's path.
   - A tab with an agent session shows the agent's mark (Claude or Codex), small and monochrome, as
     its icon. When a session finished and the user hasn't looked at it yet, or it needs the user,
@@ -387,7 +387,7 @@ A "live session" is a pane with a running program, its scrollback and its state.
 ### Warp's look for terminals
 
 The user's request, their Warp screenshot (`reference/warp-blocks.png`) and their choice: an
-imitation that keeps the shell underneath. zsh keeps editing the command line as it does today; Tern
+imitation that keeps the shell underneath. zsh keeps editing the command line as it does today; Umi
 changes how the terminal looks. Colors and spacing come from Warp's own source.
 
 - **S-9 [A+W]** At the bottom. The prompt sits at the bottom of the pane from the start, and output
@@ -407,13 +407,13 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
 - **S-11 [A+W]** The folder box. At the prompt, a small rounded box with a folder icon and the current
   folder (`~` for the home folder), as at the bottom of the screenshot.
 - **S-12 [A+W]** Where it applies:
-  - only inside Tern: other terminals, and zsh started anywhere else, look as they did;
+  - only inside Umi: other terminals, and zsh started anywhere else, look as they did;
   - zsh only: other shells keep the usual look;
   - full-screen programs (the alternate screen: vim, an agent's full-screen interface) take the whole
     pane as before, with no block decorations;
   - programs and agents that read a pane (`read`, `wait --pattern`) see what the shell and programs
-    printed (the folder line and the command line as the shell printed them), never what Tern draws;
-  - `shell-integration-features = no-tern-blocks` in the user's Ghostty config turns it off.
+    printed (the folder line and the command line as the shell printed them), never what Umi draws;
+  - `shell-integration-features = no-umi-blocks` in the user's Ghostty config turns it off.
 
 ## E. Editor and Markdown
 
@@ -478,7 +478,7 @@ runs, it is the same session: same id, conversation, folder and settings.
   same command in their own terminal in that folder: their and the project's instructions
   (`CLAUDE.md`, `AGENTS.md`), skills, MCP servers, plugins, hooks and subagents; the login shell's
   environment, never the launching process's agent variables; their own logins. Running sessions
-  never changes the user's own `claude`/`codex` configuration, except installing Tern's plugins
+  never changes the user's own `claude`/`codex` configuration, except installing Umi's plugins
   (AG-18).
 
 ### Headless and live
@@ -554,7 +554,7 @@ runs, it is the same session: same id, conversation, folder and settings.
   Requests the agent withdraws disappear. In a live session the agent's own interface asks.
 
 ### Observability
-- **AG-18 [A]** The product observes agents the way Warp does: Tern's plugins for Claude Code and
+- **AG-18 [A]** The product observes agents the way Warp does: Umi's plugins for Claude Code and
   Codex report each session's state from the agents' own hooks to the app. That covers sessions the
   product started, while live, and `claude`/`codex` the user starts by typing them in a pane, which
   then become sessions the product knows. The plugins are installed into the user's Claude Code and

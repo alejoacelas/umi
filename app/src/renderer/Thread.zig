@@ -63,11 +63,11 @@ cursor_h: xev.Timer,
 cursor_c: xev.Completion = .{},
 cursor_c_cancel: xev.Completion = .{},
 
-/// Tern: wakes the renderer when a running block's elapsed time (shown
+/// Umi: wakes the renderer when a running block's elapsed time (shown
 /// in its header, Warp's look) next changes.
-tern_h: xev.Timer,
-tern_c: xev.Completion = .{},
-tern_c_cancel: xev.Completion = .{},
+umi_h: xev.Timer,
+umi_c: xev.Completion = .{},
+umi_c_cancel: xev.Completion = .{},
 
 /// Incremental scrollback compression scheduling.
 compression: Compression = undefined,
@@ -150,9 +150,9 @@ pub fn init(
     var cursor_timer = try xev.Timer.init();
     errdefer cursor_timer.deinit();
 
-    // Tern: a timer for running blocks' elapsed time.
-    var tern_h = try xev.Timer.init();
-    errdefer tern_h.deinit();
+    // Umi: a timer for running blocks' elapsed time.
+    var umi_h = try xev.Timer.init();
+    errdefer umi_h.deinit();
 
     // The mailbox for messaging this thread
     var mailbox = try Mailbox.create(alloc);
@@ -167,7 +167,7 @@ pub fn init(
         .render_h = render_h,
         .draw_now = draw_now,
         .cursor_h = cursor_timer,
-        .tern_h = tern_h,
+        .umi_h = umi_h,
         .surface = surface,
         .renderer = renderer_impl,
         .state = state,
@@ -191,7 +191,7 @@ pub fn deinit(self: *Thread) void {
     self.render_h.deinit();
     self.draw_now.deinit();
     self.cursor_h.deinit();
-    self.tern_h.deinit();
+    self.umi_h.deinit();
     if (comptime terminalpkg.compression_enabled)
         self.compression.deinit();
     self.loop.deinit();
@@ -594,28 +594,28 @@ fn renderCallback(
     // Schedule the next animation wake, if the renderer needs one.
     t.armAnimationTimer();
 
-    // Tern: and the next tick of a running block's elapsed time.
-    t.armTernTimer();
+    // Umi: and the next tick of a running block's elapsed time.
+    t.armUmiTimer();
 
     return .disarm;
 }
 
-/// Tern: schedule a frame update for when a visible running block's
+/// Umi: schedule a frame update for when a visible running block's
 /// elapsed time next changes.
-fn armTernTimer(self: *Thread) void {
-    const delay = self.renderer.ternTickMs() orelse return;
-    self.tern_h.reset(
+fn armUmiTimer(self: *Thread) void {
+    const delay = self.renderer.umiTickMs() orelse return;
+    self.umi_h.reset(
         &self.loop,
-        &self.tern_c,
-        &self.tern_c_cancel,
+        &self.umi_c,
+        &self.umi_c_cancel,
         delay,
         Thread,
         self,
-        ternTimerCallback,
+        umiTimerCallback,
     );
 }
 
-fn ternTimerCallback(
+fn umiTimerCallback(
     self_: ?*Thread,
     _: *xev.Loop,
     _: *xev.Completion,

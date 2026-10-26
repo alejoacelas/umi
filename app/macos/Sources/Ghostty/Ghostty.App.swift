@@ -352,12 +352,12 @@ extension Ghostty {
             return GHOSTTY_CLIPBOARD_READ_STARTED
         }
 
-        /// Text pasted into a pane running an agent's own interface is a draft there (Tern, AG-9).
+        /// Text pasted into a pane running an agent's own interface is a draft there (Umi, AG-9).
         private static func notePaste(_ contents: [Ghostty.ClipboardContent], into surfaceView: SurfaceView) {
             guard let text = contents.first(where: { $0.mime == "text/plain" }).flatMap({ String(data: $0.data, encoding: .utf8) }),
                   !text.isEmpty else { return }
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { TernAgentUI.shared.inputSent(pane: surfaceView, text: text, keys: []) }
+                MainActor.assumeIsolated { UmiAgentUI.shared.inputSent(pane: surfaceView, text: text, keys: []) }
             }
         }
 
@@ -1659,14 +1659,14 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
 
-                // Tern: a command in this pane ended (shell integration). Notes the exit
+                // Umi: a command in this pane ended (shell integration). Notes the exit
                 // of an agent launched as typed, and finishes the sidebar's command line.
-                TernCommandLog.shared.commandFinished(surfaceView.id)
+                UmiCommandLog.shared.commandFinished(surfaceView.id)
                 let exitCode = Int(v.exit_code)
                 DispatchQueue.main.async {
-                    // A session's own interface (`tern agent attach`) ended in this pane.
-                    TernAgentUI.shared.commandFinished(in: surfaceView)
-                    TernState.shared.layoutDidChange()
+                    // A session's own interface (`umi agent attach`) ended in this pane.
+                    UmiAgentUI.shared.commandFinished(in: surfaceView)
+                    UmiState.shared.layoutDidChange()
                 }
 
                 // Determine if we even care about command finish notifications
@@ -1845,9 +1845,9 @@ extension Ghostty {
                 guard let surface = target.target.surface else { return }
                 guard let surfaceView = self.surfaceView(from: surface) else { return }
                 guard let title = String(cString: v.title!, encoding: .utf8) else { return }
-                // Tern: every title change is the running (or finished) command, for the
+                // Umi: every title change is the running (or finished) command, for the
                 // sidebar, recorded before the display debounce so instant commands count.
-                TernCommandLog.shared.recordTitle(surfaceView.id, title)
+                UmiCommandLog.shared.recordTitle(surfaceView.id, title)
                 surfaceView.setTitle(title)
 
             default:

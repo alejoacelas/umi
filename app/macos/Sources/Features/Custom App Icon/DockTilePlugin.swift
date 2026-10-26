@@ -10,9 +10,9 @@ class DockTilePlugin: NSObject, NSDockTilePlugIn {
     // Separate defaults based on debug vs release builds so we can test icons
     // without messing up releases.
     #if DEBUG
-    private let ghosttyUserDefaults = UserDefaults(suiteName: "dev.tern.app.debug")
+    private let ghosttyUserDefaults = UserDefaults(suiteName: "dev.umi.app.debug")
     #else
-    private let ghosttyUserDefaults = UserDefaults(suiteName: "dev.tern.app")
+    private let ghosttyUserDefaults = UserDefaults(suiteName: "dev.umi.app")
     #endif
 
     private var iconChangeObserver: Any?

@@ -33,7 +33,7 @@ vgcore.*
 
 /sprite_face_test*
 
-# Tern release output
+# Umi release output
 /dist/out/
-macos/TernTests/__pycache__/
+macos/UmiTests/__pycache__/
 /dist/build.log

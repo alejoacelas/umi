@@ -386,13 +386,13 @@ extension Ghostty {
             // Setup our surface. This will also initialize all the terminal IO.
             var surface_cfg = baseConfig ?? SurfaceConfiguration()
 
-            // Tern: programs in this pane can find this instance and their own pane
+            // Umi: programs in this pane can find this instance and their own pane
             // (the CLI defaults to "this pane").
-            surface_cfg.environmentVariables.merge(TernEnvironment.paneVariables(paneID: self.id)) { _, new in new }
-            // Tern: where the pane starts when that's given, for panes made any way (CLI, ⌘T,
+            surface_cfg.environmentVariables.merge(UmiEnvironment.paneVariables(paneID: self.id)) { _, new in new }
+            // Umi: where the pane starts when that's given, for panes made any way (CLI, ⌘T,
             // AppleScript). Otherwise the engine picks (the configured working-directory or
             // home) and the pane's folder is read from its process.
-            TernState.shared.setStartFolder(self.id, surface_cfg.workingDirectory)
+            UmiState.shared.setStartFolder(self.id, surface_cfg.workingDirectory)
             let surface = surface_cfg.withCValue(view: self) { surface_cfg_c in
                 ghostty_surface_new(app, &surface_cfg_c)
             }
@@ -836,12 +836,12 @@ extension Ghostty {
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result { focusDidChange(true) }
-            // Tern: while a pane shows a session's read-only view, its keyboard focus is
+            // Umi: while a pane shows a session's read-only view, its keyboard focus is
             // that view.
-            if result, TernAgentUI.shared.isShowingAgent(id) {
+            if result, UmiAgentUI.shared.isShowingAgent(id) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
-                    TernAgentUI.shared.focusAgentView(of: self)
+                    UmiAgentUI.shared.focusAgentView(of: self)
                 }
             }
             return result
@@ -1123,10 +1123,10 @@ extension Ghostty {
             // On any keyDown event we unset our bell state
             bell = false
 
-            // Tern: typing into a session's live interface (a draft there holds back
+            // Umi: typing into a session's live interface (a draft there holds back
             // messages for it; Esc/Ctrl-C may interrupt its turn, which fires no hook).
-            if TernAgentUI.shared.livePanes.contains(id) {
-                TernAgentUI.shared.keyTyped(pane: self, event: event)
+            if UmiAgentUI.shared.livePanes.contains(id) {
+                UmiAgentUI.shared.keyTyped(pane: self, event: event)
             }
 
             // We need to translate the mods (maybe) to handle configs such as option-as-alt
@@ -1844,10 +1844,10 @@ extension Ghostty {
             let id = notification.request.identifier
             self.notificationIdentifiers.remove(id)
             if focus {
-                // Tern: the pane may be in a tab that isn't shown; show it. Panes outside
-                // Tern's windows (the quick terminal) are focused as before.
-                if TernTopology.locate(self) != nil {
-                    TernLayout.focusPane(self, activate: true)
+                // Umi: the pane may be in a tab that isn't shown; show it. Panes outside
+                // Umi's windows (the quick terminal) are focused as before.
+                if UmiTopology.locate(self) != nil {
+                    UmiLayout.focusPane(self, activate: true)
                 } else {
                     self.window?.makeKeyAndOrderFront(self)
                     Ghostty.moveFocus(to: self)

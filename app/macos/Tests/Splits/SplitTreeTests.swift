@@ -185,7 +185,7 @@ struct SplitTreeTests {
             Issue.record("unexpected node type")
             return
         }
-        // Tern: a split along a row already shares it equally (L-19).
+        // Umi: a split along a row already shares it equally (L-19).
         #expect(abs(before.ratio - 1.0/3.0) < 0.001)
 
         let equalized = tree.equalized()
@@ -195,7 +195,7 @@ struct SplitTreeTests {
         }
     }
 
-    // MARK: - Equal panes (Tern, L-19)
+    // MARK: - Equal panes (Umi, L-19)
 
     /// The widths of a tree's leaves laid out in 1200 points, left to right.
     private func widths(_ tree: SplitTree<MockView>) -> [Double] {

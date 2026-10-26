@@ -150,16 +150,16 @@ flags: packed struct {
     /// True if the terminal should perform selection scrolling.
     selection_scroll: bool = false,
 
-    /// Tern: Warp's look is on for this terminal (configuration, kept
+    /// Umi: Warp's look is on for this terminal (configuration, kept
     /// across a full reset). The primary screen's last used row is then
-    /// drawn at the bottom of the view, and the blocks Tern's zsh
+    /// drawn at the bottom of the view, and the blocks Umi's zsh
     /// integration marks are drawn as blocks.
-    tern_blocks: bool = false,
+    umi_blocks: bool = false,
 
-    /// Tern: the newest prompt came from a shell without Tern's block
+    /// Umi: the newest prompt came from a shell without Umi's block
     /// marker (another shell's integration), so the view keeps the usual
-    /// top-down look until a Tern block prompt comes again.
-    tern_plain_prompt: bool = false,
+    /// top-down look until an Umi block prompt comes again.
+    umi_plain_prompt: bool = false,
 
     /// Dirty flag used only by the search thread. The renderer is expected
     /// to set this to true if the viewport was dirty as it was rendering.
@@ -2172,8 +2172,8 @@ pub fn semanticPrompt(
                 self.flags.shell_redraws_prompt = v;
             }
 
-            // Tern: a prompt of Tern's zsh integration starts a block.
-            self.ternPromptStarted(cmd.readOption(.tern) orelse false, ternAid(cmd.readOption(.aid)));
+            // Umi: a prompt of Umi's zsh integration starts a block.
+            self.umiPromptStarted(cmd.readOption(.umi) orelse false, umiAid(cmd.readOption(.aid)));
 
             click: {
                 // Handle click_events as a priority over cl. click_events
@@ -2269,162 +2269,162 @@ pub fn semanticPrompt(
     }
 }
 
-/// Tern: a new prompt started at the cursor's row. `block` is true for
-/// Tern's own zsh prompt (OSC 133;A with tern=1): the row then starts a
+/// Umi: a new prompt started at the cursor's row. `block` is true for
+/// Umi's own zsh prompt (OSC 133;A with umi=1): the row then starts a
 /// block, which the following C and D complete.
-/// Tern: an OSC 133 `aid` as Tern's zsh integration gives it (the shell's pid).
-pub fn ternAid(raw: ?[]const u8) ?u32 {
+/// Umi: an OSC 133 `aid` as Umi's zsh integration gives it (the shell's pid).
+pub fn umiAid(raw: ?[]const u8) ?u32 {
     const text = raw orelse return null;
     return std.fmt.parseInt(u32, text, 10) catch null;
 }
 
-fn ternPromptStarted(self: *Terminal, block: bool, aid: ?u32) void {
+fn umiPromptStarted(self: *Terminal, block: bool, aid: ?u32) void {
     const screen: *Screen = self.screens.active;
-    if (screen.tern_block_pin) |old| {
-        if (ternPinRow(old)) |row| if (row.tern_state == .running) {
+    if (screen.umi_block_pin) |old| {
+        if (umiPinRow(old)) |row| if (row.umi_state == .running) {
             // A shell its command started shows a prompt of its own (a
             // nested zsh): the command's block waits for its own end.
-            if (screen.tern_outer_len == Screen.tern_outer_max) {
-                screen.pages.untrackPin(screen.tern_outer[0].pin);
-                std.mem.copyForwards(Screen.TernOuter, screen.tern_outer[0 .. Screen.tern_outer_max - 1], screen.tern_outer[1..]);
-                screen.tern_outer_len -= 1;
+            if (screen.umi_outer_len == Screen.umi_outer_max) {
+                screen.pages.untrackPin(screen.umi_outer[0].pin);
+                std.mem.copyForwards(Screen.UmiOuter, screen.umi_outer[0 .. Screen.umi_outer_max - 1], screen.umi_outer[1..]);
+                screen.umi_outer_len -= 1;
             }
-            screen.tern_outer[screen.tern_outer_len] = .{
+            screen.umi_outer[screen.umi_outer_len] = .{
                 .pin = old,
-                .started = screen.tern_block_started,
-                .aid = screen.tern_block_aid,
+                .started = screen.umi_block_started,
+                .aid = screen.umi_block_aid,
             };
-            screen.tern_outer_len += 1;
-            screen.tern_block_pin = null;
+            screen.umi_outer_len += 1;
+            screen.umi_block_pin = null;
         };
-        if (screen.tern_block_pin) |pin| screen.pages.untrackPin(pin);
-        screen.tern_block_pin = null;
+        if (screen.umi_block_pin) |pin| screen.pages.untrackPin(pin);
+        screen.umi_block_pin = null;
     }
-    screen.tern_block_started = null;
-    screen.tern_block_aid = aid;
+    screen.umi_block_started = null;
+    screen.umi_block_aid = aid;
 
-    self.flags.tern_plain_prompt = !block;
+    self.flags.umi_plain_prompt = !block;
     if (!block) return;
 
-    // A Tern block prompt turns the look on, also where Tern's integration
+    // An Umi block prompt turns the look on, also where Umi's integration
     // wasn't injected at launch (sourced by hand, `shell-integration = none`).
-    self.flags.tern_blocks = true;
+    self.flags.umi_blocks = true;
 
     const row = screen.cursor.page_row;
-    row.tern_block = true;
-    row.tern_state = .prompt;
-    row.tern_failed = false;
-    row.tern_unit = .ms;
-    row.tern_duration = 0;
+    row.umi_block = true;
+    row.umi_state = .prompt;
+    row.umi_failed = false;
+    row.umi_unit = .ms;
+    row.umi_duration = 0;
     row.dirty = true;
-    screen.tern_block_pin = screen.pages.trackPin(screen.cursor.page_pin.*) catch null;
+    screen.umi_block_pin = screen.pages.trackPin(screen.cursor.page_pin.*) catch null;
 }
 
-/// Tern: a block's first row, if it is still a block (not erased or
+/// Umi: a block's first row, if it is still a block (not erased or
 /// scrolled out of the scrollback since).
-fn ternPinRow(pin: *PageList.Pin) ?*Row {
+fn umiPinRow(pin: *PageList.Pin) ?*Row {
     if (pin.garbage) return null;
     const row = pin.rowAndCell().row;
-    if (!row.tern_block) return null;
+    if (!row.umi_block) return null;
     return row;
 }
 
-/// Tern: the newest block's row, if it is still a block.
-fn ternCurrentBlockRow(self: *Terminal) ?*Row {
-    const pin = self.screens.active.tern_block_pin orelse return null;
-    return ternPinRow(pin);
+/// Umi: the newest block's row, if it is still a block.
+fn umiCurrentBlockRow(self: *Terminal) ?*Row {
+    const pin = self.screens.active.umi_block_pin orelse return null;
+    return umiPinRow(pin);
 }
 
-/// Tern: the newest block's command started (OSC 133;C), at `now` on the
+/// Umi: the newest block's command started (OSC 133;C), at `now` on the
 /// awake clock.
-pub fn ternBlockStarted(self: *Terminal, now: std.Io.Timestamp) void {
-    const row = self.ternCurrentBlockRow() orelse return;
-    if (row.tern_state != .prompt) return;
-    row.tern_state = .running;
+pub fn umiBlockStarted(self: *Terminal, now: std.Io.Timestamp) void {
+    const row = self.umiCurrentBlockRow() orelse return;
+    if (row.umi_state != .prompt) return;
+    row.umi_state = .running;
     row.dirty = true;
-    self.screens.active.tern_block_started = now;
+    self.screens.active.umi_block_started = now;
 }
 
-/// Tern: a command finished (OSC 133;D) at `now`, with `exit_code` when the
+/// Umi: a command finished (OSC 133;D) at `now`, with `exit_code` when the
 /// shell gave one, from the shell `aid` names when it says. Its block is the
 /// newest one if that runs; otherwise the newest prompt was a nested shell's.
 /// A shell that ended inside a command (its last command was `exit`) never
 /// reports its own end: the command it ran inside reports the end, matched by
 /// `aid`, and blocks of the shells nested in it end with it.
-pub fn ternBlockFinished(self: *Terminal, now: std.Io.Timestamp, exit_code: ?i32, aid: ?u32) void {
+pub fn umiBlockFinished(self: *Terminal, now: std.Io.Timestamp, exit_code: ?i32, aid: ?u32) void {
     const screen: *Screen = self.screens.active;
 
-    if (aid != null and screen.tern_block_aid != aid) {
+    if (aid != null and screen.umi_block_aid != aid) {
         // Find the outer block of the shell that reported.
-        var i: usize = screen.tern_outer_len;
+        var i: usize = screen.umi_outer_len;
         while (i > 0) {
             i -= 1;
-            const outer = screen.tern_outer[i];
+            const outer = screen.umi_outer[i];
             if (outer.aid != aid) continue;
             // The newest block and blocks nested deeper ended with their shells.
-            self.ternAbandonCurrent(now);
-            for (screen.tern_outer[i + 1 .. screen.tern_outer_len]) |inner| {
-                if (ternPinRow(inner.pin)) |row| if (row.tern_state == .running) ternFinishRow(row, inner.started, now, null);
+            self.umiAbandonCurrent(now);
+            for (screen.umi_outer[i + 1 .. screen.umi_outer_len]) |inner| {
+                if (umiPinRow(inner.pin)) |row| if (row.umi_state == .running) umiFinishRow(row, inner.started, now, null);
                 screen.pages.untrackPin(inner.pin);
             }
-            screen.tern_outer_len = @intCast(i);
+            screen.umi_outer_len = @intCast(i);
             defer screen.pages.untrackPin(outer.pin);
-            const row = ternPinRow(outer.pin) orelse return;
-            if (row.tern_state == .running) ternFinishRow(row, outer.started, now, exit_code orelse 0);
+            const row = umiPinRow(outer.pin) orelse return;
+            if (row.umi_state == .running) umiFinishRow(row, outer.started, now, exit_code orelse 0);
             return;
         }
     }
 
-    if (self.ternCurrentBlockRow()) |row| if (row.tern_state == .running) {
-        ternFinishRow(row, screen.tern_block_started, now, exit_code orelse 0);
-        self.ternAbandonCurrent(now);
+    if (self.umiCurrentBlockRow()) |row| if (row.umi_state == .running) {
+        umiFinishRow(row, screen.umi_block_started, now, exit_code orelse 0);
+        self.umiAbandonCurrent(now);
         return;
     };
-    self.ternAbandonCurrent(now);
+    self.umiAbandonCurrent(now);
 
     // No aid (another integration): a status after a nested shell's prompt
     // ends the command that started it.
     if (aid != null) return;
     const code = exit_code orelse return;
-    if (screen.tern_outer_len == 0) return;
-    screen.tern_outer_len -= 1;
-    const outer = screen.tern_outer[screen.tern_outer_len];
+    if (screen.umi_outer_len == 0) return;
+    screen.umi_outer_len -= 1;
+    const outer = screen.umi_outer[screen.umi_outer_len];
     defer screen.pages.untrackPin(outer.pin);
-    const row = ternPinRow(outer.pin) orelse return;
-    if (row.tern_state != .running) return;
-    ternFinishRow(row, outer.started, now, code);
+    const row = umiPinRow(outer.pin) orelse return;
+    if (row.umi_state != .running) return;
+    umiFinishRow(row, outer.started, now, code);
 }
 
-/// Tern: forget the newest block; one whose command still runs ends now,
+/// Umi: forget the newest block; one whose command still runs ends now,
 /// without a status (its shell is gone).
-fn ternAbandonCurrent(self: *Terminal, now: std.Io.Timestamp) void {
+fn umiAbandonCurrent(self: *Terminal, now: std.Io.Timestamp) void {
     const screen: *Screen = self.screens.active;
-    if (screen.tern_block_pin) |pin| {
-        if (ternPinRow(pin)) |row| if (row.tern_state == .running) ternFinishRow(row, screen.tern_block_started, now, null);
+    if (screen.umi_block_pin) |pin| {
+        if (umiPinRow(pin)) |row| if (row.umi_state == .running) umiFinishRow(row, screen.umi_block_started, now, null);
         screen.pages.untrackPin(pin);
     }
-    screen.tern_block_pin = null;
-    screen.tern_block_started = null;
-    screen.tern_block_aid = null;
+    screen.umi_block_pin = null;
+    screen.umi_block_started = null;
+    screen.umi_block_aid = null;
 }
 
-fn ternFinishRow(row: *Row, started: ?std.Io.Timestamp, now: std.Io.Timestamp, exit_code: ?i32) void {
+fn umiFinishRow(row: *Row, started: ?std.Io.Timestamp, now: std.Io.Timestamp, exit_code: ?i32) void {
     const ms: u64 = if (started) |t| ms: {
         const ns = t.durationTo(now).nanoseconds;
         break :ms @intCast(@max(0, @divTrunc(ns, std.time.ns_per_ms)));
     } else 0;
-    row.tern_state = .done;
-    row.tern_failed = if (exit_code) |code| code != 0 else false;
-    row.ternSetDurationMs(ms);
+    row.umi_state = .done;
+    row.umi_failed = if (exit_code) |code| code != 0 else false;
+    row.umiSetDurationMs(ms);
     row.dirty = true;
 }
 
-/// Tern: true when Warp's look applies to what the terminal shows now:
+/// Umi: true when Warp's look applies to what the terminal shows now:
 /// it's on, the primary screen is active and the newest prompt (if any)
-/// is Tern's.
-pub fn ternBlocksActive(self: *const Terminal) bool {
-    return self.flags.tern_blocks and
-        !self.flags.tern_plain_prompt and
+/// is Umi's.
+pub fn umiBlocksActive(self: *const Terminal) bool {
+    return self.flags.umi_blocks and
+        !self.flags.umi_plain_prompt and
         self.screens.active_key == .primary;
 }
 
@@ -5156,8 +5156,8 @@ pub fn fullReset(self: *Terminal) void {
         // state, so a terminal reset must not change it.
         .resize_pull_scrollback = self.flags.resize_pull_scrollback,
 
-        // Tern: configuration too.
-        .tern_blocks = self.flags.tern_blocks,
+        // Umi: configuration too.
+        .umi_blocks = self.flags.umi_blocks,
 
         .xt_checksum = self.default_xt_checksum,
     };

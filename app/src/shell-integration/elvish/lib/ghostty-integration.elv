@@ -82,9 +82,9 @@
   # feature flags into command options.
   fn ssh-integration {|@args|
     var ghostty = $E:GHOSTTY_BIN_DIR/"ghostty"
-    # Tern: the core executable is named tern-app.
+    # Umi: the core executable is named umi-app.
     if (not ?(test -x $ghostty)) {
-      set ghostty = $E:GHOSTTY_BIN_DIR/"tern-app"
+      set ghostty = $E:GHOSTTY_BIN_DIR/"umi-app"
     }
     var flags = []
     if (not (has-value $features ssh-env)) {

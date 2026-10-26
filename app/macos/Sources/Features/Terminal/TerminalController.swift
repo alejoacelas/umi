@@ -4,31 +4,31 @@ import SwiftUI
 import Combine
 import GhosttyKit
 
-/// A Tern window: a sidebar of tabs, each tab a split tree of terminal panes, and an
+/// An Umi window: a sidebar of tabs, each tab a split tree of terminal panes, and an
 /// editor panel per tab.
 ///
-/// Tern keeps its own list of tabs per window instead of AppKit's native window tabs. The
+/// Umi keeps its own list of tabs per window instead of AppKit's native window tabs. The
 /// window shows the selected tab's split tree (`surfaceTree`); the other tabs' panes keep
 /// running off screen. Owning the model is what lets creating and moving things leave the
 /// user's selection and focus untouched at every moment (L-8), keep pinned tabs grouped
 /// (L-2), and move tabs between windows without AppKit merging or reordering them (M-2, M-6).
 class TerminalController: BaseTerminalController {
-    override var windowNibName: NSNib.Name? { "TerminalTern" }
+    override var windowNibName: NSNib.Name? { "TerminalUmi" }
 
     /// The window's id for the CLI.
-    let ternID = UUID()
-    var ternIDString: String { ternID.uuidString.lowercased() }
+    let umiID = UUID()
+    var umiIDString: String { umiID.uuidString.lowercased() }
 
     /// When the window was created, for stable window numbering.
     let createdAt = Date()
 
     /// The window's tabs, pinned ones first (in pin order).
-    @Published private(set) var tabs: [TernTab] = []
+    @Published private(set) var tabs: [UmiTab] = []
 
-    private var selectedTabStorage: TernTab?
+    private var selectedTabStorage: UmiTab?
 
     /// The tab whose panes the window shows.
-    var selectedTab: TernTab { selectedTabStorage! }
+    var selectedTab: UmiTab { selectedTabStorage! }
 
     /// True while the visible tree is being swapped for another tab's.
     private var switchingTabs = false
@@ -43,16 +43,16 @@ class TerminalController: BaseTerminalController {
     var terminalAreaSize: CGSize = .zero
 
     /// This window's sidebar width (S-8): dragged at the sidebar's edge, saved with the layout.
-    /// A new window starts at the width last chosen in any window (`TernState.sidebarWidth`).
-    @Published var sidebarWidth: CGFloat = TernState.shared.sidebarWidth {
+    /// A new window starts at the width last chosen in any window (`UmiState.sidebarWidth`).
+    @Published var sidebarWidth: CGFloat = UmiState.shared.sidebarWidth {
         didSet {
-            let clamped = TernTheme.clampSidebarWidth(sidebarWidth)
+            let clamped = UmiTheme.clampSidebarWidth(sidebarWidth)
             if clamped != sidebarWidth { sidebarWidth = clamped; return }
             guard sidebarWidth != oldValue else { return }
-            TernState.shared.layoutDidChange(persistOnly: true)
-            TernEvents.shared.emit("sidebar.changed", ["visible": TernState.shared.sidebarVisible,
-                                                        "mode": TernState.shared.sidebarMode.rawValue,
-                                                        "width": Double(sidebarWidth), "window": ternIDString])
+            UmiState.shared.layoutDidChange(persistOnly: true)
+            UmiEvents.shared.emit("sidebar.changed", ["visible": UmiState.shared.sidebarVisible,
+                                                        "mode": UmiState.shared.sidebarMode.rawValue,
+                                                        "width": Double(sidebarWidth), "window": umiIDString])
         }
     }
 
@@ -73,8 +73,8 @@ class TerminalController: BaseTerminalController {
     /// The notification cancellable for focused surface property changes.
     private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
 
-    /// Tern's palette over this window: commands, panes and files (L-14, L-15, L-16).
-    let palette = TernPaletteModel()
+    /// Umi's palette over this window: commands, panes and files (L-14, L-15, L-16).
+    let palette = UmiPaletteModel()
 
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
@@ -83,14 +83,14 @@ class TerminalController: BaseTerminalController {
     ) {
         self.derivedConfig = DerivedConfig(ghostty.config)
         super.init(ghostty, baseConfig: base, surfaceTree: tree)
-        let tab = TernTab(tree: surfaceTree)
+        let tab = UmiTab(tree: surfaceTree)
         tabs = [tab]
         selectedTabStorage = tab
         commonInit()
     }
 
     /// A window made of existing tabs (a tab moved to a new window, undo, restoration).
-    init(_ ghostty: Ghostty.App, tabs: [TernTab], selected: TernTab? = nil) {
+    init(_ ghostty: Ghostty.App, tabs: [UmiTab], selected: UmiTab? = nil) {
         precondition(!tabs.isEmpty, "a window needs at least one tab")
         self.derivedConfig = DerivedConfig(ghostty.config)
         let selected = selected.flatMap { s in tabs.contains { $0 === s } ? s : nil } ?? tabs[0]
@@ -152,7 +152,7 @@ class TerminalController: BaseTerminalController {
     // MARK: Tabs
 
     /// Pinned tabs first, keeping each group's relative order.
-    private static func ordered(_ tabs: [TernTab]) -> [TernTab] {
+    private static func ordered(_ tabs: [UmiTab]) -> [UmiTab] {
         tabs.filter(\.pinned) + tabs.filter { !$0.pinned }
     }
 
@@ -163,16 +163,16 @@ class TerminalController: BaseTerminalController {
         tabs.contains { $0.contains(surface) } || surfaceTree.contains(surface)
     }
 
-    func tab(containing surface: Ghostty.SurfaceView) -> TernTab? {
+    func tab(containing surface: Ghostty.SurfaceView) -> UmiTab? {
         if surfaceTree.contains(surface) { return selectedTabStorage }
         return tabs.first { $0.contains(surface) }
     }
 
-    func index(of tab: TernTab) -> Int? { tabs.firstIndex { $0 === tab } }
+    func index(of tab: UmiTab) -> Int? { tabs.firstIndex { $0 === tab } }
 
     /// Show another tab. With `focus`, its focused pane takes keyboard focus (if this is
     /// the key window); without, nothing about focus changes beyond which tree is shown.
-    func selectTab(_ tab: TernTab, focus: Bool = true) {
+    func selectTab(_ tab: UmiTab, focus: Bool = true) {
         guard tabs.contains(where: { $0 === tab }) else { return }
         guard tab !== selectedTabStorage else {
             if focus, let target = tab.effectiveFocusedSurface, window?.isKeyWindow ?? false {
@@ -195,18 +195,18 @@ class TerminalController: BaseTerminalController {
         objectWillChange.send()
 
         if focus, let target, window?.isKeyWindow ?? false {
-            TernLayout.moveFocus(to: target, in: self)
+            UmiLayout.moveFocus(to: target, in: self)
         }
-        TernLooking.focusChanged(in: self)
-        TernEvents.shared.emit("tab.selected", ["tab": tab.idString, "window": ternIDString])
-        TernState.shared.layoutDidChange()
-        if TernTopology.currentWindow === self { TernTabHistory.visited(tab) }
-        TernTabOrder.selectionChanged(in: self)
+        UmiLooking.focusChanged(in: self)
+        UmiEvents.shared.emit("tab.selected", ["tab": tab.idString, "window": umiIDString])
+        UmiState.shared.layoutDidChange()
+        if UmiTopology.currentWindow === self { UmiTabHistory.visited(tab) }
+        UmiTabOrder.selectionChanged(in: self)
     }
 
     /// Insert a tab, keeping pinned tabs first. `index` is a position among all tabs and
     /// is clamped into the tab's group.
-    func insertTab(_ tab: TernTab, at index: Int? = nil) {
+    func insertTab(_ tab: UmiTab, at index: Int? = nil) {
         guard !tabs.contains(where: { $0 === tab }) else { return }
         let pinnedCount = tabs.filter(\.pinned).count
         var position = index ?? tabs.count
@@ -217,12 +217,12 @@ class TerminalController: BaseTerminalController {
         }
         tabs.insert(tab, at: position)
         setOccluded(tab.panes, occluded: tab !== selectedTabStorage)
-        TernState.shared.layoutDidChange()
+        UmiState.shared.layoutDidChange()
     }
 
     /// Take a tab out of this window. If it was selected, a neighbor is selected instead;
     /// if it was the last tab, the window closes (unless `keepWindow`).
-    func detachTab(_ tab: TernTab, focusNeighbor: Bool = true, keepWindow: Bool = false) {
+    func detachTab(_ tab: UmiTab, focusNeighbor: Bool = true, keepWindow: Bool = false) {
         guard let index = index(of: tab) else { return }
         if tab === selectedTabStorage {
             tab.tree = surfaceTree
@@ -242,11 +242,11 @@ class TerminalController: BaseTerminalController {
             let neighbor = tabs[min(index, tabs.count - 1)]
             selectTab(neighbor, focus: focusNeighbor && (window?.isKeyWindow ?? false))
         }
-        TernState.shared.layoutDidChange()
+        UmiState.shared.layoutDidChange()
     }
 
     /// Move a tab within this window. `index` is clamped into the tab's pin group.
-    func moveTab(_ tab: TernTab, to index: Int) {
+    func moveTab(_ tab: UmiTab, to index: Int) {
         guard let from = self.index(of: tab) else { return }
         tabs.remove(at: from)
         let pinnedCount = tabs.filter(\.pinned).count
@@ -254,49 +254,49 @@ class TerminalController: BaseTerminalController {
             ? min(max(index, 0), pinnedCount)
             : min(max(index, pinnedCount), tabs.count)
         tabs.insert(tab, at: position)
-        TernState.shared.layoutDidChange()
+        UmiState.shared.layoutDidChange()
         // A tab put somewhere by hand stays there (S-7), also when it's the selected tab.
-        TernTabOrder.placed(tab, in: self)
+        UmiTabOrder.placed(tab, in: self)
     }
 
     /// Pin or unpin a tab. Pinned tabs come first, in pin order; unpinning moves the tab
     /// to the top of the unpinned group.
-    func setPinned(_ tab: TernTab, _ pinned: Bool) {
+    func setPinned(_ tab: UmiTab, _ pinned: Bool) {
         guard let from = index(of: tab), tab.pinned != pinned else { return }
         tabs.remove(at: from)
         tab.pinned = pinned
         let pinnedCount = tabs.filter(\.pinned).count
         tabs.insert(tab, at: pinnedCount)
-        TernState.shared.layoutDidChange()
-        TernTabOrder.pinsChanged(in: self)
+        UmiState.shared.layoutDidChange()
+        UmiTabOrder.pinsChanged(in: self)
     }
 
     /// Put the tabs in a new order (the sidebar order, S-7): a permutation of `tabs` that
     /// keeps pinned tabs first. Not an undo step: it follows from selection and agent stops.
-    func reorderTabs(_ order: [TernTab]) {
+    func reorderTabs(_ order: [UmiTab]) {
         guard order.count == tabs.count, tabs.allSatisfy({ tab in order.contains { $0 === tab } }) else { return }
         withAnimation(.easeInOut(duration: 0.18)) { tabs = Self.ordered(order) }
-        TernEvents.shared.emit("tab.reordered", ["window": ternIDString, "tabs": tabs.map(\.idString)])
-        TernState.shared.layoutDidChange()
+        UmiEvents.shared.emit("tab.reordered", ["window": umiIDString, "tabs": tabs.map(\.idString)])
+        UmiState.shared.layoutDidChange()
     }
 
     /// Replace a tab's tree. For the selected tab this is the visible tree.
-    func setTree(_ tree: SplitTree<Ghostty.SurfaceView>, for tab: TernTab) {
+    func setTree(_ tree: SplitTree<Ghostty.SurfaceView>, for tab: UmiTab) {
         if tab === selectedTabStorage {
             surfaceTree = tree
         } else {
             tab.tree = tree
             setOccluded(tab.panes, occluded: true)
-            TernState.shared.layoutDidChange()
+            UmiState.shared.layoutDidChange()
         }
     }
 
-    func tree(of tab: TernTab) -> SplitTree<Ghostty.SurfaceView> {
+    func tree(of tab: UmiTab) -> SplitTree<Ghostty.SurfaceView> {
         tab === selectedTabStorage ? surfaceTree : tab.tree
     }
 
     /// Replace the whole tab list (undo and restoration).
-    func restoreTabs(_ newTabs: [TernTab], selected: TernTab, focusedPane: Ghostty.SurfaceView?) {
+    func restoreTabs(_ newTabs: [UmiTab], selected: UmiTab, focusedPane: Ghostty.SurfaceView?) {
         guard !newTabs.isEmpty else { return }
         // The given tabs carry the trees to show; the visible tree is replaced, not saved.
         tabs = Self.ordered(newTabs)
@@ -309,7 +309,7 @@ class TerminalController: BaseTerminalController {
         titleOverride = tab.name
         for other in tabs where other !== tab { setOccluded(other.panes, occluded: true) }
         objectWillChange.send()
-        TernState.shared.layoutDidChange()
+        UmiState.shared.layoutDidChange()
     }
 
     /// Tell libghostty that panes of hidden tabs aren't visible, so they stop rendering.
@@ -331,8 +331,8 @@ class TerminalController: BaseTerminalController {
         didSet {
             guard !switchingTabs, let tab = selectedTabStorage, tab.name != titleOverride else { return }
             tab.name = titleOverride
-            TernEvents.shared.emit("tab.renamed", ["tab": tab.idString, "name": titleOverride ?? ""])
-            TernState.shared.layoutDidChange()
+            UmiEvents.shared.emit("tab.renamed", ["tab": tab.idString, "name": titleOverride ?? ""])
+            UmiState.shared.layoutDidChange()
         }
     }
 
@@ -347,7 +347,7 @@ class TerminalController: BaseTerminalController {
         guard !switchingTabs, let tab = selectedTabStorage else { return }
         tab.tree = to
         if let focusedSurface, to.contains(focusedSurface) { tab.focusedSurface = focusedSurface }
-        TernState.shared.layoutDidChange()
+        UmiState.shared.layoutDidChange()
 
         // The selected tab lost its last pane: close the tab (or the window).
         if to.isEmpty {
@@ -384,16 +384,16 @@ class TerminalController: BaseTerminalController {
     override func previouslyFocusedSurface(excluding node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
         let closing = Set(node.leaves().map(ObjectIdentifier.init))
         let remaining = (surfaceTree.root?.leaves() ?? []).filter { !closing.contains(ObjectIdentifier($0)) }
-        return TernFocusHistory.mostRecent(among: remaining)
+        return UmiFocusHistory.mostRecent(among: remaining)
     }
 
-    /// Ghostty's "toggle command palette" opens Tern's palette (L-14).
+    /// Ghostty's "toggle command palette" opens Umi's palette (L-14).
     @IBAction override func toggleCommandPalette(_ sender: Any?) {
         palette.toggle(.commands, in: self)
     }
 
     override func restoreUndoTree(_ tree: SplitTree<Ghostty.SurfaceView>, owner: AnyObject?) {
-        guard let tab = owner as? TernTab, tab !== selectedTabStorage else {
+        guard let tab = owner as? UmiTab, tab !== selectedTabStorage else {
             surfaceTree = tree
             return
         }
@@ -430,7 +430,7 @@ class TerminalController: BaseTerminalController {
 
     // The preferred parent terminal controller.
     static var preferredParent: TerminalController? {
-        TernTopology.currentWindow ?? all.first {
+        UmiTopology.currentWindow ?? all.first {
             $0.window?.isMainWindow ?? false
         } ?? lastMain ?? all.last
     }
@@ -532,7 +532,7 @@ class TerminalController: BaseTerminalController {
             }
         }
 
-        TernState.shared.windowCreated(c)
+        UmiState.shared.windowCreated(c)
         return c
     }
 
@@ -547,7 +547,7 @@ class TerminalController: BaseTerminalController {
         focus: Bool = true,
         registerUndo: Bool = true
     ) -> TerminalController {
-        let tab = TernTab(tree: tree)
+        let tab = UmiTab(tree: tree)
         return newWindow(ghostty, tabs: [tab], selected: tab, position: position,
                          confirmUndo: confirmUndo, inheritBackgroundOpacity: inheritBackgroundOpacity,
                          focus: focus, registerUndo: registerUndo)
@@ -556,8 +556,8 @@ class TerminalController: BaseTerminalController {
     /// Create a new window holding existing tabs.
     static func newWindow(
         _ ghostty: Ghostty.App,
-        tabs: [TernTab],
-        selected: TernTab,
+        tabs: [UmiTab],
+        selected: UmiTab,
         frame: NSRect? = nil,
         position: NSPoint? = nil,
         confirmUndo: Bool = true,
@@ -578,10 +578,10 @@ class TerminalController: BaseTerminalController {
                 c.explicitFrame = frame
                 window.setFrame(frame, display: false)
             } else if let treeSize, treeSize.width > 0, treeSize.height > 0 {
-                let chrome = TernTheme.chromeSize(sidebar: TernState.shared.sidebarVisible, width: c.sidebarWidth)
+                let chrome = UmiTheme.chromeSize(sidebar: UmiState.shared.sidebarVisible, width: c.sidebarWidth)
                 window.setContentSize(CGSize(
-                    width: max(treeSize.width + chrome.width, TernTheme.minimumContentSize.width),
-                    height: max(treeSize.height + chrome.height, TernTheme.minimumContentSize.height)))
+                    width: max(treeSize.width + chrome.width, UmiTheme.minimumContentSize.width),
+                    height: max(treeSize.height + chrome.height, UmiTheme.minimumContentSize.height)))
             }
             if let position {
                 window.setFrameTopLeftPoint(position)
@@ -621,7 +621,7 @@ class TerminalController: BaseTerminalController {
             }
         }
 
-        TernState.shared.windowCreated(c)
+        UmiState.shared.windowCreated(c)
         return c
     }
 
@@ -652,7 +652,7 @@ class TerminalController: BaseTerminalController {
         focus: Bool,
         name: String? = nil,
         color: TerminalTabColor = .none
-    ) -> (TernTab, Ghostty.SurfaceView)? {
+    ) -> (UmiTab, Ghostty.SurfaceView)? {
         guard let ghosttyApp = ghostty.app else { return nil }
         let view = Ghostty.SurfaceView(ghosttyApp, baseConfig: config)
         // Start the pane at the size it will have when shown, so its program sees the
@@ -662,7 +662,7 @@ class TerminalController: BaseTerminalController {
             view.frame = CGRect(origin: .zero, size: contentSize)
             view.sizeDidChange(contentSize)
         }
-        let tab = TernTab(tree: .init(view: view))
+        let tab = UmiTab(tree: .init(view: view))
         tab.name = name
         tab.color = color
         insertTab(tab, at: index)
@@ -687,8 +687,8 @@ class TerminalController: BaseTerminalController {
                 }
             }
         }
-        TernEvents.shared.emit("tab.created", ["tab": tab.idString, "window": ternIDString])
-        TernEvents.shared.emit("pane.created", ["pane": view.ternID, "tab": tab.idString, "window": ternIDString])
+        UmiEvents.shared.emit("tab.created", ["tab": tab.idString, "window": umiIDString])
+        UmiEvents.shared.emit("pane.created", ["pane": view.umiID, "tab": tab.idString, "window": umiIDString])
         return (tab, view)
     }
 
@@ -717,7 +717,7 @@ class TerminalController: BaseTerminalController {
         }
     }
 
-    /// Tern restores windows from its own state directory (see TernPersistence), never
+    /// Umi restores windows from its own state directory (see UmiPersistence), never
     /// through AppKit's per-app saved state, which would be shared by every instance of
     /// the same bundle id.
     private func syncRestoration() {
@@ -797,24 +797,24 @@ class TerminalController: BaseTerminalController {
         guard let tab = tabs.first(where: { $0.contains(target) }),
               let node = tab.tree.root?.node(view: target) else { return }
         let newTree = tab.tree.removing(node)
-        TernEvents.shared.emit("pane.closed", ["pane": target.ternID, "tab": tab.idString, "window": ternIDString])
+        UmiEvents.shared.emit("pane.closed", ["pane": target.umiID, "tab": tab.idString, "window": umiIDString])
         if newTree.isEmpty {
             closeTabImmediately(tab)
         } else {
             tab.tree = newTree
-            TernState.shared.layoutDidChange()
+            UmiState.shared.layoutDidChange()
         }
     }
 
     /// Replace a tab's tree as one undoable step. Undo holds the old tree, and so its panes,
     /// for the undo interval, as closing a visible pane does.
-    func replaceTree(_ newTree: SplitTree<Ghostty.SurfaceView>, for tab: TernTab, undoAction: String) {
+    func replaceTree(_ newTree: SplitTree<Ghostty.SurfaceView>, for tab: UmiTab, undoAction: String) {
         let oldTree = tree(of: tab)
         let lostFocus = tab === selectedTabStorage && focusedSurface.map { !newTree.contains($0) } ?? false
         setTree(newTree, for: tab)
         // The focused pane went away (an undone split): focus moves to one that's left.
         if lostFocus, let next = tab.focusedSurface.flatMap({ newTree.contains($0) ? $0 : nil })
-            ?? TernFocusHistory.mostRecent(among: newTree.root?.leaves() ?? []) ?? newTree.root?.leaves().first {
+            ?? UmiFocusHistory.mostRecent(among: newTree.root?.leaves() ?? []) ?? newTree.root?.leaves().first {
             DispatchQueue.main.async { Ghostty.moveFocus(to: next) }
         }
         guard let undoManager else { return }
@@ -827,13 +827,13 @@ class TerminalController: BaseTerminalController {
 
     /// Close part of a tab that isn't shown; a tab left empty closes. Both can be undone,
     /// and reopened (⇧⌘T).
-    func closeHiddenNode(_ node: SplitTree<Ghostty.SurfaceView>.Node, in tab: TernTab) {
+    func closeHiddenNode(_ node: SplitTree<Ghostty.SurfaceView>.Node, in tab: UmiTab) {
         let oldTree = tree(of: tab)
         let newTree = oldTree.removing(node)
         if newTree.isEmpty {
             closeTabImmediately(tab)
         } else {
-            if case .leaf(let view) = node { TernReopen.shared.recordPane(view, tab: tab, tree: oldTree, in: self) }
+            if case .leaf(let view) = node { UmiReopen.shared.recordPane(view, tab: tab, tree: oldTree, in: self) }
             replaceTree(newTree, for: tab, undoAction: "Close Terminal")
         }
     }
@@ -841,13 +841,13 @@ class TerminalController: BaseTerminalController {
     /// A pane of the shown tab is being closed (not its last: that closes the tab).
     override func surfaceNodeWillClose(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
         guard case .leaf(let view) = node, surfaceTree.root != node else { return }
-        TernReopen.shared.recordPane(view, tab: selectedTab, tree: surfaceTree, in: self)
+        UmiReopen.shared.recordPane(view, tab: selectedTab, tree: surfaceTree, in: self)
     }
 
     // MARK: Panes in hidden tabs (AppleScript, App Intents)
 
     /// The base class only knows the shown tree; a pane in a hidden tab goes through its tab.
-    private func hiddenTab(containing view: Ghostty.SurfaceView) -> TernTab? {
+    private func hiddenTab(containing view: Ghostty.SurfaceView) -> UmiTab? {
         surfaceTree.contains(view) ? nil : tabs.first { $0.contains(view) }
     }
 
@@ -900,14 +900,14 @@ class TerminalController: BaseTerminalController {
 
     /// Close a tab without asking. Undo brings it back (for as long as undo-timeout keeps
     /// its panes alive).
-    func closeTabImmediately(_ tab: TernTab, registerUndo: Bool = true) {
+    func closeTabImmediately(_ tab: UmiTab, registerUndo: Bool = true) {
         guard let index = index(of: tab) else { return }
-        let paneIDs = tree(of: tab).root?.leaves().map(\.ternID) ?? []
+        let paneIDs = tree(of: tab).root?.leaves().map(\.umiID) ?? []
         let tabsBefore = tabs
         let selectedBefore = selectedTab
         let focusedBefore = focusedSurface
 
-        TernEditor.saveDirtyDocuments(of: tab)
+        UmiEditor.saveDirtyDocuments(of: tab)
 
         if tabs.count == 1 {
             closeWindowImmediately()
@@ -916,7 +916,7 @@ class TerminalController: BaseTerminalController {
 
         detachTab(tab)
         // ⇧⌘T can bring it back (not when undo of New Tab is what closes it).
-        if registerUndo { TernReopen.shared.recordTab(tab, index: index, in: self) }
+        if registerUndo { UmiReopen.shared.recordTab(tab, index: index, in: self) }
 
         if registerUndo, let undoManager {
             undoManager.setActionName("Close Tab")
@@ -939,13 +939,13 @@ class TerminalController: BaseTerminalController {
         }
 
         for pane in paneIDs {
-            TernEvents.shared.emit("pane.closed", ["pane": pane, "tab": tab.idString, "window": ternIDString])
+            UmiEvents.shared.emit("pane.closed", ["pane": pane, "tab": tab.idString, "window": umiIDString])
         }
-        TernEvents.shared.emit("tab.closed", ["tab": tab.idString, "window": ternIDString])
+        UmiEvents.shared.emit("tab.closed", ["tab": tab.idString, "window": umiIDString])
     }
 
     /// Close a tab, asking first if a program is running in it.
-    func closeTab(_ tab: TernTab, sender: Any?) {
+    func closeTab(_ tab: UmiTab, sender: Any?) {
         guard tree(of: tab).contains(where: { $0.needsConfirmQuit }) else {
             closeTabImmediately(tab)
             return
@@ -960,17 +960,17 @@ class TerminalController: BaseTerminalController {
 
     /// Close every tab but `keep` (the sidebar row's menu), asking first if a program runs in
     /// one of them. Pinned tabs aren't spared, as in Warp. Each can be reopened (⇧⌘T).
-    func closeTabs(otherThan keep: TernTab) {
+    func closeTabs(otherThan keep: UmiTab) {
         closeTabs(tabs.filter { $0 !== keep }, actionName: "Close Other Tabs", question: "Close Other Tabs?")
     }
 
     /// Close the tabs listed below `tab` in the sidebar.
-    func closeTabs(below tab: TernTab) {
+    func closeTabs(below tab: UmiTab) {
         guard let index = index(of: tab) else { return }
         closeTabs(Array(tabs[(index + 1)...]), actionName: "Close Tabs Below", question: "Close Tabs Below?")
     }
 
-    private func closeTabs(_ toClose: [TernTab], actionName: String, question: String) {
+    private func closeTabs(_ toClose: [UmiTab], actionName: String, question: String) {
         guard !toClose.isEmpty else { return }
         let close = { [weak self] in
             guard let self else { return }
@@ -1016,17 +1016,17 @@ class TerminalController: BaseTerminalController {
 
         cancelPendingInitialPresentation()
         registerUndoForCloseWindow()
-        for tab in tabs { TernEditor.saveDirtyDocuments(of: tab) }
+        for tab in tabs { UmiEditor.saveDirtyDocuments(of: tab) }
         // ⇧⌘T can bring it back (not when undo of New Window is what closes it).
         if !surfaceTree.isEmpty { selectedTab.tree = surfaceTree }
-        if !(undoManager?.isUndoing ?? false) { TernReopen.shared.recordWindow(self) }
+        if !(undoManager?.isUndoing ?? false) { UmiReopen.shared.recordWindow(self) }
 
-        let paneIDs = allSurfaces.map(\.ternID)
+        let paneIDs = allSurfaces.map(\.umiID)
         let tabIDs = tabs.map(\.idString)
         window.close()
-        for pane in paneIDs { TernEvents.shared.emit("pane.closed", ["pane": pane, "window": ternIDString]) }
-        for tab in tabIDs { TernEvents.shared.emit("tab.closed", ["tab": tab, "window": ternIDString]) }
-        TernEvents.shared.emit("window.closed", ["window": ternIDString])
+        for pane in paneIDs { UmiEvents.shared.emit("pane.closed", ["pane": pane, "window": umiIDString]) }
+        for tab in tabIDs { UmiEvents.shared.emit("tab.closed", ["tab": tab, "window": umiIDString]) }
+        UmiEvents.shared.emit("window.closed", ["window": umiIDString])
     }
 
     /// Close the window without confirmation or undo (its tabs moved elsewhere).
@@ -1034,7 +1034,7 @@ class TerminalController: BaseTerminalController {
         cancelPendingInitialPresentation()
         tabs = []
         window?.close()
-        TernEvents.shared.emit("window.closed", ["window": ternIDString])
+        UmiEvents.shared.emit("window.closed", ["window": umiIDString])
     }
 
     private func registerUndoForCloseWindow() {
@@ -1086,8 +1086,8 @@ class TerminalController: BaseTerminalController {
     /// The state that we require to recreate a TerminalController from an undo.
     struct UndoState {
         let frame: NSRect
-        let tabs: [TernTab]
-        let selected: TernTab
+        let tabs: [UmiTab]
+        let selected: UmiTab
         let focusedSurface: UUID?
     }
 
@@ -1106,7 +1106,7 @@ class TerminalController: BaseTerminalController {
                 DispatchQueue.main.async { Ghostty.moveFocus(to: first, from: nil) }
             }
         }
-        TernState.shared.windowCreated(self)
+        UmiState.shared.windowCreated(self)
     }
 
     /// The current undo state for this controller
@@ -1132,12 +1132,12 @@ class TerminalController: BaseTerminalController {
         super.windowDidLoad()
         guard let window else { return }
 
-        // Tern manages tabs itself; AppKit must never merge windows into tab groups.
+        // Umi manages tabs itself; AppKit must never merge windows into tab groups.
         window.tabbingMode = .disallowed
         // While the screen is locked or asleep no frames are drawn, and AppKit's window-opening
         // animation never ends: each window opened then (agents open windows unattended) kept a
         // thread waiting for ever, until the shared thread pool ran out. No animation then.
-        if TernScreen.isUnavailable { window.animationBehavior = .none }
+        if UmiScreen.isUnavailable { window.animationBehavior = .none }
 
         let config = ghostty.config
         syncRestoration()
@@ -1152,7 +1152,7 @@ class TerminalController: BaseTerminalController {
         }
 
         // The terminal's initial size plus the sidebar.
-        let chrome = TernTheme.chromeSize(sidebar: TernState.shared.sidebarVisible, width: sidebarWidth)
+        let chrome = UmiTheme.chromeSize(sidebar: UmiState.shared.sidebarVisible, width: sidebarWidth)
         container.initialContentSize = focusedSurface?.initialSize.map {
             NSSize(width: $0.width + chrome.width, height: $0.height + chrome.height)
         }
@@ -1216,7 +1216,7 @@ class TerminalController: BaseTerminalController {
         isClosed = true
         super.windowWillClose(notification)
         cancelPendingInitialPresentation()
-        TernState.shared.windowClosed(self)
+        UmiState.shared.windowClosed(self)
 
         if let focusedWindow = NSApplication.shared.keyWindow, focusedWindow != window {
             let frame = focusedWindow.frame
@@ -1226,14 +1226,14 @@ class TerminalController: BaseTerminalController {
 
     override func windowDidBecomeKey(_ notification: Notification) {
         super.windowDidBecomeKey(notification)
-        TernTopology.windowBecameCurrent(self)
-        TernLooking.focusChanged(in: self)
+        UmiTopology.windowBecameCurrent(self)
+        UmiLooking.focusChanged(in: self)
     }
 
     override func windowDidMove(_ notification: Notification) {
         super.windowDidMove(notification)
         LastWindowPosition.shared.save(window)
-        TernState.shared.layoutDidChange(persistOnly: true)
+        UmiState.shared.layoutDidChange(persistOnly: true)
     }
 
     override func windowDidResize(_ notification: Notification) {
@@ -1242,7 +1242,7 @@ class TerminalController: BaseTerminalController {
         if let window = self.window as? TerminalWindow {
             window.syncWindowTitleAppearance()
         }
-        TernState.shared.layoutDidChange(persistOnly: true)
+        UmiState.shared.layoutDidChange(persistOnly: true)
     }
 
     func windowDidBecomeMain(_ notification: Notification) {
@@ -1363,11 +1363,11 @@ class TerminalController: BaseTerminalController {
 
         if let to, let tab = selectedTabStorage, tab.contains(to), tab.focusedSurface !== to {
             tab.focusedSurface = to
-            TernEvents.shared.emit("pane.focused", ["pane": to.ternID, "tab": tab.idString, "window": ternIDString])
-            TernState.shared.layoutDidChange()
+            UmiEvents.shared.emit("pane.focused", ["pane": to.umiID, "tab": tab.idString, "window": umiIDString])
+            UmiState.shared.layoutDidChange()
         }
-        if to != nil { TernLooking.focusChanged(in: self) }
-        if let to, surfaceTree.contains(to) { TernFocusHistory.focused(to) }
+        if to != nil { UmiLooking.focusChanged(in: self) }
+        if let to, surfaceTree.contains(to) { UmiFocusHistory.focused(to) }
 
         surfaceAppearanceCancellables.removeAll()
         guard let focusedSurface else { return }
@@ -1400,12 +1400,12 @@ class TerminalController: BaseTerminalController {
         guard target == self.focusedSurface, surfaceTree.contains(target) else { return }
         guard let action = notification.userInfo?[Notification.Name.GhosttyMoveTabKey] as? Ghostty.Action.MoveTab else { return }
         guard action.amount != 0, let current = index(of: selectedTab) else { return }
-        TernTabOrder.hold {
-            TernLayout.undoable("Move Tab", windows: [self]) {
+        UmiTabOrder.hold {
+            UmiLayout.undoable("Move Tab", windows: [self]) {
                 self.moveTab(self.selectedTab, to: current + action.amount)
             }
         }
-        TernEvents.shared.emit("tab.moved", ["tab": selectedTab.idString, "window": ternIDString])
+        UmiEvents.shared.emit("tab.moved", ["tab": selectedTab.idString, "window": umiIDString])
     }
 
     @objc private func onGotoTab(notification: SwiftUI.Notification) {
@@ -1415,18 +1415,18 @@ class TerminalController: BaseTerminalController {
         guard let tabEnum = tabEnumAny as? ghostty_action_goto_tab_e else { return }
         let tabIndex: Int32 = tabEnum.rawValue
 
-        // A Ghostty keybinding the user kept (Tern's defaults unbind these keys in favor of
+        // A Ghostty keybinding the user kept (Umi's defaults unbind these keys in favor of
         // its menu items): the same navigation as the menu items.
         if tabIndex <= 0 {
             if tabIndex == GHOSTTY_GOTO_TAB_PREVIOUS.rawValue {
-                TernNavigation.selectAdjacentTab(-1, in: self)
+                UmiNavigation.selectAdjacentTab(-1, in: self)
             } else if tabIndex == GHOSTTY_GOTO_TAB_NEXT.rawValue {
-                TernNavigation.selectAdjacentTab(1, in: self)
+                UmiNavigation.selectAdjacentTab(1, in: self)
             } else if tabIndex == GHOSTTY_GOTO_TAB_LAST.rawValue {
-                TernNavigation.selectLastTab(in: self)
+                UmiNavigation.selectLastTab(in: self)
             }
         } else {
-            TernNavigation.selectTab(number: Int(tabIndex), in: self)
+            UmiNavigation.selectTab(number: Int(tabIndex), in: self)
         }
     }
 
@@ -1582,5 +1582,5 @@ extension TerminalController {
 
 extension Ghostty.SurfaceView {
     /// The pane's id as the CLI shows it.
-    var ternID: String { id.uuidString.lowercased() }
+    var umiID: String { id.uuidString.lowercased() }
 }

@@ -187,7 +187,7 @@ def test_restart_restores_pins_and_names(target, fresh):
 @pytest.mark.harness
 def test_a_partial_log_line_left_by_a_crash_loses_nothing_after_it(fresh):
     """A crash can cut the last line of a session's log short. Entries written after the restart must
-    still be read back at the next one. (Tern-specific: it keeps each session in sessions/<id>/log.jsonl.)"""
+    still be read back at the next one. (Umi-specific: it keeps each session in sessions/<id>/log.jsonl.)"""
     other = fresh(prefix="acc-ag22-partial-")
     sid = other.start_agent("claude", "ECHO first")
     other.wait(sid)
@@ -342,7 +342,7 @@ def test_an_explicit_target_overrides_a_stale_caller(inst, win):
     """A CLI carrying the identity of a pane that's gone still creates a tab where --pane or --window
     says."""
     gone = inst.json("tab", "new", "--window", win["window"])["pane"]
-    pane_env = {"TERN_PANE_ID": gone, "TERN_INSTANCE": json.loads(inst.cli("--json", "ping").stdout)["instance"]}
+    pane_env = {"UMI_PANE_ID": gone, "UMI_INSTANCE": json.loads(inst.cli("--json", "ping").stdout)["instance"]}
     inst.cli("pane", "close", gone)
     time.sleep(0.5)
     created = inst.json("tab", "new", "--pane", win["pane"], "--no-focus", env=pane_env)

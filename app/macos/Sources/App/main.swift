@@ -2,10 +2,10 @@ import AppKit
 import Cocoa
 import GhosttyKit
 
-// Tern: terminals must not inherit another agent's session markers or another Tern pane's
+// Umi: terminals must not inherit another agent's session markers or another Umi pane's
 // identity from whatever launched the app. This runs before ghostty_init, which captures
 // the process environment.
-TernEnvironment.scrubInherited()
+UmiEnvironment.scrubInherited()
 
 // Initialize Ghostty global state. We do this once right away because the
 // CLI APIs require it and it lets us ensure it is done immediately for the
@@ -35,9 +35,9 @@ if ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) != GHOSTTY_SUCCE
 // action is a command starting with a `+`, such as `ghostty +boo`.
 ghostty_cli_try_action()
 
-// Tern: one instance per state directory (P-3). A second launch hands over to the first
+// Umi: one instance per state directory (P-3). A second launch hands over to the first
 // and exits before creating anything. CLI actions (above, such as `+ssh` from the shell
 // integration) run without the app, so they come first.
-TernSingleInstance.acquireOrExit()
+UmiSingleInstance.acquireOrExit()
 
 _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)

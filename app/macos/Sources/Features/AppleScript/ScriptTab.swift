@@ -21,26 +21,26 @@ final class ScriptTab: NSObject {
     /// This can become `nil` if the tab closes while a script is running.
     private weak var controller: BaseTerminalController?
 
-    /// The Tern tab this wrapper stands for (nil for windows without Tern tabs, such as
+    /// The Umi tab this wrapper stands for (nil for windows without Umi tabs, such as
     /// the quick terminal, whose one tab is the controller itself).
-    private weak var tab: TernTab?
+    private weak var tab: UmiTab?
 
     /// Called by `ScriptWindow.tabs` / `ScriptWindow.selectedTab`.
     ///
     /// The ID is computed once so object specifiers built from this instance keep
     /// a consistent tab identity.
-    init(window: ScriptWindow, controller: BaseTerminalController, tab: TernTab? = nil) {
+    init(window: ScriptWindow, controller: BaseTerminalController, tab: UmiTab? = nil) {
         self.stableID = tab.map(Self.stableID(tab:)) ?? Self.stableID(controller: controller)
         self.window = window
         self.controller = controller
         self.tab = tab
     }
 
-    private var ternController: TerminalController? { controller as? TerminalController }
+    private var umiController: TerminalController? { controller as? TerminalController }
 
     /// The tab's panes (its split tree, shown or not).
     private var tabSurfaces: [Ghostty.SurfaceView] {
-        if let tab, let ternController { return ternController.tree(of: tab).root?.leaves() ?? [] }
+        if let tab, let umiController { return umiController.tree(of: tab).root?.leaves() ?? [] }
         return controller?.surfaceTree.root?.leaves() ?? []
     }
 
@@ -67,7 +67,7 @@ final class ScriptTab: NSObject {
     @objc(index)
     var index: Int {
         guard NSApp.isAppleScriptEnabled else { return 0 }
-        if let tab, let ternController { return (ternController.index(of: tab) ?? -1) + 1 }
+        if let tab, let umiController { return (umiController.index(of: tab) ?? -1) + 1 }
         guard let controller else { return 0 }
         return window?.tabIndex(for: controller) ?? 0
     }
@@ -78,7 +78,7 @@ final class ScriptTab: NSObject {
     @objc(selected)
     var selected: Bool {
         guard NSApp.isAppleScriptEnabled else { return false }
-        if let tab, let ternController { return ternController.selectedTab === tab }
+        if let tab, let umiController { return umiController.selectedTab === tab }
         guard let controller else { return false }
         return window?.tabIsSelected(controller) ?? false
     }
@@ -89,8 +89,8 @@ final class ScriptTab: NSObject {
     @objc(focusedTerminal)
     var focusedTerminal: ScriptTerminal? {
         guard NSApp.isAppleScriptEnabled else { return nil }
-        if let tab, let ternController {
-            let surface = (tab === ternController.selectedTab ? ternController.focusedSurface : nil)
+        if let tab, let umiController {
+            let surface = (tab === umiController.selectedTab ? umiController.focusedSurface : nil)
                 .flatMap { tab.contains($0) ? $0 : nil } ?? tab.effectiveFocusedSurface
             return surface.map(ScriptTerminal.init)
         }
@@ -137,13 +137,13 @@ final class ScriptTab: NSObject {
     func handleSelectTab(_ command: NSScriptCommand) -> Any? {
         guard NSApp.validateScript(command: command) else { return nil }
 
-        if let tab, let ternController {
-            guard ternController.tabs.contains(where: { $0 === tab }) else {
+        if let tab, let umiController {
+            guard umiController.tabs.contains(where: { $0 === tab }) else {
                 command.scriptErrorNumber = errAEEventFailed
                 command.scriptErrorString = "Tab is no longer available."
                 return nil
             }
-            TernLayout.focusTab(tab, in: ternController)
+            UmiLayout.focusTab(tab, in: umiController)
             return nil
         }
 
@@ -218,8 +218,8 @@ extension ScriptTab {
         "tab-\(ObjectIdentifier(controller).hexString)"
     }
 
-    /// Stable ID for one Tern tab (its own id, which survives moves between windows).
-    static func stableID(tab: TernTab) -> String {
+    /// Stable ID for one Umi tab (its own id, which survives moves between windows).
+    static func stableID(tab: UmiTab) -> String {
         "tab-\(tab.idString)"
     }
 }

@@ -1,0 +1,30 @@
+{
+  "name": "Umi",
+  "app": "../../app/macos/build/ReleaseLocal/Umi.app",
+  "executable": "Contents/MacOS/umi-app",
+  "cli": "Contents/MacOS/umi",
+  "launch_args": ["--window-save-state=never"],
+  "restore_launch_args": [],
+  "env": {
+    "state_dir": "UMI_STATE_DIR",
+    "claude_bin": "UMI_CLAUDE_BIN",
+    "codex_bin": "UMI_CODEX_BIN",
+    "feed_url": "UMI_FEED_URL"
+  },
+  "release": {
+    "command": ["bash", "../../app/dist/release.sh", "--version", "{version}", "--out", "{out}",
+                "--base-url", "{base_url}", "--no-publish"],
+    "feed": "appcast.json",
+    "app": "Umi.app"
+  },
+  "installer": {
+    "command": ["bash", "../../app/dist/install.sh", "--from", "{app}"],
+    "env": {"dest": "UMI_INSTALL_DEST", "bin": "UMI_INSTALL_BIN",
+            "no_default": "UMI_INSTALL_NO_DEFAULT", "no_launch": "UMI_INSTALL_NO_LAUNCH"}
+  },
+  "build_cli": {"source": "../../app/macos/UmiCLI", "command": ["bash", "{src}/build.sh", "--out", "{out}"]},
+  "restoration_safe": true,
+  "other_products": ["com.mitchellh.ghostty", "com.mitchellh.ghostty.debug", "dev.tern.app", "dev.tern.app.debug",
+                     "dev.wraith.terminal", "dev.shade.terminal"],
+  "other_names": ["Ghostty", "Tern", "Wraith", "Shade"]
+}

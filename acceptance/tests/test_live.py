@@ -2,8 +2,8 @@
 AG-18, AG-19), against the fake harnesses' TUI ("live") modes.
 
 "Live" is the agent's own interface running in a pane on the session's conversation. With the fakes it
-is their line-oriented TUI (fakes/README.md): `tern read --pane P` shows it and `tern send --pane P
---enter TEXT` types into it, as a person would. The read-only view is read and pressed through Tern's
+is their line-oriented TUI (fakes/README.md): `umi read --pane P` shows it and `umi send --pane P
+--enter TEXT` types into it, as a person would. The read-only view is read and pressed through Umi's
 internal `debug.agent.pane` / `debug.agent.press` methods (the same code its buttons run), so these
 tests need no accessibility permission; the few `ui` tests that need the real keyboard say so.
 
@@ -144,8 +144,8 @@ def test_an_interactive_launch_goes_live_after_its_first_turn(inst, win, shown, 
     text = wait_screen(inst, pane, hid, f"{USER[kind]}SLEEP 3 {n}", f"ok: SLEEP 3 {n}")
     assert text.count(BANNER[kind]) == 1
     delivered_once(inst, n)
-    # The interface draws its screen before its own SessionStart hook reaches Tern (the hook runs
-    # `tern agent hook`, a process of its own): until then the session is still opening its interface.
+    # The interface draws its screen before its own SessionStart hook reaches Umi (the hook runs
+    # `umi agent hook`, a process of its own): until then the session is still opening its interface.
     info = wait_until(lambda: (lambda i: i if (i["location"], i["status"]) == ("live", "idle") else None)(inst.info(sid)),
                       15, message="the live session to report idle")
     assert info["activity"] == "idle", info
@@ -205,7 +205,7 @@ def test_the_users_focus_moves_only_when_asked(inst, win, shown):
 @pytest.mark.req("AG-2")
 @pytest.mark.parametrize("kind", KINDS)
 def test_the_claude_and_codex_shortcuts_give_the_user_a_session(inst, win, shown, kind):
-    """`tern claude "TASK"` / `tern codex "TASK"`: the task headless in a new tab, switched to, then live
+    """`umi claude "TASK"` / `umi codex "TASK"`: the task headless in a new tab, switched to, then live
     there; without a task, live at once."""
     n = nonce()
     inst.cli("pane", "focus", win["pane"])
@@ -663,7 +663,7 @@ def test_a_message_to_live_claude_waits_for_its_running_turn(inst, win, shown):
 @pytest.mark.req("AG-9", "AG-11")
 def test_a_message_to_live_claude_waits_while_something_is_typed_in_it(inst, win, shown):
     """"When its interface is idle and the user has nothing typed in it." Text put on its prompt line
-    (here with `tern send` and no Enter) must survive: the message waits instead."""
+    (here with `umi send` and no Enter) must survive: the message waits instead."""
     sid, pane = go_live(inst, shown, win, "claude")
     draft = "draft-" + nonce()
     inst.cli("send", "--pane", pane, draft)
@@ -725,7 +725,7 @@ def test_stop_closes_a_live_interface(inst, win, shown, kind):
     assert out["status"] == "DONE" and f"SLEEP 30 {n}" in out["reply"], "the conversation stays resumable"
 
 
-# ---- AG-18: Tern's plugins report what agents typed in a pane do ------------------------------------
+# ---- AG-18: Umi's plugins report what agents typed in a pane do ------------------------------------
 
 PLUGIN = {"claude": "Contents/Resources/agent-plugins/claude", "codex": "Contents/Resources/agent-plugins/codex"}
 
@@ -754,10 +754,10 @@ def test_an_agent_typed_in_a_pane_becomes_a_known_session(inst, win, kind):
     dirs_var = "FAKE_CLAUDE_PLUGIN_DIRS" if kind == "claude" else "FAKE_CODEX_PLUGIN_DIRS"
     pane = win["pane"]
     known = {s["id"] for s in inst.agents()}
-    # The user has Tern's plugin installed (`agent plugins install`) and types the agent's command.
+    # The user has Umi's plugin installed (`agent plugins install`) and types the agent's command.
     inst.type_line(pane, f"FAKE_AGENT_DIR='{root}' {dirs_var}='{plugin}' '{fake}'")
     session = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
-                         message="the typed agent to become a session Tern knows")
+                         message="the typed agent to become a session Umi knows")
     sid = session["id"]
     hid = session.get("harness_id")
     try:
@@ -776,7 +776,7 @@ def test_an_agent_typed_in_a_pane_becomes_a_known_session(inst, win, kind):
         inst.type_line(pane, "/exit")
         wait_until(lambda: inst.info(sid)["location"] != "live", 15, message="the interface's end to be noticed")
         assert inst.info(sid)["status"] in ("idle", "stopped"), inst.info(sid)
-        # A session Tern knows: a message resumes its conversation.
+        # A session Umi knows: a message resumes its conversation.
         inst.send(sid, "RECALL")
         code, out = inst.wait(sid, timeout=60)
         assert out["status"] == "DONE" and f"SLEEP 2 {n}" in out["reply"], out
@@ -790,23 +790,23 @@ def test_an_agent_typed_in_a_pane_becomes_a_known_session(inst, win, kind):
 
 @pytest.mark.req("AG-18")
 @pytest.mark.parametrize("kind", KINDS)
-def test_the_plugins_hooks_are_silent_outside_tern(inst, kind, tmp_path):
-    """Outside the product (another terminal, no app running, or a session Tern runs headless) Tern's
+def test_the_plugins_hooks_are_silent_outside_umi(inst, kind, tmp_path):
+    """Outside the product (another terminal, no app running, or a session Umi runs headless) Umi's
     hook prints nothing and does nothing."""
-    script = os.path.join(inst.target.app, PLUGIN[kind], "hooks", "tern-hook.sh")
+    script = os.path.join(inst.target.app, PLUGIN[kind], "hooks", "umi-hook.sh")
     assert os.access(script, os.X_OK), script
     hid = "00000000-0000-4000-8000-" + nonce() + "00"
     payload = json.dumps({"session_id": hid, "cwd": str(tmp_path), "hook_event_name": "SessionStart",
                           "transcript_path": str(tmp_path / "t.jsonl"), "source": "startup"})
     stopped_dir = str(tmp_path / "no-app")
     os.makedirs(stopped_dir)
-    base = {k: v for k, v in inst.env.items() if not k.startswith("TERN_")}
+    base = {k: v for k, v in inst.env.items() if not k.startswith("UMI_")}
     cli = inst.target.cli_path
     environments = {
         "another terminal": base,
-        "a terminal of an app that isn't running": dict(base, TERN_CLI=cli, TERN_STATE_DIR=stopped_dir),
-        "a session Tern runs headless": dict(base, TERN_CLI=cli, TERN_STATE_DIR=inst.dir, TERN_HEADLESS="1"),
-        "Tern, but no pane of it": dict(base, TERN_CLI=cli, TERN_STATE_DIR=inst.dir),
+        "a terminal of an app that isn't running": dict(base, UMI_CLI=cli, UMI_STATE_DIR=stopped_dir),
+        "a session Umi runs headless": dict(base, UMI_CLI=cli, UMI_STATE_DIR=inst.dir, UMI_HEADLESS="1"),
+        "Umi, but no pane of it": dict(base, UMI_CLI=cli, UMI_STATE_DIR=inst.dir),
     }
     before = {s["id"] for s in inst.agents()}
     for where, env in environments.items():
@@ -901,7 +901,7 @@ def test_background_sessions_are_in_the_window_menu(inst, win, shown, ui):
 
 @pytest.mark.req("AG-9")
 def test_a_message_to_live_claude_waits_while_the_user_types_in_it(inst, win, shown, ui):
-    """The same as the `tern send` draft test above, with the keyboard."""
+    """The same as the `umi send` draft test above, with the keyboard."""
     sid, pane = go_live(inst, shown, win, "claude")
     inst.cli("pane", "focus", pane)
     ui.activate()

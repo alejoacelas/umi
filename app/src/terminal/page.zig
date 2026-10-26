@@ -2071,22 +2071,22 @@ pub const Row = packed struct(u64) {
     /// screen.
     dirty: bool = false,
 
-    /// Tern: true on the first row of a prompt that Tern's zsh
-    /// integration marked as a block (OSC 133;A with tern=1). The
-    /// tern_* fields below describe that block and are only meaningful
+    /// Umi: true on the first row of a prompt that Umi's zsh
+    /// integration marked as a block (OSC 133;A with umi=1). The
+    /// umi_* fields below describe that block and are only meaningful
     /// on this row. Reset with the row like every other field.
-    tern_block: bool = false,
+    umi_block: bool = false,
 
-    /// Tern: the block's command: still at its prompt, running (OSC 133
+    /// Umi: the block's command: still at its prompt, running (OSC 133
     /// C seen) or done (OSC 133 D seen).
-    tern_state: TernBlockState = .prompt,
+    umi_state: UmiBlockState = .prompt,
 
-    /// Tern: the command exited with a non-zero status.
-    tern_failed: bool = false,
+    /// Umi: the command exited with a non-zero status.
+    umi_failed: bool = false,
 
-    /// Tern: how long the command ran (see ternDurationMs).
-    tern_unit: TernDurationUnit = .ms,
-    tern_duration: u17 = 0,
+    /// Umi: how long the command ran (see umiDurationMs).
+    umi_unit: UmiDurationUnit = .ms,
+    umi_duration: u17 = 0,
 
     /// The semantic prompt state of the row. See `semantic_prompt`.
     pub const SemanticPrompt = enum(u2) {
@@ -2104,23 +2104,23 @@ pub const Row = packed struct(u64) {
         prompt_continuation = 2,
     };
 
-    /// Tern: see `tern_state`.
-    pub const TernBlockState = enum(u2) {
+    /// Umi: see `umi_state`.
+    pub const UmiBlockState = enum(u2) {
         prompt = 0,
         running = 1,
         done = 2,
     };
 
-    /// Tern: the unit of `tern_duration`, coarser as durations grow so
+    /// Umi: the unit of `umi_duration`, coarser as durations grow so
     /// 17 bits cover milliseconds up to 2 minutes and seconds up to a
     /// day and a half.
-    pub const TernDurationUnit = enum(u2) {
+    pub const UmiDurationUnit = enum(u2) {
         ms = 0,
         cs = 1,
         ds = 2,
         s = 3,
 
-        fn msPer(self: TernDurationUnit) u64 {
+        fn msPer(self: UmiDurationUnit) u64 {
             return switch (self) {
                 .ms => 1,
                 .cs => 10,
@@ -2130,23 +2130,23 @@ pub const Row = packed struct(u64) {
         }
     };
 
-    /// Tern: record a block's duration in the finest unit that holds it.
-    pub fn ternSetDurationMs(self: *Row, ms: u64) void {
+    /// Umi: record a block's duration in the finest unit that holds it.
+    pub fn umiSetDurationMs(self: *Row, ms: u64) void {
         const max = std.math.maxInt(u17);
-        inline for ([_]TernDurationUnit{ .ms, .cs, .ds, .s }) |unit| {
+        inline for ([_]UmiDurationUnit{ .ms, .cs, .ds, .s }) |unit| {
             const value = ms / unit.msPer();
             if (value <= max or unit == .s) {
-                self.tern_unit = unit;
-                self.tern_duration = @intCast(@min(value, max));
+                self.umi_unit = unit;
+                self.umi_duration = @intCast(@min(value, max));
                 return;
             }
         }
     }
 
-    /// Tern: the block's duration in milliseconds (rounded down to its
+    /// Umi: the block's duration in milliseconds (rounded down to its
     /// unit).
-    pub fn ternDurationMs(self: Row) u64 {
-        return @as(u64, self.tern_duration) * self.tern_unit.msPer();
+    pub fn umiDurationMs(self: Row) u64 {
+        return @as(u64, self.umi_duration) * self.umi_unit.msPer();
     }
 
     /// The backing integer of this packed struct. Prefer this over

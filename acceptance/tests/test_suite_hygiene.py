@@ -49,7 +49,7 @@ def test_a_real_run_leaves_the_agents_folders_as_found(tmp_path):
 
     # Before the run: the user's own things.
     config_before = (f'model = "x"\n\n[projects."{user_dir}"]\ntrust_level = "trusted"\n\n'
-                     '[plugins."tern@tern"]\nenabled = true\n')
+                     '[plugins."umi@umi"]\nenabled = true\n')
     write(f"{home}/.codex/config.toml", config_before)
     old_rollout = f"{home}/.codex/sessions/2026/10/01/rollout-old.jsonl"
     write(old_rollout, json.dumps({"type": "session_meta", "payload": {"id": "old", "cwd": user_dir}}) + "\n")

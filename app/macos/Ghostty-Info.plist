@@ -141,19 +141,19 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>TernUpdatePublicKey</key>
+	<key>UmiUpdatePublicKey</key>
 	<string>MGHOLjeXrmSxJ4ZL/efRqa0SBDjwDZb/grJTFTuSbY8=</string>
-	<key>TernUpdateFeedURL</key>
-	<string>github.com/alejoacelas/tern/releases/latest/download/appcast.json</string>
-	<key>TernBuildKind</key>
+	<key>UmiUpdateFeedURL</key>
+	<string>github.com/alejoacelas/umi/releases/latest/download/appcast.json</string>
+	<key>UmiBuildKind</key>
 	<string>dev</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>dev.tern.surfaceId</string>
+			<string>dev.umi.surfaceId</string>
 			<key>UTTypeDescription</key>
-			<string>Tern Pane Identifier</string>
+			<string>Umi Pane Identifier</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>

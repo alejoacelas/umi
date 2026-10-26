@@ -261,20 +261,20 @@ class BaseTerminalController: NSWindowController,
             .first { $0.ownsSurface(surface) }
     }
 
-    /// Whether a surface belongs to this controller, shown or not. Tern windows have
+    /// Whether a surface belongs to this controller, shown or not. Umi windows have
     /// tabs whose panes aren't in the visible `surfaceTree`.
     func ownsSurface(_ surface: Ghostty.SurfaceView) -> Bool {
         surfaceTree.contains(surface)
     }
 
     /// What a tree change belongs to, so undo can put it back in the right place even
-    /// after the window switched to showing something else (Tern: the tab).
+    /// after the window switched to showing something else (Umi: the tab).
     func undoTreeOwner() -> AnyObject? { nil }
 
-    /// Make a surface this controller owns visible (Tern: select its tab).
+    /// Make a surface this controller owns visible (Umi: select its tab).
     func revealSurface(_ surface: Ghostty.SurfaceView) {}
 
-    /// Put back a tree from undo. Tern windows apply it to the tab it came from.
+    /// Put back a tree from undo. Umi windows apply it to the tab it came from.
     func restoreUndoTree(_ tree: SplitTree<Ghostty.SurfaceView>, owner: AnyObject?) {
         surfaceTree = tree
     }
@@ -361,7 +361,7 @@ class BaseTerminalController: NSWindowController,
             focusedSurface = nil
         }
         syncSurfaceTreeOcclusionState()
-        TernState.shared.layoutDidChange()
+        UmiState.shared.layoutDidChange()
     }
 
     /// Update all surfaces with the focus state. This ensures that libghostty has an accurate view about
@@ -515,7 +515,7 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// A node of the shown tree is about to be closed for good (not moved). Tern: closed
+    /// A node of the shown tree is about to be closed for good (not moved). Umi: closed
     /// panes can be reopened (⇧⌘T).
     func surfaceNodeWillClose(_ node: SplitTree<Ghostty.SurfaceView>.Node) {}
 
@@ -526,7 +526,7 @@ class BaseTerminalController: NSWindowController,
     private func findNextFocusTargetAfterClosing(node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
         guard let root = surfaceTree.root else { return nil }
 
-        // Tern: the pane the user focused before, when there is one (Warp's pane history).
+        // Umi: the pane the user focused before, when there is one (Warp's pane history).
         if let previous = previouslyFocusedSurface(excluding: node) { return previous }
 
         // If we're the leftmost, then we move to the next surface after closing.
@@ -538,7 +538,7 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Tern: the pane to focus after `node` closes, from the panes focused before it. Nil
+    /// Umi: the pane to focus after `node` closes, from the panes focused before it. Nil
     /// falls back to tree order.
     func previouslyFocusedSurface(excluding node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
         nil
@@ -829,7 +829,7 @@ class BaseTerminalController: NSWindowController,
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard ownsSurface(target) else { return }
 
-        // Tern: a pane in a tab that isn't shown is shown first.
+        // Umi: a pane in a tab that isn't shown is shown first.
         revealSurface(target)
 
         // Bring the window to front and focus the surface.
@@ -996,7 +996,7 @@ class BaseTerminalController: NSWindowController,
     }
 
     private func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
-        // Tern: only the two panes beside the dragged divider change size (L-19).
+        // Umi: only the two panes beside the dragged divider change size (L-19).
         do {
             surfaceTree = try surfaceTree.movingDivider(of: node, to: newRatio)
         } catch {
@@ -1213,7 +1213,7 @@ class BaseTerminalController: NSWindowController,
     }
 
     func defaultUpdateOverlayVisibility() -> Bool {
-        // Tern shows update state in the sidebar, never as an overlay.
+        // Umi shows update state in the sidebar, never as an overlay.
         false
     }
 

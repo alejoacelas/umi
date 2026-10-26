@@ -43,10 +43,10 @@ const pipeline_descs: []const struct { [:0]const u8, PipelineDescription } =
             .step_fn = .per_instance,
             .blending_enabled = true,
         } },
-        .{ "tern_rect", .{
-            .vertex_attributes = TernRect,
-            .vertex_fn = "tern_rect_vertex",
-            .fragment_fn = "tern_rect_fragment",
+        .{ "umi_rect", .{
+            .vertex_attributes = UmiRect,
+            .vertex_fn = "umi_rect_vertex",
+            .fragment_fn = "umi_rect_fragment",
             .step_fn = .per_instance,
             .blending_enabled = true,
         } },
@@ -299,10 +299,10 @@ pub const CellText = extern struct {
 /// This is a single parameter for the cell bg shader.
 pub const CellBg = [4]u8;
 
-/// Tern: a rectangle drawn under the text for Warp's look (block
+/// Umi: a rectangle drawn under the text for Warp's look (block
 /// separators, the tint and bar of a failed block, the folder box), in
 /// pixels in the grid's space. Colors are straight (not premultiplied).
-pub const TernRect = extern struct {
+pub const UmiRect = extern struct {
     /// x, y, width, height.
     rect: [4]f32 align(16),
     fill: [4]u8 align(4),

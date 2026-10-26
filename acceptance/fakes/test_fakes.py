@@ -2466,7 +2466,7 @@ def t_codex_tui_remote():
 
 
 def t_codex_tui_local():
-    plugin = make_plugin("ternx", "codex")
+    plugin = make_plugin("umix", "codex")
     env = {"FAKE_CODEX_PLUGIN_DIRS": plugin}
     tui = PtyProc([FAKE_CODEX, "-m", "gpt-test", "hello local tui"], env)
     try:
@@ -2553,7 +2553,7 @@ def t_codex_tui_local():
 
 def t_codex_hooks_app_server():
     """Hooks run in the stdio app server too (detached, parent = the server)."""
-    plugin = make_plugin("ternx2", "codex", matchers={"PreToolUse": "Read"})
+    plugin = make_plugin("umix2", "codex", matchers={"PreToolUse": "Read"})
     x = FX(env={"FAKE_CODEX_PLUGIN_DIRS": plugin})
     x.init()
     tid = x.thread(model="gpt-hooks")
@@ -2660,8 +2660,8 @@ def t_claude_cancel_queued():
 
 
 def t_claude_hooks_print():
-    plugin = make_plugin("tern", "claude", matchers={"PreToolUse": "Read|Write"})
-    plugin2 = make_plugin("tern2", "claude")
+    plugin = make_plugin("umi", "claude", matchers={"PreToolUse": "Read|Write"})
+    plugin2 = make_plugin("umi2", "claude")
     sid = str(uuid.uuid4())
     c = FC("--session-id", sid, "--plugin-dir", plugin, "-n", "named", env={"FAKE_CLAUDE_PLUGIN_DIRS": plugin2})
     init = c.init()
@@ -2678,8 +2678,8 @@ def t_claude_hooks_print():
     i, r = c.result(n)
     assert r["user_message_uuids"] == [u1, u2], r
     sysinit = [m for m in c.msgs if m.get("subtype") == "init"][0]
-    assert {"name": "tern", "path": plugin, "source": "tern@inline", "version": "1.2.3"} in sysinit["plugins"]
-    assert {"name": "tern2", "path": plugin2, "source": "tern2@installed", "version": "1.2.3"} in sysinit["plugins"]
+    assert {"name": "umi", "path": plugin, "source": "umi@inline", "version": "1.2.3"} in sysinit["plugins"]
+    assert {"name": "umi2", "path": plugin2, "source": "umi2@installed", "version": "1.2.3"} in sysinit["plugins"]
     r = claude_say(c, "WAKE 0.5 nonce-w")
     c.wait_for(lambda m: m.get("type") == "result" and m.get("result") == "woke: nonce-w", timeout=10)
     c.state("idle", c.n() - 1)
@@ -2785,7 +2785,7 @@ def t_claude_transcript():
 
 
 def t_claude_tui():
-    plugin = make_plugin("terntui", "claude")
+    plugin = make_plugin("umitui", "claude")
     sid = str(uuid.uuid4())
     c = FC("--session-id", sid)
     c.init()

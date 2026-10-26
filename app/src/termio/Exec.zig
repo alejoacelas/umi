@@ -72,9 +72,9 @@ pub fn initTerminal(self: *Exec, term: *terminal.Terminal) void {
         log.warn("error setting initial pwd err={}", .{err});
     };
 
-    // Tern: Warp's look, for zsh with Tern's integration (other shells keep
+    // Umi: Warp's look, for zsh with Umi's integration (other shells keep
     // the usual look).
-    term.flags.tern_blocks = self.subprocess.tern_blocks;
+    term.flags.umi_blocks = self.subprocess.umi_blocks;
 
     // Setup our initial grid/screen size from the terminal. This
     // can't fail because the pty should not exist at this point.
@@ -599,9 +599,9 @@ const Subprocess = struct {
     rt_pre_exec_info: Command.RtPreExecInfo,
     rt_post_fork_info: Command.RtPostForkInfo,
 
-    /// Tern: the shell is zsh with Tern's integration and its block prompt
-    /// (Warp's look); see Terminal.flags.tern_blocks.
-    tern_blocks: bool = false,
+    /// Umi: the shell is zsh with Umi's integration and its block prompt
+    /// (Warp's look); see Terminal.flags.umi_blocks.
+    umi_blocks: bool = false,
 
     /// Union that represents the running process type.
     const Process = union(enum) {
@@ -764,7 +764,7 @@ const Subprocess = struct {
         _ = env.orderedRemove("VTE_VERSION");
 
         // Setup our shell integration, if we can.
-        var tern_blocks = false;
+        var umi_blocks = false;
         const shell_command: configpkg.Command = shell: {
             const default_shell_command: configpkg.Command =
                 cfg.command orelse .{ .shell = switch (builtin.os.tag) {
@@ -818,9 +818,9 @@ const Subprocess = struct {
                 .{integration.shell},
             );
 
-            // Tern: its zsh prompt draws blocks (Warp's look).
-            tern_blocks = integration.shell == .zsh and
-                cfg.shell_integration_features.@"tern-blocks";
+            // Umi: its zsh prompt draws blocks (Warp's look).
+            umi_blocks = integration.shell == .zsh and
+                cfg.shell_integration_features.@"umi-blocks";
 
             break :shell integration.command;
         };
@@ -884,7 +884,7 @@ const Subprocess = struct {
 
             .rt_pre_exec_info = cfg.rt_pre_exec_info,
             .rt_post_fork_info = cfg.rt_post_fork_info,
-            .tern_blocks = tern_blocks,
+            .umi_blocks = umi_blocks,
 
             // Should be initialized with initTerminal call.
             .grid_size = .{},

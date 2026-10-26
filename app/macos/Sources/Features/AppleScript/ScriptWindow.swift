@@ -60,8 +60,8 @@ final class ScriptWindow: NSObject {
     @objc(tabs)
     var tabs: [ScriptTab] {
         guard NSApp.isAppleScriptEnabled else { return [] }
-        if let tern = primaryController as? TerminalController {
-            return tern.tabs.map { ScriptTab(window: self, controller: tern, tab: $0) }
+        if let umi = primaryController as? TerminalController {
+            return umi.tabs.map { ScriptTab(window: self, controller: umi, tab: $0) }
         }
         return controllers.map { ScriptTab(window: self, controller: $0) }
     }
@@ -72,8 +72,8 @@ final class ScriptWindow: NSObject {
     @objc(selectedTab)
     var selectedTab: ScriptTab? {
         guard NSApp.isAppleScriptEnabled else { return nil }
-        if let tern = primaryController as? TerminalController, !tern.tabs.isEmpty {
-            return ScriptTab(window: self, controller: tern, tab: tern.selectedTab)
+        if let umi = primaryController as? TerminalController, !umi.tabs.isEmpty {
+            return ScriptTab(window: self, controller: umi, tab: umi.selectedTab)
         }
         guard let selectedController else { return nil }
         return ScriptTab(window: self, controller: selectedController)
@@ -88,9 +88,9 @@ final class ScriptWindow: NSObject {
     @objc(valueInTabsWithUniqueID:)
     func valueInTabs(uniqueID: String) -> ScriptTab? {
         guard NSApp.isAppleScriptEnabled else { return nil }
-        if let tern = primaryController as? TerminalController {
-            guard let tab = tern.tabs.first(where: { ScriptTab.stableID(tab: $0) == uniqueID }) else { return nil }
-            return ScriptTab(window: self, controller: tern, tab: tab)
+        if let umi = primaryController as? TerminalController {
+            guard let tab = umi.tabs.first(where: { ScriptTab.stableID(tab: $0) == uniqueID }) else { return nil }
+            return ScriptTab(window: self, controller: umi, tab: tab)
         }
         guard let controller = controller(tabID: uniqueID) else { return nil }
         return ScriptTab(window: self, controller: controller)

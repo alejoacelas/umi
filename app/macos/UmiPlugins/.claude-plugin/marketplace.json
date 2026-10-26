@@ -1,0 +1,14 @@
+{
+  "name": "umi",
+  "description": "Umi's integration for Claude Code: tells Umi what a Claude Code session in one of its panes is doing",
+  "owner": { "name": "Umi" },
+  "plugins": [
+    {
+      "name": "umi",
+      "description": "Reports a session's state (working, finished, needs you) to Umi when it runs inside Umi. Silent anywhere else.",
+      "source": "./claude",
+      "version": "1.0.1",
+      "category": "productivity"
+    }
+  ]
+}

@@ -29,7 +29,7 @@ extension NSPasteboard.PasteboardType {
 extension NSPasteboard {
     /// The pasteboard to used for Ghostty selection.
     static var ghosttySelection: NSPasteboard = {
-        NSPasteboard(name: .init("dev.tern.selection"))
+        NSPasteboard(name: .init("dev.umi.selection"))
     }()
 
     /// Gets the contents of the pasteboard as a string following a specific set of semantics.

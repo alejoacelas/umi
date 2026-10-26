@@ -123,7 +123,7 @@ extension SplitTree {
     /// Insert a new view at the given view point by creating a split in the given direction.
     /// This will always reset the zoomed state of the tree.
     ///
-    /// Tern (L-19): panes in the same row or column share it equally, as in Warp. When `at`
+    /// Umi (L-19): panes in the same row or column share it equally, as in Warp. When `at`
     /// is already in a row (column) and the split goes along it, the new view joins that run
     /// with an equal share and the others shrink proportionally; otherwise `at` is halved.
     func inserting(view: ViewType, at: ViewType, direction: NewDirection) throws -> Self {
@@ -143,7 +143,7 @@ extension SplitTree {
     /// Remove a node from the tree. If the node being removed is part of a split,
     /// the sibling node takes the place of the parent split.
     ///
-    /// Tern (L-19): a pane leaving a row (column) of three or more shares its space among
+    /// Umi (L-19): a pane leaving a row (column) of three or more shares its space among
     /// the rest of that row in proportion to their sizes.
     func removing(_ target: Node) -> Self {
         guard let root else { return self }
@@ -326,7 +326,7 @@ extension SplitTree {
             throw SplitError.viewNotFound
         }
 
-        // Tern: move only this divider. In a row of three or more, the two panes beside
+        // Umi: move only this divider. In a row of three or more, the two panes beside
         // it change size and the others keep theirs (as in Warp).
         let newRoot = try root.movingDivider(at: splitPath, to: newRatio)
         return .init(root: newRoot, zoomed: nil)
@@ -1412,7 +1412,7 @@ extension SplitTree {
     }
 }
 
-// MARK: Runs (Tern: equal panes, L-19)
+// MARK: Runs (Umi: equal panes, L-19)
 
 // Warp lays out panes as flex siblings: panes in the same row (or column) share it, a split
 // along the row adds an equal sibling, and a close shares the space among the rest. A binary

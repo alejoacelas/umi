@@ -4,3 +4,11 @@ logs/
 .worktrees/
 .DS_Store
 __pycache__/
+
+# The poster-based icon (Studio Ghibli's art) never enters this repository: it is applied
+# locally by app/dist/local-icon.sh from 1Password. Its source, the poster and anything made
+# from them stay out of git.
+icon-source.png
+poster.*
+umi-local-icon*
+local-icon/

@@ -52,7 +52,7 @@ present. Extra fields are fine.
 | `pane resize [PANE] up\|down\|left\|right [AMOUNT]` | |
 | `send [--pane P] [--enter\|-e] TEXT…` | no TEXT plus a piped stdin sends stdin |
 | `keys [--pane P] KEY…` | enter esc tab backspace up down left right ctrl+c shift+tab … |
-| `read [--pane P] [--scrollback] [--lines N]` | prints the text as the shell and programs printed it. With Tern's look (SPEC S-9 to S-12) a zsh prompt is two blank rows, the folder, and the command line; durations, lines and the folder box are drawn, not text |
+| `read [--pane P] [--scrollback] [--lines N]` | prints the text as the shell and programs printed it. With Umi's look (SPEC S-9 to S-12) a zsh prompt is two blank rows, the folder, and the command line; durations, lines and the folder box are drawn, not text |
 | `wait [--pane P] (--pattern RE \| --idle SECS) [--timeout T]` | prints the matched text; 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
 | `events [--filter PREFIX]… [--pane P]` | a filter keeps events whose name starts with PREFIX; JSON lines `{"event": name, "data": {…}}`, names like `pane.created`, `pane.closed`, `pane.moved`, `pane.focused`, `tab.created`, `tab.renamed`, `tab.selected`, `window.created` |
 | `notify [--pane P] TITLE [BODY]` | |
@@ -77,8 +77,8 @@ Other commands:
 | Command | Notes |
 |---|---|
 | `help [--json]` | `--json`: every command for programs: `{"cli", "product", "version": 1, "commands": [{"section", "usage", "summary", "actions": [{"title", "argv", "ask": [{"name", "prompt", "option"?, "choices"?, "optional", "kind", "words"?}]}]}]}` |
-| `shortcuts [ls]` | JSON `{"shortcuts": [{"id", "title", "kind": "tern"\|"ghostty", "keys": [str], "display": [str], "default": [str], "changed": bool, "menu"?, "source"?}], "files": [str]}` |
-| `shortcuts set ID KEYS`, `shortcuts clear ID`, `shortcuts reset [ID]` | ID from `shortcuts`: a Tern item (`tab.next`) or `ghostty:ACTION`; KEYS like `cmd+shift+]`; JSON of `set` has `notes`: the shortcuts the key was taken from |
+| `shortcuts [ls]` | JSON `{"shortcuts": [{"id", "title", "kind": "umi"\|"ghostty", "keys": [str], "display": [str], "default": [str], "changed": bool, "menu"?, "source"?}], "files": [str]}` |
+| `shortcuts set ID KEYS`, `shortcuts clear ID`, `shortcuts reset [ID]` | ID from `shortcuts`: an Umi item (`tab.next`) or `ghostty:ACTION`; KEYS like `cmd+shift+]`; JSON of `set` has `notes`: the shortcuts the key was taken from |
 
 Events also include `tab.reordered` `{"window", "tabs": [ids]}` when the sidebar order (SPEC S-7) changes,
 `palette.opened` and `palette.ran`.
@@ -125,15 +125,15 @@ headless; a session can be shown in a pane read-only, taken over live there, and
 | `agent report done\|blocked\|failed SUMMARY… [--session S]` | inside a session S defaults to `self`; JSON `{"report": Report}` |
 | `agent watch SESSION --notify OTHER [--message ID] [--text T]` | |
 | `agent approve SESSION [REQUEST] [--always] [--message TEXT]`, `agent deny SESSION [REQUEST] [--message TEXT]`, `agent answer SESSION [TEXT…] [--answer N=TEXT]…` | approvals and questions (sessions without full access) |
-| `agent plugins [status\|install [--force]\|remove]` | Tern's plugins in Claude Code and Codex (AG-18); JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}`; current means this app's version, from this copy of the app, enabled and (Codex) its hooks trusted; `--force` reinstalls even when current |
-| `agent hook EVENT` | used by Tern's plugins: reads the agent's hook input on stdin; prints nothing |
+| `agent plugins [status\|install [--force]\|remove]` | Umi's plugins in Claude Code and Codex (AG-18); JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}`; current means this app's version, from this copy of the app, enabled and (Codex) its hooks trusted; `--force` reinstalls even when current |
+| `agent hook EVENT` | used by Umi's plugins: reads the agent's hook input on stdin; prints nothing |
 | `doctor` | exit 0 when everything needed is present |
 
 SESSION is a session id or unique prefix, a name, the agent's own session or thread id, or `self`
 (inside a session).
 
 - **Session**: `{"id", "name", "kind": "claude"|"codex", "status": starting|working|idle|needs_input|stopped|error,
-  "activity", "title", "cwd", "location": "background"|"pane"|"live", "running": bool (Tern's headless process for
+  "activity", "title", "cwd", "location": "background"|"pane"|"live", "running": bool (Umi's headless process for
   it runs), "pane"?: pane id, "harness_id"?, "parent"?,
   "requests": [Request], "last_message"?: Message, "waiting"?: [Message] (messages not delivered yet),
   "waiting_reason"?, "error"?, "report"?: Report, "background_tasks"?: int, "startup"?: Startup, "origin": "started"|"typed"}`

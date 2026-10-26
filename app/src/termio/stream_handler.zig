@@ -1464,8 +1464,8 @@ pub const StreamHandler = struct {
             .end_input_start_output => {
                 self.surfaceMessageWriter(.start_command);
 
-                // Tern: the newest block's command runs from now.
-                self.terminal.ternBlockStarted(.now(global.io(), .awake));
+                // Umi: the newest block's command runs from now.
+                self.terminal.umiBlockStarted(.now(global.io(), .awake));
             },
 
             .end_command => {
@@ -1477,12 +1477,12 @@ pub const StreamHandler = struct {
 
                 self.surfaceMessageWriter(.{ .stop_command = code });
 
-                // Tern: a block's command is done; its header shows how
+                // Umi: a block's command is done; its header shows how
                 // long it took.
-                self.terminal.ternBlockFinished(
+                self.terminal.umiBlockFinished(
                     .now(global.io(), .awake),
                     cmd.readOption(.exit_code),
-                    terminal.Terminal.ternAid(cmd.readOption(.aid)),
+                    terminal.Terminal.umiAid(cmd.readOption(.aid)),
                 );
             },
 

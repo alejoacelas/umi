@@ -1901,7 +1901,7 @@ pub const CAPI = struct {
         return readTextLocked(surface, core_sel, result);
     }
 
-    /// Tern: how many bytes the surface's child process has written so far.
+    /// Umi: how many bytes the surface's child process has written so far.
     export fn ghostty_surface_output_bytes(surface: *Surface) u64 {
         surface.core_surface.renderer_state.mutex.lockUncancelable(global.io());
         defer surface.core_surface.renderer_state.mutex.unlock(global.io());
@@ -1925,7 +1925,7 @@ pub const CAPI = struct {
         return readOutputLocked(screen, core_sel, result);
     }
 
-    /// Tern: like ghostty_surface_read_output_text, for the last `rows` rows
+    /// Umi: like ghostty_surface_read_output_text, for the last `rows` rows
     /// of the screen, scrollback included, so recent output that scrolled
     /// past the screen can be read without reading the whole scrollback.
     export fn ghostty_surface_read_output_tail(
@@ -1943,16 +1943,16 @@ pub const CAPI = struct {
         return readOutputLocked(screen, terminal.Selection.init(tl, br, false), result);
     }
 
-    /// Tern: Warp's look in this surface's viewport, as JSON, for tests
+    /// Umi: Warp's look in this surface's viewport, as JSON, for tests
     /// and diagnostics: whether it's on, how far the view is moved down
     /// (as the renderer last drew it, and as the terminal is now), each
     /// row's part in a block, and each block with its folder, command,
     /// state, failure and duration.
-    export fn ghostty_surface_tern_blocks(
+    export fn ghostty_surface_umi_blocks(
         surface: *Surface,
         result: *Text,
     ) bool {
-        const tern_blocks = @import("../renderer/tern_blocks.zig");
+        const umi_blocks = @import("../renderer/umi_blocks.zig");
         const alloc = global.alloc();
         const core = &surface.core_surface;
 
@@ -1977,7 +1977,7 @@ pub const CAPI = struct {
             break :cursor pt.viewport.y;
         };
 
-        var layout: tern_blocks.Layout = .{};
+        var layout: umi_blocks.Layout = .{};
         defer layout.deinit(alloc);
         layout.compute(alloc, t, pins.items, cursor_y, .now(global.io(), .awake)) catch return false;
 
@@ -1985,7 +1985,7 @@ pub const CAPI = struct {
         defer out.deinit();
         const w = &out.writer;
         const cell_h = core.size.cell.height;
-        const drawn_px = core.renderer_state.tern_offset_px.load(.monotonic);
+        const drawn_px = core.renderer_state.umi_offset_px.load(.monotonic);
         w.print("{{\"on\":{},\"offset_rows\":{d},\"drawn_offset_rows\":{d},\"rows\":{d},\"cols\":{d},\"cursor_row\":", .{
             layout.on,
             layout.offset_rows,
@@ -2008,9 +2008,9 @@ pub const CAPI = struct {
             if (b.ms) |ms| w.print("{d}", .{ms}) catch return false else w.writeAll("null") catch return false;
             if (b.ms) |ms| {
                 var buf: [48]u8 = undefined;
-                const text = tern_blocks.formatDuration(&buf, ms);
+                const text = umi_blocks.formatDuration(&buf, ms);
                 w.writeAll(",\"duration\":") catch return false;
-                ternWriteJsonString(w, std.mem.trim(u8, text, " ")) catch return false;
+                umiWriteJsonString(w, std.mem.trim(u8, text, " ")) catch return false;
             }
             // The folder (header rows) and the command (input cells of the
             // command rows), read from the block's own rows (also when they
@@ -2021,24 +2021,24 @@ pub const CAPI = struct {
             defer command.deinit(alloc);
             if (b.start) |start| rows: {
                 var p = start.down(2) orelse break :rows;
-                ternRowText(alloc, p, false, &header) catch return false;
+                umiRowText(alloc, p, false, &header) catch return false;
                 while (p.rowAndCell().row.wrap) {
                     p = p.down(1) orelse break :rows;
-                    ternRowText(alloc, p, false, &header) catch return false;
+                    umiRowText(alloc, p, false, &header) catch return false;
                 }
                 var n: usize = 0;
                 while (n < 64) : (n += 1) {
                     p = p.down(1) orelse break;
                     const row = p.rowAndCell().row;
-                    if (row.semantic_prompt == .none or row.tern_block) break;
+                    if (row.semantic_prompt == .none or row.umi_block) break;
                     if (n > 0) command.append(alloc, '\n') catch return false;
-                    ternRowText(alloc, p, true, &command) catch return false;
+                    umiRowText(alloc, p, true, &command) catch return false;
                 }
             }
             w.writeAll(",\"header\":") catch return false;
-            ternWriteJsonString(w, header.items) catch return false;
+            umiWriteJsonString(w, header.items) catch return false;
             w.writeAll(",\"command\":") catch return false;
-            ternWriteJsonString(w, command.items) catch return false;
+            umiWriteJsonString(w, command.items) catch return false;
             w.writeAll("}") catch return false;
         }
         w.writeAll("]") catch return false;
@@ -2047,7 +2047,7 @@ pub const CAPI = struct {
             const scale = surface.getContentScale() catch apprt.ContentScale{ .x = 1, .y = 1 };
             // How far the folder box's text is drawn right of its cells, as last drawn.
             const box_dx: f32 = dx: {
-                const rows = &core.renderer_state.tern_rows;
+                const rows = &core.renderer_state.umi_rows;
                 rows.lock.lockUncancelable(global.io());
                 defer rows.lock.unlock(global.io());
                 var most: u16 = 0;
@@ -2075,7 +2075,7 @@ pub const CAPI = struct {
         return true;
     }
 
-    fn ternRowText(
+    fn umiRowText(
         alloc: Allocator,
         pin: terminal.Pin,
         input_only: bool,
@@ -2088,23 +2088,23 @@ pub const CAPI = struct {
             // A wide character's spacer cells aren't text of their own.
             if (cell.wide == .spacer_tail or cell.wide == .spacer_head) continue;
             const cp: u21 = if (cell.hasText()) cell.codepoint() else ' ';
-            try ternAppendCodepoint(alloc, out, cp);
+            try umiAppendCodepoint(alloc, out, cp);
             // The rest of a grapheme (combining marks, emoji sequences).
             if (cell.hasGrapheme()) if (page.lookupGrapheme(cell)) |rest| {
-                for (rest) |more| try ternAppendCodepoint(alloc, out, more);
+                for (rest) |more| try umiAppendCodepoint(alloc, out, more);
             };
         }
         // Trailing blanks aren't text.
         while (out.items.len > start and out.items[out.items.len - 1] == ' ') out.items.len -= 1;
     }
 
-    fn ternAppendCodepoint(alloc: Allocator, out: *std.ArrayList(u8), cp: u21) !void {
+    fn umiAppendCodepoint(alloc: Allocator, out: *std.ArrayList(u8), cp: u21) !void {
         var buf: [4]u8 = undefined;
         const n = std.unicode.utf8Encode(cp, &buf) catch return;
         try out.appendSlice(alloc, buf[0..n]);
     }
 
-    fn ternWriteJsonString(w: *std.Io.Writer, s: []const u8) !void {
+    fn umiWriteJsonString(w: *std.Io.Writer, s: []const u8) !void {
         try w.writeByte('"');
         for (s) |c| switch (c) {
             '"' => try w.writeAll("\\\""),

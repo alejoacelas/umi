@@ -26,7 +26,7 @@ FAKE_CODEX = os.path.join(FAKES, "fake_codex.py")
 # product) out of the product under test. The app's own environment reaches its panes' shells,
 # so an agent the tests run in a pane would otherwise inherit, say, the outer Claude Code's
 # CLAUDE_EFFORT or CLAUDE_CONFIG_DIR.
-_SCRUB_PREFIXES = ("CLAUDE_", "CODEX_", "SHADE_", "WRAITH_", "GHOSTTY_", "FAKE_", "TERN_")
+_SCRUB_PREFIXES = ("CLAUDE_", "CODEX_", "SHADE_", "WRAITH_", "GHOSTTY_", "FAKE_", "UMI_")
 _SCRUB_KEYS = {"CLAUDECODE", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "AI_AGENT"}
 
 
@@ -85,6 +85,10 @@ class Target:
         self.restore_launch_args = data.get("restore_launch_args", [])
         self.other_products = data.get("other_products", [])
         self.other_names = data.get("other_names", [])
+        # Command words that are relative paths ("./x", "../x") are relative to the target file.
+        for spec in (self.release, self.installer):
+            if spec and spec.get("command"):
+                spec["command"] = [resolve(w) if w.startswith(("./", "../")) else w for w in spec["command"]]
         if self.build_cli and self.build_cli.get("source"):
             self.build_cli = dict(self.build_cli, source=resolve(self.build_cli["source"]))
         info_path = os.path.join(self.app, "Contents", "Info.plist")
@@ -319,7 +323,7 @@ class Instance:
         self.quit_app()
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    # -- raw control requests (Tern's internal debug.* methods)
+    # -- raw control requests (Umi's internal debug.* methods)
 
     def rpc(self, method, **params):
         """A raw control request to the app (for internal `debug.*` methods that the CLI doesn't
@@ -454,13 +458,13 @@ class Instance:
         self.cli("send", "--pane", pane, "--enter", text, timeout=30)
 
     def session_view(self, pane):
-        """What a pane shows of a session (Tern's internal `debug.agent.pane`): {"showing":
+        """What a pane shows of a session (Umi's internal `debug.agent.pane`): {"showing":
         "agent" (the read-only view) | "live" | "terminal", "session"?, "transcript"?, "texts"?,
         "buttons"?}."""
         return self.rpc("debug.agent.pane", pane=pane)
 
     def press(self, pane, title, field_text=None):
-        """Press a button of a pane's read-only session view (Tern's internal `debug.agent.press`)."""
+        """Press a button of a pane's read-only session view (Umi's internal `debug.agent.press`)."""
         params = {"pane": pane, "title": title}
         if field_text is not None:
             params["field_text"] = field_text

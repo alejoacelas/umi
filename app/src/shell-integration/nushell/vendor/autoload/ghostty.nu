@@ -13,12 +13,12 @@ export module ghostty {
       return
     }
 
-    # Tern: the core executable is named tern-app.
+    # Umi: the core executable is named umi-app.
     let bin_dir = ($env.GHOSTTY_BIN_DIR? | default "")
     let ghostty = if ($bin_dir | path join "ghostty" | path exists) {
       $bin_dir | path join "ghostty"
     } else {
-      $bin_dir | path join "tern-app"
+      $bin_dir | path join "umi-app"
     }
     mut flags = []
     if not (has_feature "ssh-env") {

@@ -7,7 +7,7 @@
 - Use `macos/build.nu` to build the macOS app, do not use `zig build`
   (except to build the underlying library as mentioned above).
   - Build: `macos/build.nu [--scheme Ghostty] [--configuration Debug] [--action build]`
-  - Output: `macos/build/<configuration>/Tern.app` (e.g. `macos/build/Debug/Tern.app`)
+  - Output: `macos/build/<configuration>/Umi.app` (e.g. `macos/build/Debug/Umi.app`)
 - Run unit tests directly with `macos/build.nu --action test`
 
 ## AppleScript

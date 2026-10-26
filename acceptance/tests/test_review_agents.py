@@ -46,7 +46,7 @@ def menu_item(inst, title):
 def test_take_over_while_the_headless_process_is_still_launching(fresh):
     """Round 1, P1: Take Over reaching a Claude session whose headless process is still being launched
     cancelled the launch and never answered `agent attach`. It must go live at once."""
-    inst = fresh(prefix="acc-rv-", env={"TERN_TEST_LAUNCH_DELAY": "4"})
+    inst = fresh(prefix="acc-rv-", env={"UMI_TEST_LAUNCH_DELAY": "4"})
     w = inst.json("window", "new", "--cwd", inst.work)
     wait_until(lambda: inst.screen(w["pane"]).strip(), 20, message="the shell")
     n = nonce()
@@ -70,7 +70,7 @@ def test_attach_for_a_session_live_elsewhere_leaves_the_pane_as_it_was(inst, win
     sid = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--name", f"elsewhere-{nonce()}",
                     "--split", "right", "--pane", win["pane"], "ECHO hello")["session"]["id"]
     live_pane = wait_live(inst, sid)
-    inst.cli("send", "--pane", win["pane"], "-e", f'"$TERN_CLI" agent attach {sid}')
+    inst.cli("send", "--pane", win["pane"], "-e", f'"$UMI_CLI" agent attach {sid}')
     wait_until(lambda: "already live" in inst.screen(win["pane"]), 15, message="attach says the session is live elsewhere")
     time.sleep(0.5)
     view = inst.session_view(win["pane"])
@@ -110,7 +110,7 @@ def test_a_key_freed_from_one_action_and_given_to_another_stays_bound(inst, win)
 def test_a_command_cancelled_by_opening_another_palette_leaves_that_palette_alone(inst, win):
     """Round 1, P2: opening another palette while a command ran killed the command, but its completion
     then replaced the new palette with its output (or closed it)."""
-    query = f"tern wait --pane {win['pane']} --pattern never-{nonce()} --timeout 20"
+    query = f"umi wait --pane {win['pane']} --pattern never-{nonce()} --timeout 20"
     inst.rpc("debug.palette", window=win["window"], mode="commands", query=query)
     started = inst.rpc("debug.palette.perform", window=win["window"], title="Run " + query, timeout=1)
     assert started.get("step") == "running", started
@@ -165,7 +165,7 @@ def test_a_typed_agent_hidden_mid_turn_is_ended_when_its_turn_ends(inst, win):
     known = {s["id"] for s in inst.agents()}
     inst.type_line(pane, f"FAKE_AGENT_DIR='{root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
     session = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
-                         message="the typed agent to become a session Tern knows")
+                         message="the typed agent to become a session Umi knows")
     sid, hid = session["id"], session.get("harness_id")
     try:
         wait_until(lambda: BANNER in inst.screen(pane), 20, message="its interface")
@@ -266,13 +266,13 @@ def test_hooks_run_from_a_plugin_folder_whose_path_has_spaces(inst, kind, tmp_pa
     root = tmp_path / "plugin copy" / kind
     shutil.copytree(os.path.join(inst.target.app, PLUGIN[kind]), root)
     calls = tmp_path / "calls.txt"
-    cli = tmp_path / "fake tern"
+    cli = tmp_path / "fake umi"
     cli.write_text(f"#!/bin/sh\necho \"$@\" >> '{calls}'\n")
     cli.chmod(0o755)
     variable = "CLAUDE_PLUGIN_ROOT" if kind == "claude" else "PLUGIN_ROOT"
     hooks = json.load(open(root / "hooks" / "hooks.json"))["hooks"]
-    env = {k: v for k, v in os.environ.items() if not k.startswith("TERN_")}
-    env.update({"TERN_CLI": str(cli), "TERN_STATE_DIR": str(tmp_path), variable: str(root)})
+    env = {k: v for k, v in os.environ.items() if not k.startswith("UMI_")}
+    env.update({"UMI_CLI": str(cli), "UMI_STATE_DIR": str(tmp_path), variable: str(root)})
     events = []
     for event, groups in hooks.items():
         for group in groups:
@@ -309,7 +309,7 @@ def test_a_codex_server_that_stops_reading_blocks_no_other_session(inst, win):
 @pytest.mark.req("AG-22", "I-4")
 def test_an_update_now_counts_work_in_a_live_interface(fresh):
     """Round 3, P2: installing an update now (it restarts the app) checked only headless turns; work in
-    a Claude interface Tern shows live was cut off without asking for --force."""
+    a Claude interface Umi shows live was cut off without asking for --force."""
     inst = fresh(prefix="acc-rv-update-")
     win = inst.json("window", "new", "--cwd", inst.work)
     wait_until(lambda: inst.screen(win["pane"]).strip(), 20, message="the shell")
@@ -498,7 +498,7 @@ def test_resume_of_a_live_session_starts_no_second_process(inst, win):
 
 @pytest.mark.req("AG-15")
 def test_removing_a_working_live_session_needs_force(inst, win):
-    """Round 5, P2: `agent rm` checked only Tern's headless process, so a Claude interface at work was
+    """Round 5, P2: `agent rm` checked only Umi's headless process, so a Claude interface at work was
     removed (and ended) without --force."""
     sid, pane = live_claude(inst, win)
     inst.type_line(pane, f"SLEEP 20 {nonce()}")
@@ -589,7 +589,7 @@ def test_stopping_a_typed_agent_ends_what_it_started(inst, win):
     known = {s["id"] for s in inst.agents()}
     inst.type_line(pane, f"FAKE_AGENT_DIR='{root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
     session = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
-                         message="the typed agent to become a session Tern knows")
+                         message="the typed agent to become a session Umi knows")
     sid, hid = session["id"], session.get("harness_id")
     stubborn_file = os.path.join(root, "stubborn.pid")
     if os.path.exists(stubborn_file):
@@ -716,7 +716,7 @@ def test_background_work_from_the_interface_continues_after_a_quit(target, fresh
 @pytest.mark.req("L-17")
 @pytest.mark.parametrize("action", ["", "no_such_action"])
 def test_an_unknown_terminal_action_is_refused_and_the_app_stays_up(inst, win, action):
-    """Round 8, P2: `tern shortcuts set 'ghostty:' cmd+j` saved a broken binding and crashed the app."""
+    """Round 8, P2: `umi shortcuts set 'ghostty:' cmd+j` saved a broken binding and crashed the app."""
     try:
         refused = inst.cli("shortcuts", "set", f"ghostty:{action}", "cmd+j", check=False)
         assert refused.returncode != 0, refused.stdout
@@ -737,7 +737,7 @@ def test_take_over_never_types_into_another_program(inst, win, tmp_path):
     inst.wait(sid)
     pane = inst.json("agent", "open", sid, "--split", "right", "--pane", win["pane"])["pane"]
     wait_until(lambda: inst.session_view(pane).get("showing") == "agent", 10, message="the read-only view")
-    # The shell under the view is at its prompt (Tern's zsh prompt shows the folder, not "%" or "$").
+    # The shell under the view is at its prompt (Umi's zsh prompt shows the folder, not "%" or "$").
     wait_until(lambda: "%" in inst.screen(pane) or "$" in inst.screen(pane) or
                (inst.rpc("debug.blocks", pane=pane).get("blocks") or [{}])[-1].get("state") == "active", 20,
                message="the shell under the view")
@@ -787,9 +787,9 @@ def test_hiding_a_live_codex_session_ends_its_interface(inst, win):
 # ---- round 10 (the last review round; fixed after it) ---------------------------------------------
 
 @pytest.mark.req("AG-11", "AG-18")
-def test_claude_resumed_by_hand_takes_the_conversation_from_tern(inst, win):
-    """Round 10, P1: `claude --resume ID` typed in a pane for a session Tern ran headless was adopted as
-    live while Tern's headless process kept running on the same conversation."""
+def test_claude_resumed_by_hand_takes_the_conversation_from_umi(inst, win):
+    """Round 10, P1: `claude --resume ID` typed in a pane for a session Umi ran headless was adopted as
+    live while Umi's headless process kept running on the same conversation."""
     plugin = os.path.join(inst.target.app, PLUGIN["claude"])
     sid = inst.start_agent("claude", f"SLEEP 15 {nonce()}")
     wait_until(lambda: inst.info(sid)["status"] == "working", 15, message="the headless turn runs")
@@ -800,7 +800,7 @@ def test_claude_resumed_by_hand_takes_the_conversation_from_tern(inst, win):
     inst.type_line(pane, f"FAKE_AGENT_DIR='{inst.fake_dir}' CLAUDE_CONFIG_DIR='{inst.claude_config}' "
                          f"FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}' --resume {hid}")
     wait_until(lambda: inst.info(sid)["location"] == "live", 20, message="the session adopted as live")
-    wait_until(lambda: not inst.info(sid)["running"], 15, message="Tern's headless process to stop")
+    wait_until(lambda: not inst.info(sid)["running"], 15, message="Umi's headless process to stop")
     inst.type_line(pane, "/exit")
     wait_until(lambda: inst.info(sid)["location"] != "live", 15, message="the interface to end")
 
@@ -822,7 +822,7 @@ def test_an_answer_typed_into_a_dialog_is_not_a_draft(inst, win):
 
 @pytest.mark.req("AG-18", "AG-3")
 def test_a_typed_agents_config_folder_is_kept_for_its_resumes(inst, win, tmp_path):
-    """Round 10, P2: an agent typed with its own CLAUDE_CONFIG_DIR lost it when Tern adopted the session,
+    """Round 10, P2: an agent typed with its own CLAUDE_CONFIG_DIR lost it when Umi adopted the session,
     so resuming it headless looked in the default folder."""
     root = login_fake_dir()
     plugin = os.path.join(inst.target.app, PLUGIN["claude"])
@@ -833,7 +833,7 @@ def test_a_typed_agents_config_folder_is_kept_for_its_resumes(inst, win, tmp_pat
     known = {s["id"] for s in inst.agents()}
     inst.type_line(pane, f"CLAUDE_CONFIG_DIR='{config}' FAKE_AGENT_DIR='{root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
     session = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
-                         message="the typed agent to become a session Tern knows")
+                         message="the typed agent to become a session Umi knows")
     sid, hid = session["id"], session.get("harness_id")
     try:
         wait_until(lambda: BANNER in inst.screen(pane), 20, message="its interface")
@@ -869,16 +869,16 @@ def test_a_parked_session_reopens_where_asked(inst, win):
 # ---- found while updating the installed copy -------------------------------------------------------
 
 @pytest.mark.req("AG-18")
-def test_a_plugin_installed_from_another_copy_of_tern_is_not_current(inst):
-    """Found while updating this Mac's copy to 0.4.0: Codex's Tern plugin had been installed from a
+def test_a_plugin_installed_from_another_copy_of_umi_is_not_current(inst):
+    """Found while updating this Mac's copy to 0.4.0: Codex's Umi plugin had been installed from a
     development build of the same plugin version, and the installed app took it as current, so its
     marketplace kept pointing at that build."""
     home = os.path.join(inst.fake_dir, "codex-home")
-    os.makedirs(os.path.join(home, "plugins", "cache", "tern", "tern", "1.0.1"), exist_ok=True)
+    os.makedirs(os.path.join(home, "plugins", "cache", "umi", "umi", "1.0.1"), exist_ok=True)
     with open(os.path.join(home, "config.toml"), "w") as f:
-        f.write('[marketplaces.tern]\nsource_type = "local"\nsource = "/somewhere/else/Tern.app/Contents/Resources/agent-plugins"\n\n'
-                '[plugins."tern@tern"]\nenabled = true\n\n'
-                '[hooks.state."tern@tern:hooks/hooks.json:stop:0:0"]\ntrusted_hash = "x"\n')
+        f.write('[marketplaces.umi]\nsource_type = "local"\nsource = "/somewhere/else/Umi.app/Contents/Resources/agent-plugins"\n\n'
+                '[plugins."umi@umi"]\nenabled = true\n\n'
+                '[hooks.state."umi@umi:hooks/hooks.json:stop:0:0"]\ntrusted_hash = "x"\n')
     status = inst.json("agent", "plugins")
     codex = status.get("codex") or {}
     assert codex.get("installed") and codex.get("current") is False, status
@@ -886,12 +886,12 @@ def test_a_plugin_installed_from_another_copy_of_tern_is_not_current(inst):
 
 @pytest.mark.req("AG-18")
 def test_a_disabled_claude_plugin_is_not_current(inst):
-    """Found while updating this Mac's copy: Claude Code had Tern's plugin installed but disabled (its
-    settings had been rewritten), and Tern took it as current, so it reported nothing."""
+    """Found while updating this Mac's copy: Claude Code had Umi's plugin installed but disabled (its
+    settings had been rewritten), and Umi took it as current, so it reported nothing."""
     config = inst.claude_config
     os.makedirs(os.path.join(config, "plugins"), exist_ok=True)
     with open(os.path.join(config, "plugins", "installed_plugins.json"), "w") as f:
-        json.dump({"version": 2, "plugins": {"tern@tern": [{"scope": "user", "version": "1.0.1"}]}}, f)
+        json.dump({"version": 2, "plugins": {"umi@umi": [{"scope": "user", "version": "1.0.1"}]}}, f)
     with open(os.path.join(config, "settings.json"), "w") as f:
         json.dump({"enabledPlugins": {}}, f)
     claude = inst.json("agent", "plugins").get("claude") or {}
@@ -903,9 +903,9 @@ def test_a_disabled_claude_plugin_is_not_current(inst):
 
 @pytest.mark.req("AG-11")
 def test_a_message_that_crashed_codex_before_its_turn_was_reported_is_not_sent_again(inst):
-    """test_chaos found it: Codex took a message in and crashed before Tern heard that its turn started
+    """test_chaos found it: Codex took a message in and crashed before Umi heard that its turn started
     (under chaos seed 977 the `turn/started` notification is still in the server's writer when it dies).
-    Tern hadn't marked the conversation as existing, so the next start opened a new thread and sent the
+    Umi hadn't marked the conversation as existing, so the next start opened a new thread and sent the
     message again, which crashed it again: 39 deliveries before it gave up. The next start now resumes
     the thread it wrote to and finds the message in its items."""
     n = nonce()
@@ -924,7 +924,7 @@ def test_a_message_that_crashed_codex_before_its_turn_was_reported_is_not_sent_a
 
 @pytest.mark.req("AG-9", "AG-11")
 def test_a_message_waiting_when_claude_is_resumed_by_hand_is_delivered(inst, win):
-    """0.5.0 round 4, P2: when `claude --resume ID` typed in a pane took the conversation from Tern's
+    """0.5.0 round 4, P2: when `claude --resume ID` typed in a pane took the conversation from Umi's
     headless process, messages that process had taken and not confirmed came back to the queue after
     the last pump, and waited there until something else happened."""
     plugin = os.path.join(inst.target.app, PLUGIN["claude"])

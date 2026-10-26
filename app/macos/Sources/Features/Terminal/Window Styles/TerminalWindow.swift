@@ -95,7 +95,7 @@ class TerminalWindow: NSWindow {
             self.configureTabContextMenuIfNeeded(menu)
         }
 
-        // Tern keeps its own tabs; AppKit must never group windows into native tabs
+        // Umi keeps its own tabs; AppKit must never group windows into native tabs
         // (a new window always stays a separate window, M-6).
         tabbingMode = .disallowed
 
@@ -234,7 +234,7 @@ class TerminalWindow: NSWindow {
         // It takes an event loop cycle to merge all the windows so we set a
         // short timer to relabel the tabs (issue #1902)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            TernState.shared.layoutDidChange()
+            UmiState.shared.layoutDidChange()
         }
     }
 

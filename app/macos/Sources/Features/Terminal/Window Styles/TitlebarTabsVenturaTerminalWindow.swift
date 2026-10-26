@@ -132,7 +132,7 @@ class TitlebarTabsVenturaTerminalWindow: TerminalWindow {
             // It takes an event loop cycle to merge all the windows so we set a
             // short timer to relabel the tabs (issue #1902)
             _ = controller
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { TernState.shared.layoutDidChange() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { UmiState.shared.layoutDidChange() }
         }
     }
 

@@ -147,8 +147,8 @@ class AppDelegate: NSObject,
         }
     }
 
-    /// Tern's updater (Ghostty's Sparkle updater, which points at Ghostty's feed, is gone).
-    var updater: TernUpdater { TernUpdater.shared }
+    /// Umi's updater (Ghostty's Sparkle updater, which points at Ghostty's feed, is gone).
+    var updater: UmiUpdater { UmiUpdater.shared }
 
     /// The elapsed time since the process was started
     var timeSinceLaunch: TimeInterval {
@@ -206,19 +206,19 @@ class AppDelegate: NSObject,
             "NSAutoFillHeuristicControllerEnabled": false,
         ])
 
-        // Tern: the control socket comes up before any window exists, so panes created
+        // Umi: the control socket comes up before any window exists, so panes created
         // during restoration can already be reached.
-        TernControlServer.shared.start()
+        UmiControlServer.shared.start()
         // Agent sessions: load them, clean up after an earlier run, continue cut-off turns.
-        TernAgents.shared.bootstrap()
+        UmiAgents.shared.bootstrap()
         MainActor.assumeIsolated {
             // "Next session that needs you" reaching a session no pane shows: show it.
-            TernAttention.shared.showSession = { id in
-                _ = try? TernAgentUI.open(id, placement: .init(kind: .tab, focus: true), caller: TernCaller([:]))
+            UmiAttention.shared.showSession = { id in
+                _ = try? UmiAgentUI.open(id, placement: .init(kind: .tab, focus: true), caller: UmiCaller([:]))
             }
         }
-        // Tern's plugins for Claude Code and Codex, installed and kept current (AG-18).
-        TernAgentPlugins.ensureInstalledAtLaunch()
+        // Umi's plugins for Claude Code and Codex, installed and kept current (AG-18).
+        UmiAgentPlugins.ensureInstalledAtLaunch()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -239,15 +239,15 @@ class AppDelegate: NSObject,
         // Initial config loading
         ghosttyConfigDidChange(config: ghostty.config)
 
-        // Tern: menus, saved state and updates.
-        TernUndoTrace.install(undoManager)
-        TernShortcuts.install()
-        TernLooking.start()
-        TernPersistence.shared.restoreUI()
+        // Umi: menus, saved state and updates.
+        UmiUndoTrace.install(undoManager)
+        UmiShortcuts.install()
+        UmiLooking.start()
+        UmiPersistence.shared.restoreUI()
         undoManager.disableUndoRegistration()
-        TernPersistence.shared.restoreLayout()
+        UmiPersistence.shared.restoreLayout()
         undoManager.enableUndoRegistration()
-        TernUpdater.shared.startBackgroundChecks()
+        UmiUpdater.shared.startBackgroundChecks()
 
         // Register our service provider. This must happen after everything is initialized.
         NSApp.servicesProvider = ServiceProvider()
@@ -408,11 +408,11 @@ class AppDelegate: NSObject,
 
         // If we've already accepted to install an update, then we don't need to
         // confirm quit. The user is already expecting the update to happen.
-        if TernUpdater.shared.isQuittingForUpdate {
+        if UmiUpdater.shared.isQuittingForUpdate {
             return .terminateNow
         }
 
-        // Tern: a quit asked for by another process (a script, an installer, the Dock)
+        // Umi: a quit asked for by another process (a script, an installer, the Dock)
         // is deliberate: no dialog. Edits in the editor are saved or kept as recovery
         // copies at termination, and the layout is saved continuously. Quitting with ⌘Q
         // inside the app still asks when programs are running.
@@ -448,7 +448,7 @@ class AppDelegate: NSObject,
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        TernAppLifecycle.willTerminate()
+        UmiAppLifecycle.willTerminate()
 
         // We have no notifications we want to persist after death,
         // so remove them all now. In the future we may want to be
@@ -518,9 +518,9 @@ class AppDelegate: NSObject,
         var isDirectory = ObjCBool(true)
         guard FileManager.default.fileExists(atPath: filename, isDirectory: &isDirectory) else { return false }
 
-        // Tern: Markdown and text files open in the editor (I-3).
-        if !isDirectory.boolValue, TernEditor.handles(URL(fileURLWithPath: filename)) {
-            return TernEditor.openFromSystem(URL(fileURLWithPath: filename))
+        // Umi: Markdown and text files open in the editor (I-3).
+        if !isDirectory.boolValue, UmiEditor.handles(URL(fileURLWithPath: filename)) {
+            return UmiEditor.openFromSystem(URL(fileURLWithPath: filename))
         }
 
         // Set to true if confirmation is required before starting up the
@@ -564,7 +564,7 @@ class AppDelegate: NSObject,
             // may want to show this as a sheet on the focused window (especially if we're
             // opening a tab). I'm not sure.
             let alert = NSAlert()
-            alert.messageText = "Allow Tern to execute \"\(filename)\"?"
+            alert.messageText = "Allow Umi to execute \"\(filename)\"?"
             alert.addButton(withTitle: "Allow")
             alert.addButton(withTitle: "Cancel")
             alert.alertStyle = .warning
@@ -617,12 +617,12 @@ class AppDelegate: NSObject,
         // We need to keep a strong reference to it so it isn't disabled.
         signals.append(sigusr2)
 
-        // Tern: the system (or a script) asking us to quit with SIGTERM saves state,
+        // Umi: the system (or a script) asking us to quit with SIGTERM saves state,
         // keeps editor edits, installs a staged update, then exits.
         signal(SIGTERM, SIG_IGN)
         let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         sigterm.setEventHandler {
-            MainActor.assumeIsolated { TernAppLifecycle.willTerminate() }
+            MainActor.assumeIsolated { UmiAppLifecycle.willTerminate() }
             exit(0)
         }
         sigterm.resume()
@@ -826,17 +826,17 @@ class AppDelegate: NSObject,
             .reduce(0) { $0 + ($1.bell ? 1 : 0) }
         let wantsBadge = ghostty.config.bellFeatures.contains(.attention) && bellCount > 0
         var label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
-        // Tern: agent sessions that need the user come first (TernAttention).
-        let needingInput = MainActor.assumeIsolated { TernAttention.shared.needingYouCount }
+        // Umi: agent sessions that need the user come first (UmiAttention).
+        let needingInput = MainActor.assumeIsolated { UmiAttention.shared.needingYouCount }
         if needingInput > 0 { label = needingInput > 99 ? "99+" : String(needingInput) }
         NSApp.dockTile.badgeLabel = label
         NSApp.dockTile.display()
     }
 
-    /// Tern: a managed session started or stopped needing the user. Isolated (test)
+    /// Umi: a managed session started or stopped needing the user. Isolated (test)
     /// instances set the badge without asking for the badge permission.
     func refreshDockBadge() {
-        if TernPaths.isIsolated { setDockBadge() } else { syncDockBadge() }
+        if UmiPaths.isIsolated { setDockBadge() } else { syncDockBadge() }
     }
 
     private func ghosttyConfigDidChange(config: Ghostty.Config) {
@@ -846,7 +846,7 @@ class AppDelegate: NSObject,
         // Depending on the "window-save-state" setting we have to set the NSQuitAlwaysKeepsWindows
         // configuration. This is the only way to carefully control whether macOS invokes the
         // state restoration system.
-        // Tern restores windows from its own state directory, never through AppKit's
+        // Umi restores windows from its own state directory, never through AppKit's
         // saved state (shared by every copy of the same bundle id).
         UserDefaults.ghostty.setValue(false, forKey: "NSQuitAlwaysKeepsWindows")
 
@@ -956,10 +956,10 @@ class AppDelegate: NSObject,
         withCompletionHandler: () -> Void
     ) {
         let userInfo = didReceive.notification.request.content.userInfo
-        if userInfo["tern_update"] != nil {
+        if userInfo["umi_update"] != nil {
             // The update question's notification: show the sidebar, where the question is.
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { _ = TernUpdater.handleNotification(userInfo: ["tern_update": true]) }
+                MainActor.assumeIsolated { _ = UmiUpdater.handleNotification(userInfo: ["umi_update": true]) }
             }
             withCompletionHandler()
             return
@@ -974,8 +974,8 @@ class AppDelegate: NSObject,
         withCompletionHandler: (UNNotificationPresentationOptions) -> Void
     ) {
         // Managed sessions decide themselves whether to notify (not while their pane is in front).
-        let shouldPresent = willPresent.request.content.userInfo["tern_agent_session"] != nil
-            || willPresent.request.content.userInfo["tern_update"] != nil
+        let shouldPresent = willPresent.request.content.userInfo["umi_agent_session"] != nil
+            || willPresent.request.content.userInfo["umi_update"] != nil
             || ghostty.shouldPresentNotification(notification: willPresent)
         let options: UNNotificationPresentationOptions = shouldPresent ? [.banner, .sound] : []
         withCompletionHandler(options)
@@ -1023,7 +1023,7 @@ class AppDelegate: NSObject,
     }
 
     @IBAction func checkForUpdates(_ sender: Any?) {
-        TernUpdater.shared.checkFromMenu()
+        UmiUpdater.shared.checkFromMenu()
     }
 
     /// Quit to install an update the user asked for: no confirmations.
@@ -1400,7 +1400,7 @@ extension AppDelegate {
         if controllersNeedConfirmation.count == 1 {
             Task {
                 let response = await controllersNeedConfirmation[0].confirmCloseAsync(
-                    messageText: "Quit \(TernPaths.productName)?",
+                    messageText: "Quit \(UmiPaths.productName)?",
                     informativeText: "The terminal still has a running process. If you quit, the process will be killed.",
                     confirmButtonTitle: "Terminate",
                 )
@@ -1434,7 +1434,7 @@ extension AppDelegate {
         Task {
             for controller in controllers {
                 let response = await controller.confirmCloseAsync(
-                    messageText: "Quit \(TernPaths.productName)?",
+                    messageText: "Quit \(UmiPaths.productName)?",
                     informativeText: "The terminal still has a running process. If you quit, the process will be killed.",
                     confirmButtonTitle: "Terminate",
                 )
