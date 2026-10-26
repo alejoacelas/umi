@@ -1,0 +1,14 @@
+{
+  "name": "tern",
+  "description": "Tern's integration for Claude Code: tells Tern what a Claude Code session in one of its panes is doing",
+  "owner": { "name": "Tern" },
+  "plugins": [
+    {
+      "name": "tern",
+      "description": "Reports a session's state (working, finished, needs you) to Tern when it runs inside Tern. Silent anywhere else.",
+      "source": "./claude",
+      "version": "1.0.1",
+      "category": "productivity"
+    }
+  ]
+}
