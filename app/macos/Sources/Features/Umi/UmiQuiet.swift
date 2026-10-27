@@ -290,6 +290,8 @@ enum UmiQuiet {
                           processes: Processes) -> PaneState {
         guard let surface = pane.surface else { return .unknown("it has no terminal") }
         if ghostty_surface_process_exited(surface) { return .exited }
+        // Text being composed with an input method isn't on the terminal yet.
+        if pane.hasMarkedText() { return .typed }
         guard let tty = pane.surfaceModel?.ttyName else { return .unknown("its terminal has no device") }
         var info = stat()
         guard stat(tty, &info) == 0, let front = processes.fronts[info.st_rdev] else {

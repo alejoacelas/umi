@@ -1667,6 +1667,7 @@ extension Ghostty {
         @IBAction func paste(_ sender: Any?) {
             guard let surface = self.surface else { return }
             // Umi: pasted into a session's live interface, it's a draft there.
+            UmiAgentUI.shared.noteKey(pane: self)
             if UmiAgentUI.shared.livePanes.contains(id) {
                 UmiAgentUI.shared.pasted(pane: self, text: NSPasteboard.general.string(forType: .string))
             }
@@ -1679,6 +1680,7 @@ extension Ghostty {
         @IBAction func pasteAsPlainText(_ sender: Any?) {
             guard let surface = self.surface else { return }
             // Umi: pasted into a session's live interface, it's a draft there.
+            UmiAgentUI.shared.noteKey(pane: self)
             if UmiAgentUI.shared.livePanes.contains(id) {
                 UmiAgentUI.shared.pasted(pane: self, text: NSPasteboard.general.string(forType: .string))
             }
@@ -1691,6 +1693,7 @@ extension Ghostty {
         @IBAction func pasteSelection(_ sender: Any?) {
             guard let surface = self.surface else { return }
             // Umi: pasted into a session's live interface, it's a draft there.
+            UmiAgentUI.shared.noteKey(pane: self)
             if UmiAgentUI.shared.livePanes.contains(id) {
                 UmiAgentUI.shared.pasted(pane: self, text: nil)
             }
@@ -2151,6 +2154,7 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // events so programs treat it as typed input, never as a paste.
         if !chars.isEmpty {
             // Umi: text a session's live interface gets without a key (dictation) is a draft there.
+            UmiAgentUI.shared.noteKey(pane: self)
             if UmiAgentUI.shared.livePanes.contains(id) { UmiAgentUI.shared.pasted(pane: self, text: chars) }
             _ = committedTextAction(GHOSTTY_ACTION_PRESS, text: chars)
         }
@@ -2343,6 +2347,7 @@ extension Ghostty.SurfaceView {
 
         if let content {
             // Umi: dropped into a session's live interface, it's a draft there.
+            UmiAgentUI.shared.noteKey(pane: self)
             if UmiAgentUI.shared.livePanes.contains(id) { UmiAgentUI.shared.pasted(pane: self, text: content) }
             DispatchQueue.main.async {
                 self.surfaceModel?.sendText(content)
