@@ -89,6 +89,9 @@ struct UmiQuietTests {
         #expect(more.effort == "high")
         #expect(more.args == ["--plugin-dir", "/mine", "--settings", "{}", "-d", "hello"])
         #expect(UmiTypedCommand.claude(["--permission-mode", "bypassPermissions"]).fullAccess)
+        // Options that take values though `claude --help` doesn't list them.
+        #expect(UmiTypedCommand.claude(["--thinking", "disabled", "--channels", "a", "b", "--verbose", "go"]).args
+                == ["--thinking", "disabled", "--channels", "a", "b", "--verbose"])
     }
 
     @Test func codexFlags() {

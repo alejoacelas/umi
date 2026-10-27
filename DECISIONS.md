@@ -1596,7 +1596,9 @@ once a second while an update waits (one read of the process table, one terminal
   - *An idle agent.* A session's read-only view is quiet when the terminal it covers is (its shell at
     an empty prompt, or exited: the terminal can be shown and used under the view). A live interface is
     quiet when it is what's in front, known by its process (the group of the process its hooks came
-    from) or by the session its environment names (Umi started it), never by its arguments, and its
+    from) or by the session its environment names (Umi started it), never by its arguments, in a pane
+    whose input Umi follows for that session (another agent typed under a view whose terminal is shown
+    isn't; review round 10), and its
     session is idle with nothing typed. Umi can't read an agent's input line, and following it keystroke
     by keystroke failed four review rounds in a row (Esc, history recall, Ctrl-P, Ctrl-G, cursor moves
     before Backspace or Ctrl-U, multi-line pastes, drops, dictation). So for an update the rule is
@@ -1717,8 +1719,11 @@ parent to the agent's program) at its first hook and whenever the user types it 
 session Umi started that the user resumes by hand (`claude --resume ID --model …`; review round 2), and
 keeps them (an interface Umi started itself names the session in its environment and is left alone):
 `--model`, `--effort`, `--dangerously-skip-permissions` and `--permission-mode` become the session's
-settings, other options its harness arguments. Parsing follows `claude --help` (2.1.311): options that
-take several values take them up to the next option, as Claude's own parser does. Left out: what picks
+settings, other options its harness arguments. Parsing follows `claude --help` (2.1.311) and the options
+it takes without listing them (`--thinking`, `--channels`, …; review round 10): options that take
+several values take them up to the next option, as Claude's own parser does. An option it doesn't know
+is kept as a switch and a word after it left out: running the first prompt again would be worse than a
+flag missing its value. Left out: what picks
 a conversation (`--resume`, `--continue`, `--session-id`, `--fork-session`), one-offs (`--print`,
 `--worktree`, `--tmux`, `--bg`), Umi's or Tern's plugin, and the first prompt, which isn't run again.
 For a typed Codex only the model, effort, approvals, full access and profile are kept: its interface

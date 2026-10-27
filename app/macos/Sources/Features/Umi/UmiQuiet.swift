@@ -206,8 +206,11 @@ enum UmiQuiet {
                 let under = paneState(pane, live: nil, processes: processes)
                 state = under == .prompt || under == .exited ? .view(id) : under
             } else {
-                let attached = ui.livePanes.contains(pane.id) ? ui.attachments[pane.id] : nil
-                let session = live.first { $0.id == attached } ?? live.first { $0.pane == umiID }
+                // Only a pane whose input Umi follows for the session can hold an idle interface
+                // (UmiAgentLiveUI routes keys by these): another agent there (typed under a view
+                // whose terminal is shown) is a program Umi can't vouch for.
+                let followed = ui.livePanes.contains(pane.id) ? ui.attachments[pane.id] : nil
+                let session = live.first { $0.id == followed }
                 state = paneState(pane, live: session.map { ($0.id, $0.kind, $0.pid) }, processes: processes)
             }
             snapshot.panes.append(Pane(id: umiID, tab: tab, state: state))

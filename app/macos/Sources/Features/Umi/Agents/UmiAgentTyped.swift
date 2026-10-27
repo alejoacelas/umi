@@ -64,18 +64,21 @@ enum UmiTypedCommand {
         kind == .claude ? claude(args) : codex(args)
     }
 
-    // Claude Code 2.1's options (`claude --help`): which take a value, which take several
-    // (until the next option) and which may take one.
+    // Claude Code 2.1's options (`claude --help`, and options it takes without listing them,
+    // seen in recordings): which take a value, which take several (until the next option) and
+    // which may take one. An option it doesn't know is kept as a switch, and a word after it is
+    // left out: running a first prompt again would be worse than a flag missing its value.
     private static let claudeValue: Set<String> = [
         "--agent", "--agents", "--append-system-prompt", "--append-system-prompt-file", "--autocompact",
         "--debug-file", "--environment", "--fallback-model", "--input-format", "--json-schema", "--max-budget-usd",
-        "--max-turns", "-n", "--name", "--output-format", "--permission-prompt-tool", "--permission-prompts",
-        "--plugin-url", "--remote-control-session-name-prefix", "--setting-sources", "--settings",
-        "--system-prompt", "--system-prompt-file", "--system-prompt-snapshot",
+        "--max-thinking-tokens", "--max-turns", "-n", "--name", "--output-format", "--permission-prompt-tool",
+        "--permission-prompts", "--plugin-url", "--remote-control-session-name-prefix", "--resume-session-at",
+        "--setting-sources", "--settings", "--system-prompt", "--system-prompt-file", "--system-prompt-snapshot",
+        "--task-budget", "--thinking", "--thinking-display",
     ]
     private static let claudeValues: Set<String> = [
-        "--add-dir", "--allowedTools", "--allowed-tools", "--betas", "--disallowedTools", "--disallowed-tools",
-        "--file", "--mcp-config", "--tools",
+        "--add-dir", "--allowedTools", "--allowed-tools", "--betas", "--channels", "--disallowedTools",
+        "--disallowed-tools", "--file", "--mcp-config", "--tools",
     ]
     private static let claudeOptionalValue: Set<String> = ["-d", "--debug", "--prompt-suggestions"]
 
