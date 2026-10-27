@@ -24,6 +24,12 @@ cd macos
 xcodebuild -target Ghostty -configuration ReleaseLocal -arch arm64 build               # → macos/build/ReleaseLocal/Umi.app
 ```
 
+To try a change, run `app/dist/dev.sh`: it builds the Debug app incrementally (and libghostty
+only when something outside `app/macos` changed), then restarts a dev copy next to the installed
+Umi. The dev copy (`dev.umi.app.debug`) is an isolated instance with its own state in
+`~/Library/Application Support/Umi-dev`, so it keeps its windows between restarts and never touches
+the user's Umi or its sessions. `app/dist/dev.sh umi ls` drives it; `--help` lists the options.
+
 Rebuild the library whenever something outside `app/macos` changes. `app/dist/release.sh --version
 X.Y.Z --build --no-publish` does both steps and stamps a release copy without publishing. The built
 bundle is `Umi.app` (`dev.umi.app`), with `Contents/MacOS/umi-app` (the app) and
