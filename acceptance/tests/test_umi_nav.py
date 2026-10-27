@@ -636,6 +636,35 @@ def test_tabs_move_only_when_the_user_moves_them(inst, win):
     assert tab_ids(inst, window) == [d, a, b, c]
 
 
+@pytest.mark.req("S-7", "M-3", "L-2", "L-13", "M-2")
+def test_undo_and_redo_put_back_only_the_tabs_a_step_moved(inst, win):
+    """Undo of a move, a pin or a move to another window puts that tab back and nothing else."""
+    a = win["tab"]
+    window = win["window"]
+    b, c, d = (new_tab(inst, win, "--no-focus")["tab"] for _ in range(3))
+
+    def menu(title, expected):
+        rpc(inst, "debug.menu.perform", title=title)
+        wait_until(lambda: tab_ids(inst, window) == expected, 5,
+                   message=f"{title}: {expected}, not {tab_ids(inst, window)}")
+
+    inst.cli("tab", "move", d, "--up", "--no-focus")
+    assert tab_ids(inst, window) == [a, b, d, c]
+    menu("Undo", [a, b, c, d])
+    menu("Redo", [a, b, d, c])
+    inst.cli("tab", "pin", c)
+    assert tab_ids(inst, window) == [c, a, b, d]
+    menu("Undo", [a, b, d, c])
+    assert not window_of(inst, window)["tabs"][3]["pinned"]
+    menu("Redo", [c, a, b, d])
+    inst.cli("tab", "unpin", c)
+    other = inst.json("window", "new")["window"]
+    inst.cli("tab", "move", b, "--window", other, "--no-focus")
+    assert tab_ids(inst, window) == [c, a, d] and b in tab_ids(inst, other)
+    menu("Undo", [c, a, b, d])
+    assert b not in tab_ids(inst, other)
+
+
 # ---- With real key presses (accessibility; take over the keyboard) --------------------------------
 
 KEYCODES = {"]": 30, "[": 33, ",": 43, "tab": 48, "return": 36, "esc": 53, "down": 125, "left": 123, "right": 124,

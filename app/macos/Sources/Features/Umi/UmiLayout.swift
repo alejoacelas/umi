@@ -490,19 +490,33 @@ enum UmiLayout {
 
     // MARK: Undo
 
+    /// The tabs the running undoable step put in, took out of or moved within a window (nil
+    /// outside a step).
+    private static var stepMoves: Set<UUID>?
+
+    /// A tab changed place (`TerminalController` reports it).
+    static func tabMoved(_ tab: UmiTab) {
+        stepMoves?.insert(tab.id)
+    }
+
     /// Run a layout change as one undoable step. Undo puts every involved window back the
-    /// way it was (tabs, trees, selection, focus); redo puts the result back. Snapshots hold
-    /// panes weakly, so undo never keeps a closed pane's process alive.
+    /// way it was (tabs, trees, selection, focus); redo puts the result back. Either one moves
+    /// only the tabs the step moved (S-7). Snapshots hold panes weakly, so undo never keeps a
+    /// closed pane's process alive.
     @discardableResult
     static func undoable<T>(_ name: String, windows: [TerminalController], _ body: () throws -> T) rethrows -> T {
         let before = UmiSnapshot(windows)
         let existing = Set(TerminalController.all.map(ObjectIdentifier.init))
+        let outer = stepMoves
+        stepMoves = []
+        defer { stepMoves = outer.map { $0.union(stepMoves ?? []) } }
         let result = try body()
+        let moved = stepMoves ?? []
         let created = TerminalController.all.filter { !existing.contains(ObjectIdentifier($0)) }
         let after = UmiSnapshot(windows + created)
         guard let undoManager = (NSApp.delegate as? AppDelegate)?.undoManager,
               undoManager.isUndoRegistrationEnabled else { return result }
-        registerUndo(name, undoManager: undoManager, restore: before, redo: after)
+        registerUndo(name, undoManager: undoManager, restore: before, redo: after, moved: moved)
         return result
     }
 
@@ -510,10 +524,10 @@ enum UmiLayout {
     static let moveUndoExpiration: Duration = .seconds(600)
 
     private static func registerUndo(_ name: String, undoManager: ExpiringUndoManager,
-                                     restore: UmiSnapshot, redo: UmiSnapshot) {
+                                     restore: UmiSnapshot, redo: UmiSnapshot, moved: Set<UUID>) {
         undoManager.registerUndo(withTarget: UmiSnapshotTarget.shared, expiresAfter: moveUndoExpiration) { _ in
-            restore.apply(closing: redo)
-            registerUndo(name, undoManager: undoManager, restore: redo, redo: restore)
+            restore.apply(closing: redo, moved: moved)
+            registerUndo(name, undoManager: undoManager, restore: redo, redo: restore, moved: moved)
         }
         undoManager.setActionName(name)
     }
@@ -620,8 +634,8 @@ struct UmiSnapshot {
 
     /// Put these windows back as they were. Windows of `other` that aren't part of this
     /// snapshot (created by the step being undone) close, without touching their panes,
-    /// which have moved back.
-    func apply(closing other: UmiSnapshot) {
+    /// which have moved back. `moved`: the tabs the step moved; only they change places.
+    func apply(closing other: UmiSnapshot, moved: Set<UUID>) {
         guard let ghostty = UmiLayout.ghostty else { return }
         let mine = Set(windows.map { ObjectIdentifier($0.box) })
 
@@ -701,22 +715,25 @@ struct UmiSnapshot {
             let live = state.box.controller.flatMap { c in
                 !c.isClosed && (c.window?.isVisible ?? false || c.presentsWithoutFocus) ? c : nil
             }
-            // Tabs the window has now that the snapshot doesn't know about (and that still
-            // hold panes) stay, each after the tab it follows now: nothing live is ever dropped,
-            // and a tab the step didn't move doesn't move (S-7).
+            // The order (S-7): the tabs the window has now keep their order, except the ones
+            // the step moved, which go back after the tab they follow in the snapshot. Tabs the
+            // snapshot doesn't know about (made since) that still hold panes stay too: nothing
+            // live is ever dropped, and nothing the step didn't move moves.
             if let live {
-                var previous: UmiTab?
+                var order: [UmiTab] = []
                 for existing in live.tabs {
                     if tabs.contains(where: { $0 === existing }) {
-                        previous = existing
-                        continue
+                        if !moved.contains(existing.id) { order.append(existing) }
+                    } else if !live.tree(of: existing).isEmpty {
+                        if existing === live.selectedTab { existing.tree = live.surfaceTree }
+                        order.append(existing)
                     }
-                    guard !live.tree(of: existing).isEmpty else { continue }
-                    if existing === live.selectedTab { existing.tree = live.surfaceTree }
-                    let at = previous.flatMap { p in tabs.firstIndex { $0 === p } }.map { $0 + 1 } ?? 0
-                    tabs.insert(existing, at: at)
-                    previous = existing
                 }
+                for (index, tab) in tabs.enumerated() where !order.contains(where: { $0 === tab }) {
+                    let at = index == 0 ? 0 : (order.firstIndex { $0 === tabs[index - 1] }.map { $0 + 1 } ?? order.count)
+                    order.insert(tab, at: at)
+                }
+                tabs = order
             }
             guard !tabs.isEmpty else {
                 live?.closeWindowWithoutConfirmation()

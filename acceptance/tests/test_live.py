@@ -245,10 +245,12 @@ def test_a_turn_ending_never_moves_a_tab(inst, win, shown):
 
 
 @pytest.mark.req("S-7", "M-3", "AG-8")
-def test_undoing_a_move_leaves_a_tab_made_since_where_it_is(inst, win, shown):
-    """0.6.1 review round 2: a live interface hidden mid-turn and shown again (`agent open --tab
-    --focus`) gets a tab without an undo step of its own; undoing an earlier tab move then put that
-    tab last. It stays right after the tab it follows."""
+@pytest.mark.parametrize("after", ["unmoved", "moved"])
+def test_undo_and_redo_of_a_move_leave_a_tab_made_since_in_its_place(inst, win, shown, after):
+    """0.6.1 review rounds 2 and 3: a live interface hidden mid-turn and shown again (`agent open --tab
+    --focus`) gets a tab without an undo step of its own. Undoing an earlier tab move put that tab last,
+    then (after a first fix) carried it along with the moved tab when it followed that one. Undo and
+    redo move only the tab the step moved; the others, the new one included, keep their order."""
     window = win["window"]
     sid, pane = go_live(inst, shown, win, "claude")
     n = nonce()
@@ -261,16 +263,23 @@ def test_undoing_a_move_leaves_a_tab_made_since_where_it_is(inst, win, shown):
     b = inst.json("tab", "new", "--window", window, "--no-focus")["tab"]
     c = inst.json("tab", "new", "--window", window, "--no-focus")["tab"]
     inst.cli("tab", "move", c, "--up", "--no-focus")
-    inst.cli("tab", "focus", a)
     assert tab_ids(inst, window) == [a, c, b]
-    shown_again = inst.json("agent", "open", sid, "--tab", "--window", window, "--focus")["pane"]
-    assert shown_again == pane, "the same interface, shown again"
-    s = inst.find_pane(pane)[1]["id"]
-    assert tab_ids(inst, window) == [a, s, c, b], "shown right after the current tab"
+    # The tab shown again opens after the current tab: one the move didn't touch (a), or the moved one (c).
+    inst.cli("tab", "focus", a if after == "unmoved" else c)
+    assert inst.json("agent", "open", sid, "--tab", "--window", window, "--focus")["pane"] == pane
+    x = inst.find_pane(pane)[1]["id"]
+    shown_order = [a, x, c, b] if after == "unmoved" else [a, c, x, b]
+    assert tab_ids(inst, window) == shown_order, "shown right after the current tab"
     assert inst.rpc("debug.undo")["undo"] == "Move Tab Up"
     inst.rpc("debug.menu.perform", title="Undo")
-    wait_until(lambda: tab_ids(inst, window) != [a, s, c, b], 5, message="the move undone")
-    assert tab_ids(inst, window) == [a, s, b, c], "undoing the move moved the tab made since"
+    wait_until(lambda: tab_ids(inst, window) != shown_order, 5, message="the move undone")
+    assert tab_ids(inst, window) == [a, x, b, c], "undo moved more than the moved tab"
+    inst.rpc("debug.menu.perform", title="Redo")
+    wait_until(lambda: tab_ids(inst, window) != [a, x, b, c], 5, message="the move redone")
+    order = tab_ids(inst, window)
+    assert [t for t in order if t != c] == [a, x, b] and order.index(c) == 1, f"redo: {order}"
+    if after == "moved":
+        assert order == shown_order, "redo puts everything back as it was"
 
 
 @pytest.mark.req("AG-2")

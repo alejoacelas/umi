@@ -444,6 +444,9 @@ recency".
   also checks that the new tab a file from outside opens goes right after the current tab (it went
   last); new `ui` test `tests/test_umi_nav.py::test_cmd_t_opens_after_the_current_tab_and_redo_puts_it_back_there`
   (Redo of New Tab opened the tab one place further down). **Requirements:** S-7, E-10, M-3.
-- **Review round 2 (0.6.1)**: new `tests/test_live.py::test_undoing_a_move_leaves_a_tab_made_since_where_it_is`
-  (a hidden live interface shown again in a tab, then Undo of an earlier tab move: the tab went last).
-  **Requirements:** S-7, M-3.
+- **Review rounds 2 and 3 (0.6.1)**: new `tests/test_live.py::test_undo_and_redo_of_a_move_leave_a_tab_made_since_in_its_place`
+  (a hidden live interface shown again in a tab, after a tab the move didn't touch or after the moved
+  one, then Undo and Redo of the earlier move: the tab went last, then moved along with the moved tab),
+  and `tests/test_umi_nav.py::test_undo_and_redo_put_back_only_the_tabs_a_step_moved` (Move Tab Up, a
+  pin and a move to another window, undone and redone through the Edit menu without the accessibility
+  tree). **Requirements:** S-7, M-3.

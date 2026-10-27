@@ -1528,3 +1528,19 @@ current one while the user isn't looking, which is the kind of movement this cha
 (chosen): keeps Umi's placement where Warp has nothing to copy. A pane moved to a new tab still opens
 right after its own tab; moved into another window, it goes after that window's current tab when
 focused, else last. One function decides (`TerminalController.newTabIndex(selecting:)`).
+
+## 77. Undo and redo move only the tabs the step moved
+
+Moves, pins and pane moves are undone by putting back a snapshot of the windows. Tabs made after the
+step without an undo step of their own (a live interface hidden mid-turn and shown again with
+`agent open --tab`) aren't in it: the restore put them last (review round 2), and anchoring them to the
+tab before them moved them along with the moved tab (round 3). From the order alone it can't be told
+which tab a step moved ([A, C, B] → [A, B, C] is C going down or B going up), so the step now records
+the tabs it put in, took out of or moved (`TerminalController` reports `insertTab`, `detachTab`,
+`moveTab` and `setPinned` to `UmiLayout.tabMoved` while an `undoable` step runs). Undo and redo keep
+every other tab in its current order and put each recorded tab back after the tab it follows in the
+snapshot. A tab made since and the moved tab can still be ambiguous for redo ([A, S, C, B], undo, redo
+gives [A, C, S, B]: C goes back right after A); the rule keeps everything the step didn't move in order.
+
+**Evidence:** `test_undo_and_redo_of_a_move_leave_a_tab_made_since_in_its_place` (both cases, with the
+fake Claude), `test_undo_and_redo_put_back_only_the_tabs_a_step_moved`.

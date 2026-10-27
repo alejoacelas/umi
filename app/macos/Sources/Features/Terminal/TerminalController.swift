@@ -227,6 +227,7 @@ class TerminalController: BaseTerminalController {
         }
         tabs.insert(tab, at: position)
         setOccluded(tab.panes, occluded: tab !== selectedTabStorage)
+        UmiLayout.tabMoved(tab)
         UmiState.shared.layoutDidChange()
     }
 
@@ -239,6 +240,7 @@ class TerminalController: BaseTerminalController {
             if let focusedSurface, tab.contains(focusedSurface) { tab.focusedSurface = focusedSurface }
         }
         tabs.remove(at: index)
+        UmiLayout.tabMoved(tab)
         if tab === selectedTabStorage {
             if tabs.isEmpty {
                 if !keepWindow {
@@ -264,6 +266,7 @@ class TerminalController: BaseTerminalController {
             ? min(max(index, 0), pinnedCount)
             : min(max(index, pinnedCount), tabs.count)
         tabs.insert(tab, at: position)
+        UmiLayout.tabMoved(tab)
         UmiState.shared.layoutDidChange()
     }
 
@@ -275,6 +278,7 @@ class TerminalController: BaseTerminalController {
         tab.pinned = pinned
         let pinnedCount = tabs.filter(\.pinned).count
         tabs.insert(tab, at: pinnedCount)
+        UmiLayout.tabMoved(tab)
         UmiState.shared.layoutDidChange()
     }
 
