@@ -702,11 +702,20 @@ struct UmiSnapshot {
                 !c.isClosed && (c.window?.isVisible ?? false || c.presentsWithoutFocus) ? c : nil
             }
             // Tabs the window has now that the snapshot doesn't know about (and that still
-            // hold panes) stay, after the restored ones: nothing live is ever dropped.
+            // hold panes) stay, each after the tab it follows now: nothing live is ever dropped,
+            // and a tab the step didn't move doesn't move (S-7).
             if let live {
-                for existing in live.tabs where !tabs.contains(where: { $0 === existing }) && !live.tree(of: existing).isEmpty {
+                var previous: UmiTab?
+                for existing in live.tabs {
+                    if tabs.contains(where: { $0 === existing }) {
+                        previous = existing
+                        continue
+                    }
+                    guard !live.tree(of: existing).isEmpty else { continue }
                     if existing === live.selectedTab { existing.tree = live.surfaceTree }
-                    tabs.append(existing)
+                    let at = previous.flatMap { p in tabs.firstIndex { $0 === p } }.map { $0 + 1 } ?? 0
+                    tabs.insert(existing, at: at)
+                    previous = existing
                 }
             }
             guard !tabs.isEmpty else {

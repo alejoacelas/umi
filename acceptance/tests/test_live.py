@@ -244,6 +244,35 @@ def test_a_turn_ending_never_moves_a_tab(inst, win, shown):
     wait_until(lambda: row_marks(inst, window)[tb] == "finished", 10, message="the finish behind marked")
 
 
+@pytest.mark.req("S-7", "M-3", "AG-8")
+def test_undoing_a_move_leaves_a_tab_made_since_where_it_is(inst, win, shown):
+    """0.6.1 review round 2: a live interface hidden mid-turn and shown again (`agent open --tab
+    --focus`) gets a tab without an undo step of its own; undoing an earlier tab move then put that
+    tab last. It stays right after the tab it follows."""
+    window = win["window"]
+    sid, pane = go_live(inst, shown, win, "claude")
+    n = nonce()
+    inst.type_line(pane, f"SLEEP 20 {n}")
+    interface_pid(inst, n)
+    wait_status(inst, sid, "working")
+    inst.cli("agent", "hide", sid)
+    wait_until(lambda: not inst.find_pane(pane), 5, message="the interface out of sight")
+    a = win["tab"]
+    b = inst.json("tab", "new", "--window", window, "--no-focus")["tab"]
+    c = inst.json("tab", "new", "--window", window, "--no-focus")["tab"]
+    inst.cli("tab", "move", c, "--up", "--no-focus")
+    inst.cli("tab", "focus", a)
+    assert tab_ids(inst, window) == [a, c, b]
+    shown_again = inst.json("agent", "open", sid, "--tab", "--window", window, "--focus")["pane"]
+    assert shown_again == pane, "the same interface, shown again"
+    s = inst.find_pane(pane)[1]["id"]
+    assert tab_ids(inst, window) == [a, s, c, b], "shown right after the current tab"
+    assert inst.rpc("debug.undo")["undo"] == "Move Tab Up"
+    inst.rpc("debug.menu.perform", title="Undo")
+    wait_until(lambda: tab_ids(inst, window) != [a, s, c, b], 5, message="the move undone")
+    assert tab_ids(inst, window) == [a, s, b, c], "undoing the move moved the tab made since"
+
+
 @pytest.mark.req("AG-2")
 @pytest.mark.parametrize("kind", KINDS)
 def test_the_claude_and_codex_shortcuts_give_the_user_a_session(inst, win, shown, kind):
