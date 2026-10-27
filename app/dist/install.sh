@@ -71,13 +71,14 @@ if pgrep -f "^$dest/Contents/MacOS/" >/dev/null 2>&1; then
 fi
 
 mkdir -p "$(dirname "$dest")"
-staged="$dest.installing-$$"
+# Hidden names keep launchers like Raycast and Spotlight from listing the half-copied app.
+staged="$(dirname "$dest")/.$(basename "$dest").installing-$$"
 rm -rf "$staged"
 ditto "$src" "$staged" || die "couldn't copy the app to $(dirname "$dest")"
 # The download quarantine is what makes macOS ask (or refuse) to open an unnotarized app.
 xattr -cr "$staged" 2>/dev/null || true
 if [[ -d "$dest" ]]; then
-    old="$dest.old-$$"
+    old="$(dirname "$dest")/.$(basename "$dest").old-$$"
     mv "$dest" "$old"
     mv "$staged" "$dest" || { mv "$old" "$dest"; die "couldn't install into $dest"; }
     rm -rf "$old"

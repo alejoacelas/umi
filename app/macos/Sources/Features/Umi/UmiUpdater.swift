@@ -598,7 +598,7 @@ final class UmiUpdater: ObservableObject {
         sleep 0.2
     done
     [ -d "$staged" ] || { echo "staged app missing"; exit 1; }
-    old="$dest.old-$$"
+    old="$(dirname "$dest")/.$(basename "$dest").old-$$"
     if mv "$dest" "$old" && mv "$staged" "$dest"; then
         rm -rf "$old"
         /usr/bin/xattr -cr "$dest" 2>/dev/null
