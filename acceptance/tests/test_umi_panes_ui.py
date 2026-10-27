@@ -744,10 +744,13 @@ def test_markdown_opens_in_the_tab_whose_folder_is_closest(inst, win, tmp_path):
     # Already open: it shows where it is.
     inst.cli("tab", "focus", t_root)
     assert opened(deep / "guide.md")["tab"] == t_pkg
-    # No tab above it: a new tab in its folder, in the current window; the next file there joins it.
+    # No tab above it: a new tab in its folder, in the current window, right after the current tab
+    # (S-7); the next file there joins it.
+    inst.cli("tab", "focus", win["tab"])
     before = tab_ids(inst, win["window"])
     first = opened(elsewhere / "notes.md")
     assert first["window"] == win["window"] and first["tab"] not in before
+    assert tab_ids(inst, win["window"]) == before[:1] + [first["tab"]] + before[1:], "right after the current tab"
     new_pane = tab_of(inst, first["tab"])["panes"][0]
     assert os.path.realpath(new_pane["cwd"]) == os.path.realpath(elsewhere)
     assert opened(elsewhere / "more.md")["tab"] == first["tab"]

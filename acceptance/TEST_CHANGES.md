@@ -440,3 +440,7 @@ recency".
 - **Changed, `tests/test_umi_panes_ui.py::test_move_tab_up_and_down_stay_in_their_pin_group`**: it
   allowed any order of the unpinned tabs after pinning ("pinning re-sorts the unpinned tabs"); it now
   asserts the exact order (only the pinned tab moves, to the end of the pinned group).
+- **Review round 1 (0.6.1)**: `tests/test_umi_panes_ui.py::test_markdown_opens_in_the_tab_whose_folder_is_closest`
+  also checks that the new tab a file from outside opens goes right after the current tab (it went
+  last); new `ui` test `tests/test_umi_nav.py::test_cmd_t_opens_after_the_current_tab_and_redo_puts_it_back_there`
+  (Redo of New Tab opened the tab one place further down). **Requirements:** S-7, E-10, M-3.

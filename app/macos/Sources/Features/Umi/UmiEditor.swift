@@ -572,13 +572,15 @@ enum UmiEditor {
         }
         if let best { return (best.window, best.tab) }
 
-        // No tab is in or above the file's folder: a new tab there.
+        // No tab is in or above the file's folder: a new tab there. It's made in the background and
+        // `open` then shows it, so it goes where a new tab the user goes to opens (S-7).
         var options = UmiLayout.PaneOptions()
         options.cwd = url.deletingLastPathComponent().path
         let created: [String: Any]
         if let current {
             created = try UmiLayout.newTab(in: current, options: options, tabName: nil, color: .none,
-                                            index: nil, focus: false, inheritFrom: nil)
+                                            index: current.newTabIndex(selecting: true) + 1, focus: false,
+                                            inheritFrom: nil)
         } else {
             created = try UmiLayout.newWindow(options, tabName: nil, focus: false)
         }

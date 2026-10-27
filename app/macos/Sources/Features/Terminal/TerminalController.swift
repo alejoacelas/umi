@@ -662,6 +662,8 @@ class TerminalController: BaseTerminalController {
         tab.name = name
         tab.color = color
         insertTab(tab, at: index ?? newTabIndex(selecting: select))
+        // Where it went, for redo: by then the selection (and so `newTabIndex`) may differ.
+        let placed = self.index(of: tab)
         if select {
             selectTab(tab, focus: focus)
             if focus {
@@ -679,7 +681,7 @@ class TerminalController: BaseTerminalController {
                 }
                 // Redo opens the tab again, like Ghostty's New Tab.
                 undoManager.registerUndo(withTarget: target, expiresAfter: target.undoExpiration) { target in
-                    target.addTab(config: config, at: index, select: select, focus: focus, name: name, color: color)
+                    target.addTab(config: config, at: placed ?? index, select: select, focus: focus, name: name, color: color)
                 }
             }
         }

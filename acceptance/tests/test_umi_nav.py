@@ -685,6 +685,29 @@ def test_tab_keys_from_the_editor_the_file_tree_and_the_palette(inst, win, ui, t
     inst.cli("sidebar", "tabs")
 
 
+@pytest.mark.req("S-7", "M-3")
+def test_cmd_t_opens_after_the_current_tab_and_redo_puts_it_back_there(inst, win, ui):
+    """⌘T opens a tab right after the current one (S-7); Undo closes it and Redo opens it again in
+    the same place (0.6.1 review round 1: redo worked out the place again after Undo had selected the
+    next tab, and opened it one further down)."""
+    a = win["tab"]
+    b = new_tab(inst, win, "--no-focus")["tab"]
+    c = new_tab(inst, win, "--no-focus")["tab"]
+    inst.cli("tab", "focus", a)
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+    ui.choose(ui.menu_item("New Tab"))
+    wait_until(lambda: len(tab_ids(inst, win["window"])) == 4, 5, message="⌘T made a tab")
+    made = tab_ids(inst, win["window"])
+    assert made[0] == a and made[2:] == [b, c], f"not right after the current tab: {made}"
+    ui.choose(ui.menu_item("Undo"))
+    wait_until(lambda: tab_ids(inst, win["window"]) == [a, b, c], 5, message="undo closed it")
+    ui.choose(ui.menu_item("Redo"))
+    wait_until(lambda: len(tab_ids(inst, win["window"])) == 4, 5, message="redo opened it again")
+    again = tab_ids(inst, win["window"])
+    assert again[0] == a and again[2:] == [b, c], f"redo put it elsewhere: {again}"
+
+
 @pytest.mark.req("L-14")
 def test_cmd_p_runs_a_cli_command_typed_into_the_palette(inst, win, ui):
     ui.activate()
