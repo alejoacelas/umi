@@ -300,8 +300,11 @@ enum UmiQuiet {
         }
         // Whatever the shell started besides what is in front (and what that started) is a job a
         // relaunch would end: `sleep 600 &`, a suspended program, a server left running.
+        // (Without job control a job stays in the shell's own group: with the shell in front,
+        // every process it started counts.)
         let inFront: Set<pid_t> = front == shell ? [] : Set([front] + processes.descendants(of: front))
-        for pid in processes.descendants(of: shell) where !inFront.contains(pid) && processes.byPID[pid]?.pgid != front {
+        for pid in processes.descendants(of: shell)
+        where !inFront.contains(pid) && (front == shell || processes.byPID[pid]?.pgid != front) {
             let job = UmiProcess.name(pid) ?? "a process"
             if !promptHelpers.contains(job) { return .job(job) }
         }
@@ -337,8 +340,8 @@ extension UmiAgentSession {
         }
         // Any interface of its own in a pane, Codex's attached one included.
         if record.live == true, liveDraft { return "something is typed in its interface" }
-        if record.live == true, liveInputUnsure {
-            return "its interface may have a prompt from its history on its input line (send or clear it)"
+        if record.live == true, liveInputTouched {
+            return "its interface's input line may hold text (send it, or clear it with Ctrl-C)"
         }
         switch status {
         case "working": return activityText == "working" ? "a turn is running" : "a turn is running (\(activityText))"

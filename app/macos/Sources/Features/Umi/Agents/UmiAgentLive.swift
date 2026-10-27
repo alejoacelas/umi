@@ -156,7 +156,7 @@ extension UmiAgentSession {
             record.livePID = nil
             record.goLiveWhenSettled = nil
             liveState = record.kind == .codex ? .idle : .starting
-            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false; liveCursorMoved = false
+            liveDraft = false; liveDraftChars = 0; liveInputTouched = false
             liveBackground = 0
             liveActivity = ""
             goingLive = false
@@ -262,9 +262,11 @@ extension UmiAgentSession {
             if record.kind == .codex || claudeConversationOnDisk { record.conversation = true }
             saveRecord()
             if liveState == .starting || liveState == nil { liveState = .idle }
+            // A fresh interface, or one `/clear` just reset: its input line is empty.
+            liveDraft = false; liveDraftChars = 0; liveInputTouched = false
         case "UserPromptSubmit":
             liveState = .working
-            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false; liveCursorMoved = false
+            liveDraft = false; liveDraftChars = 0; liveInputTouched = false
             liveActivity = ""
             liveTurnError = nil
             liveTurnFailedAt = nil
@@ -365,14 +367,8 @@ extension UmiAgentSession {
             }
             liveDraftChars = max(0, liveDraftChars + typed)
             let had = liveDraft
-            if typed > 0 {
-                liveDraft = true
-            } else if typed < 0 && liveCursorMoved {
-                // Where the cursor is, Umi can't tell what Backspace removed.
-                liveInputUnsure = true
-            } else if typed < 0 && liveDraftChars == 0 {
-                liveDraft = false
-            }
+            if typed > 0 { liveDraft = true } else if typed < 0 && liveDraftChars == 0 { liveDraft = false }
+            liveInputTouched = true
             changed()
             if had && !liveDraft { pump() }
             return
@@ -383,8 +379,7 @@ extension UmiAgentSession {
             if clearsInput {
                 liveDraft = false
                 liveDraftChars = 0
-                liveInputUnsure = false
-                liveCursorMoved = false
+                liveInputTouched = false
                 pump()
             }
             changed()
@@ -412,34 +407,23 @@ extension UmiAgentSession {
         }
     }
 
-    /// The user emptied the interface's input line: messages that waited for it can go.
+    /// The user emptied the interface's input line: messages that waited for it can go. (It may
+    /// have cleared only part of it, so the line still counts as touched for an update.)
     func liveDraftCleared() {
         lastLiveKey = Date()
         liveDraft = false
         liveDraftChars = 0
-        // With the cursor moved, Ctrl-U clears only what is before it.
-        if liveCursorMoved { liveInputUnsure = true } else { liveInputUnsure = false }
+        liveInputTouched = true
         changed()
         pump()
     }
 
-    /// Left, Right, Home or End on the input line.
-    func liveCursor() {
+    /// Any other key on the interface's input line (moving the cursor, recalling a prompt,
+    /// opening an editor): it may hold text Umi can't follow. Keys answering a permission or
+    /// question dialog don't count.
+    func liveInputEdited() {
         lastLiveKey = Date()
-        if liveState == .idle || liveState == .working { liveCursorMoved = true }
-        changed()
-    }
-
-    /// Up or Down at the interface's prompt: it may have put an earlier prompt on the input line.
-    func liveHistory() {
-        lastLiveKey = Date()
-        liveInputMayHoldText()
-    }
-
-    /// The input line may hold text Umi didn't see typed (it isn't a permission or question
-    /// dialog, where keys answer it).
-    func liveInputMayHoldText() {
-        if liveState == .idle || liveState == .working { liveInputUnsure = true }
+        if liveState != .needsInput { liveInputTouched = true }
         changed()
     }
 
@@ -468,7 +452,7 @@ extension UmiAgentSession {
         record.livePID = nil
         record.liveAttached = nil
         liveState = nil
-        liveDraft = false; liveDraftChars = 0; liveInputUnsure = false; liveCursorMoved = false
+        liveDraft = false; liveDraftChars = 0; liveInputTouched = false
         liveBackground = 0
         liveActivity = ""
         reclaiming = false

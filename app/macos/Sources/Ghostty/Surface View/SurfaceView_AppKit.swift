@@ -2149,6 +2149,8 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // All committed text (IME, dictation, etc.) must be sent as key
         // events so programs treat it as typed input, never as a paste.
         if !chars.isEmpty {
+            // Umi: text a session's live interface gets without a key (dictation) is a draft there.
+            if UmiAgentUI.shared.livePanes.contains(id) { UmiAgentUI.shared.pasted(pane: self, text: chars) }
             _ = committedTextAction(GHOSTTY_ACTION_PRESS, text: chars)
         }
     }
@@ -2339,6 +2341,8 @@ extension Ghostty.SurfaceView {
         let content = pb.getOpinionatedStringContents()
 
         if let content {
+            // Umi: dropped into a session's live interface, it's a draft there.
+            if UmiAgentUI.shared.livePanes.contains(id) { UmiAgentUI.shared.pasted(pane: self, text: content) }
             DispatchQueue.main.async {
                 self.surfaceModel?.sendText(content)
             }

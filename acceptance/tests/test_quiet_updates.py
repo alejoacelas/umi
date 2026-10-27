@@ -111,6 +111,11 @@ def test_a_busy_pane_is_not_quiet(calm):
     busy_with(["sleep", "background"])
     inst.cli("send", "--pane", pane, "--enter", "kill %1")
     wait_quiet(inst)
+    # Without job control a job stays in the shell's own process group.
+    inst.cli("send", "--pane", pane, "--enter", "unsetopt monitor; sleep 301 & echo started-$!; setopt monitor")
+    busy_with(["sleep", "background"])
+    inst.cli("send", "--pane", pane, "--enter", "pkill -f 'sleep 301'")
+    wait_quiet(inst)
 
     # A shell started from the pane's shell is a program running there (its state would be lost).
     inst.cli("send", "--pane", pane, "--enter", "/bin/zsh")
@@ -164,6 +169,8 @@ def test_a_running_turn_or_a_waiting_message_is_not_quiet(calm):
     inst.send(lid, f"ECHO waiting {nonce()}")
     wait_reason(inst, lambda r: r.get("session") == lid and "waiting to be delivered" in r["reason"])
     inst.cli("keys", "--pane", lpane, "ctrl+u")
+    # The message goes (the draft is cleared), the interface comes back; its line counts as empty once
+    # it's back (a fresh interface).
     wait_quiet(inst, timeout=60)
     # A prompt typed and sent in Codex's interface (attached to Umi's server): once its turn is
     # done, the interface is empty again, and quiet.
@@ -228,30 +235,27 @@ def test_idle_agents_in_panes_are_quiet(calm):
     inst.cli("send", "--pane", typed_pane, "not sent yet")
     found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
     assert "typed in its interface" in found["reason"], found
-    # Esc at the prompt leaves what was typed (only a turn is interrupted); Ctrl-U clears it.
-    inst.cli("keys", "--pane", typed_pane, "esc")
-    time.sleep(0.5)
-    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "Esc counted as clearing the draft"
-    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+    # Esc at the prompt leaves what was typed (only a turn is interrupted). Ctrl-U may clear only part
+    # of the line (before the cursor, or one line of several): still counted. Ctrl-C at the prompt
+    # clears the whole line in Claude Code and Codex.
+    for key in ("esc", "ctrl+u"):
+        inst.cli("keys", "--pane", typed_pane, key)
+        time.sleep(0.5)
+        assert any(r.get("session") == typed["id"] for r in reasons(inst)), f"{key} counted as emptying the line"
+    inst.cli("keys", "--pane", typed_pane, "ctrl+c")
     wait_quiet(inst)
-    # Up (or Ctrl-P, or any edit Umi can't follow) may put an earlier prompt on the input line: not
-    # quiet until it's sent or cleared.
-    for key in ("up", "ctrl+p"):
+    # Recalling a prompt (Up, Ctrl-P) or moving the cursor: the line may hold text Umi can't follow.
+    for key in ("up", "ctrl+p", "left"):
         inst.cli("keys", "--pane", typed_pane, key)
         found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
-        assert "history" in found["reason"], (key, found)
-        inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+        assert "may hold text" in found["reason"], (key, found)
+        inst.cli("keys", "--pane", typed_pane, "ctrl+c")
         wait_quiet(inst)
-    # With the cursor moved, Backspace may delete nothing and Ctrl-U leaves what follows the cursor:
-    # what was typed still counts.
+    # Sending a prompt empties the line.
     inst.cli("send", "--pane", typed_pane, "a")
-    inst.cli("keys", "--pane", typed_pane, "left", "backspace")
-    time.sleep(0.5)
-    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "a draft Umi lost track of counted as empty"
-    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
-    time.sleep(0.5)
-    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "Ctrl-U after moving the cursor counted as empty"
-    inst.type_line(typed_pane, "ECHO sent")      # sending it empties the line
+    assert wait_reason(inst, lambda r: r.get("session") == typed["id"])
+    inst.cli("keys", "--pane", typed_pane, "ctrl+u")     # (the fake's Ctrl-C doesn't clear its line)
+    inst.type_line(typed_pane, "ECHO sent")
     wait_quiet(inst, timeout=30)
     for s in (lid, viewed, typed["id"]):
         inst.cli("agent", "stop", s, check=False, timeout=60)

@@ -228,10 +228,8 @@ extension UmiAgentUI {
             case .escape:
                 // Interrupts a turn like Ctrl-C, but at the prompt it leaves what was typed.
                 s.liveKey(interrupt: true, typed: 0, clearsInput: false)
-            case .history:
-                s.liveHistory()
-            case .cursor:
-                s.liveCursor()
+            case .history, .cursor:
+                s.liveInputEdited()
             case .delete:
                 s.liveKey(interrupt: false, typed: -1)
             case .text(let count):
@@ -241,10 +239,8 @@ extension UmiAgentUI {
                 // or Ctrl-N recalling a prompt, Ctrl-G opening an editor): if text was typed, it
                 // still counts as typed, and the line may now hold text Umi didn't see.
                 s.liveKey(interrupt: false, typed: 0)
-                s.liveInputMayHoldText()
             case .other:
-                s.lastLiveKey = Date()
-                s.changed()
+                s.liveInputEdited()
             }
         }
     }

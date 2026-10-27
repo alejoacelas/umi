@@ -492,3 +492,8 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   and Ctrl-U (still not quiet), then sends the line (quiet); `test_a_running_turn_or_a_waiting_message_is_not_quiet`
   also checks a Codex `BACKGROUND` command left running after its turn, and that a prompt sent in
   Codex's attached interface leaves it quiet once its turn is done. **Requirement:** I-4.
+- **Review round 4 (0.6.2)**: anything reaching an agent's input line now counts until a prompt is sent
+  or Ctrl-C clears it, so `test_idle_agents_in_panes_are_quiet` checks that Esc and Ctrl-U leave it
+  counted, that Up, Ctrl-P and Left make it count, and that Ctrl-C or sending a prompt empties it (the
+  round-3 checks of Left and Backspace are part of this); `test_a_busy_pane_is_not_quiet` adds a job
+  started with job control off (it stays in the shell's own process group). **Requirement:** I-4.

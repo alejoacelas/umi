@@ -1593,15 +1593,16 @@ once a second while an update waits (one read of the process table, one terminal
     an empty prompt, or exited: the terminal can be shown and used under the view). A live interface is
     quiet when it is what's in front, known by its process (the group of the process its hooks came
     from) or by the session its environment names (Umi started it), never by its arguments, and its
-    session is idle with nothing typed. "Nothing typed" is what Umi saw typed, pasted or cleared, made
-    conservative (review rounds 1 and 2): Esc at the prompt doesn't clear it (only a turn is
-    interrupted); Up, Down and any edit Umi can't follow (Ctrl-P and Ctrl-N recall prompts, Ctrl-G opens
-    an external editor, a word deleted) may leave text Umi didn't see, so the line counts as possibly
-    holding text until it is sent or cleared (Ctrl-C, Ctrl-U) or the interface ends. Once the cursor has
-    moved (Left, Right, Home, End), Backspace and Ctrl-U no longer count as emptying the line (round
-    3). A prompt sent in Codex's attached interface is seen as sent when its turn starts (that
-    interface has no hook of its own). That can hold an update back until the next prompt is sent; it
-    never lets one discard a draft.
+    session is idle with nothing typed. Umi can't read an agent's input line, and following it keystroke
+    by keystroke failed four review rounds in a row (Esc, history recall, Ctrl-P, Ctrl-G, cursor moves
+    before Backspace or Ctrl-U, multi-line pastes, drops, dictation). So for an update the rule is
+    blunt: once anything reaches the input line (a key other than Enter, a paste, a drop, dictated
+    text), it counts as possibly holding text until a prompt is sent (its hook, or for Codex's attached
+    interface the turn it starts), Ctrl-C at the prompt clears it (as Claude Code and Codex do), the
+    interface starts or `/clear` resets it, or the interface ends. Keys answering a permission or
+    question dialog don't count. This can hold an update back until the next prompt is sent (the status
+    says to send it or press Ctrl-C); it never lets one discard a draft. Delivering messages to a live
+    Claude (AG-9) keeps its own, finer tracking (except that Esc no longer counts as clearing a draft).
   - A pane whose process exited is quiet.
 - **Unsaved work**: editor documents with unsaved changes; a modal window, a sheet, a text field being
   edited (a tab rename, a search), the command palette.
