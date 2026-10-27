@@ -33,7 +33,10 @@ stop() {
     local pid
     pid="$(running_pid)"
     [[ -n "$pid" ]] || return 0
-    osascript -e "tell application id \"dev.umi.app.debug\" to quit" >/dev/null 2>&1 || kill "$pid" 2>/dev/null || true
+    # Quit this process only. Addressing the app by name or bundle id can reach the installed
+    # Umi instead: both are called Umi.
+    osascript -l JavaScript -e "ObjC.import('AppKit'); \$.NSRunningApplication.runningApplicationWithProcessIdentifier($pid).terminate" >/dev/null 2>&1 \
+        || kill "$pid" 2>/dev/null || true
     for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || return 0; sleep 0.1; done
     kill "$pid" 2>/dev/null || true
 }
