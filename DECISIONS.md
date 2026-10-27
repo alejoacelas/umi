@@ -1668,7 +1668,8 @@ C is what the brief asked for. The staged update keeps its zip and what it was v
 replaced version to `kept/previous` and removes other kept versions. For a running version without a
 kept zip, the updater fetches its own release again, from the feed `release.sh` now stamps into each
 release (`UmiReleaseFeedURL`), and verifies it like an update while the new version is staged; the
-countdown waits for that. `update --now` waits for that too (at most a minute and a half; review round 1).
+countdown waits for that. `update --now` waits for that too (at most a minute and a half; review round 1), and a plain quit while
+it is still being fetched leaves the update for the next run, which fetches both again (round 11).
 Rollback verifies the kept zip again (signature, hash, bundle id, version,
 code signature) and installs through the same helper. It marks the version it left
 (`rolled_back_from`): that version and older ones never install by themselves again, so a rollback
@@ -1723,7 +1724,7 @@ settings, other options its harness arguments. Parsing follows `claude --help` (
 it takes without listing them (`--thinking`, `--channels`, …; review round 10): options that take
 several values take them up to the next option, as Claude's own parser does. An option it doesn't know
 is kept as a switch and a word after it left out: running the first prompt again would be worse than a
-flag missing its value. Left out: what picks
+flag missing its value. Left out: everything after `--` (round 11), what picks
 a conversation (`--resume`, `--continue`, `--session-id`, `--fork-session`), one-offs (`--print`,
 `--worktree`, `--tmux`, `--bg`), Umi's or Tern's plugin, and the first prompt, which isn't run again.
 For a typed Codex only the model, effort, approvals, full access and profile are kept: its interface

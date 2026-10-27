@@ -112,6 +112,8 @@ enum UmiTypedCommand {
                 }
                 return out
             }
+            // Everything after `--` is the first prompt.
+            if args[i] == "--" { break }
             switch arg {
             case "--model": flags.model = value()
             case "--effort": flags.effort = value()
@@ -166,6 +168,7 @@ enum UmiTypedCommand {
                 i += 1
                 return args[i]
             }
+            if args[i] == "--" { break }
             switch arg {
             case "-m", "--model": flags.model = value()
             case "-a", "--ask-for-approval": flags.permissionMode = value()

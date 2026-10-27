@@ -1089,6 +1089,10 @@ final class UmiUpdater: ObservableObject {
         guard installOnQuit, let staged else { return }
         // An isolated instance never replaces the user's installed app.
         guard installTargetProblem == nil else { return }
+        // A quit while this version's own zip is still being fetched (for a rollback) leaves the
+        // update for the next run, which fetches both again: going back stays possible. (Installs
+        // Umi starts itself wait for it.)
+        guard keepingArchive == nil || relaunchAfterInstall else { return }
         let destination = Bundle.main.bundleURL
         let script = (updatesDirectory as NSString).appendingPathComponent("install.sh")
         let log = (updatesDirectory as NSString).appendingPathComponent("install.log")
