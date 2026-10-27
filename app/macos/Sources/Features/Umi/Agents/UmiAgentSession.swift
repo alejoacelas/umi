@@ -135,6 +135,10 @@ final class UmiAgentSession {
     /// input, so only what surely empties the line ends it: a prompt sent, Ctrl-C at the prompt,
     /// the interface ending.
     var liveInputTouched = false
+    /// Counts what reaches the input line, and the count at the last Enter: a prompt sent (perhaps
+    /// one queued during a turn) leaves the line empty only if nothing reached it after that Enter.
+    var liveInputSeq = 0
+    var liveEnterSeq = 0
     var lastLiveKey: Date?
     /// Background work the live interface reported at its last Stop.
     var liveBackground = 0
@@ -813,7 +817,7 @@ final class UmiAgentSession {
             // The user started it in the agent's own interface: theirs to finish, and recorded so
             // a quit or crash continues it (AG-22). What they typed was sent (attached Codex has
             // no hook of its own that says so).
-            liveDraft = false; liveDraftChars = 0; liveInputTouched = false
+            livePromptSent()
             liveTurnError = nil
             liveTurnFailedAt = nil
             record.openSelfTurn = true

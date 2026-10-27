@@ -497,3 +497,7 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   counted, that Up, Ctrl-P and Left make it count, and that Ctrl-C or sending a prompt empties it (the
   round-3 checks of Left and Backspace are part of this); `test_a_busy_pane_is_not_quiet` adds a job
   started with job control off (it stays in the shell's own process group). **Requirement:** I-4.
+- **Review round 5 (0.6.2)**: Ctrl-C no longer counts as emptying an agent's input line for an update,
+  so `test_idle_agents_in_panes_are_quiet` sends a prompt where it pressed Ctrl-C, checks that Ctrl-C
+  keeps the line counted, and adds a prompt queued during a turn followed by a newer unsent draft
+  (still counted once the turns are done). **Requirement:** I-4.

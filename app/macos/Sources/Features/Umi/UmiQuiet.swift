@@ -341,7 +341,7 @@ extension UmiAgentSession {
         // Any interface of its own in a pane, Codex's attached one included.
         if record.live == true, liveDraft { return "something is typed in its interface" }
         if record.live == true, liveInputTouched {
-            return "its interface's input line may hold text (send it, or clear it with Ctrl-C)"
+            return "its interface's input line may hold text (an update waits until a prompt is sent or the interface closes)"
         }
         switch status {
         case "working": return activityText == "working" ? "a turn is running" : "a turn is running (\(activityText))"

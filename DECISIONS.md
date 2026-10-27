@@ -1598,11 +1598,14 @@ once a second while an update waits (one read of the process table, one terminal
     before Backspace or Ctrl-U, multi-line pastes, drops, dictation). So for an update the rule is
     blunt: once anything reaches the input line (a key other than Enter, a paste, a drop, dictated
     text), it counts as possibly holding text until a prompt is sent (its hook, or for Codex's attached
-    interface the turn it starts), Ctrl-C at the prompt clears it (as Claude Code and Codex do), the
-    interface starts or `/clear` resets it, or the interface ends. Keys answering a permission or
-    question dialog don't count. This can hold an update back until the next prompt is sent (the status
-    says to send it or press Ctrl-C); it never lets one discard a draft. Delivering messages to a live
-    Claude (AG-9) keeps its own, finer tracking (except that Esc no longer counts as clearing a draft).
+    interface the turn it starts), the interface starts or `/clear` resets it, or the interface ends.
+    A prompt sent counts only if nothing reached the line after the last Enter: a prompt queued during
+    a turn and taken in later doesn't clear a newer draft (round 5). Ctrl-C doesn't count either: it
+    clears the line in Claude Code and Codex, but a `key-remap` can turn it into Copy before the
+    interface sees it (round 5). Keys answering a permission or question dialog don't count. This can
+    hold an update back until the next prompt is sent (the status says so); it never lets one discard
+    a draft. Delivering messages to a live Claude (AG-9) keeps its own, finer tracking (Esc no longer
+    counts as clearing a draft there, and neither does a queued prompt taken in after a newer draft).
   - A pane whose process exited is quiet.
 - **Unsaved work**: editor documents with unsaved changes; a modal window, a sheet, a text field being
   edited (a tab rename, a search), the command palette.

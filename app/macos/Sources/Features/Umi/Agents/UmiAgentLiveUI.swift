@@ -220,7 +220,7 @@ extension UmiAgentUI {
             guard let s = UmiAgents.shared.session(id: session), s.record.live == true else { return }
             switch input {
             case .submit:
-                s.lastLiveKey = Date()   // UserPromptSubmit says whether something was sent
+                s.liveEnterPressed()     // UserPromptSubmit says whether something was sent
             case .clear:
                 s.liveDraftCleared()     // Ctrl-U empties the input line
             case .interrupt:

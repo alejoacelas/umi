@@ -235,27 +235,35 @@ def test_idle_agents_in_panes_are_quiet(calm):
     inst.cli("send", "--pane", typed_pane, "not sent yet")
     found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
     assert "typed in its interface" in found["reason"], found
-    # Esc at the prompt leaves what was typed (only a turn is interrupted). Ctrl-U may clear only part
-    # of the line (before the cursor, or one line of several): still counted. Ctrl-C at the prompt
-    # clears the whole line in Claude Code and Codex.
-    for key in ("esc", "ctrl+u"):
+    # Esc leaves what was typed; Ctrl-U may clear only part of the line (before the cursor, or one
+    # line of several); Ctrl-C may be remapped and never reach the interface. None of them counts as
+    # emptying the line; sending a prompt does.
+    for key in ("esc", "ctrl+u", "ctrl+c"):
         inst.cli("keys", "--pane", typed_pane, key)
         time.sleep(0.5)
         assert any(r.get("session") == typed["id"] for r in reasons(inst)), f"{key} counted as emptying the line"
-    inst.cli("keys", "--pane", typed_pane, "ctrl+c")
-    wait_quiet(inst)
+    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+    inst.type_line(typed_pane, f"ECHO sent {nonce()}")
+    wait_quiet(inst, timeout=30)
     # Recalling a prompt (Up, Ctrl-P) or moving the cursor: the line may hold text Umi can't follow.
     for key in ("up", "ctrl+p", "left"):
         inst.cli("keys", "--pane", typed_pane, key)
         found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
         assert "may hold text" in found["reason"], (key, found)
-        inst.cli("keys", "--pane", typed_pane, "ctrl+c")
-        wait_quiet(inst)
-    # Sending a prompt empties the line.
-    inst.cli("send", "--pane", typed_pane, "a")
-    assert wait_reason(inst, lambda r: r.get("session") == typed["id"])
-    inst.cli("keys", "--pane", typed_pane, "ctrl+u")     # (the fake's Ctrl-C doesn't clear its line)
-    inst.type_line(typed_pane, "ECHO sent")
+        inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+        inst.type_line(typed_pane, f"ECHO sent {nonce()}")
+        wait_quiet(inst, timeout=30)
+    # A prompt sent while a turn runs (queued, taken in later), then a newer draft left unsent: taking
+    # the queued prompt in doesn't count the newer draft as sent.
+    inst.type_line(typed_pane, f"SLEEP 4 {nonce()}")
+    wait_until(lambda: inst.info(typed["id"])["status"] == "working", 10, message="the turn")
+    inst.type_line(typed_pane, f"ECHO queued {nonce()}")
+    inst.cli("send", "--pane", typed_pane, "a newer draft")
+    wait_until(lambda: inst.info(typed["id"])["status"] == "idle", 30, message="the turns done")
+    time.sleep(1)
+    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "the newer draft counted as sent"
+    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+    inst.type_line(typed_pane, f"ECHO last {nonce()}")
     wait_quiet(inst, timeout=30)
     for s in (lid, viewed, typed["id"]):
         inst.cli("agent", "stop", s, check=False, timeout=60)

@@ -156,7 +156,7 @@ extension UmiAgentSession {
             record.livePID = nil
             record.goLiveWhenSettled = nil
             liveState = record.kind == .codex ? .idle : .starting
-            liveDraft = false; liveDraftChars = 0; liveInputTouched = false
+            liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq
             liveBackground = 0
             liveActivity = ""
             goingLive = false
@@ -263,10 +263,10 @@ extension UmiAgentSession {
             saveRecord()
             if liveState == .starting || liveState == nil { liveState = .idle }
             // A fresh interface, or one `/clear` just reset: its input line is empty.
-            liveDraft = false; liveDraftChars = 0; liveInputTouched = false
+            liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq
         case "UserPromptSubmit":
             liveState = .working
-            liveDraft = false; liveDraftChars = 0; liveInputTouched = false
+            livePromptSent()
             liveActivity = ""
             liveTurnError = nil
             liveTurnFailedAt = nil
@@ -368,7 +368,7 @@ extension UmiAgentSession {
             liveDraftChars = max(0, liveDraftChars + typed)
             let had = liveDraft
             if typed > 0 { liveDraft = true } else if typed < 0 && liveDraftChars == 0 { liveDraft = false }
-            liveInputTouched = true
+            touchInput()
             changed()
             if had && !liveDraft { pump() }
             return
@@ -377,9 +377,10 @@ extension UmiAgentSession {
             // Ctrl-C at an idle prompt clears what was typed: what waited for that can go. (Esc
             // leaves it.)
             if clearsInput {
+                // (For an update the line still counts: a remapped Ctrl-C may have been a copy, and
+                // never reached the interface.)
                 liveDraft = false
                 liveDraftChars = 0
-                liveInputTouched = false
                 pump()
             }
             changed()
@@ -413,7 +414,7 @@ extension UmiAgentSession {
         lastLiveKey = Date()
         liveDraft = false
         liveDraftChars = 0
-        liveInputTouched = true
+        touchInput()
         changed()
         pump()
     }
@@ -423,8 +424,28 @@ extension UmiAgentSession {
     /// question dialog don't count.
     func liveInputEdited() {
         lastLiveKey = Date()
-        if liveState != .needsInput { liveInputTouched = true }
+        if liveState != .needsInput { touchInput() }
         changed()
+    }
+
+    private func touchInput() {
+        liveInputTouched = true
+        liveInputSeq &+= 1
+    }
+
+    /// Enter in the interface: if it sends a prompt, its hook (or turn) comes later.
+    func liveEnterPressed() {
+        lastLiveKey = Date()
+        if liveState != .needsInput { liveEnterSeq = liveInputSeq }
+    }
+
+    /// The interface sent a prompt: the line is empty again unless something reached it after
+    /// the last Enter (a draft typed while a queued prompt waited).
+    func livePromptSent() {
+        guard liveInputSeq == liveEnterSeq else { return }
+        liveDraft = false
+        liveDraftChars = 0
+        liveInputTouched = false
     }
 
     /// The live interface closed (its SessionEnd hook, its process gone, or its pane closed):
@@ -452,7 +473,7 @@ extension UmiAgentSession {
         record.livePID = nil
         record.liveAttached = nil
         liveState = nil
-        liveDraft = false; liveDraftChars = 0; liveInputTouched = false
+        liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq
         liveBackground = 0
         liveActivity = ""
         reclaiming = false
