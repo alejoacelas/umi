@@ -180,7 +180,9 @@ extension UmiAgentSession {
     /// (UmiTypedCommand). Nothing changes when its process can't be read.
     func adoptTypedFlags(pid: Int32) {
         guard record.origin == "typed", record.liveAttached != true,
-              let args = UmiTypedCommand.arguments(pid: pid, kind: record.kind) else { return }
+              let args = UmiTypedCommand.arguments(pid: pid, kind: record.kind),
+              // Only an interactive interface: never a one-off run (`-p`).
+              !args.contains("-p"), !args.contains("--print") else { return }
         let flags = UmiTypedCommand.flags(args, kind: record.kind)
         record.model = flags.model
         record.effort = flags.effort

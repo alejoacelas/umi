@@ -202,7 +202,9 @@ enum UmiQuiet {
             let umiID = pane.umiID
             let state: PaneState
             if ui.isShowingAgent(pane.id), let id = ui.attachments[pane.id] {
-                state = .view(id)
+                // The view covers a terminal of its own, which may have been used meanwhile.
+                let under = paneState(pane, live: nil, processes: processes)
+                state = under == .prompt || under == .exited ? .view(id) : under
             } else {
                 let attached = ui.livePanes.contains(pane.id) ? ui.attachments[pane.id] : nil
                 let session = live.first { $0.id == attached } ?? live.first { $0.pane == umiID }
@@ -238,20 +240,34 @@ enum UmiQuiet {
         let byPID: [pid_t: UmiProcessTree.Info]
         let children: [pid_t: [pid_t]]
         let fronts: [dev_t: pid_t]
+        let onTerminal: [dev_t: [pid_t]]
 
         init() {
             let infos = UmiProcessTree.all(everyone: true)
             var byPID: [pid_t: UmiProcessTree.Info] = [:]
             var children: [pid_t: [pid_t]] = [:]
             var fronts: [dev_t: pid_t] = [:]
+            var onTerminal: [dev_t: [pid_t]] = [:]
             for info in infos {
                 byPID[info.pid] = info
                 if !info.zombie { children[info.ppid, default: []].append(info.pid) }
-                if info.tpgid > 0 { fronts[info.tdev] = info.tpgid }
+                if info.tpgid > 0 {
+                    fronts[info.tdev] = info.tpgid
+                    onTerminal[info.tdev, default: []].append(info.pid)
+                }
             }
             self.byPID = byPID
             self.children = children
             self.fronts = fronts
+            self.onTerminal = onTerminal
+        }
+
+        /// The pane's own shell: the process on its terminal that the app started, directly or
+        /// through `login` (Ghostty runs `login`, which runs the shell).
+        func shell(onTerminal device: dev_t, app: pid_t) -> pid_t? {
+            let mine = onTerminal[device] ?? []
+            guard let first = mine.first(where: { byPID[$0]?.ppid == app }) else { return nil }
+            return mine.first { byPID[$0]?.ppid == first } ?? first
         }
 
         func descendants(of root: pid_t) -> [pid_t] {
@@ -268,6 +284,7 @@ enum UmiQuiet {
     /// Helpers a shell runs for its prompt that live as long as it does; they hold no work.
     static let promptHelpers: Set<String> = ["gitstatusd", "gitstatusd-darwin-arm64"]
 
+    /// What a pane's terminal holds. `live`: the session whose own interface Umi shows there.
     @MainActor
     static func paneState(_ pane: Ghostty.SurfaceView, live: (id: String, kind: UmiAgentKind, pid: Int32?)?,
                           processes: Processes) -> PaneState {
@@ -278,24 +295,27 @@ enum UmiQuiet {
         guard stat(tty, &info) == 0, let front = processes.fronts[info.st_rdev] else {
             return .unknown("no process is in front of its terminal")
         }
-        if let live {
-            // The session's interface, if it's what is in front.
-            let group = live.pid.flatMap { processes.byPID[$0]?.pgid }
-            let args = UmiProcess.arguments(front) ?? []
-            if group == front || args.prefix(3).contains(where: { $0.lowercased().contains(live.kind.rawValue) }) {
-                return .live(live.id)
-            }
+        guard let shell = processes.shell(onTerminal: info.st_rdev, app: getpid()) else {
+            return .unknown("its shell can't be found")
         }
-        let name = UmiProcess.name(front)
-        guard UmiProcess.isShell(front) else { return .running(name ?? "a program") }
-        // The pane's own shell: started for this pane by the app, directly or through `login`
-        // (a shell started from it is a program running there).
-        guard let leader = processes.byPID[front] else { return .unknown("its shell can't be found") }
-        let parent = processes.byPID[leader.ppid]
-        guard leader.ppid == getpid() || parent?.ppid == getpid() else { return .running(name ?? "a shell") }
-        for pid in processes.descendants(of: front) {
+        // Whatever the shell started besides what is in front (and what that started) is a job a
+        // relaunch would end: `sleep 600 &`, a suspended program, a server left running.
+        let inFront: Set<pid_t> = front == shell ? [] : Set([front] + processes.descendants(of: front))
+        for pid in processes.descendants(of: shell) where !inFront.contains(pid) && processes.byPID[pid]?.pgid != front {
             let job = UmiProcess.name(pid) ?? "a process"
             if !promptHelpers.contains(job) { return .job(job) }
+        }
+        if front != shell {
+            // The session's own interface, known by its process (from its hooks) or by the session
+            // its environment names (Umi started it): never by its arguments.
+            if let live {
+                let group = live.pid.flatMap { processes.byPID[$0]?.pgid }
+                if group == front || UmiProcessTree.environment(front)?["UMI_SESSION_ID"] == live.id {
+                    return .live(live.id)
+                }
+            }
+            // A program, or a shell started from the pane's shell.
+            return .running(UmiProcess.name(front) ?? "a program")
         }
         switch ghostty_surface_umi_prompt_state(surface) {
         case 1: return .prompt
@@ -310,7 +330,11 @@ extension UmiAgentSession {
     var quietBlocker: String? {
         if !queue.isEmpty { return "\(queue.count) message\(queue.count == 1 ? "" : "s") waiting to be delivered" }
         if !inFlight.isEmpty { return "a message is being delivered" }
-        if exclusiveLive, liveDraft { return "something is typed in its interface" }
+        // Any interface of its own in a pane, Codex's attached one included.
+        if record.live == true, liveDraft { return "something is typed in its interface" }
+        if record.live == true, liveInputUnsure {
+            return "its interface may have a prompt from its history on its input line (send or clear it)"
+        }
         switch status {
         case "working": return activityText == "working" ? "a turn is running" : "a turn is running (\(activityText))"
         case "starting": return "it is starting"

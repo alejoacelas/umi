@@ -129,6 +129,9 @@ final class UmiAgentSession {
     /// Characters typed on the interface's input line and not deleted (Backspace), as far as Umi
     /// saw them.
     var liveDraftChars = 0
+    /// The input line may hold text Umi didn't see typed (a prompt recalled from history): an
+    /// update doesn't install over it (I-4). Sending or clearing the line ends it.
+    var liveInputUnsure = false
     var lastLiveKey: Date?
     /// Background work the live interface reported at its last Stop.
     var liveBackground = 0

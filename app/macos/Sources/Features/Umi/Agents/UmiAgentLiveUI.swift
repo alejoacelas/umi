@@ -141,8 +141,12 @@ extension UmiAgentUI {
         let chars = event.charactersIgnoringModifiers ?? ""
         let control = event.modifierFlags.contains(.control)
         let input: LiveInput
-        if event.keyCode == 53 /* esc */ || (control && chars.lowercased() == "c") {
+        if control && chars.lowercased() == "c" {
             input = .interrupt
+        } else if event.keyCode == 53 {                          // esc
+            input = .escape
+        } else if [125, 126].contains(event.keyCode) && event.modifierFlags.isDisjoint(with: [.command, .control, .option]) {
+            input = .history                                      // up, down: may recall a prompt
         } else if event.keyCode == 36 || event.keyCode == 76 {   // return, enter
             input = .submit
         } else if control && chars.lowercased() == "u" {
@@ -177,8 +181,12 @@ extension UmiAgentUI {
         for key in keys {
             let spec = key.lowercased()
             let input: LiveInput
-            if ["esc", "escape", "ctrl+c", "control+c", "c+c"].contains(spec) {
+            if ["ctrl+c", "control+c", "c+c"].contains(spec) {
                 input = .interrupt
+            } else if ["esc", "escape"].contains(spec) {
+                input = .escape
+            } else if ["up", "down", "arrowup", "arrowdown"].contains(spec) {
+                input = .history
             } else if ["enter", "return", "ret", "cr", "nl"].contains(spec) {
                 input = .submit
             } else if ["ctrl+u", "control+u", "c+u"].contains(spec) {
@@ -199,7 +207,7 @@ extension UmiAgentUI {
 
     /// What a key (or text) does to the live interface's input line, as far as Umi can tell.
     enum LiveInput {
-        case interrupt, submit, clear, delete, other, edit
+        case interrupt, escape, history, submit, clear, delete, other, edit
         case text(Int)
     }
 
@@ -213,6 +221,11 @@ extension UmiAgentUI {
                 s.liveDraftCleared()     // Ctrl-U empties the input line
             case .interrupt:
                 s.liveKey(interrupt: true, typed: 0)
+            case .escape:
+                // Interrupts a turn like Ctrl-C, but at the prompt it leaves what was typed.
+                s.liveKey(interrupt: true, typed: 0, clearsInput: false)
+            case .history:
+                s.liveHistory()
             case .delete:
                 s.liveKey(interrupt: false, typed: -1)
             case .text(let count):

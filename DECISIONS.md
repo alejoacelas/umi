@@ -1576,20 +1576,26 @@ once a second while an update waits (one read of the process table, one terminal
   still a turn: a relaunch would cut it off); an interface opening or closing. Every session the app
   knows counts, started by Umi or typed in a pane (AG-18).
 - **Panes**, each on its own:
-  - *Its own shell at an empty prompt.* The pty's foreground process group comes from the kernel's
-    process table (the `tpgid` of the processes on the pane's tty). Its leader must be a shell whose
-    parent is the app or the app's `login` child: a shell started from the pane's shell (`zsh`, `bash`)
-    is a program running there, whose state a relaunch would lose. The shell must have no live
-    descendants (a job left running with `&` would be killed); `gitstatusd`, a prompt helper that lives
-    as long as its shell, is the only exception. Then the shell's own marks (OSC 133, Ghostty's shell
+  - *Its own shell at an empty prompt.* The pane's own shell is the process on its tty that the app
+    started (through `login`); the pty's foreground process group comes from the kernel's process table
+    (the `tpgid` of the processes on the tty). The shell must be in front: anything else in front is a
+    program running there, a shell started from the pane's shell (`zsh`, `bash`) included, whose state a
+    relaunch would lose. Whatever the shell started besides what is in front is a job (`sleep 600 &`, a
+    suspended program) that a relaunch would end, also when an idle agent is in front; `gitstatusd`, a
+    prompt helper that lives as long as its shell, is the only exception. Then the shell's own marks (OSC 133, Ghostty's shell
     integration) must say the cursor is in the prompt's input and every input cell from the prompt's
     first row through the rows the input continues on is blank: a new terminal function,
     `ghostty_surface_umi_prompt_state` (0 can't tell, 1 empty, 2 typed). No marks seen, a full-screen
     program's screen or a cursor outside the input is "can't tell". zsh-autosuggestions' grey text only
     shows after something typed, so it never makes an empty prompt look typed.
-  - *An idle agent.* A session's read-only view is quiet (its session is judged above). A live
-    interface is quiet when it is what's in front (its process group is the foreground group, or the
-    foreground program's arguments name the agent) and its session is idle with nothing typed.
+  - *An idle agent.* A session's read-only view is quiet when the terminal it covers is (its shell at
+    an empty prompt, or exited: the terminal can be shown and used under the view). A live interface is
+    quiet when it is what's in front, known by its process (the group of the process its hooks came
+    from) or by the session its environment names (Umi started it), never by its arguments, and its
+    session is idle with nothing typed. "Nothing typed" is what Umi saw typed, pasted or cleared, made
+    conservative (review round 1): Esc at the prompt doesn't clear it (only a turn is interrupted), and
+    Up or Down at the prompt may recall an earlier prompt, so the line counts as possibly holding text
+    until it is sent or cleared (Ctrl-C, Ctrl-U).
   - A pane whose process exited is quiet.
 - **Unsaved work**: editor documents with unsaved changes; a modal window, a sheet, a text field being
   edited (a tab rename, a search), the command palette.
@@ -1638,7 +1644,8 @@ C is what the brief asked for. The staged update keeps its zip and what it was v
 replaced version to `kept/previous` and removes other kept versions. For a running version without a
 kept zip, the updater fetches its own release again, from the feed `release.sh` now stamps into each
 release (`UmiReleaseFeedURL`), and verifies it like an update while the new version is staged; the
-countdown waits for that. Rollback verifies the kept zip again (signature, hash, bundle id, version,
+countdown waits for that. `update --now` waits for that too (at most a minute and a half; review round 1).
+Rollback verifies the kept zip again (signature, hash, bundle id, version,
 code signature) and installs through the same helper. It marks the version it left
 (`rolled_back_from`): that version and older ones never install by themselves again, so a rollback
 can't be undone by the next quiet moment; `umi update` or `--now` clears the mark. A version that won't
@@ -1649,7 +1656,12 @@ feed.
 
 - A failed install (the helper couldn't swap, the app didn't exit) leaves `updates/attempt.json`
   behind: the next launch, still the old version, marks that version `failed_install`, and it doesn't
-  install by itself again (a newer one does); `umi update --now` tries again.
+  install by itself again (a newer one does), not even through a yes remembered from before
+  (`auto-update = check`; review round 1); `umi update` or `--now` tries again.
+- A file that fails verification isn't downloaded again by the next check (the same file); a network
+  failure is retried.
+- At the end of the countdown Umi looks once more just before quitting, and stands down if anything
+  started meanwhile.
 - After a rollback, §82's mark.
 - The feed serving an older or the same version never installs anything (versions are compared).
 - While an update waits, checks go on: a newer release replaces the staged one.
@@ -1657,7 +1669,10 @@ feed.
 ## 84. Isolated instances never update the user's installed app
 
 An isolated instance (`UMI_STATE_DIR`) refuses to download, install or roll back when its bundle is
-`/Applications/Umi.app`, `~/Applications/Umi.app` or the bundle the user's own instance runs from. The
+`/Applications/Umi.app`, `~/Applications/Umi.app`, the bundle the user's own instance runs from, or the
+one it last ran from (it records its location at each launch, `installed-app`, so a copy installed
+elsewhere is protected while it isn't running; review round 1). Paths are compared after resolving
+links. The
 tests stand their own copy in with `UMI_UPDATE_PROTECTED_APP` (it can only add protection). An isolated
 instance that does update (a test copy in a temporary Applications folder) relaunches through
 `updates/relaunch.sh` with its whole environment and arguments; before, the helper passed only the

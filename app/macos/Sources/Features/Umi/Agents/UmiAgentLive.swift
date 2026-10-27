@@ -156,7 +156,7 @@ extension UmiAgentSession {
             record.livePID = nil
             record.goLiveWhenSettled = nil
             liveState = record.kind == .codex ? .idle : .starting
-            liveDraft = false; liveDraftChars = 0
+            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false
             liveBackground = 0
             liveActivity = ""
             goingLive = false
@@ -264,7 +264,7 @@ extension UmiAgentSession {
             if liveState == .starting || liveState == nil { liveState = .idle }
         case "UserPromptSubmit":
             liveState = .working
-            liveDraft = false; liveDraftChars = 0
+            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false
             liveActivity = ""
             liveTurnError = nil
             liveTurnFailedAt = nil
@@ -355,7 +355,7 @@ extension UmiAgentSession {
     /// A key in the live interface. `typed`: characters added to its input line (negative:
     /// deleted with Backspace). Text typed and not sent holds messages back (also while a turn
     /// runs: it waits in the input box); deleting it all lets them go.
-    func liveKey(interrupt: Bool, typed: Int) {
+    func liveKey(interrupt: Bool, typed: Int, clearsInput: Bool = true) {
         lastLiveKey = Date()
         if !interrupt {
             // Keys typed into a permission or question dialog answer it: no draft on the prompt.
@@ -371,11 +371,15 @@ extension UmiAgentSession {
             return
         }
         if liveState == .idle {
-            // Ctrl-C at an idle prompt clears what was typed: what waited for that can go.
-            liveDraft = false
-            liveDraftChars = 0
+            // Ctrl-C at an idle prompt clears what was typed: what waited for that can go. (Esc
+            // leaves it.)
+            if clearsInput {
+                liveDraft = false
+                liveDraftChars = 0
+                liveInputUnsure = false
+                pump()
+            }
             changed()
-            pump()
             return
         }
         guard liveState == .working || liveState == .needsInput else { changed(); return }
@@ -405,8 +409,16 @@ extension UmiAgentSession {
         lastLiveKey = Date()
         liveDraft = false
         liveDraftChars = 0
+        liveInputUnsure = false
         changed()
         pump()
+    }
+
+    /// Up or Down at the interface's prompt: it may have put an earlier prompt on the input line.
+    func liveHistory() {
+        lastLiveKey = Date()
+        if liveState == .idle || liveState == .working { liveInputUnsure = true }
+        changed()
     }
 
     /// The live interface closed (its SessionEnd hook, its process gone, or its pane closed):
@@ -434,7 +446,7 @@ extension UmiAgentSession {
         record.livePID = nil
         record.liveAttached = nil
         liveState = nil
-        liveDraft = false; liveDraftChars = 0
+        liveDraft = false; liveDraftChars = 0; liveInputUnsure = false
         liveBackground = 0
         liveActivity = ""
         reclaiming = false

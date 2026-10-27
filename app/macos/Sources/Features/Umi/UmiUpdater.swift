@@ -110,6 +110,9 @@ final class UmiUpdater: ObservableObject {
     private var downloadVersion: String?
     /// The current or last download was started by a check, not by the user.
     private var automaticDownload = false
+    /// A release that downloaded but failed verification (its zip's SHA-256): checks don't fetch
+    /// the same file again every 15 minutes (the user still can).
+    private var rejected: String?
     private var timer: Timer?
     private var quietTimer: Timer?
     private var countdownDeadline: Date?
@@ -298,6 +301,12 @@ final class UmiUpdater: ObservableObject {
         // A yes is under way or done: nothing to ask (a newer version is asked about after
         // the staged one installs).
         if downloadTask != nil || staged != nil { return }
+        // A failed install or a rollback holds the version back even from a remembered yes: only a
+        // new yes (`umi update`) installs it.
+        if heldBack(version) != nil {
+            question = nil
+            return
+        }
         if answers.consent == version {
             // The user already said yes to this version (before a restart, or a download
             // that failed): carry on without asking again.
@@ -333,6 +342,7 @@ final class UmiUpdater: ObservableObject {
               installTargetProblem == nil, downloadTask == nil else { return }
         if let staged, Self.compare(staged.version, version) != .orderedAscending { return }
         if answers.skipped == version || (answers.laterUntil.map { $0 > Date() } ?? false) || heldBack(version) != nil { return }
+        if rejected == release.sha256 { return }
         Task { @MainActor in
             guard self.downloadTask == nil else { return }
             _ = try? await self.download(release: release, automatic: true)
@@ -460,6 +470,7 @@ final class UmiUpdater: ObservableObject {
 
     /// Check in the background now and then (unless `auto-update = off`).
     func startBackgroundChecks() {
+        recordInstalledApp()
         guard backgroundChecks else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             Task { @MainActor in await self?.backgroundCheck() }
@@ -622,8 +633,8 @@ final class UmiUpdater: ObservableObject {
             return ["installed": UmiVersion.current, "latest": release.version, "update_available": false,
                     "message": "\(UmiPaths.productName) \(UmiVersion.current) is up to date."]
         }
-        // A yes overrides what held this version back.
-        if !automatic { clearHolds(for: release.version) }
+        // A new yes (not one remembered from before) overrides what held this version back.
+        if !automatic && given == nil { clearHolds(for: release.version) }
         if keepingArchive == nil {
             keepingArchive = Task { @MainActor in
                 await self.keepRollbackArchive()
@@ -658,16 +669,21 @@ final class UmiUpdater: ObservableObject {
         (error as? UmiError)?.message ?? error.localizedDescription
     }
 
-    /// Download a release and check it is what the feed says, signed with Umi's key.
+    /// Download a release and check it is what the feed says, signed with Umi's key. A file that
+    /// fails the checks isn't fetched again by a check (a network failure is retried).
     private func fetchVerified(_ release: Release) async throws -> Data {
         guard let key = publicKey else { throw UmiError.failed("this build has no update-signing key") }
-        let (temp, response) = try await URLSession.shared.download(from: release.url)
-        defer { try? FileManager.default.removeItem(at: temp) }
+        // In memory (a few tens of MB): a download cut off by a quit leaves no temporary file.
+        let (data, response) = try await URLSession.shared.data(from: release.url)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw UmiError.failed("the update download answered HTTP \(http.statusCode)")
         }
-        let data = try Data(contentsOf: temp)
-        try Self.verify(data, sha256: release.sha256, signature: release.signature, key: key)
+        do {
+            try Self.verify(data, sha256: release.sha256, signature: release.signature, key: key)
+        } catch {
+            rejected = release.sha256
+            throw error
+        }
         return data
     }
 
@@ -681,7 +697,12 @@ final class UmiUpdater: ObservableObject {
 
     private func fetchAndVerify(_ release: Release) async throws -> URL {
         let data = try await fetchVerified(release)
-        return try stage(data, release: release)
+        do {
+            return try stage(data, release: release)
+        } catch {
+            rejected = release.sha256
+            throw error
+        }
     }
 
     /// Unpack a verified zip into `staged-VERSION` and check the app in it: bundle id, version
@@ -821,32 +842,54 @@ final class UmiUpdater: ObservableObject {
     // MARK: Installing
 
     /// Why this copy may not replace its own app (nil: it may). An isolated instance (its own
-    /// state directory: a test, a second copy) never replaces the user's installed app.
+    /// state directory: a test, a second copy) never replaces the user's installed app: the
+    /// standard places, the copy the user's own instance last ran from (it records it at each
+    /// launch, wherever it was installed) and the one it runs from now. Paths are compared after
+    /// resolving links.
     var installTargetProblem: String? {
         guard UmiPaths.isIsolated else { return nil }
-        let bundle = Bundle.main.bundleURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let bundle = Self.canonical(Bundle.main.bundleURL.path)
         var installed = ["/Applications", NSHomeDirectory() + "/Applications"].map { "\($0)/\(UmiPaths.productName).app" }
+        if let recorded = try? String(contentsOfFile: Self.userStatePath("installed-app"), encoding: .utf8) {
+            installed.append(recorded.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
         if let main = Self.defaultInstanceBundle() { installed.append(main) }
         // Tests stand a copy of their own in for the user's (it only ever adds protection).
         if let protected = ProcessInfo.processInfo.environment["UMI_UPDATE_PROTECTED_APP"], !protected.isEmpty {
-            installed.append(URL(fileURLWithPath: protected).resolvingSymlinksInPath().standardizedFileURL.path)
+            installed.append(protected)
         }
-        guard installed.contains(bundle) else { return nil }
+        guard installed.contains(where: { !$0.isEmpty && Self.canonical($0) == bundle }) else { return nil }
         return "this is an isolated instance (UMI_STATE_DIR) running from the installed \(UmiPaths.productName) "
             + "(\(bundle)); it never updates that copy"
     }
 
+    private static func canonical(_ path: String) -> String {
+        URL(fileURLWithPath: UmiPaths.canonical(path)).standardizedFileURL.path
+    }
+
+    /// A file in the user's own state directory (not an isolated instance's).
+    private static func userStatePath(_ name: String) -> String {
+        NSHomeDirectory() + "/Library/Application Support/\(UmiPaths.productName)/\(name)"
+    }
+
+    /// The user's own instance records where it runs from, so an isolated instance can tell the
+    /// user's app wherever it was installed.
+    private func recordInstalledApp() {
+        guard !UmiPaths.isIsolated, UmiVersion.isRelease else { return }
+        try? (Self.canonical(Bundle.main.bundleURL.path) + "\n")
+            .write(toFile: UmiPaths.path("installed-app"), atomically: true, encoding: .utf8)
+    }
+
     /// The bundle the user's own instance (the default state directory) runs from, if it runs.
     private static func defaultInstanceBundle() -> String? {
-        let path = NSHomeDirectory() + "/Library/Application Support/\(UmiPaths.productName)/instance.json"
-        guard let data = FileManager.default.contents(atPath: path),
+        guard let data = FileManager.default.contents(atPath: userStatePath("instance.json")),
               let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let pid = (json["pid"] as? NSNumber)?.int32Value, pid > 0, kill(pid, 0) == 0 else { return nil }
         var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
         let executable = String(cString: buffer)
         guard let range = executable.range(of: ".app/Contents/MacOS/") else { return nil }
-        return URL(fileURLWithPath: String(executable[..<range.lowerBound]) + ".app").resolvingSymlinksInPath().standardizedFileURL.path
+        return String(executable[..<range.lowerBound]) + ".app"
     }
 
     private func refuseWhileTurnsRun(force: Bool, doing: String = "Installing now") throws {
@@ -872,19 +915,35 @@ final class UmiUpdater: ObservableObject {
         guard let staged else {
             return ["installed": UmiVersion.current, "message": "\(UmiPaths.productName) \(UmiVersion.current) is up to date."]
         }
+        // The running version's own zip, kept for a rollback, first (at most a minute and a half).
+        let deadline = Date().addingTimeInterval(90)
+        while keepingArchive != nil, Date() < deadline { try? await Task.sleep(nanoseconds: 200_000_000) }
+        guard self.staged?.version == staged.version, phase != .installing else {
+            throw UmiError.failed("the update changed meanwhile; run `\(UmiPaths.cliName) update --now` again")
+        }
         clearHolds(for: staged.version)
         UmiEvents.shared.emit("update.installing", ["version": staged.version, "why": "now"])
         beginInstall()
         return ["installing": staged.version, "message": "Installing \(UmiPaths.productName) \(staged.version) and relaunching."]
     }
 
-    /// Quit to install the staged update, then relaunch: in front if the app was in front.
-    private func beginInstall() {
+    /// Quit to install the staged update, then relaunch: in front if the app was in front. An
+    /// install at a quiet moment looks once more just before quitting, and stands down if
+    /// anything started meanwhile.
+    private func beginInstall(atQuietMoment: Bool = false) {
         stopCountdown()
         relaunchAfterInstall = true
         relaunchInBackground = !NSApp.isActive
         phase = .installing
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            if atQuietMoment, !UmiQuiet.reasons().isEmpty, let staged = self.staged {
+                self.relaunchAfterInstall = false
+                self.phase = .ready(staged.version)
+                self.interrupted = true
+                UmiEvents.shared.emit("update.countdown", ["version": staged.version, "stopped": "activity"])
+                return
+            }
             (NSApp.delegate as? AppDelegate)?.terminateForUpdate()
         }
     }
@@ -928,8 +987,9 @@ final class UmiUpdater: ObservableObject {
 
     private func quietTick() {
         guard let staged, case .ready = phase, downloadTask == nil, keepingArchive == nil else {
-            if staged == nil || phase == .installing { quietTimer?.invalidate(); quietTimer = nil }
-            stopCountdown()
+            // (While installing it keeps going: a last look may still stand the install down.)
+            if staged == nil { quietTimer?.invalidate(); quietTimer = nil }
+            if phase != .installing { stopCountdown() }
             return
         }
         guard mode == .install, installTargetProblem == nil, heldBack(staged.version) == nil, !notNow else {
@@ -962,7 +1022,7 @@ final class UmiUpdater: ObservableObject {
             return
         }
         UmiEvents.shared.emit("update.installing", ["version": staged.version, "why": "quiet"])
-        beginInstall()
+        beginInstall(atQuietMoment: true)
     }
 
     // MARK: The installer

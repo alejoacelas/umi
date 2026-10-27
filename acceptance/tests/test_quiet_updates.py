@@ -209,7 +209,39 @@ def test_idle_agents_in_panes_are_quiet(calm):
     inst.cli("send", "--pane", typed_pane, "not sent yet")
     found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
     assert "typed in its interface" in found["reason"], found
+    # Esc at the prompt leaves what was typed (only a turn is interrupted); Ctrl-U clears it.
+    inst.cli("keys", "--pane", typed_pane, "esc")
+    time.sleep(0.5)
+    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "Esc counted as clearing the draft"
+    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+    wait_quiet(inst)
+    # Up may put an earlier prompt on the input line: not quiet until it's sent or cleared.
+    inst.cli("keys", "--pane", typed_pane, "up")
+    found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
+    assert "history" in found["reason"], found
     inst.cli("keys", "--pane", typed_pane, "ctrl+u")
     wait_quiet(inst)
     for s in (lid, viewed, typed["id"]):
         inst.cli("agent", "stop", s, check=False, timeout=60)
+
+
+@pytest.mark.req("I-4", "AG-18")
+@pytest.mark.harness
+def test_a_job_beside_an_agent_interface_is_not_quiet(calm):
+    """An idle agent in front doesn't make its pane quiet when the shell also runs a job (`sleep &`
+    before typing `claude`): the relaunch would end it."""
+    inst, pane = calm
+    plugin = os.path.join(inst.target.app, PLUGIN)
+    known = {s["id"] for s in inst.agents()}
+    inst.type_line(pane, f"sleep 300 & FAKE_AGENT_DIR='{inst.fake_dir}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
+    typed = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
+                       message="the typed agent to become a session")
+    wait_until(lambda: "Fake Claude Code" in inst.screen(pane, scrollback=True), 20, message="its interface")
+    no_input(inst)
+    found = wait_reason(inst, lambda r: r.get("pane") == pane)
+    assert "sleep" in found["reason"] and "background" in found["reason"], found
+    inst.cli("agent", "stop", typed["id"], check=False, timeout=60)
+    wait_until(lambda: "Fake Claude Code" not in inst.screen(pane) or inst.info(typed["id"])["location"] != "live", 20,
+               message="the interface to end")
+    inst.cli("send", "--pane", pane, "--enter", "kill %1")
+    wait_quiet(inst)
