@@ -98,7 +98,10 @@ pinned; nothing reorders them on its own (SPEC S-7).
 | Command | Notes |
 |---|---|
 | `update --check` | prints the installed and the newest version; JSON `{"installed", "latest", "update_available": bool}` |
-| `update [--now]` | downloads and verifies the newest version. It installs when the app quits, or with `--now` installs it and relaunches the app at once |
+| `update [--now [--force]]` | checks at once, then downloads and verifies the newest version. It installs at the next quiet moment (SPEC I-4; with `auto-update = check` or `download`, when the app quits), or with `--now` installs it and relaunches the app at once; `--now` refuses while managed-agent turns run unless `--force` |
+| `update --status` | what is known without checking, and what a staged update waits for. JSON: `installed`, `latest`, `update_available`, `state` (`up_to_date`, `available`, `downloading`, `ready`, `installing`, `asking`, `later`, `skipped`, `agreed`, `held_back`, `failed`, `unknown`), `mode` (`install`, `download`, `check`, `off`), `ready` and `installs` (`quiet` or `quit`) for a staged update, `countdown` (seconds) while the notice counts down, `not_now_until`, `held_back` (why a newer version doesn't install by itself), `rolled_back_from`, `failed_install`, `rollback` (the version `--rollback` goes back to), `quiet` `{"quiet": bool, "waiting_for": [{"kind": "pane"\|"session"\|"editor"\|"dialog"\|"input", "reason", "pane"?, "tab"?, "session"?, "name"?}], "idle_seconds"}`; without `--json`, a line per thing it waits for |
+| `update --rollback [--force]` | installs the version installed before this one from its kept, verified zip and relaunches; the version gone back from doesn't install by itself again (`update` installs it). Fails when no earlier version is kept |
+| `update --later \| --skip` | answers the update question (`auto-update = check`): ask again after a day \| not about this version |
 
 ## Agents
 

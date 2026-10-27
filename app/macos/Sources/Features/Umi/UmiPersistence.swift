@@ -157,6 +157,10 @@ final class UmiPersistence {
         }
         var restored = 0
         var current: TerminalController?
+        // After an update installed while another app was in front, the windows come back behind
+        // it and the app stays in the background (I-4).
+        let background = UmiUpdater.launchedInBackground
+        var made: [TerminalController] = []
         for windowJSON in windows {
             var tabs: [UmiTab] = []
             var selected: UmiTab?
@@ -197,13 +201,21 @@ final class UmiPersistence {
             }
             let controller = TerminalController.newWindow(
                 ghostty, tabs: tabs, selected: selected ?? tabs[0], frame: frame,
-                focus: true, registerUndo: false)
+                focus: !background, registerUndo: false)
+            made.append(controller)
             controller.windowName = windowJSON["name"] as? String
             if let width = windowJSON["sidebar_width"] as? Double { controller.sidebarWidth = CGFloat(width) }
             if windowJSON["current"] as? Bool == true { current = controller }
             restored += 1
         }
-        if let current {
+        if background {
+            let top = current ?? made.last
+            top?.window?.orderBack(nil)
+            for controller in made where controller !== top {
+                if let number = top?.window?.windowNumber { controller.window?.order(.below, relativeTo: number) }
+            }
+            if let top { UmiTopology.windowBecameCurrent(top) }
+        } else if let current {
             current.window?.makeKeyAndOrderFront(nil)
             UmiTopology.windowBecameCurrent(current)
         }

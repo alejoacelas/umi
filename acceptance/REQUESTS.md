@@ -158,6 +158,9 @@ without asking, whether the MIT license in the user's name is right, and whether
 show workers by default:
 > script quits should not ask, updates should ask. license is good. default workers to backgroudn
 
+("updates should ask" is superseded on 2026-10-27, below: updates install themselves at a quiet
+moment; `auto-update = check` brings the question back.)
+
 ## After 0.4.0: Warp's look for terminals, and the sidebar order (BRIEF-blocks.md)
 
 > would it be easy to implement the look and placement from warp of terminals? notice that the
@@ -183,3 +186,13 @@ On the sidebar order (superseded on 2026-10-27, below):
 
 This supersedes the request above: selecting a tab and an agent finishing its turn no longer move
 tabs; only the user's own moves do (SPEC S-7).
+
+## 2026-10-27: updates install themselves when nothing would be lost (BRIEF-quiet-updates.md)
+
+Alejo develops Umi on one Mac and uses it all day on another; he wants each tested release to reach
+the main Mac without interrupting his work and without having to act. Asked whether installing at a
+quiet moment should be the default:
+> yes let's make install when quiet the default
+
+This supersedes "updates should ask" (above) and the rule that updates install only on quit or when
+asked (SPEC I-4).

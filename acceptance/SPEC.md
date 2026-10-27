@@ -143,14 +143,38 @@ and agents reaching the app from their own processes.
 - **I-2 [A]** After install, `<cli> doctor` reports what is missing on this machine, for example
   `claude`, `codex` or `git` not on the login PATH, and exits non-zero if anything is.
 - **I-3 [W]** `open README.md` (or double-clicking a `.md` file) opens it in the app's editor.
-- **I-4 [A]** Updates. An installed copy updates itself from the product's own public release feed:
-  - it checks in the background, from a "Check for Updates…" menu item and from `<cli> update`;
-  - when a background check finds a newer version, it asks the user before downloading or
-    installing anything. The question never takes focus or blocks work, and it stays available
-    until answered. Choosing the menu item or running `<cli> update` counts as a yes;
-  - it verifies what it downloads, then installs it when the app quits, or at once when the user
-    asks (`<cli> update --now`, or the update prompt);
-  - it never quits the app or closes terminals by itself to install;
+- **I-4 [A]** Updates. An installed copy updates itself from the product's own public release feed,
+  without interrupting the user and without their having to act (REQUESTS.md, 2026-10-27):
+  - it checks in the background (about every 15 minutes), from a "Check for Updates…" menu item and
+    from `<cli> update`, which checks at once;
+  - a check that finds a newer signed release downloads and verifies it without asking, then installs
+    it at the first quiet moment and relaunches. Quiet means all of these hold, and anything the
+    product can't be sure of counts as busy:
+    - no agent turn runs in any session the product knows (started by it or typed in a pane, AG-18),
+      and no message waits to be delivered;
+    - every pane is at its own shell's prompt with nothing typed and nothing else running there
+      (no foreground program, no job, no shell started from it), or shows an idle agent: its own
+      interface with nothing typed in it, or a read-only view;
+    - no editor or other window holds unsaved changes or a dialog that a relaunch would lose;
+    - nobody has typed or clicked in the app for 2 minutes;
+  - about 30 seconds before installing, a notice in the sidebar (never a dialog) says "Updating to
+    X.Y.Z", with **Not now** (wait for the next quiet moment at least an hour later) and **Install
+    now**. Anything the user does during the countdown stops it until the next quiet moment;
+  - after the relaunch everything comes back as after a quit (AG-7, AG-22, R-3): windows, tabs,
+    panes and their folders, and agent sessions in their panes, live ones live with the same
+    conversation and flags (an agent the user typed in a pane included);
+  - `<cli> update --now` installs at once (asking first, with `--force`, before cutting running
+    turns off, AG-22); `<cli> update --status` says what is pending and why it isn't quiet yet (which
+    pane or session); `<cli> update --rollback` installs the previously installed version again
+    (its verified zip is kept when a new one installs), and the version gone back from doesn't
+    install by itself again. An install that fails doesn't install by itself again either;
+  - a config setting (`auto-update = check`) turns automatic installing off: then a background check
+    asks the user before downloading or installing anything, with a question that never takes focus
+    or blocks work and stays available until answered; the menu item and `<cli> update` count as a
+    yes; the update installs when the app quits, or when the user asks;
+  - it verifies what it downloads (signature, hash, bundle id, version, code signature), and a helper
+    swaps the bundle and puts the old one back if that fails;
+  - an isolated or test instance (its own state directory) never updates the user's installed app;
   - an older build updates to a newer one end to end.
 
   `<cli> update --check` prints the installed and the newest version. Publishing a new version from
@@ -585,7 +609,8 @@ runs, it is the same session: same id, conversation, folder and settings.
   continues by itself once the app runs again, with a short note saying when and why it was cut off
   and that what it had running was stopped; `agent wait` on the cut-off message returns the
   continued turn's reply. A normal quit or an update never cuts turns off silently: it interrupts
-  them cleanly, and an update installs while turns run only if the user agrees.
+  them cleanly, and an update installs while turns run only if the user agrees (an update that
+  installs by itself waits for a quiet moment, when none runs, I-4).
 - **AG-23 [A]** Long runs. Many sessions, long transcripts, large tool outputs and days of uptime don't
   make the CLI or the app slow. Disk use grows only with what the user keeps.
 

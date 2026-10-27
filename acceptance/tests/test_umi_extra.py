@@ -444,12 +444,17 @@ def test_the_installer_downloads_a_release_in_a_bare_shell(target, tmp_path):
         server.shutdown()
 
 
-# ---- I-4: the update question --------------------------------------------------------------------
+# ---- I-4: updates --------------------------------------------------------------------------------
 #
-# A background check that finds a newer version asks; nothing is downloaded until the answer is
-# yes. These install a release-stamped old build (0.0.1) and point it at a local feed whose
-# contents the test switches. Checks run every 2 s in these instances (UMI_UPDATE_CHECK_SECONDS,
-# honored only with an explicit state directory).
+# These install a release-stamped old build (0.0.1) and point it at a local feed whose contents the
+# test switches. Checks run every 2 s in these instances (UMI_UPDATE_CHECK_SECONDS, honored only with
+# an explicit state directory).
+#
+# By default a check that finds a newer version downloads it and installs it at a quiet moment. With
+# `auto-update = check` (CHECK_FIRST) a background check asks first; nothing is downloaded until the
+# answer is yes.
+
+CHECK_FIRST = ["--auto-update=check"]
 
 class _LoggingHandler(SimpleHTTPRequestHandler):
     log = None
@@ -494,12 +499,12 @@ def _serve_feed(root, which):
             "sha256": "00" * 32, "signature": "AAAA"}))
 
 
-def _install_old(target, update_releases, tmp_path, later_seconds=None):
+def _install_old(target, update_releases, tmp_path, later_seconds=None, args=CHECK_FIRST, env=None, restore=False):
     from test_install import bundle_version, run_installer
 
     root, base, _ = update_releases
     _serve_feed(root, "old")
-    env = {target.env_names["feed_url"]: base + "feed/appcast.json", "UMI_UPDATE_CHECK_SECONDS": "2"}
+    env = {target.env_names["feed_url"]: base + "feed/appcast.json", "UMI_UPDATE_CHECK_SECONDS": "2", **(env or {})}
     if later_seconds:
         env["UMI_UPDATE_LATER_SECONDS"] = str(later_seconds)
     holder = Instance(target, prefix="acc-ask-", env=env)
@@ -507,7 +512,7 @@ def _install_old(target, update_releases, tmp_path, later_seconds=None):
     proc = run_installer(target, str(root / "old" / target.release["app"]), dest, str(tmp_path / "bin"), holder.env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert bundle_version(dest) == "0.0.1"
-    return Instance(Target.from_installed(target, dest), state_dir=holder.dir, env=env), dest
+    return Instance(Target.from_installed(target, dest), state_dir=holder.dir, env=env, args=args, restore=restore), dest
 
 
 def _update_status(inst):
@@ -516,6 +521,12 @@ def _update_status(inst):
 
 def _zip_requests(log):
     return [p for p in log if p.endswith(".zip")]
+
+
+def _update_downloads(log):
+    """Downloads of a newer version. (Once a newer version is staged, the installed version's own zip
+    is fetched too, once, and kept for `update --rollback`: that one is `/old/Umi-0.0.1.zip`.)"""
+    return [p for p in _zip_requests(log) if not p.startswith("/old/")]
 
 
 def _uninstall(installed, dest):
@@ -661,7 +672,7 @@ def test_update_is_a_yes_even_after_skip_and_the_yes_outlives_a_restart(target, 
         installed.start_app()
         status = wait_until(lambda: (s := _update_status(installed))["state"] == "ready" and s, 60,
                             message="the yes carried on after the restart, without asking")
-        assert status["ready"] == "999.0.0" and len(_zip_requests(log)) == 1, (status, log)
+        assert status["ready"] == "999.0.0" and len(_update_downloads(log)) == 1, (status, log)
     finally:
         _uninstall(installed, dest)
 
@@ -704,7 +715,7 @@ def test_a_yes_shows_its_failures_and_never_covers_another_version(target, updat
         _serve_feed(root, "new")
         status = wait_until(lambda: (s := _update_status(installed))["state"] == "ready" and s, 60,
                             message="the remembered yes carried on")
-        assert status["ready"] == "999.0.0" and _zip_requests(log) == ["/new/Umi-999.0.0.zip"], (status, log)
+        assert status["ready"] == "999.0.0" and _update_downloads(log) == ["/new/Umi-999.0.0.zip"], (status, log)
     finally:
         _uninstall(installed, dest)
 
@@ -832,5 +843,266 @@ def test_the_update_question_in_the_sidebar(target, update_releases, tmp_path, u
         wait_until(lambda: _update_status(installed)["state"] == "ready", 120, message="downloaded and staged")
         assert _zip_requests(log)
         wait_until(lambda: view.button("Install Now…"), 10, message="the notice offers to install")
+    finally:
+        _uninstall(installed, dest)
+
+
+# ---- I-4: installing at a quiet moment (the default) ---------------------------------------------
+#
+# A check that finds a newer version downloads and verifies it without asking, then installs it at
+# the first quiet moment (test_quiet_updates.py says what quiet means): a notice counts down
+# (UMI_UPDATE_NOTICE_SECONDS, 30 s by default), then the app quits, installs and relaunches.
+
+QUIET_ENV = {"UMI_UPDATE_IDLE_SECONDS": "3", "UMI_UPDATE_NOTICE_SECONDS": "4"}
+
+
+def _answering_version(inst):
+    try:
+        return inst.json("update", "--status", timeout=20)["installed"]
+    except (CLIError, subprocess.TimeoutExpired, ValueError, OSError):
+        return None
+
+
+def _wait_relaunched(inst, dest, version, timeout=180):
+    from test_install import bundle_version
+
+    wait_until(lambda: bundle_version(dest) == version, timeout, message=f"{version} installed")
+    wait_until(lambda: _answering_version(inst) == version, 90, message=f"{version} relaunched and answering")
+
+
+def _shell_ready(inst, pane):
+    wait_until(lambda: inst.cli("read", "--pane", pane, check=False).stdout.strip() != "", 30, message="the shell prompt")
+    time.sleep(0.5)
+
+
+@pytest.mark.req("I-4", "AG-7", "AG-22", "R-3")
+@pytest.mark.slow
+@pytest.mark.harness
+def test_an_update_installs_itself_at_a_quiet_moment_and_everything_comes_back(target, update_releases, tmp_path):
+    """I-4 (Alejo, 2026-10-27: "make install when quiet the default"): the check downloads the new
+    version without asking; it doesn't install while a pane runs something; once everything is quiet
+    a countdown runs and the app relaunches as the new version with its tabs, folders and the agent
+    the user typed (same conversation, same flags), as after a quit (AG-7, AG-22)."""
+    from test_install import bundle_version
+    from test_live import BANNER, PLUGIN, REPLY, login_fake_dir, wait_live
+    from harness import FAKE_CLAUDE
+
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path, args=[], env=QUIET_ENV, restore=True)
+    fake_root = login_fake_dir()
+    sid = hid = None
+    try:
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        assert _update_status(installed)["mode"] == "install"
+        folders = [os.path.join(installed.work, name) for name in ("a", "b")]
+        for folder in folders:
+            os.makedirs(folder, exist_ok=True)
+        first = installed.json("window", "new", "--cwd", folders[0])
+        installed.cli("tab", "rename", first["tab"], "kept")
+        second = installed.json("split", "right", "--pane", first["pane"], "--cwd", folders[1])["pane"]
+        agent_pane = installed.json("tab", "new", "agent", "--cwd", installed.work)["pane"]
+        busy = installed.json("tab", "new", "busy", "--cwd", installed.work)["pane"]
+        for pane in (first["pane"], second, agent_pane, busy):
+            _shell_ready(installed, pane)
+
+        # The user's own claude, typed with flags.
+        word = uuid.uuid4().hex[:8]
+        plugin = os.path.join(installed.target.app, PLUGIN["claude"])
+        known = {s["id"] for s in installed.agents()}
+        installed.cli("send", "--pane", agent_pane, "--enter",
+                      f"FAKE_AGENT_DIR='{fake_root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}' "
+                      f"--dangerously-skip-permissions --model fake-model-q 'ECHO before {word}'")
+        session = wait_until(lambda: next((s for s in installed.agents() if s["id"] not in known), None), 30,
+                             message="the typed claude to become a session")
+        sid = session["id"]
+        wait_until(lambda: f"{REPLY['claude']}ECHO before {word}" in installed.screen(agent_pane, scrollback=True), 20,
+                   message="its first reply")
+        wait_until(lambda: installed.info(sid)["status"] == "idle", 20, message="it is idle")
+        hid = installed.info(sid).get("harness_id")
+        installed.cli("send", "--pane", busy, "--enter", "sleep 600")
+
+        del log[:]
+        _serve_feed(root, "new")
+        status = wait_until(lambda: (s := _update_status(installed))["state"] == "ready" and s, 120,
+                            message="the new version downloaded without asking")
+        assert status["ready"] == "999.0.0" and status["installs"] == "quiet" and "question" not in status, status
+        assert _zip_requests(log), log
+        # Not while a pane runs something: the status says which pane.
+        time.sleep(8)
+        assert bundle_version(dest) == "0.0.1", "it installed while a pane was busy"
+        status = _update_status(installed)
+        assert "countdown" not in status, status
+        assert any(r.get("pane") == busy and "sleep" in r["reason"] for r in status["quiet"]["waiting_for"]), status
+        human = installed.cli("update", "--status").stdout
+        assert busy[:8] in human and "sleep" in human, human
+
+        # The user works in another app meanwhile: the relaunch doesn't bring Umi to the front.
+        activate_finder()
+        front = frontmost_pid()
+        installed.cli("keys", "--pane", busy, "ctrl+c")
+        wait_until(lambda: "countdown" in _update_status(installed), 30, message="the countdown before installing")
+        _wait_relaunched(installed, dest, "999.0.0")
+        if front is not None and front != installed.app_pid:
+            time.sleep(2)
+            assert frontmost_pid() == front, "the relaunch brought the app to the front"
+
+        # Back as after a quit: tabs, panes and their folders, the typed agent live with its flags.
+        tabs = {t.get("name"): t for w in installed.tree()["windows"] for t in w["tabs"]}
+        assert {"kept", "agent", "busy"} <= set(tabs), tabs
+        assert sorted(os.path.realpath(p["cwd"]) for p in tabs["kept"]["panes"]) == sorted(map(os.path.realpath, folders)), \
+            tabs["kept"]
+        back = wait_live(installed, sid, "claude", timeout=90)
+        assert installed.find_pane(back)[1].get("name") == "agent", "the agent came back in its own tab"
+        installed.cli("send", "--pane", back, "--enter", "STATE")
+
+        def told():
+            for item in reversed(installed.transcript(sid)):
+                if item["kind"] == "assistant" and (item.get("text") or "").startswith("{"):
+                    return json.loads(item["text"])
+            return None
+
+        state = wait_until(told, 30, message="the STATE reply")
+        assert (state["model"], state["permission_mode"]) == ("fake-model-q", "bypassPermissions"), state
+        installed.cli("send", "--pane", back, "--enter", "RECALL")
+        wait_until(lambda: f"history: ECHO before {word}" in installed.screen(back, scrollback=True), 20,
+                   message="the same conversation")
+        last = _update_status(installed).get("last_install") or {}
+        assert (last.get("version"), last.get("from"), last.get("ok")) == ("999.0.0", "0.0.1", True), last
+    finally:
+        if sid:
+            installed.cli("agent", "stop", sid, check=False, timeout=60)
+        if hid:
+            import glob
+            for path in glob.glob(os.path.join(fake_root, "claude", f"{hid}.*")):
+                os.remove(path)
+        _uninstall(installed, dest)
+
+
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_not_now_activity_install_now_and_rollback(target, update_releases, tmp_path):
+    """The notice before installing: activity stops the countdown until the next quiet moment; Not now
+    waits (here 8 s instead of an hour) before counting down again; Install now installs at once. Then
+    `update --rollback` goes back to 0.0.1, which keeps it: 999.0.0 doesn't install itself again until
+    the user asks (`update --now`)."""
+    from test_install import bundle_version
+
+    root, base, log = update_releases
+    env = {"UMI_UPDATE_IDLE_SECONDS": "2", "UMI_UPDATE_NOTICE_SECONDS": "60", "UMI_UPDATE_NOT_NOW_SECONDS": "8"}
+    installed, dest = _install_old(target, update_releases, tmp_path, args=[], env=env)
+    try:
+        installed.start_app()
+        pane = installed.json("window", "new", "--cwd", installed.work)["pane"]
+        _shell_ready(installed, pane)
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        _serve_feed(root, "new")
+        wait_until(lambda: _update_status(installed)["state"] == "ready", 120, message="downloaded")
+        status = wait_until(lambda: (s := _update_status(installed)).get("countdown") and s, 30, message="the countdown")
+        assert 0 < status["countdown"] <= 60, status
+
+        # Someone types: the countdown stops until the next quiet moment.
+        installed.rpc("debug.update.input")
+        status = _update_status(installed)
+        assert "countdown" not in status and status["state"] == "ready", status
+        wait_until(lambda: _update_status(installed).get("countdown"), 30, message="the countdown again")
+
+        # Not now: no countdown for a while, quiet or not.
+        reply = _answer_from_the_sidebar(installed, "not_now")
+        assert "error" not in reply, reply
+        status = _update_status(installed)
+        assert "countdown" not in status and status.get("not_now_until"), status
+        time.sleep(5)
+        assert "countdown" not in _update_status(installed), "Not now didn't wait"
+        wait_until(lambda: _update_status(installed).get("countdown"), 30, message="the countdown after Not now")
+
+        # Install now.
+        reply = _answer_from_the_sidebar(installed, "install_now")
+        assert "error" not in reply, reply
+        _wait_relaunched(installed, dest, "999.0.0")
+        status = _update_status(installed)
+        assert status.get("rollback") == "0.0.1", status
+
+        # Rollback, and no update loop.
+        out = installed.json("update", "--rollback")
+        assert out.get("installing") == "0.0.1", out
+        _wait_relaunched(installed, dest, "0.0.1")
+        wait_until(lambda: _update_status(installed)["state"] != "unknown", 30, message="a check after the rollback")
+        time.sleep(10)
+        status = _update_status(installed)
+        assert bundle_version(dest) == "0.0.1" and status["installed"] == "0.0.1", status
+        assert status.get("rolled_back_from") == "999.0.0" and status["state"] == "held_back", status
+        assert "ready" not in status, status
+        # The user asks for it: it installs again.
+        installed.cli("update", "--now", timeout=600)
+        _wait_relaunched(installed, dest, "999.0.0")
+        assert "rolled_back_from" not in _update_status(installed)
+    finally:
+        _uninstall(installed, dest)
+
+
+@pytest.mark.req("I-4")
+@pytest.mark.slow
+def test_a_failed_install_doesnt_loop(target, update_releases, tmp_path):
+    """An install that fails (here the Applications folder can't be written) leaves the old version
+    running after the next launch, and that version doesn't install itself again at every quiet
+    moment; `update --now` tries again."""
+    root, base, log = update_releases
+    installed, dest = _install_old(target, update_releases, tmp_path, args=[], env=QUIET_ENV)
+    folder = os.path.dirname(dest)
+    try:
+        installed.start_app()
+        wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
+        os.chmod(folder, 0o555)
+        _serve_feed(root, "new")
+        wait_until(lambda: _update_status(installed)["state"] == "ready", 120, message="downloaded")
+        # It quits to install at the quiet moment, and the install fails (the old app stays).
+        wait_until(lambda: not installed.app_running(), 60, message="the app quit to install")
+        time.sleep(3)
+        log_path = os.path.join(installed.dir, "updates", "install.log")
+        assert "install failed" in open(log_path).read()
+        os.chmod(folder, 0o755)
+        installed.start_app()
+        status = wait_until(lambda: (s := _update_status(installed))["state"] != "unknown" and s, 30,
+                            message="a check after the failed install")
+        assert status["installed"] == "0.0.1" and status.get("failed_install") == "999.0.0", status
+        time.sleep(10)
+        status = _update_status(installed)
+        assert installed.app_running() and status["installed"] == "0.0.1" and "countdown" not in status, status
+        assert status["state"] == "held_back", status
+        installed.cli("update", "--now", timeout=600)
+        _wait_relaunched(installed, dest, "999.0.0")
+    finally:
+        os.chmod(folder, 0o755)
+        _uninstall(installed, dest)
+
+
+@pytest.mark.req("I-4", "R-5")
+@pytest.mark.slow
+def test_an_isolated_instance_never_updates_the_users_app(target, update_releases, tmp_path):
+    """An instance with its own state directory running from the user's installed app never updates
+    it: nothing is downloaded, `update --now` refuses, and a quit installs nothing. (The test's own
+    copy stands in for the user's: UMI_UPDATE_PROTECTED_APP only ever adds protection.)"""
+    from test_install import bundle_version
+
+    root, base, log = update_releases
+    env = dict(QUIET_ENV)
+    installed, dest = _install_old(target, update_releases, tmp_path, args=[], env=env)
+    installed.env["UMI_UPDATE_PROTECTED_APP"] = dest
+    try:
+        installed.start_app()
+        del log[:]
+        _serve_feed(root, "new")
+        status = wait_until(lambda: (s := _update_status(installed))["state"] not in ("unknown", "up_to_date") and s, 30,
+                            message="a check that sees the new version")
+        assert "isolated instance" in status.get("install_problem", ""), status
+        time.sleep(6)
+        assert not _zip_requests(log), log
+        assert "ready" not in _update_status(installed)
+        proc = installed.cli("update", "--now", check=False, timeout=120)
+        assert proc.returncode != 0 and "never updates" in proc.stderr, proc.stderr
+        installed.quit_gracefully()
+        time.sleep(3)
+        assert bundle_version(dest) == "0.0.1"
     finally:
         _uninstall(installed, dest)

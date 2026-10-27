@@ -61,12 +61,23 @@ report to Umi only inside Umi and do nothing anywhere else. `umi agent plugins` 
 
 ## Updates
 
-Umi checks this repository's latest release in the background. When there's a newer version it asks
-first, in a note at the bottom of the sidebar (Download, Later, Skip), and downloads nothing until you
-say yes. "Check for Updates…" in the Umi menu, or `umi update`, also count as a yes. A downloaded
-update's signature is verified, and it installs when you quit Umi (`umi update --now` installs and
-relaunches at once). `umi update --check` looks for a newer version and `umi update --status` says
-where things stand. Umi never quits by itself to install an update.
+Umi checks this repository's latest release in the background (about every 15 minutes) and
+downloads a newer version by itself. Its signature is verified, and it installs at the first quiet
+moment: when no agent turn is running and no message is waiting, every pane is at an empty shell
+prompt or shows an idle agent, nothing in the editor is unsaved, and nobody has typed or clicked in
+Umi for two minutes. Half a minute before, a note at the bottom of the sidebar says "Updating to
+X.Y.Z" (Not now waits at least an hour; Install now goes ahead); typing or clicking stops it. Umi then
+relaunches with its windows, tabs, folders and agent sessions as they were.
+
+- `umi update --status` says what is pending and what it waits for (which pane or session).
+- `umi update` checks at once; `umi update --now` installs right away.
+- `umi update --rollback` goes back to the version installed before (Umi keeps its verified copy);
+  the version you left doesn't install itself again until you run `umi update`.
+- `auto-update = check` in `~/.config/umi/config` brings back asking first (Download, Later, Skip in
+  the sidebar; the update then installs when you quit Umi); `auto-update = off` checks only when asked.
+- If a new version won't start, the installer puts any release back:
+  `curl -fsSL https://github.com/alejoacelas/umi/releases/latest/download/install.sh | UMI_INSTALL_FEED=https://github.com/alejoacelas/umi/releases/download/v0.6.2/appcast.json bash`
+  (with Umi quit; any version's `appcast.json` works).
 
 ## Uninstall
 

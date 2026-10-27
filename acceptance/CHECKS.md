@@ -58,8 +58,18 @@ through the user's Ghostty config in the isolated instance.
 
 **P-2: updates.** Setup: choose the app's "Check for Updates…" item on an installed copy.
 - It checks the product's own feed and never offers an upstream Ghostty update.
-- When it's up to date, it says so. When an update is ready, it says it installs on quit and offers
-  to install now.
+- When it's up to date, it says so. When an update is downloading, it says it installs by itself at
+  the next quiet moment (with `auto-update = check`: when the app quits), and an update that is ready
+  offers to install now.
+
+**I-4: installing at a quiet moment.** Setup: an installed copy with a newer release out; leave the
+Mac alone with the app's panes at their prompts.
+- About two and a half minutes later the sidebar shows "Updating to X.Y.Z" counting down, with Not now
+  and Install now; there is no dialog and nothing takes focus.
+- Moving the mouse alone doesn't stop it; a key or a click does, and the notice then says it waits for
+  the next quiet moment.
+- After the relaunch the app is behind the app that was in front (when it wasn't in front itself), and
+  its windows, tabs, folders and agent sessions are as they were.
 
 **I-5: one-line install.** Setup: the release repository's README, and running its install command
 in a fresh shell with the install destination pointed at a temporary folder.

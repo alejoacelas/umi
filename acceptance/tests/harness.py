@@ -215,9 +215,11 @@ class Instance:
     """An isolated copy of the product: its own state directory, fake agent harnesses, and
     (optionally) its own running app."""
 
-    def __init__(self, target, prefix="acc-", fakes=True, state_dir=None, env=None, restore=False):
+    def __init__(self, target, prefix="acc-", fakes=True, state_dir=None, env=None, restore=False, args=None):
         self.target = target
         self.restore = restore
+        # Extra launch arguments (config settings, such as `--auto-update=check`).
+        self.extra_args = list(args or [])
         self.dir = state_dir or os.path.realpath(tempfile.mkdtemp(prefix=prefix))
         os.makedirs(self.dir, exist_ok=True)
         self.fake_dir = os.path.join(self.dir, "fake-agent")
@@ -248,7 +250,7 @@ class Instance:
         env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"   # like an app launched from the Dock
         log = open(os.path.join(self.dir, "app.log"), "ab")
         args = self.target.restore_launch_args if self.restore else self.target.launch_args
-        self.app_proc = subprocess.Popen([self.target.executable, *args], env=env,
+        self.app_proc = subprocess.Popen([self.target.executable, *args, *self.extra_args], env=env,
                                          stdout=log, stderr=subprocess.STDOUT, cwd=self.dir,
                                          start_new_session=True)
         if wait:

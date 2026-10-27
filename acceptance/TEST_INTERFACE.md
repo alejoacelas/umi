@@ -32,6 +32,13 @@ the tests stay independent of any implementation.
    - An environment variable that points an instance (app and CLI) at another feed URL instead of
      the public one. The tests serve that feed over plain HTTP on 127.0.0.1, and the instance must
      accept it.
+   - For isolated instances only: ways to shorten the update timings (the check interval, the quiet
+     period without input, the countdown, Not now), to move the clock the quiet checks read and to
+     stand in for the user's typing or clicking (Umi: `UMI_UPDATE_*_SECONDS`, `debug.update.clock`,
+     `debug.update.input`), and to name an app copy the instance must treat as the user's installed
+     one (Umi: `UMI_UPDATE_PROTECTED_APP`, which only ever adds protection).
+   - Launch arguments that set a config value (`--auto-update=check`), kept when the instance
+     relaunches itself after an update.
 6. **Optional: restoration-safe build.** Restart tests that rely on window restoration (pins, agent
    panes coming back) need a build whose saved window state is separate from the user's installed
    copy, for example a build with a different bundle id. Without one, those tests are skipped.

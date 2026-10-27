@@ -356,6 +356,10 @@ class AppDelegate: NSObject,
             // Don't have to do anything.
             break
 
+        case .zig_run where UmiUpdater.launchedInBackground, .cli where UmiUpdater.launchedInBackground:
+            // Umi: relaunched after an update while another app was in front: stay behind it.
+            break
+
         case .zig_run, .cli:
             // Part of launch services (clicking an app, using `open`, etc.) activates
             // the application and brings it to the front. When using the CLI we don't

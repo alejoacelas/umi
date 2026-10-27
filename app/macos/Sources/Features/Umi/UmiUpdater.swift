@@ -115,6 +115,8 @@ final class UmiUpdater: ObservableObject {
     private var countdownDeadline: Date?
     /// Why the version running now can't be rolled back to later (nil: its zip is kept).
     private var rollbackProblem: String?
+    /// The zip of the version running now is being fetched to keep (the install waits for it).
+    private var keepingArchive: Task<Void, Never>?
     /// The last install of this copy, from the attempt the previous run left (`attempt.json`).
     private var lastAttempt: (version: String, from: String, ok: Bool)?
 
@@ -622,7 +624,12 @@ final class UmiUpdater: ObservableObject {
         }
         // A yes overrides what held this version back.
         if !automatic { clearHolds(for: release.version) }
-        Task { @MainActor in await self.keepRollbackArchive() }
+        if keepingArchive == nil {
+            keepingArchive = Task { @MainActor in
+                await self.keepRollbackArchive()
+                self.keepingArchive = nil
+            }
+        }
         let when = mode == .install
             ? "It installs at the next quiet moment (`\(UmiPaths.cliName) update --status` says what it waits for; `\(UmiPaths.cliName) update --now` installs it now)."
             : "It installs when \(UmiPaths.productName) quits (or run `\(UmiPaths.cliName) update --now`)."
@@ -655,11 +662,11 @@ final class UmiUpdater: ObservableObject {
     private func fetchVerified(_ release: Release) async throws -> Data {
         guard let key = publicKey else { throw UmiError.failed("this build has no update-signing key") }
         let (temp, response) = try await URLSession.shared.download(from: release.url)
+        defer { try? FileManager.default.removeItem(at: temp) }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw UmiError.failed("the update download answered HTTP \(http.statusCode)")
         }
-        let data = try Data(contentsOf: temp, options: .mappedIfSafe)
-        try? FileManager.default.removeItem(at: temp)
+        let data = try Data(contentsOf: temp)
         try Self.verify(data, sha256: release.sha256, signature: release.signature, key: key)
         return data
     }
@@ -820,6 +827,10 @@ final class UmiUpdater: ObservableObject {
         let bundle = Bundle.main.bundleURL.resolvingSymlinksInPath().standardizedFileURL.path
         var installed = ["/Applications", NSHomeDirectory() + "/Applications"].map { "\($0)/\(UmiPaths.productName).app" }
         if let main = Self.defaultInstanceBundle() { installed.append(main) }
+        // Tests stand a copy of their own in for the user's (it only ever adds protection).
+        if let protected = ProcessInfo.processInfo.environment["UMI_UPDATE_PROTECTED_APP"], !protected.isEmpty {
+            installed.append(URL(fileURLWithPath: protected).resolvingSymlinksInPath().standardizedFileURL.path)
+        }
         guard installed.contains(bundle) else { return nil }
         return "this is an isolated instance (UMI_STATE_DIR) running from the installed \(UmiPaths.productName) "
             + "(\(bundle)); it never updates that copy"
@@ -881,6 +892,17 @@ final class UmiUpdater: ObservableObject {
     /// True while quitting to install an update (no confirmations).
     var isQuittingForUpdate: Bool { relaunchAfterInstall }
 
+    /// This launch is the relaunch after an update installed while another app was in front:
+    /// windows come back behind it, and the app doesn't come to the front (read once; the
+    /// installer leaves `updates/relaunch-background` just before it relaunches).
+    nonisolated static let launchedInBackground: Bool = {
+        let marker = (UmiPaths.directory("updates") as NSString).appendingPathComponent("relaunch-background")
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: marker) else { return false }
+        try? FileManager.default.removeItem(atPath: marker)
+        let made = attributes[.modificationDate] as? Date ?? .distantPast
+        return Date().timeIntervalSince(made) < 300
+    }()
+
     // MARK: Installing at a quiet moment
 
     /// Something the user did (typing, clicking): a countdown stops until the next quiet moment.
@@ -905,7 +927,7 @@ final class UmiUpdater: ObservableObject {
     }
 
     private func quietTick() {
-        guard let staged, case .ready = phase, downloadTask == nil else {
+        guard let staged, case .ready = phase, downloadTask == nil, keepingArchive == nil else {
             if staged == nil || phase == .installing { quietTimer?.invalidate(); quietTimer = nil }
             stopCountdown()
             return
@@ -1060,6 +1082,8 @@ final class UmiUpdater: ObservableObject {
     case "$relaunch" in
         0) ;;
         *)
+            # Behind the app in front: the relaunched app reads this and stays in the back.
+            [ "$relaunch" = "bg" ] && : > "$(dirname "$log")/relaunch-background"
             if [ -n "$again" ]; then
                 # An isolated instance comes back as itself (its environment and arguments).
                 /bin/sh "$again" "$dest" >/dev/null 2>&1 &

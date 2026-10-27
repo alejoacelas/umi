@@ -633,6 +633,65 @@ def test_sessions_cut_off_by_a_quit_come_back_in_their_place(target, fresh):
     assert not other.violations()
 
 
+@pytest.mark.req("AG-7", "AG-10", "AG-18", "AG-22", "I-4")
+@pytest.mark.slow
+def test_a_claude_typed_with_flags_comes_back_with_them(target, fresh):
+    """A `claude` the user typed in a pane with flags (`--dangerously-skip-permissions --model X`, and
+    others) comes back after the app quits, as after an update: live in its pane, on the same
+    conversation, with the same flags. Its first prompt isn't run again."""
+    if not target.restoration_safe:
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+    other = fresh(prefix="acc-typed-", restore=True)
+    pane = other.json("window", "new", "--cwd", other.work)["pane"]
+    wait_until(lambda: other.screen(pane).strip(), 20, message="the shell")
+    time.sleep(0.5)
+    root = login_fake_dir()
+    plugin = os.path.join(other.target.app, PLUGIN["claude"])
+    word = nonce()
+    known = {s["id"] for s in other.agents()}
+    other.type_line(pane, f"FAKE_AGENT_DIR='{root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}' "
+                          f"--add-dir '{other.work}' --dangerously-skip-permissions --model fake-model-x "
+                          f"'ECHO first {word}'")
+    session = wait_until(lambda: next((s for s in other.agents() if s["id"] not in known), None), 20,
+                         message="the typed agent to become a session")
+    sid = session["id"]
+    hid = None
+    try:
+        wait_screen(other, pane, f"{REPLY['claude']}ECHO first {word}")
+        wait_status(other, sid, "idle", 15)
+        info = other.info(sid)
+        hid = info.get("harness_id")
+        assert (info.get("model"), info["full_access"]) == ("fake-model-x", True), info
+
+        other.quit_gracefully(timeout=60)
+        other.start_app()
+        back = wait_live(other, sid, "claude", timeout=60)
+        assert other.find_pane(back), "its pane came back"
+        other.type_line(back, "STATE")
+
+        def state():
+            for item in reversed(other.transcript(sid)):
+                if item["kind"] == "assistant" and (item.get("text") or "").startswith("{"):
+                    return json.loads(item["text"])
+            return None
+
+        told = wait_until(state, 20, message="the STATE reply")
+        assert (told["model"], told["permission_mode"]) == ("fake-model-x", "bypassPermissions"), told
+        argv = told["argv"]
+        assert "--add-dir" in argv and other.work in argv, argv
+        assert argv[argv.index("--resume") + 1] == (hid or told["session"]), argv
+        assert not any(f"first {word}" in a for a in argv), f"the first prompt was given again: {argv}"
+        other.type_line(back, "RECALL")
+        wait_screen(other, back, f"history: ECHO first {word}")
+        firsts = [i for i in other.transcript(sid) if i["kind"] == "user" and i.get("text") == f"ECHO first {word}"]
+        assert len(firsts) == 1, firsts
+    finally:
+        other.cli("agent", "stop", sid, check=False, timeout=60)
+        hid = hid or other.info(sid).get("harness_id")
+        for path in glob.glob(os.path.join(root, "claude", f"{hid}.*")):
+            os.remove(path)
+
+
 # ---- AG-8: remove from a pane ----------------------------------------------------------------------
 
 @pytest.mark.req("AG-8", "AG-14")
