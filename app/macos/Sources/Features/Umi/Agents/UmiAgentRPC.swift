@@ -607,6 +607,7 @@ enum UmiAgentRPC {
         let adopted: String? = try await agents.run {
             let harnessID = payload["session_id"] as? String
             var session: UmiAgentSession?
+            var found = false
             if let id = caller.session { session = agents.session(id: id) }
             if session == nil, let harnessID, !harnessID.isEmpty {
                 session = agents.sessions.first { $0.record.harnessID == harnessID }
@@ -642,11 +643,12 @@ enum UmiAgentRPC {
                 agents.add(created)
                 created.notice("Found \(kind.rawValue) typed in a pane.")
                 session = created
+                found = true
             }
             guard let session else { return nil }
-            let wasLive = session.record.live == true
+            let wasLive = session.record.live == true && !found
             session.hook(event, payload, pane: paneID, pid: pid)
-            if !wasLive, session.record.live == true, keysBeforeKnown { session.liveInputEdited() }
+            if !wasLive, session.record.live == true, keysBeforeKnown { session.markInputTouched() }
             return session.record.id
         }
         if let adopted, let paneID, let surface = UmiAgentUI.surface(umiID: paneID) {

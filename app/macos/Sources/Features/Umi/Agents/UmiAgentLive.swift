@@ -364,8 +364,10 @@ extension UmiAgentSession {
     func liveKey(interrupt: Bool, typed: Int, clearsInput: Bool = true) {
         lastLiveKey = Date()
         if !interrupt {
-            // Keys typed into a permission or question dialog answer it: no draft on the prompt.
+            // Keys typed into a permission or question dialog answer it: no draft on the prompt for
+            // messages (AG-9). For an update they still count: Umi can't tell when the dialog closed.
             if liveState == .needsInput {
+                touchInput()
                 changed()
                 return
             }
@@ -425,11 +427,16 @@ extension UmiAgentSession {
     }
 
     /// Any other key on the interface's input line (moving the cursor, recalling a prompt,
-    /// opening an editor): it may hold text Umi can't follow. Keys answering a permission or
-    /// question dialog don't count.
+    /// opening an editor): it may hold text Umi can't follow.
     func liveInputEdited() {
         lastLiveKey = Date()
-        if liveState != .needsInput { touchInput() }
+        touchInput()
+        changed()
+    }
+
+    /// Something reached the input line that Umi didn't see as keys (before it knew the agent).
+    func markInputTouched() {
+        touchInput()
         changed()
     }
 

@@ -1584,7 +1584,8 @@ once a second while an update waits (one read of the process table, one terminal
     (the `tpgid` of the processes on the tty). The shell must be in front: anything else in front is a
     program running there, a shell started from the pane's shell (`zsh`, `bash`) included, whose state a
     relaunch would lose. Whatever the shell started besides what is in front is a job (`sleep 600 &`, a
-    suspended program) that a relaunch would end, also when an idle agent is in front; `gitstatusd`, a
+    suspended program, or one that left it, `(cmd &)`, and still runs on the pane's terminal: review
+    round 7) that a relaunch would end, also when an idle agent is in front; `gitstatusd`, a
     prompt helper that lives as long as its shell, is the only exception. Then the shell's own marks (OSC 133, Ghostty's shell
     integration) must say the cursor is in the prompt's input and every input cell from the prompt's
     first row through the rows the input continues on is blank: a new terminal function,
@@ -1608,7 +1609,8 @@ once a second while an update waits (one read of the process table, one terminal
     send. A late SessionStart (a fresh or `/clear`ed interface) clears the line only if nothing reached
     it after it opened or after the Enter that sent `/clear`; keys that reached a pane after an agent
     typed there started, before its first hook made it a session Umi knows, count too (round 6). Keys
-    answering a permission or question dialog don't count. This can
+    typed while a permission or question dialog is up count as well: Umi can't tell when the dialog
+    closed (round 7). This can
     hold an update back until the next prompt is sent (the status says so); it never lets one discard
     a draft. Delivering messages to a live Claude (AG-9) keeps its own, finer tracking (Esc no longer
     counts as clearing a draft there, and neither does a queued prompt taken in after a newer draft).

@@ -116,6 +116,11 @@ def test_a_busy_pane_is_not_quiet(calm):
     busy_with(["sleep", "background"])
     inst.cli("send", "--pane", pane, "--enter", "pkill -f 'sleep 301'")
     wait_quiet(inst)
+    # A job that left the shell (double fork, reparented to launchd) but still runs on its terminal.
+    inst.cli("send", "--pane", pane, "--enter", "(sleep 302 &)")
+    busy_with(["sleep", "background"])
+    inst.cli("send", "--pane", pane, "--enter", "pkill -f 'sleep 302'")
+    wait_quiet(inst)
 
     # A shell started from the pane's shell is a program running there (its state would be lost).
     inst.cli("send", "--pane", pane, "--enter", "/bin/zsh")
@@ -282,6 +287,15 @@ def test_idle_agents_in_panes_are_quiet(calm):
     found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
     assert "interrupted" in found["reason"], found
     inst.type_line(typed_pane, f"ECHO again {nonce()}")
+    wait_quiet(inst, timeout=30)
+    # Keys while a permission dialog is up: Umi can't tell when it closed, so they count too.
+    inst.type_line(typed_pane, "ASK_PERMISSION")
+    wait_until(lambda: inst.info(typed["id"])["status"] == "needs_input", 15, message="the permission prompt")
+    inst.type_line(typed_pane, "y")
+    wait_until(lambda: inst.info(typed["id"])["status"] == "idle", 15, message="allowed and done")
+    time.sleep(0.5)
+    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "keys during the dialog were ignored"
+    inst.type_line(typed_pane, f"ECHO after the dialog {nonce()}")
     wait_quiet(inst, timeout=30)
     for s in (lid, viewed, typed["id"]):
         inst.cli("agent", "stop", s, check=False, timeout=60)

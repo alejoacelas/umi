@@ -504,3 +504,8 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
 - **Review round 6 (0.6.2)**: `test_idle_agents_in_panes_are_quiet` also checks that Shift-Return isn't
   taken as sending, and that a turn interrupted with Esc keeps the moment from being quiet until the
   agent's next hook (here, the next prompt). **Requirement:** I-4.
+- **Review round 7 (0.6.2)**: `test_a_busy_pane_is_not_quiet` adds a double-forked job, `(sleep 302 &)`,
+  which leaves the shell but keeps the pane's terminal; `test_idle_agents_in_panes_are_quiet` checks
+  that keys typed while a permission dialog is up keep the line counted. (Keys reaching a typed agent
+  before its first hook come from the keyboard only, so no non-`ui` test can drive them.)
+  **Requirement:** I-4.

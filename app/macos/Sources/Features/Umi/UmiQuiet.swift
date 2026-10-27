@@ -262,12 +262,12 @@ enum UmiQuiet {
             self.onTerminal = onTerminal
         }
 
-        /// The pane's own shell: the process on its terminal that the app started, directly or
-        /// through `login` (Ghostty runs `login`, which runs the shell).
-        func shell(onTerminal device: dev_t, app: pid_t) -> pid_t? {
+        /// The pane's own shell, and the `login` it runs under: the processes on its terminal that
+        /// the app started (Ghostty runs `login`, which runs the shell).
+        func shell(onTerminal device: dev_t, app: pid_t) -> (login: pid_t, shell: pid_t)? {
             let mine = onTerminal[device] ?? []
             guard let first = mine.first(where: { byPID[$0]?.ppid == app }) else { return nil }
-            return mine.first { byPID[$0]?.ppid == first } ?? first
+            return (first, mine.first { byPID[$0]?.ppid == first } ?? first)
         }
 
         func descendants(of root: pid_t) -> [pid_t] {
@@ -295,7 +295,7 @@ enum UmiQuiet {
         guard stat(tty, &info) == 0, let front = processes.fronts[info.st_rdev] else {
             return .unknown("no process is in front of its terminal")
         }
-        guard let shell = processes.shell(onTerminal: info.st_rdev, app: getpid()) else {
+        guard let (login, shell) = processes.shell(onTerminal: info.st_rdev, app: getpid()) else {
             return .unknown("its shell can't be found")
         }
         // Whatever the shell started besides what is in front (and what that started) is a job a
@@ -305,6 +305,13 @@ enum UmiQuiet {
         let inFront: Set<pid_t> = front == shell ? [] : Set([front] + processes.descendants(of: front))
         for pid in processes.descendants(of: shell)
         where !inFront.contains(pid) && (front == shell || processes.byPID[pid]?.pgid != front) {
+            let job = UmiProcess.name(pid) ?? "a process"
+            if !promptHelpers.contains(job) { return .job(job) }
+        }
+        // A job that left the shell (`(cmd &)`, reparented to launchd) but still runs on its
+        // terminal, which a relaunch would close under it.
+        for pid in processes.onTerminal[info.st_rdev] ?? []
+        where pid != login && pid != shell && !inFront.contains(pid) && processes.byPID[pid]?.zombie != true {
             let job = UmiProcess.name(pid) ?? "a process"
             if !promptHelpers.contains(job) { return .job(job) }
         }
