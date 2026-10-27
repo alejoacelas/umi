@@ -1544,3 +1544,146 @@ gives [A, C, S, B]: C goes back right after A); the rule keeps everything the st
 
 **Evidence:** `test_undo_and_redo_of_a_move_leave_a_tab_made_since_in_its_place` (both cases, with the
 fake Claude), `test_undo_and_redo_put_back_only_the_tabs_a_step_moved`.
+
+## 78. Updates install themselves at a quiet moment (I-4, 0.6.2; replaces §18's default)
+
+Alejo's words (REQUESTS.md, 2026-10-27): "yes let's make install when quiet the default". He builds
+Umi on one Mac and uses it all day on the other, and wants each tested release to arrive there without
+interrupting him and without acting. Until 0.6.1 a background check asked first (§18) and an update
+installed only on quit or when asked.
+
+| Option | Cost |
+|---|---|
+| A. Keep asking; install on quit | What he asked to replace: he has to answer, and his Umi rarely quits. |
+| B. Download without asking, install on quit | Still waits for a quit that may not come for days. |
+| C. Download without asking, install at a quiet moment with a short notice (chosen) | Needs a dependable "nothing would be lost" test (§79) and a way out (Not now, a setting, rollback). |
+
+The setting is Ghostty's own `auto-update` key, which Umi parsed but no longer used (Sparkle is gone):
+a new value `install` is Umi's default (also when unset); `check` is the old behaviour (ask first,
+install on quit or when asked: §18 still describes it); `download` downloads without asking and
+installs on quit; `off` checks only when asked. Reusing the key keeps one documented place for it and
+needs no new parser. Background checks run every 15 minutes (`UMI_UPDATE_CHECK_SECONDS` still shortens
+it in isolated instances); `umi update` checks at once.
+
+## 79. How "quiet" is decided
+
+Every condition must hold, and whatever can't be determined counts as busy. `UmiQuiet.reasons(in:)`
+decides from a snapshot (pure, unit-tested); `UmiQuiet.snapshot()` reads the app; the updater looks
+once a second while an update waits (one read of the process table, one terminal lock per pane).
+
+- **Sessions** (`UmiAgentSession.quietBlocker`): messages queued or being delivered; something typed
+  in a live interface; status `working`, `starting` or `needs_input` (a turn waiting on the user is
+  still a turn: a relaunch would cut it off); an interface opening or closing. Every session the app
+  knows counts, started by Umi or typed in a pane (AG-18).
+- **Panes**, each on its own:
+  - *Its own shell at an empty prompt.* The pty's foreground process group comes from the kernel's
+    process table (the `tpgid` of the processes on the pane's tty). Its leader must be a shell whose
+    parent is the app or the app's `login` child: a shell started from the pane's shell (`zsh`, `bash`)
+    is a program running there, whose state a relaunch would lose. The shell must have no live
+    descendants (a job left running with `&` would be killed); `gitstatusd`, a prompt helper that lives
+    as long as its shell, is the only exception. Then the shell's own marks (OSC 133, Ghostty's shell
+    integration) must say the cursor is in the prompt's input and every input cell from the prompt's
+    first row through the rows the input continues on is blank: a new terminal function,
+    `ghostty_surface_umi_prompt_state` (0 can't tell, 1 empty, 2 typed). No marks seen, a full-screen
+    program's screen or a cursor outside the input is "can't tell". zsh-autosuggestions' grey text only
+    shows after something typed, so it never makes an empty prompt look typed.
+  - *An idle agent.* A session's read-only view is quiet (its session is judged above). A live
+    interface is quiet when it is what's in front (its process group is the foreground group, or the
+    foreground program's arguments name the agent) and its session is idle with nothing typed.
+  - A pane whose process exited is quiet.
+- **Unsaved work**: editor documents with unsaved changes; a modal window, a sheet, a text field being
+  edited (a tab rename, a search), the command palette.
+- **The user**: a local event monitor sees keys, clicks and scrolling in the app (moving the mouse
+  doesn't count); launching counts. `umi send` and `umi keys` aren't the user's input.
+
+Not counted: screen contents. Umi doesn't keep scrollback across a quit, so a finished command's output
+goes with the relaunch, as after a quit (R-3).
+
+Evidence: `test_quiet_updates.py` (fake agents, fake time through `debug.update.clock`, input through
+`debug.update.input`), `UmiQuietTests`.
+
+## 80. The notice before installing
+
+At a quiet moment the sidebar's update notice says "Updating to Umi X.Y.Z in N s" for 30 seconds (Not
+now, Install now), then Umi installs and relaunches. Anything the user does stops the countdown; the
+notice then says the update waits for the next quiet moment, with the same two buttons. Keeping the
+buttons matters: a click on Install now is itself activity, and if the notice vanished on mouse-down
+the click would land on nothing. Not now waits at least an hour (kept in `update.json` across
+restarts), then the next quiet moment counts down again. Install now installs at once, but if anything
+besides the user's own input stands in the way (a program started meanwhile) it explains what would be
+interrupted in a dialog first: the user clicked, so a dialog is fair there. With the sidebar hidden the
+notice isn't seen and the update still installs after the countdown: nothing would be lost, by §79.
+
+## 81. The relaunch stays behind the app in front
+
+Restoring the layout presents every window with focus, which activates the app: a relaunch while Alejo
+works in another app would have jumped in front of it. Now, when Umi isn't the active app as it quits
+to install, the installer relaunches it with `open -g` and leaves `updates/relaunch-background`; the
+launch that finds it (at most five minutes old) restores the windows behind the other apps' and doesn't
+activate. When Umi was in front, it comes back in front. Evidence: the end-to-end test checks the app
+in front stays in front.
+
+## 82. Rollback keeps verified zips
+
+`umi update --rollback` installs the version installed before the current one.
+
+| Option | Cost |
+|---|---|
+| A. Keep the replaced bundle | Nothing to verify it against later; a different code path from updates. |
+| B. Zip the running bundle before replacing it | Unsigned: only its hash could be checked. |
+| C. Keep each installed version's downloaded, signed zip (chosen) | The running version may not have one (installed by install.sh or an older updater). |
+
+C is what the brief asked for. The staged update keeps its zip and what it was verified against
+(`release.json`); after a successful swap the helper moves them to `updates/kept/VERSION`, writes the
+replaced version to `kept/previous` and removes other kept versions. For a running version without a
+kept zip, the updater fetches its own release again, from the feed `release.sh` now stamps into each
+release (`UmiReleaseFeedURL`), and verifies it like an update while the new version is staged; the
+countdown waits for that. Rollback verifies the kept zip again (signature, hash, bundle id, version,
+code signature) and installs through the same helper. It marks the version it left
+(`rolled_back_from`): that version and older ones never install by themselves again, so a rollback
+can't be undone by the next quiet moment; `umi update` or `--now` clears the mark. A version that won't
+start can't be rolled back from inside it; README gives the installer command with an older release's
+feed.
+
+## 83. No update loops
+
+- A failed install (the helper couldn't swap, the app didn't exit) leaves `updates/attempt.json`
+  behind: the next launch, still the old version, marks that version `failed_install`, and it doesn't
+  install by itself again (a newer one does); `umi update --now` tries again.
+- After a rollback, §82's mark.
+- The feed serving an older or the same version never installs anything (versions are compared).
+- While an update waits, checks go on: a newer release replaces the staged one.
+
+## 84. Isolated instances never update the user's installed app
+
+An isolated instance (`UMI_STATE_DIR`) refuses to download, install or roll back when its bundle is
+`/Applications/Umi.app`, `~/Applications/Umi.app` or the bundle the user's own instance runs from. The
+tests stand their own copy in with `UMI_UPDATE_PROTECTED_APP` (it can only add protection). An isolated
+instance that does update (a test copy in a temporary Applications folder) relaunches through
+`updates/relaunch.sh` with its whole environment and arguments; before, the helper passed only the
+state directory and the feed, so a relaunched test instance would have lost its fake agents and run the
+user's own `claude` and `codex`.
+
+## 85. A `claude` typed in a pane keeps its flags
+
+A session found through the plugin's hooks (AG-18) took its model from the hook payload and full access
+from `permission_mode`; `SessionStart` carries neither in the fakes (and the real CLI's payload carries
+no flags at all), and other flags were dropped. After a quit, a crash or an update the interface came
+back as `claude --resume ID --plugin-dir …`, without `--dangerously-skip-permissions` (and, with the
+fakes, without `--model`). Now
+Umi reads the interface's arguments from its process (`KERN_PROCARGS2`, walking up from the hook's
+parent to the agent's program) at its first hook and whenever the user types it again, and keeps them:
+`--model`, `--effort`, `--dangerously-skip-permissions` and `--permission-mode` become the session's
+settings, other options its harness arguments. Parsing follows `claude --help` (2.1.311): options that
+take several values take them up to the next option, as Claude's own parser does. Left out: what picks
+a conversation (`--resume`, `--continue`, `--session-id`, `--fork-session`), one-offs (`--print`,
+`--worktree`, `--tmux`, `--bg`), Umi's or Tern's plugin, and the first prompt, which isn't run again.
+For a typed Codex only the model, effort, approvals, full access and profile are kept: its interface
+attaches to Umi's own Codex server, where its other flags don't apply. Evidence:
+`test_a_claude_typed_with_flags_comes_back_with_them` (quit and restart) and the end-to-end update test.
+
+## 86. A paste is a draft in a live interface
+
+⌘V (a key binding, or Edit > Paste) into a live Claude interface wasn't seen as typing: a pasted draft
+didn't hold back a waiting message (AG-9), and would not have held back an update. Now a paste counts as
+typed text of the pasted length.

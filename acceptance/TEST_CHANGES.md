@@ -450,3 +450,36 @@ recency".
   and `tests/test_umi_nav.py::test_undo_and_redo_put_back_only_the_tabs_a_step_moved` (Move Tab Up, a
   pin and a move to another window, undone and redone through the Edit menu without the accessibility
   tree). **Requirements:** S-7, M-3.
+
+## Updates install themselves at a quiet moment (BRIEF-quiet-updates.md, 0.6.2)
+
+I-4 changed: by default a check that finds a newer version downloads it without asking and installs
+it at a quiet moment; asking first is the `auto-update = check` setting. **Requirement:** I-4, "yes
+let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
+
+- **Changed, `tests/test_umi_extra.py`**: the update-question tests (`test_a_background_check_asks_…`,
+  `test_later_asks_…`, `test_update_is_a_yes_…`, `test_a_yes_shows_its_failures_…`,
+  `test_the_latest_answer_counts`, `test_try_again_…`, the `ui` test `test_the_update_question_in_the_sidebar`)
+  launch the installed copy with `--auto-update=check`, the setting that keeps the behaviour they
+  check. What they assert is unchanged. Two of them counted every zip request; once a newer version
+  is staged, the installed version's own zip is now fetched once too, to keep for a rollback, so they
+  count downloads of the newer version (`_update_downloads`, which leaves out `/old/`). Their "nothing
+  is downloaded until yes" checks still count every zip.
+- **Changed, `tests/harness.py`**: `Instance(args=…)` adds launch arguments (config settings), used above.
+- **New, `tests/test_quiet_updates.py`** (fake agents, fake time): two minutes without input; a busy
+  pane (text typed at the prompt, a program, a background job, a shell started from the pane's shell,
+  each pane judged on its own); a running turn and a message waiting for a live Claude with a draft;
+  unsaved editor changes; idle agents in panes (a live interface, a read-only view, a `claude` the
+  user typed) are quiet, and text typed into one isn't.
+- **New, `tests/test_umi_extra.py`** (release builds): `test_an_update_installs_itself_at_a_quiet_moment_and_everything_comes_back`
+  (downloaded without asking; not installed while a pane runs `sleep`, and the status names the pane;
+  installed after a countdown once quiet; the relaunch keeps the app in front in front; tabs, folders
+  and a `claude` typed with flags come back, same conversation, same flags);
+  `test_not_now_activity_install_now_and_rollback` (activity stops the countdown, Not now waits, Install
+  now installs; `--rollback` goes back and the newer version doesn't return by itself; `update --now`
+  brings it back); `test_a_failed_install_doesnt_loop`; `test_an_isolated_instance_never_updates_the_users_app`.
+- **New, `tests/test_live.py::test_a_claude_typed_with_flags_comes_back_with_them`**: quit and restart;
+  the typed `claude --add-dir … --dangerously-skip-permissions --model …` comes back live in its pane,
+  on its conversation, with those flags, and its first prompt isn't run again.
+- **New, Swift unit tests `UmiQuietTests`**: the quiet decision from made-up snapshots with fake time,
+  and the parsing of a typed agent's flags.
