@@ -1246,6 +1246,7 @@ GHOSTTY_API bool ghostty_surface_read_output_text(ghostty_surface_t,
                                                      ghostty_selection_s,
                                                      ghostty_text_s*);
 GHOSTTY_API bool ghostty_surface_umi_blocks(ghostty_surface_t, ghostty_text_s*);
+GHOSTTY_API uint8_t ghostty_surface_umi_prompt_state(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 
 #ifdef __APPLE__

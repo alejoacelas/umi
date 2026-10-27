@@ -92,6 +92,9 @@ plist="$out/Umi.app/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$version" "$plist"
 plutil -replace CFBundleVersion -string "$version" "$plist"
 plutil -replace UmiBuildKind -string release "$plist"
+# Where this release's own feed is: an installed copy keeps its own zip from there, so
+# `umi update --rollback` can come back to it after the next update.
+plutil -replace UmiReleaseFeedURL -string "${base_url}appcast.json" "$plist"
 xattr -cr "$out/Umi.app"
 codesign --force --deep --sign - "$out/Umi.app" >/dev/null 2>&1
 codesign --verify --deep --strict "$out/Umi.app"

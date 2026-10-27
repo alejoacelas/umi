@@ -345,13 +345,15 @@ enum UmiRPC {
             return UmiUpdater.shared.status()
         case "update.answer":
             guard let answer = params.string("answer").flatMap(UmiUpdater.Answer.init(rawValue:)) else {
-                throw UmiError.badRequest("answer is download, later or skip")
+                throw UmiError.badRequest("answer is download, later, skip, not_now or install_now")
             }
             return try await UmiUpdater.shared.answer(answer)
         case "update.download":
             return try await UmiUpdater.shared.download()
         case "update.install_now":
             return try await UmiUpdater.shared.installNow(force: params.bool("force") ?? false)
+        case "update.rollback":
+            return try await UmiUpdater.shared.rollback(force: params.bool("force") ?? false)
 
         // MARK: Internal (not part of the CLI contract): scripted checks of menu and editor
         // paths that otherwise need the accessibility tree.
@@ -401,6 +403,16 @@ enum UmiRPC {
             UmiLayout.focusTab(tab, in: window)
             UmiDebug.focusEditor(in: window, selectEnd: params.bool("select_end") ?? false)
             return ["ok": true]
+
+        case "debug.update.input":
+            // Someone typing or clicking in the app, as the event monitor sees it.
+            UmiQuiet.userActed()
+            return UmiQuiet.report()
+        case "debug.update.clock":
+            // Fake time for the quiet-moment checks (isolated instances only).
+            guard UmiPaths.isIsolated else { throw UmiError.badRequest("only an isolated instance takes fake time") }
+            UmiQuiet.clockOffset += TimeInterval(params.int("advance") ?? 0)
+            return UmiQuiet.report()
 
         case "debug.agent.pane", "debug.agent.type", "debug.agent.press":
             return try UmiAgentDebug.handle(method, params, caller: caller)

@@ -248,6 +248,7 @@ class AppDelegate: NSObject,
         UmiPersistence.shared.restoreLayout()
         UmiTernImport.reportFailures()
         undoManager.enableUndoRegistration()
+        UmiQuiet.start()
         UmiUpdater.shared.startBackgroundChecks()
 
         // Register our service provider. This must happen after everything is initialized.
@@ -408,7 +409,8 @@ class AppDelegate: NSObject,
         if windows.isEmpty { return .terminateNow }
 
         // If we've already accepted to install an update, then we don't need to
-        // confirm quit. The user is already expecting the update to happen.
+        // confirm quit. The user is already expecting the update to happen (Umi: or it
+        // installs at a quiet moment, when nothing would be lost).
         if UmiUpdater.shared.isQuittingForUpdate {
             return .terminateNow
         }

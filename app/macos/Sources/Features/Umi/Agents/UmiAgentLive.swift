@@ -244,6 +244,8 @@ extension UmiAgentSession {
         if let pid, pid > 1, record.livePID != pid {
             record.livePID = pid
             saveRecord()
+            // Typed again (`claude --resume … --model …`): the latest command's flags count.
+            if event == "SessionStart" { adoptTypedFlags(pid: pid) }
         }
         let tool = payload["tool_name"] as? String ?? ""
         let input = payload["tool_input"] as? [String: Any] ?? [:]

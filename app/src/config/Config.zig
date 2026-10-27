@@ -3985,9 +3985,15 @@ term: []const u8 = "xterm-ghostty",
 ///    available, but do not automatically download or install the update.
 ///  * `download` - Check for updates, automatically download the update,
 ///    notify the user, but do not automatically install the update.
+///  * `install` - Umi: check, download and verify the update without
+///    asking, then install it at the first quiet moment (no turn running,
+///    every pane at an empty prompt or an idle agent, no unsaved editor
+///    changes, two minutes without typing or clicking) and relaunch.
 ///
-/// If unset, we defer to Sparkle's default behavior, which respects the
-/// preference stored in the standard user defaults (`defaults(1)`).
+/// Umi: if unset, `install`. `check` asks before downloading anything and
+/// installs when Umi quits or when asked; `download` downloads without
+/// asking and installs the same way; `off` checks only when asked
+/// (`umi update`). Umi never uses Sparkle.
 ///
 /// Changing this value at runtime works after a small delay.
 @"auto-update": ?AutoUpdate = null,
@@ -9948,6 +9954,8 @@ pub const AutoUpdate = enum {
     off,
     check,
     download,
+    /// Umi: install at a quiet moment (its default).
+    install,
 };
 
 /// See background-blur

@@ -630,6 +630,8 @@ enum UmiAgentRPC {
                 if kind == .codex || created.claudeConversationOnDisk { created.record.conversation = true }
                 created.liveState = .idle
                 created.saveRecord()
+                // The flags it was typed with, so it comes back with them (AG-7, AG-10).
+                if let pid { created.adoptTypedFlags(pid: pid) }
                 agents.add(created)
                 created.notice("Found \(kind.rawValue) typed in a pane.")
                 session = created

@@ -1228,8 +1228,8 @@ func shellQuote(_ word: String) -> String {
 // MARK: - Updates
 
 func updateCommand(_ argv: [String]) {
-    let args = parse(argv, ArgSpec(boolean: ["--check", "--status", "--now", "--force", "--later", "--skip"]))
-    let modes = ["--check", "--status", "--now", "--later", "--skip"].filter { args.has($0) }
+    let args = parse(argv, ArgSpec(boolean: ["--check", "--status", "--now", "--force", "--later", "--skip", "--rollback"]))
+    let modes = ["--check", "--status", "--now", "--later", "--skip", "--rollback"].filter { args.has($0) }
     if modes.count > 1 { fail("update: choose one of \(modes.joined(separator: ", "))") }
     if args.has("--check") || args.has("--status") || args.has("--later") || args.has("--skip") {
         let result: [String: Any]
@@ -1240,12 +1240,18 @@ func updateCommand(_ argv: [String]) {
         } else {
             result = callDict("update.answer", ["answer": args.has("--later") ? "later" : "skip"])
         }
-        if jsonOutput { printJSON(result) } else { print(updateStatusLine(result)) }
+        if jsonOutput {
+            printJSON(result)
+        } else {
+            print(updateStatusLine(result))
+            if args.has("--status") { for line in updateWaitLines(result) { print(line) } }
+        }
         return
     }
-    // --force: install now even while managed-agent turns run (they're interrupted and
-    // continue after the relaunch); without it, `--now` refuses while turns run (R-10).
-    let result = callDict(args.has("--now") ? "update.install_now" : "update.download", args.has("--force") ? ["force": true] : [:])
+    // --force: install now (or go back) even while managed-agent turns run (they're interrupted
+    // and continue after the relaunch); without it, `--now` refuses while turns run (AG-22).
+    let method = args.has("--rollback") ? "update.rollback" : (args.has("--now") ? "update.install_now" : "update.download")
+    let result = callDict(method, args.has("--force") ? ["force": true] : [:])
     if jsonOutput {
         printJSON(result)
     } else if let message = result["message"] as? String {
@@ -1258,6 +1264,23 @@ func updateStatusLine(_ result: [String: Any]) -> String {
     let installed = result["installed"] as? String ?? "?"
     let latest = result["latest"] as? String
     var line = "installed \(installed), latest \(latest ?? "not checked yet")"
+    let quietly = result["installs"] as? String == "quiet"
+    if let ready = result["ready"] as? String, !ready.isEmpty, ["ready", "installing"].contains(result["state"] as? String ?? "") {
+        if result["state"] as? String == "installing" { return line + ": installing \(ready) now." }
+        if !quietly {
+            return line + ": \(ready) is downloaded and installs when \(productName) quits (`\(cliName) update --now` installs it now)."
+        }
+        if let seconds = result["countdown"] as? Int { return line + ": \(ready) is downloaded and installs in \(seconds) s (Not now in the sidebar waits)." }
+        if let until = (result["not_now_until"] as? String).flatMap({ ISO8601DateFormatter().date(from: $0) }) {
+            let when = DateFormatter.localizedString(from: until, dateStyle: .none, timeStyle: .short)
+            return line + ": \(ready) is downloaded; you said Not now, so it installs at the first quiet moment after \(when) "
+                + "(`\(cliName) update --now` installs it now)."
+        }
+        if let held = result["held_back"] as? String { return line + ": \(ready) is downloaded but held back (\(held))." }
+        let quiet = (result["quiet"] as? [String: Any])?["quiet"] as? Bool ?? false
+        return line + ": \(ready) is downloaded and installs at the next quiet moment"
+            + (quiet ? " (now: the countdown starts)." : ". `\(cliName) update --now` installs it now.")
+    }
     guard let latest, result["update_available"] as? Bool ?? false else {
         return latest == nil ? line + " (`\(cliName) update --check` checks)" : line + ": up to date"
     }
@@ -1274,18 +1297,60 @@ func updateStatusLine(_ result: [String: Any]) -> String {
             + "`\(cliName) update` downloads it anyway."
     case "agreed":
         line += ": an update is available; you said yes, so it downloads at the next check (or now with `\(cliName) update`)."
+    case "held_back":
+        line += ": an update is available but doesn't install by itself (\(result["held_back"] as? String ?? "held back")); "
+            + "`\(cliName) update` downloads it."
     case "downloading":
         line += ": downloading \(result["downloading"] as? String ?? latest)."
-    case "ready", "installing":
-        let ready = result["ready"] as? String ?? latest
-        line += ": \(ready) is downloaded and installs when \(productName) quits (`\(cliName) update --now` installs it now)."
     case "failed":
         line += ": the download failed (\(result["error"] as? String ?? "unknown error")); `\(cliName) update` tries again."
     default:
         line += ": an update is available (`\(cliName) update`)"
         if result["background_checks"] as? Bool == false { line += "; this copy doesn't check by itself" }
+        if result["mode"] as? String == "install" && result["background_checks"] as? Bool == true {
+            line += "; it downloads at the next check"
+        }
     }
     return line
+}
+
+/// `update --status`: what a quiet moment still waits for (which pane, session or other
+/// thing), and what can be gone back to.
+func updateWaitLines(_ result: [String: Any]) -> [String] {
+    var lines: [String] = []
+    let mode = result["mode"] as? String ?? "install"
+    if mode != "install" { lines.append("auto-update = \(mode) (updates \(mode == "check" ? "ask first" : mode == "off" ? "are checked only when asked" : "download by themselves") and install when \(productName) quits)") }
+    if let quiet = result["quiet"] as? [String: Any] {
+        let waiting = quiet["waiting_for"] as? [[String: Any]] ?? []
+        if waiting.isEmpty {
+            lines.append("quiet: nothing running, nothing typed or unsaved, nobody typing")
+        } else {
+            lines.append("not quiet:")
+            for reason in waiting {
+                let text = reason["reason"] as? String ?? "?"
+                switch reason["kind"] as? String {
+                case "pane":
+                    var where_ = "pane \(String((reason["pane"] as? String ?? "?").prefix(8)))"
+                    if let tab = reason["tab"] as? String { where_ += " (tab \"\(tab)\")" }
+                    lines.append("  \(where_): \(text)")
+                case "session":
+                    lines.append("  session \(reason["name"] as? String ?? reason["session"] as? String ?? "?"): \(text)")
+                default:
+                    lines.append("  \(text)")
+                }
+            }
+        }
+    }
+    if let previous = result["rollback"] as? String {
+        lines.append("`\(cliName) update --rollback` goes back to \(previous)")
+    } else if let problem = result["rollback_problem"] as? String {
+        lines.append("no rollback: \(problem)")
+    }
+    if let failed = result["failed_install"] as? String {
+        lines.append("installing \(failed) failed last time, so it doesn't install by itself (`\(cliName) update --now` tries again)")
+    }
+    if let problem = result["install_problem"] as? String { lines.append(problem) }
+    return lines
 }
 
 // MARK: - Doctor

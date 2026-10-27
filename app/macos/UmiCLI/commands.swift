@@ -233,13 +233,20 @@ let commandTable: [CommandHelp] = [
     CommandHelp(section: "Other", usage: "shortcuts [ls | set ID KEYS | clear ID | reset [ID]]",
                 summary: "keyboard shortcuts (also in Settings, ⌘,)",
                 actions: [PaletteAction(title: "List Keyboard Shortcuts", argv: ["shortcuts"])]),
-    CommandHelp(section: "Other", usage: "update", summary: "download the newest version (it installs when \(productName) quits)",
+    CommandHelp(section: "Other", usage: "update", summary: """
+        check now and download the newest version (it installs at the next
+        quiet moment, or when \(productName) quits with auto-update = check)
+        """,
                 actions: [PaletteAction(title: "Check for Updates", argv: ["update", "--check"])]),
     CommandHelp(section: "Other", usage: "update --check | --status",
-                summary: "look for a newer version | say what's known, without looking"),
+                summary: "look for a newer version | say what's pending and what a quiet moment waits for"),
     CommandHelp(section: "Other", usage: "update --now [--force]", summary: """
         download and install now, then relaunch (--force: even while
         agent turns run; they continue after the relaunch)
+        """),
+    CommandHelp(section: "Other", usage: "update --rollback [--force]", summary: """
+        go back to the version installed before this one (it won't
+        install by itself again)
         """),
     CommandHelp(section: "Other", usage: "update --later | --skip", summary: """
         answer \(productName)'s update question: ask again tomorrow |

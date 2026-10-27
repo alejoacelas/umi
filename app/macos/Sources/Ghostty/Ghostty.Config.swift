@@ -753,6 +753,8 @@ extension Ghostty.Config {
         case off
         case check
         case download
+        /// Umi: install at a quiet moment (its default, I-4).
+        case install
     }
 
     /// Background blur configuration that maps from the C API values.

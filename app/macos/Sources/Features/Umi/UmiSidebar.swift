@@ -574,9 +574,10 @@ struct UmiSidebarResizeEdge: View {
     }
 }
 
-/// A quiet notice at the bottom of the sidebar about updates (I-4): the question when a
-/// newer version is out (nothing downloads until Download), the download, and the staged
-/// update. It never takes focus or blocks anything; it stays until answered.
+/// A quiet notice at the bottom of the sidebar about updates (I-4): the countdown before an
+/// update installs at a quiet moment (Not now, Install now), or, with `auto-update = check`,
+/// the question when a newer version is out (nothing downloads until Download), the download,
+/// and the staged update. It never takes focus or blocks anything; it stays until answered.
 private struct UmiUpdateNotice: View {
     let notice: UmiUpdater.Notice
 
@@ -608,6 +609,7 @@ private struct UmiUpdateNotice: View {
         case .downloading: return "arrow.down.circle.dotted"
         case .ready: return "checkmark.circle"
         case .failed: return "exclamationmark.circle"
+        case .updating, .waiting: return "arrow.triangle.2.circlepath"
         }
     }
 
@@ -618,6 +620,12 @@ private struct UmiUpdateNotice: View {
         case .downloading(let version): return "Downloading \(name) \(version)…"
         case .ready(let version): return "\(name) \(version) is ready. It installs when you quit."
         case .failed(let version, let reason): return "Couldn't download \(name) \(version): \(reason)"
+        case .updating(let version, let seconds):
+            return seconds > 0
+                ? "Updating to \(name) \(version) in \(seconds) s. \(name) relaunches, with your tabs and sessions."
+                : "Updating to \(name) \(version)…"
+        case .waiting(let version):
+            return "Updating to \(name) \(version) at the next quiet moment (nothing running, nobody typing)."
         }
     }
 
@@ -636,6 +644,24 @@ private struct UmiUpdateNotice: View {
             HStack(spacing: 4) {
                 noticeButton("Try Again", prominent: true) { answer(.download) }
                 noticeButton("Later") { answer(.later) }
+            }
+        case .updating(_, let seconds) where seconds == 0:
+            EmptyView()
+        case .updating, .waiting:
+            // The same buttons in both: a click on one stops the countdown (it's activity) and
+            // the notice changes its words under the pointer, but the button still gets the click.
+            HStack(spacing: 4) {
+                noticeButton("Not now") { answer(.notNow) }
+                noticeButton("Install now", prominent: true) {
+                    Task { @MainActor in
+                        do {
+                            _ = try await UmiUpdater.shared.answer(.installNow)
+                        } catch {
+                            // Something runs now: say what installing would interrupt, and ask.
+                            UmiUpdater.shared.presentReadyPrompt()
+                        }
+                    }
+                }
             }
         case .downloading:
             EmptyView()

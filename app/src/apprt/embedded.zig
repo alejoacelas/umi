@@ -2075,6 +2075,56 @@ pub const CAPI = struct {
         return true;
     }
 
+    /// Umi: whether the shell waits at its prompt with nothing typed, as
+    /// the shell's own marks say (OSC 133). Umi installs updates only when
+    /// a relaunch would lose nothing, so anything it can't be sure of
+    /// counts as busy:
+    ///   0  can't tell: no marks seen on this screen, another screen
+    ///      (a program's full-screen view), or the cursor isn't in the
+    ///      prompt's input;
+    ///   1  at the prompt, with nothing typed;
+    ///   2  at the prompt, with something typed (blanks don't count).
+    export fn ghostty_surface_umi_prompt_state(surface: *Surface) u8 {
+        const core = &surface.core_surface;
+        core.renderer_state.mutex.lockUncancelable(global.io());
+        defer core.renderer_state.mutex.unlock(global.io());
+
+        const t = core.renderer_state.terminal;
+        if (t.screens.active_key == .alternate) return 0;
+        const screen = t.screens.active;
+        if (!screen.semantic_prompt.seen) return 0;
+        const cursor = screen.cursor.page_pin.*;
+        if (screen.cursor.semantic_content != .input) return 0;
+
+        // The prompt's first row (OSC 133 A), at or above the cursor's.
+        var start = cursor;
+        var up: usize = 0;
+        while (start.rowAndCell().row.semantic_prompt != .prompt) : (up += 1) {
+            if (up >= 256) return 0;
+            start = start.up(1) orelse return 0;
+        }
+
+        // Every input cell from there through the cursor's row and the rows
+        // the input continues on (soft wraps, continuation prompts).
+        var p = start;
+        var rows: usize = 0;
+        var past_cursor = false;
+        while (rows < 512) : (rows += 1) {
+            const row = p.rowAndCell().row;
+            for (p.cells(.all)) |*cell| {
+                if (cell.semantic_content != .input or !cell.hasText()) continue;
+                const cp = cell.codepoint();
+                if (cp != ' ' and cp != '\t') return 2;
+            }
+            if (p.node == cursor.node and p.y == cursor.y) past_cursor = true;
+            const next = p.down(1) orelse break;
+            if (past_cursor and !row.wrap and
+                next.rowAndCell().row.semantic_prompt != .prompt_continuation) break;
+            p = next;
+        }
+        return 1;
+    }
+
     fn umiRowText(
         alloc: Allocator,
         pin: terminal.Pin,

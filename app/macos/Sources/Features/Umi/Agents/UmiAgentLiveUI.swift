@@ -149,6 +149,9 @@ extension UmiAgentUI {
             input = .clear
         } else if event.keyCode == 51 && event.modifierFlags.isDisjoint(with: [.option, .command]) {
             input = .delete                                       // backspace: one character
+        } else if event.modifierFlags.contains(.command) && chars.lowercased() == "v" {
+            // A paste puts text on the input line: it's typed text, as long as the paste is.
+            input = .text(max(1, NSPasteboard.general.string(forType: .string)?.count ?? 1))
         } else if [123, 124, 125, 126, 115, 116, 119, 121, 117].contains(event.keyCode)
                     || event.modifierFlags.contains(.command) || (event.characters ?? "").isEmpty {
             input = .other                                        // navigation, shortcuts
@@ -158,6 +161,12 @@ extension UmiAgentUI {
             input = .text((event.characters ?? "").count)
         }
         Self.liveInput(session: session, input)
+    }
+
+    /// Edit > Paste (or its key) in a live interface: the pasted text is typed text there.
+    func pasted(pane: Ghostty.SurfaceView, text: String?) {
+        guard let session = attachments[pane.id] ?? Self.sessionLive(in: pane.id) else { return }
+        Self.liveInput(session: session, .text(max(1, text?.count ?? 1)))
     }
 
     /// Text and keys put into a pane through Umi (`umi send`, `umi keys`): agents and scripts
