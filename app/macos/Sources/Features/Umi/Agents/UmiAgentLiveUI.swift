@@ -416,7 +416,7 @@ extension UmiLayout {
     /// Put a detached pane back, in a new tab.
     static func adopt(_ pane: Ghostty.SurfaceView, intoNewTabOf window: TerminalController, focus: Bool) {
         let tab = UmiTab(tree: .init(view: pane))
-        window.insertTab(tab, at: window.tabs.count)
+        window.insertTab(tab, at: window.newTabIndex(selecting: focus))
         UmiEvents.shared.emit("tab.created", ["tab": tab.idString, "window": window.umiIDString])
         if focus { focusPane(pane, activate: true) }
     }

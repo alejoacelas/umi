@@ -119,7 +119,6 @@ enum UmiNavigationRPC {
             return [
                 "history": UmiTabHistory.recentFirst.map(\.idString),
                 "focus_history": UmiFocusHistory.recentFirst.map(\.umiID),
-                "order_frozen": UmiTabOrder.isFrozen,
                 "can_go_back": UmiTabHistory.canGoBack,
                 "can_jump_back": UmiNavigation.canJumpBack,
                 "shown_sessions": shownSessions,

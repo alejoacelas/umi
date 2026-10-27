@@ -35,7 +35,7 @@ present. Extra fields are fine.
 | `ls` | JSON: `{"windows": [Window], "current_tab": id, "current_pane": id}` |
 | `window new [--cwd D] [--cmd C] [--name N] [--worktree W [--base REF]] [--no-focus]` | prints the new pane's id; JSON has `pane`, `tab`, `window` |
 | `window focus\|close [WINDOW]` | |
-| `tab new [NAME] [--window W] [--pane P] [--cwd D] [--cmd C] [--name N] [--color C] [--index I] [--worktree W [--base REF]] [--no-focus]` | as `window new` |
+| `tab new [NAME] [--window W] [--pane P] [--cwd D] [--cmd C] [--name N] [--color C] [--index I] [--worktree W [--base REF]] [--no-focus]` | as `window new`; the tab opens right after the current tab, or last with `--no-focus`, or at `--index` (SPEC S-7) |
 | `tab focus\|close\|equalize [TAB]` | |
 | `tab back` | the tab visited before (again: the one before that), in any window; JSON `{"tab", "window", "index", "title"}`; fails when there is none |
 | `tab next\|prev [--window W]` | the next or previous tab in sidebar order (wraps); JSON as `tab back` |
@@ -80,8 +80,8 @@ Other commands:
 | `shortcuts [ls]` | JSON `{"shortcuts": [{"id", "title", "kind": "umi"\|"ghostty", "keys": [str], "display": [str], "default": [str], "changed": bool, "menu"?, "source"?}], "files": [str]}` |
 | `shortcuts set ID KEYS`, `shortcuts clear ID`, `shortcuts reset [ID]` | ID from `shortcuts`: an Umi item (`tab.next`) or `ghostty:ACTION`; KEYS like `cmd+shift+]`; JSON of `set` has `notes`: the shortcuts the key was taken from |
 
-Events also include `tab.reordered` `{"window", "tabs": [ids]}` when the sidebar order (SPEC S-7) changes,
-`palette.opened` and `palette.ran`.
+Events also include `palette.opened` and `palette.ran`. Tabs change places only when moved (`tab.moved`) or
+pinned; nothing reorders them on its own (SPEC S-7).
 
 ## Editor
 

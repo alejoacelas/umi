@@ -156,7 +156,7 @@ final class UmiAgentSession {
     var lastHookAt: Date?
     /// Waiters for the headless process to stop (taking the session over).
     var stoppedHandlers: [() -> Void] = []
-    /// When a turn last ended (or it last asked for input): the sidebar orders tabs by it.
+    /// When a turn last ended (or it last asked for input): ⌃⌘J goes to the oldest first (L-12).
     var lastStopAt: Date?
     var driverForLive: UmiHarnessDriver? { driver }
     private var uiPosted = false

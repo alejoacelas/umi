@@ -1478,3 +1478,53 @@ tests don't depend on the user's windows and don't move where the user's next wi
 A root `CLAUDE.md` with `@AGENTS.md` made Claude Code, started by the real-agent tests in a folder
 inside this repository, stop on "Allow external CLAUDE.md file imports?". It now says in one sentence
 to read AGENTS.md, which Claude agents working here still see, with no import to approve.
+
+## 75. S-7: tabs keep their order, as in Warp (0.6.1; replaces §50 and §64)
+
+Alejo (2026-10-27): "fix the tab reordering? right now it has a custom logic and I want to have the
+standard behavior from warp that doesn't switch tab order depending on recency". Warp never reorders
+tabs on its own: its tab list changes only through the user's moves, pins and new tabs (its
+`tab_mru_order` is a separate list for switching, never the bar's order).
+
+- **Selection** never moves a tab, by any route: `selectTab` no longer reports to the order, so a click,
+  ⌘1–9, ⇧⌘[ / ⇧⌘], ⌃Tab, `tab focus`, a pane focus, `jump`, a notification and reopen all leave the list.
+- **Agent stops** never move a tab; the row's quiet mark (S-3) is the only sign.
+- **The user's moves** are the only moves: drag, `tab move`, Move Tab Up/Down, `tab new --index`, pin
+  and unpin (unchanged: pinning puts a tab at the end of the pinned tabs, unpinning at the top of the
+  others, which is exactly Warp's `pin_tab`/`unpin_tab`).
+
+Options: (a) drop every automatic move (chosen; it is what Warp does and what Alejo asked for);
+(b) keep "an agent's stop moves its tab" and drop only the selection rule: rejected, since the stop
+rule is the recency ordering he wants gone.
+
+Removed rather than left dormant: `UmiTabOrder` (the 1.2 s settle delay and freeze after tab keys, the
+pending and known stops and their attention observer, the 60 s "recent stop" cut-off, placed-by-hand
+tracking, `hold` and its wrappers around drops, tab moves, Move Tab, `tab new --index` and reopen),
+`TerminalController.reorderTabs` and its `tab.reordered` event (it could no longer fire),
+`UmiAttention.lastStop(for:in:)`, and `debug.navigation`'s `order_frozen`.
+
+**Evidence:** `test_selecting_a_tab_never_moves_it`, `test_an_agent_finishing_its_turn_never_moves_its_tab`,
+`test_tabs_move_only_when_the_user_moves_them`, `test_next_and_prev_walk_the_sidebar_order_which_stays_put`
+(`test_umi_nav.py`), and `test_a_turn_ending_never_moves_a_tab` (`test_live.py`, the fake agents).
+
+## 76. Where new tabs open
+
+**Warp** (its source at commit `6398d1e9`, 2026-10-03): the setting `new_tab_placement` defaults to
+`AfterCurrentTab` (`app/src/workspace/tab_settings.rs:23-27`); `new_tab_index_and_group` puts a new tab
+at the active tab's index + 1, pushed below the pinned tabs (`app/src/workspace/view.rs:13058-13089`);
+every path that makes a tab (new terminal, file, notebook, a child agent) goes through it and then
+selects the new tab. Warp has no tab that opens in the background.
+
+**Umi until 0.6.0:** ⌘T inserted the tab after the current one (Ghostty's `window-new-tab-position =
+current`, the default), `tab new` and session tabs went last; then the old S-7 moved any new tab that
+got selected to the top of the unpinned tabs. So a new tab ended up at the top, not where Warp puts it.
+
+**Now:** a new tab the user goes to opens right after the current tab, below the pinned tabs (⌘T, the
+sidebar's +, `tab new`, files and folders opened in a new tab, sessions started with `--focus`), and
+still follows `window-new-tab-position = end` if the user sets it. A tab opened in the background
+(`--no-focus`, sessions shown without `--focus`) goes last, as it did. Options for those: (a) right
+after the current tab too: several then stack newest first, and each one shifts every tab below the
+current one while the user isn't looking, which is the kind of movement this change removes; (b) last
+(chosen): keeps Umi's placement where Warp has nothing to copy. A pane moved to a new tab still opens
+right after its own tab; moved into another window, it goes after that window's current tab when
+focused, else last. One function decides (`TerminalController.newTabIndex(selecting:)`).

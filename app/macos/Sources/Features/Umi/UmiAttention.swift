@@ -76,12 +76,6 @@ final class UmiAttention: ObservableObject {
         return leaves.compactMap { panes[$0.id]?.mark }.max() ?? .none
     }
 
-    /// When an agent in the tab last stopped or delivered (nil: no agent ever did).
-    func lastStop(for tab: UmiTab, in controller: TerminalController) -> Date? {
-        let leaves = controller.tree(of: tab).root?.leaves() ?? []
-        return leaves.compactMap { panes[$0.id]?.lastStop }.max()
-    }
-
     /// Sessions that need the user: shown ones with a mark, and background ones that need input.
     /// The Dock badge: sessions that need the user (a question, an approval, input), the
     /// user's words. A finish not seen yet is only the sidebar's quiet mark.

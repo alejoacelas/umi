@@ -145,11 +145,6 @@ final class UmiReopen {
     /// Reopen the most recently closed item that can still come back.
     @discardableResult
     func reopen() throws -> [String: Any] {
-        // What comes back comes back in its old place (S-7 doesn't move it on being selected).
-        try UmiTabOrder.hold { try reopenHeld() }
-    }
-
-    private func reopenHeld() throws -> [String: Any] {
         prune()
         while let entry = entries.popLast() {
             guard reopenable(entry) else { continue }

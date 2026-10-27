@@ -170,8 +170,19 @@ class TerminalController: BaseTerminalController {
 
     func index(of tab: UmiTab) -> Int? { tabs.firstIndex { $0 === tab } }
 
+    /// Where a new tab opens when no position is asked for (S-7). A tab the user goes to opens
+    /// right after the selected tab, as in Warp (`window-new-tab-position = current`, the default;
+    /// `end` puts it last). One opened in the background goes last, so no tab shifts while the
+    /// user isn't looking. `insertTab` keeps it below the pinned tabs.
+    func newTabIndex(selecting: Bool) -> Int {
+        guard selecting, ghostty.config.windowNewTabPosition == "current",
+              let selected = index(of: selectedTab) else { return tabs.count }
+        return selected + 1
+    }
+
     /// Show another tab. With `focus`, its focused pane takes keyboard focus (if this is
     /// the key window); without, nothing about focus changes beyond which tree is shown.
+    /// Selecting never moves the tab (S-7).
     func selectTab(_ tab: UmiTab, focus: Bool = true) {
         guard tabs.contains(where: { $0 === tab }) else { return }
         guard tab !== selectedTabStorage else {
@@ -201,7 +212,6 @@ class TerminalController: BaseTerminalController {
         UmiEvents.shared.emit("tab.selected", ["tab": tab.idString, "window": umiIDString])
         UmiState.shared.layoutDidChange()
         if UmiTopology.currentWindow === self { UmiTabHistory.visited(tab) }
-        UmiTabOrder.selectionChanged(in: self)
     }
 
     /// Insert a tab, keeping pinned tabs first. `index` is a position among all tabs and
@@ -255,8 +265,6 @@ class TerminalController: BaseTerminalController {
             : min(max(index, pinnedCount), tabs.count)
         tabs.insert(tab, at: position)
         UmiState.shared.layoutDidChange()
-        // A tab put somewhere by hand stays there (S-7), also when it's the selected tab.
-        UmiTabOrder.placed(tab, in: self)
     }
 
     /// Pin or unpin a tab. Pinned tabs come first, in pin order; unpinning moves the tab
@@ -267,16 +275,6 @@ class TerminalController: BaseTerminalController {
         tab.pinned = pinned
         let pinnedCount = tabs.filter(\.pinned).count
         tabs.insert(tab, at: pinnedCount)
-        UmiState.shared.layoutDidChange()
-        UmiTabOrder.pinsChanged(in: self)
-    }
-
-    /// Put the tabs in a new order (the sidebar order, S-7): a permutation of `tabs` that
-    /// keeps pinned tabs first. Not an undo step: it follows from selection and agent stops.
-    func reorderTabs(_ order: [UmiTab]) {
-        guard order.count == tabs.count, tabs.allSatisfy({ tab in order.contains { $0 === tab } }) else { return }
-        withAnimation(.easeInOut(duration: 0.18)) { tabs = Self.ordered(order) }
-        UmiEvents.shared.emit("tab.reordered", ["window": umiIDString, "tabs": tabs.map(\.idString)])
         UmiState.shared.layoutDidChange()
     }
 
@@ -636,14 +634,12 @@ class TerminalController: BaseTerminalController {
               let parentController = parent.windowController as? TerminalController else {
             return newWindow(ghostty, withBaseConfig: baseConfig, withParent: parent, focus: focus)
         }
-        let position: Int? = ghostty.config.windowNewTabPosition == "current"
-            ? parentController.index(of: parentController.selectedTab).map { $0 + 1 }
-            : nil
-        parentController.addTab(config: baseConfig, at: position, select: focus, focus: focus)
+        parentController.addTab(config: baseConfig, select: focus, focus: focus)
         return parentController
     }
 
-    /// Create a new tab in this window running a new shell.
+    /// Create a new tab in this window running a new shell, at `index` (a position among all
+    /// tabs) or else where new tabs open (`newTabIndex`).
     @discardableResult
     func addTab(
         config: Ghostty.SurfaceConfiguration?,
@@ -665,7 +661,7 @@ class TerminalController: BaseTerminalController {
         let tab = UmiTab(tree: .init(view: view))
         tab.name = name
         tab.color = color
-        insertTab(tab, at: index)
+        insertTab(tab, at: index ?? newTabIndex(selecting: select))
         if select {
             selectTab(tab, focus: focus)
             if focus {
@@ -1400,10 +1396,8 @@ class TerminalController: BaseTerminalController {
         guard target == self.focusedSurface, surfaceTree.contains(target) else { return }
         guard let action = notification.userInfo?[Notification.Name.GhosttyMoveTabKey] as? Ghostty.Action.MoveTab else { return }
         guard action.amount != 0, let current = index(of: selectedTab) else { return }
-        UmiTabOrder.hold {
-            UmiLayout.undoable("Move Tab", windows: [self]) {
-                self.moveTab(self.selectedTab, to: current + action.amount)
-            }
+        UmiLayout.undoable("Move Tab", windows: [self]) {
+            self.moveTab(self.selectedTab, to: current + action.amount)
         }
         UmiEvents.shared.emit("tab.moved", ["tab": selectedTab.idString, "window": umiIDString])
     }

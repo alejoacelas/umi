@@ -3,8 +3,8 @@
 Shortcuts work whatever has focus; ⌘⇧[ goes back through the tabs visited; ⌘⇧] walks the
 sidebar order; ⌃⌘J / ⌃⌘K go to the sessions that need the user and back; ⌃⇧←/→ move tabs;
 ⌘P, ⇧⌘P and ⌘O open the command, pane and file palettes; ⌘, opens Settings, where shortcuts
-are edited; a close returns focus to the pane used before; in the sidebar only the current tab
-(to the top) and tabs whose agent stopped (to just below it) move.
+are edited; a close returns focus to the pane used before; tabs stay where the user put them:
+selecting one or an agent finishing its turn moves nothing, as in Warp (S-7).
 
 Most checks go through the CLI. Behavior that only the UI shows is checked through the app's
 internal `debug.*` control methods (menus, the palettes, a key press delivered inside the app,
@@ -69,12 +69,6 @@ def new_tab(inst, win, *extra):
     return pane_info(inst, pane)
 
 
-def settle(inst):
-    """Wait for the tab order to settle after tab-switching keys or commands (S-7)."""
-    wait_until(lambda: not rpc(inst, "debug.navigation")["order_frozen"], 5, message="the tab order settles")
-    time.sleep(0.2)
-
-
 def menu_item(inst, title):
     return next((i for i in rpc(inst, "debug.menu")["items"] if i["title"] == title), None)
 
@@ -129,7 +123,6 @@ def test_tab_keys_work_whatever_has_focus(inst, win, tmp_path, focus):
     (a key press delivered inside the app; the AX test below presses real keys)."""
     second = new_tab(inst, win)
     inst.cli("tab", "focus", win["tab"])
-    settle(inst)
     if focus == "editor":
         doc = tmp_path / "notes.txt"
         doc.write_text("hello\n")
@@ -140,7 +133,6 @@ def test_tab_keys_work_whatever_has_focus(inst, win, tmp_path, focus):
     wait_until(lambda: selected(inst, win["window"]) != before, 5, message=f"⇧⌘] from {focus} ({result})")
     assert selected(inst, win["window"]) == second["tab"]
     rpc(inst, "debug.palette.close", window=win["window"])
-    settle(inst)
     before = selected(inst, win["window"])
     rpc(inst, "debug.key", window=win["window"], keys="ctrl+tab", focus=focus)
     wait_until(lambda: selected(inst, win["window"]) != before, 5, message=f"⌃Tab from {focus}")
@@ -188,22 +180,20 @@ def test_tab_back_skips_closed_tabs_and_fails_clearly_at_the_start(fresh):
 
 
 @pytest.mark.req("L-11", "S-7")
-def test_next_tab_walks_the_sidebar_order_as_seen(inst, win):
-    """⇧⌘] goes down the list the user saw: a burst of presses doesn't bounce between the two
-    tabs at the top, even though the selected tab moves to the top once the order settles."""
+def test_next_and_prev_walk_the_sidebar_order_which_stays_put(inst, win):
+    """⇧⌘] goes down the list and ⌃⇧Tab up it, both wrapping around, and the list never changes on
+    the way (before 0.6.1 the selected tab moved to the top a moment after the last press)."""
     tabs = [win["tab"]] + [new_tab(inst, win)["tab"] for _ in range(3)]
+    assert tab_ids(inst, win["window"]) == tabs, "each new tab opens right after the current one"
     inst.cli("tab", "focus", win["tab"])
-    settle(inst)
-    seen = tab_ids(inst, win["window"])
-    assert seen[0] == win["tab"], "the current tab is at the top"
-    walked = [inst.json("tab", "next")["tab"] for _ in range(3)]
-    assert walked == seen[1:4], f"walked {walked}, the list was {seen}"
-    settle(inst)
-    assert tab_ids(inst, win["window"])[0] == walked[-1], "once settled, the current tab is at the top"
-    assert set(tab_ids(inst, win["window"])) == set(tabs)
-    # prev walks back up the list as it is now.
-    now = tab_ids(inst, win["window"])
-    assert inst.json("tab", "prev")["tab"] == now[-1], "previous from the top wraps to the bottom"
+    walked = [inst.json("tab", "next")["tab"] for _ in range(4)]
+    assert walked == tabs[1:] + tabs[:1], f"walked {walked}, the list was {tabs}"
+    inst.json("tab", "next")
+    time.sleep(1.5)  # longer than the old order's settle delay
+    assert tab_ids(inst, win["window"]) == tabs, "walking moved tabs"
+    assert selected(inst, win["window"]) == tabs[1]
+    assert [inst.json("tab", "prev")["tab"] for _ in range(2)] == [tabs[0], tabs[-1]], "prev wraps to the last"
+    assert tab_ids(inst, win["window"]) == tabs
 
 
 @pytest.mark.req("L-11")
@@ -211,8 +201,8 @@ def test_tab_number_items_and_cycling(inst, win):
     second = new_tab(inst, win)
     third = new_tab(inst, win)
     inst.cli("tab", "focus", win["tab"])
-    settle(inst)
     order = tab_ids(inst, win["window"])
+    assert order == [win["tab"], second["tab"], third["tab"]]
     rpc(inst, "debug.menu.perform", title="Tab 2")
     assert selected(inst, win["window"]) == order[1]
     rpc(inst, "debug.menu.perform", title="Last Tab")
@@ -223,7 +213,7 @@ def test_tab_number_items_and_cycling(inst, win):
     assert selected(inst, win["window"]) == order[2]
     rpc(inst, "debug.menu.perform", title="Cycle to Next Tab")
     assert selected(inst, win["window"]) == order[0]
-    assert {second["tab"], third["tab"]} <= set(order)
+    assert tab_ids(inst, win["window"]) == order, "selecting by number or cycling moved tabs"
 
 
 # ---- L-12: the sessions that need the user, and back -----------------------------------------------
@@ -501,88 +491,149 @@ def test_closing_a_pane_focuses_the_pane_used_before(inst, win):
 
 # ---- S-7: the sidebar order ----------------------------------------------------------------------
 
-@pytest.mark.req("S-7")
-def test_only_the_current_tab_and_tabs_whose_agent_stopped_move(inst, win):
-    """The user: "other than the focused session, tabs should only move when an agent finishes their
-    turn". Selecting a tab moves it to the top; the tab the user leaves stays where it is; a tab whose
-    agent stops or delivers moves to just below the current one."""
+def assert_order(inst, window, order, what):
+    assert tab_ids(inst, window) == order, f"{what} moved tabs (they were {order})"
+
+
+@pytest.mark.req("S-7", "L-11", "L-12", "L-20")
+def test_selecting_a_tab_never_moves_it(inst, win):
+    """Alejo (2026-10-27): "the standard behavior from warp that doesn't switch tab order depending on
+    recency". Selecting a tab, by any route, leaves every tab where it is, then and a moment later."""
     a = win["tab"]
-    b = new_tab(inst, win)
-    c = new_tab(inst, win)
-    d = new_tab(inst, win)
-    panes = {b["tab"]: b["id"], c["tab"]: c["id"], d["tab"]: d["id"], a: win["pane"]}
+    b, c, d = (new_tab(inst, win) for _ in range(3))
+    panes = {a: win["pane"], b["tab"]: b["id"], c["tab"]: c["id"], d["tab"]: d["id"]}
     b, c, d = b["tab"], c["tab"], d["tab"]
+    order = [a, b, c, d]
+    window = win["window"]
+    assert_order(inst, window, order, "opening tabs")
     try:
-        # Each new tab took the top when it was selected.
-        assert tab_ids(inst, win["window"]) == [d, c, b, a]
+        for target in (a, "#3", d, b):
+            inst.cli("tab", "focus", target)
+            assert_order(inst, window, order, f"tab focus {target}")
+        assert selected(inst, window) == b
+        for command in (("tab", "next"), ("tab", "prev"), ("tab", "back"), ("tab", "back")):
+            inst.json(*command)
+            assert_order(inst, window, order, " ".join(command))
+        for title in ("Tab 1", "Tab 3", "Last Tab", "Cycle to Next Tab", "Cycle to Previous Tab", "Show Next Tab",
+                      "Back to Previous Tab"):
+            rpc(inst, "debug.menu.perform", title=title)
+            assert_order(inst, window, order, title)
+        rpc(inst, "debug.key", window=window, keys="cmd+shift+]", focus="terminal")
+        assert_order(inst, window, order, "⇧⌘] pressed")
+        inst.cli("pane", "focus", panes[c])
+        assert selected(inst, window) == c
+        assert_order(inst, window, order, "pane focus")
+        # Going to a session that needs the user (⌃⌘J), and back. Only this test's marks: sessions
+        # earlier tests left in the shared instance may have theirs.
+        for pane in rpc(inst, "debug.ui.attention")["panes"]:
+            rpc(inst, "debug.attention.set", pane=pane, clear=True)
         inst.cli("tab", "focus", a)
-        assert tab_ids(inst, win["window"]) == [a, d, c, b], "the tab left (d) stays where it was"
-        inst.cli("tab", "focus", c)
-        assert tab_ids(inst, win["window"]) == [c, a, d, b], "a stays just where it was"
-        # An agent stops in b: b moves to just below the current tab, nothing else moves.
-        rpc(inst, "debug.attention.set", pane=panes[b], title="b", stopped_ago=1)
-        wait_until(lambda: tab_ids(inst, win["window"]) == [c, b, a, d], 5,
-                   message="the tab whose agent just stopped comes right after the current one")
-        # Then one in d: d goes there, above b (the most recent stop first).
-        rpc(inst, "debug.attention.set", pane=panes[d], title="d", stopped_ago=0)
-        wait_until(lambda: tab_ids(inst, win["window"]) == [c, d, b, a], 5, message="d's stop")
-        # A stop in the current tab, a mark cleared, or a stop first seen long after it happened (a
-        # session restored at launch) moves nothing.
-        rpc(inst, "debug.attention.set", pane=panes[c], title="c", stopped_ago=0)
-        rpc(inst, "debug.attention.set", pane=panes[b], clear=True)
-        rpc(inst, "debug.attention.set", pane=panes[a], title="a", stopped_ago=600)
-        time.sleep(1)
-        assert tab_ids(inst, win["window"]) == [c, d, b, a]
-        # `#N` selectors and `ls` follow the order; selecting moves only the selected tab.
-        assert inst.json("tab", "focus", "#3")["tab"] == b
-        assert tab_ids(inst, win["window"]) == [b, c, d, a]
+        rpc(inst, "debug.attention.set", pane=panes[d], title="d", mark="needs_you", stopped_ago=0)
+        assert inst.json("jump")["tab"] == d
+        assert_order(inst, window, order, "jump")
+        inst.json("jump", "back")
+        assert_order(inst, window, order, "jump back")
+        # A tab closed and reopened comes back where it was, and selecting it there moves nothing.
+        inst.cli("tab", "close", b)
+        wait_until(lambda: b not in tab_ids(inst, window), 5, message="closed")
+        assert inst.json("reopen")["tab"] == b
+        assert_order(inst, window, order, "reopen")
+        inst.cli("tab", "focus", b)
+        time.sleep(1.5)  # longer than the old order's settle delay: nothing moves later either
+        assert_order(inst, window, order, "waiting")
+        # `#N` selectors and `ls` follow the order.
+        assert inst.json("tab", "focus", "#4")["tab"] == d
+    finally:
+        rpc(inst, "debug.attention.set", pane=panes[d], clear=True)
+
+
+@pytest.mark.req("S-7", "S-3")
+def test_an_agent_finishing_its_turn_never_moves_its_tab(inst, win):
+    """A stop or a question in any tab, the current one or not, leaves the tabs where they are; the
+    tab shows its mark. (The fake agents do it for real in test_live.py.)"""
+    a = win["tab"]
+    b, c, d = (new_tab(inst, win, "--no-focus") for _ in range(3))
+    panes = {a: win["pane"], b["tab"]: b["id"], c["tab"]: c["id"], d["tab"]: d["id"]}
+    b, c, d = b["tab"], c["tab"], d["tab"]
+    order = [a, b, c, d]
+    window = win["window"]
+    assert_order(inst, window, order, "opening tabs in the background")
+    inst.cli("tab", "focus", b)
+    try:
+        for tab, mark, ago in ((d, "finished", 1), (c, "needs_you", 0), (a, "finished", 0), (b, "finished", 0),
+                               (d, "finished", 0)):
+            rpc(inst, "debug.attention.set", pane=panes[tab], title=f"agent {tab}", mark=mark, stopped_ago=ago)
+            assert_order(inst, window, order, f"a stop in {tab}")
+        marks = {r["tab"]: r["mark"] for r in rpc(inst, "debug.ui.rows", window=window)["rows"]}
+        assert marks[d] == "finished" and marks[c] == "needs_you", marks
+        time.sleep(1.5)
+        assert_order(inst, window, order, "waiting after the stops")
+        # Then the user looks at them one by one: still nothing moves.
+        for tab in (d, c, a):
+            inst.cli("tab", "focus", tab)
+            assert_order(inst, window, order, f"looking at {tab}")
     finally:
         for pane in panes.values():
             rpc(inst, "debug.attention.set", pane=pane, clear=True)
 
 
-@pytest.mark.req("S-7", "L-13")
-def test_a_selected_tab_moved_by_hand_keeps_its_place_when_an_agent_stops(inst, win):
-    """0.5.0 review round 5: moving the selected tab (Move Tab Down, a drag) doesn't change the
-    selection, so it wasn't recorded as placed by hand, and the next agent stop put it back on top; and
-    a tab whose agent stopped went to the top, above a selected tab placed lower."""
-    b = new_tab(inst, win)
-    c = new_tab(inst, win)
-    panes = {b["tab"]: b["id"], c["tab"]: c["id"]}
-    a, b, c = win["tab"], b["tab"], c["tab"]
-    try:
-        assert tab_ids(inst, win["window"]) == [c, b, a]
-        inst.cli("tab", "move", c, "--down")
-        assert tab_ids(inst, win["window"]) == [b, c, a] and selected(inst, win["window"]) == c
-        rpc(inst, "debug.attention.set", pane=win["pane"], title="a", stopped_ago=0)
-        time.sleep(1)
-        assert tab_ids(inst, win["window"]) == [b, c, a], "a goes just below the selected tab, which stays put"
-        rpc(inst, "debug.attention.set", pane=panes[b], title="b", stopped_ago=0)
-        wait_until(lambda: tab_ids(inst, win["window"]) == [c, b, a], 5,
-                   message="b just below the selected tab")
-    finally:
-        for pane in list(panes.values()) + [win["pane"]]:
-            rpc(inst, "debug.attention.set", pane=pane, clear=True)
+@pytest.mark.req("S-7", "L-1", "L-2")
+def test_new_tabs_open_right_after_the_current_one(inst, win):
+    """As in Warp: a new tab the user goes to opens right after the current tab (below the pinned
+    tabs); one opened in the background goes last; `--index` puts it where asked."""
+    a = win["tab"]
+    window = win["window"]
+    b = new_tab(inst, win)["tab"]
+    c = new_tab(inst, win)["tab"]
+    assert tab_ids(inst, window) == [a, b, c]
+    inst.cli("tab", "focus", a)
+    d = new_tab(inst, win)["tab"]
+    assert tab_ids(inst, window) == [a, d, b, c], "right after the current tab, not last"
+    e = new_tab(inst, win, "--no-focus")["tab"]
+    assert tab_ids(inst, window) == [a, d, b, c, e], "a background tab goes last"
+    assert selected(inst, window) == d
+    f = new_tab(inst, win, "--index", "2")["tab"]
+    assert tab_ids(inst, window) == [a, f, d, b, c, e], "--index is where it goes"
+    # With the current tab pinned, a new tab opens at the top of the others.
+    inst.cli("tab", "pin", c)
+    assert tab_ids(inst, window) == [c, a, f, d, b, e]
+    inst.cli("tab", "focus", c)
+    g = new_tab(inst, win)["tab"]
+    assert tab_ids(inst, window) == [c, g, a, f, d, b, e]
+    inst.cli("tab", "unpin", c)
 
 
-@pytest.mark.req("S-7", "L-2")
-def test_pinned_tabs_stay_first_and_placements_hold_until_the_next_reorder(inst, win):
-    b = new_tab(inst, win)
-    c = new_tab(inst, win)
-    inst.cli("tab", "pin", c["tab"])
-    inst.cli("tab", "focus", b["tab"])
-    order = tab_ids(inst, win["window"])
-    assert order[:2] == [c["tab"], b["tab"]], "pinned first, then the current tab"
-    # An explicit placement stays where it was put, even though it selects the tab…
-    inst.cli("tab", "move", win["tab"], "--index", "3")
-    assert tab_ids(inst, win["window"]) == [c["tab"], b["tab"], win["tab"]]
-    assert selected(inst, win["window"]) == win["tab"]
-    # …until the selection changes.
-    inst.cli("tab", "focus", b["tab"])
-    assert tab_ids(inst, win["window"])[:2] == [c["tab"], b["tab"]]
-    # Selecting the pinned tab doesn't move it out of pin order.
-    inst.cli("tab", "focus", c["tab"])
-    assert tab_ids(inst, win["window"])[0] == c["tab"]
+@pytest.mark.req("S-7", "L-2", "L-13", "M-4")
+def test_tabs_move_only_when_the_user_moves_them(inst, win):
+    """Moves by hand (`tab move`, Move Tab Up/Down, a drop, pinning) put a tab where the user put
+    it, and selecting other tabs afterwards leaves it there. Pinned tabs stay first."""
+    a = win["tab"]
+    window = win["window"]
+    b, c, d = (new_tab(inst, win)["tab"] for _ in range(3))
+    assert tab_ids(inst, window) == [a, b, c, d]
+    inst.cli("tab", "move", d, "--index", "1")
+    assert tab_ids(inst, window) == [d, a, b, c] and selected(inst, window) == d
+    inst.cli("tab", "move", a, "--down")
+    assert tab_ids(inst, window) == [d, b, a, c]
+    inst.cli("tab", "focus", c)
+    rpc(inst, "debug.menu.perform", title="Move Tab Up")
+    assert tab_ids(inst, window) == [d, b, c, a]
+    rpc(inst, "debug.ui.drop", window=window, tab=d, row=a, zone="after")
+    assert tab_ids(inst, window) == [b, c, a, d]
+    for tab in (b, a, c, d):
+        inst.cli("tab", "focus", tab)
+    assert tab_ids(inst, window) == [b, c, a, d], "selecting moved a tab placed by hand"
+    # Pinning puts a tab at the end of the pinned tabs; unpinning, at the top of the others.
+    inst.cli("tab", "pin", a)
+    inst.cli("tab", "pin", d)
+    assert tab_ids(inst, window) == [a, d, b, c]
+    inst.cli("tab", "focus", b)
+    inst.cli("tab", "focus", d)
+    assert tab_ids(inst, window) == [a, d, b, c], "selecting a pinned tab moved it"
+    inst.cli("tab", "unpin", a)
+    assert tab_ids(inst, window) == [d, a, b, c]
+    inst.cli("tab", "unpin", d)
+    assert tab_ids(inst, window) == [d, a, b, c]
 
 
 # ---- With real key presses (accessibility; take over the keyboard) --------------------------------
@@ -612,13 +663,11 @@ def test_tab_keys_from_the_editor_the_file_tree_and_the_palette(inst, win, ui, t
     for mode in ("source", "preview"):
         inst.cli("editor", "mode", mode, "--tab", win["tab"])
         inst.cli("tab", "focus", win["tab"])
-        settle(inst)
         rpc(inst, "debug.editor.focus", tab=win["tab"])
         press(ui, "]", "cmd", "shift")
         wait_until(lambda: selected(inst, win["window"]) == second["tab"], 5, message=f"⇧⌘] from the editor ({mode})")
     # The palette's query field.
     inst.cli("tab", "focus", win["tab"])
-    settle(inst)
     press(ui, "p", "cmd")
     assert ui.focused_input(5) is not None, "the palette's field has focus"
     press(ui, "tab", "ctrl")
@@ -627,7 +676,6 @@ def test_tab_keys_from_the_editor_the_file_tree_and_the_palette(inst, win, ui, t
     # The file tree.
     inst.cli("sidebar", "files")
     inst.cli("tab", "focus", win["tab"])
-    settle(inst)
     row = ui.find(lambda e: ui.label(e) == "keys.md")
     if row is not None:
         ui.press(row)

@@ -94,11 +94,12 @@ recent and changed ones first).
 record a new key for one, see it take effect at once, reset it; the window says the Ghostty config
 file isn't changed.
 
-**S-7: sidebar order (by hand, plus a screenshot).** Four tabs, two with agents that stopped at
-different times. Select a tab: it goes to the top (after pinned ones), and the tab you left stays where
-it was. When an agent stops in another tab, that tab moves to just below the current one; nothing else
-moves. Press ⇧⌘] three times quickly: the selection walks down the list, and about a second after the
-last press the selected tab moves to the top.
+**S-7: sidebar order (by hand).** Five tabs, one pinned, two with agent sessions. Click rows, press
+⌘1–9, ⇧⌘] several times, ⇧⌘[, ⌃Tab and ⌃⌘J: the selection moves, the tabs never do. Let an agent in
+a tab you aren't looking at finish a turn: its row shows the quiet mark and stays where it is. Drag a
+row, use Move Tab Up/Down and pin and unpin a tab: those tabs move where you put them (a pinned tab to
+the end of the pinned ones, an unpinned one to the top of the others) and stay there as you select
+others. ⌘T opens a tab right below the current one.
 
 **M-4: dragging (by hand).** Add: drag a pane's grab handle onto another tab's row (it moves into
 that tab) and between two rows (a new tab there, with an insertion line); drag a tab row out of

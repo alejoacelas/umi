@@ -409,3 +409,34 @@ pane whose view is moved down selects the word drawn there) and
   the trust answer finds the "Yes" choice numbered or not; Codex's update offer is skipped with Esc
   (never Enter, which would run Codex's installer). The checks are unchanged. **Requirements:** AG-2,
   AG-6, AG-7, AG-9.
+
+## Tabs keep their order, as in Warp (BRIEF-tab-order.md, 0.6.1)
+
+S-7 changed: the requirement the old tests checked (the current tab at the top, tabs whose agent
+stopped just below it) is gone, so those tests were replaced by tests of the new rule, not loosened.
+**Requirement:** S-7, "the standard behavior from warp that doesn't switch tab order depending on
+recency".
+
+- **Removed** (they asserted the old rule): `test_only_the_current_tab_and_tabs_whose_agent_stopped_move`,
+  `test_a_selected_tab_moved_by_hand_keeps_its_place_when_an_agent_stops`,
+  `test_pinned_tabs_stay_first_and_placements_hold_until_the_next_reorder` and
+  `test_next_tab_walks_the_sidebar_order_as_seen` (`tests/test_umi_nav.py`), and the `settle()` helper,
+  which waited for the old order's freeze (`debug.navigation`'s `order_frozen`, removed from the app).
+- **New, `tests/test_umi_nav.py`**: `test_selecting_a_tab_never_moves_it` (every route the suite can
+  drive: `tab focus` by id and `#N`, `next`, `prev`, `back`, the Tab N / Last Tab / Cycle / Show Next /
+  Back items, a ⇧⌘] press, a pane focus, `jump` and `jump back`, close and `reopen`, then a wait longer
+  than the old settle delay); `test_an_agent_finishing_its_turn_never_moves_its_tab` (stops and
+  questions in the current tab and others leave the order, and the rows show their marks);
+  `test_new_tabs_open_right_after_the_current_one` (Warp's placement; background tabs last; `--index`;
+  below a pinned current tab); `test_tabs_move_only_when_the_user_moves_them` (`tab move --index`,
+  `--down`, Move Tab Up, a drop, pin and unpin; selecting afterwards moves nothing);
+  `test_next_and_prev_walk_the_sidebar_order_which_stays_put` (replaces the "as seen" test).
+- **New, `tests/test_live.py::test_a_turn_ending_never_moves_a_tab`**: the fake Claude and Codex finish
+  turns in tabs the user isn't in (and one in the tab the user is in); no tab moves, and the rows show
+  the finished mark. (The tests above stand in for the agent engine; this one is the real path.)
+- **Changed, `tests/test_umi_nav.py::test_tab_number_items_and_cycling`**: it also checks the order is
+  unchanged afterwards. `test_tab_keys_work_whatever_has_focus` and the `ui` test
+  `test_tab_keys_from_the_editor_the_file_tree_and_the_palette` no longer wait for the order to settle.
+- **Changed, `tests/test_umi_panes_ui.py::test_move_tab_up_and_down_stay_in_their_pin_group`**: it
+  allowed any order of the unpinned tabs after pinning ("pinning re-sorts the unpinned tabs"); it now
+  asserts the exact order (only the pinned tab moves, to the end of the pinned group).

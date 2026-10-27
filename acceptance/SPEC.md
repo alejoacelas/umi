@@ -213,7 +213,7 @@ the menu.
     closed since are skipped. Visiting a tab any other way ends the walk.
   - ⇧⌘] (`<cli> tab next`) goes to the next tab in sidebar order, ⌃Tab too, and ⌃⇧Tab (`<cli> tab
     prev`) to the previous one; both wrap around. Pressed several times in a row they walk down
-    (or up) the list as it was when the walk started (S-7 doesn't reorder it meanwhile).
+    (or up) the list, which stays as it is (S-7).
   - ⌘1–⌘8 show the Nth tab of the window and ⌘9 its last tab.
 
 - **L-12 [A+W]** ⌃⌘J (`<cli> jump`) goes to the next session that needs the user: sessions that
@@ -363,21 +363,25 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
   Ghostty config and theme override the product's defaults.
 - **S-6 [W]** The "running/last command" line updates for commands that finish instantly.
-- **S-7 [A+W]** The sidebar's order, in the user's words: "other than the focused session, tabs should
-  only move when an agent finishes their turn":
-  - pinned tabs first, in pin order (pins are explicit and stay where the user put them);
-  - selecting a tab moves it to the top of the other tabs, so the current tab is at the top;
-  - when a tab's agent stops or delivers, the tab moves to just below the current tab (several: the
-    most recent stop first);
-  - nothing else moves a tab: the tab the user leaves stays where it is. A stop first seen long after
-    it happened (sessions restored at launch) moves nothing.
+- **S-7 [A+W]** The sidebar's order, in the user's words (2026-10-27): "the standard behavior from warp
+  that doesn't switch tab order depending on recency". Tabs stay where they are until the user moves
+  them:
+  - selecting a tab never moves it, whatever selects it: a click, ⌘1–9, ⇧⌘[ / ⇧⌘], ⌃Tab, `<cli> tab
+    focus` (or `next`, `prev`, `back`), a pane focus, `jump` and `jump back`, a notification, reopen;
+  - an agent finishing its turn (or asking for something) never moves its tab; the tab shows its
+    mark (S-3);
+  - tabs move only when the user moves them: dragging (M-4), `<cli> tab move`, Move Tab Up/Down
+    (L-13), `<cli> tab new --index`, and pinning and unpinning. Pinned tabs come first, in pin order:
+    pinning puts a tab at the end of the pinned tabs and unpinning at the top of the others, as in
+    Warp;
+  - a new tab the user goes to (⌘T, the sidebar's +, `<cli> tab new`, a session started with
+    `--focus`) opens right after the current tab, below the pinned tabs, as in Warp (Ghostty's
+    `window-new-tab-position = end` puts it last instead). A tab opened in the background
+    (`--no-focus`, a session shown without `--focus`) goes last, so no tab shifts while the user isn't
+    looking. A pane moved to a new tab gets one right after its own tab.
 
-  This is the window's real tab order: `ls`, `#N` selectors and ⌘1–9 follow it. A tab placed by hand
-  (dragged, `tab move --index`, Move Tab Up/Down, `tab new --index`) stays where it was put, even
-  though placing it selects it. After ⇧⌘], ⇧⌘[, ⌃Tab or ⌘1–9 the order stays as the user saw it until a
-  moment (about a second) after the last press, so repeated presses walk the list instead of bouncing
-  between the top two tabs; then the selected tab moves up, and so do tabs whose agents stopped
-  meanwhile.
+  This is the window's real tab order: `ls`, `#N` selectors and ⌘1–9 follow it. (Until 0.6.0 the
+  current tab moved to the top and tabs whose agent stopped moved to just below it; REQUESTS.md.)
 - **S-8 [A+W]** Each window's sidebar can be made wider or narrower by dragging its edge, between
   180 points and the smaller of 600 points and half the window. The width is per window, saved and
   restored with the layout; a new window starts at the width last chosen. Double-clicking the edge

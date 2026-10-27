@@ -39,15 +39,9 @@ enum UmiSidebarDrop {
         return UmiTabDrag.receive(providers) { tab, source in perform(.tab(tab, source)) }
     }
 
-    /// Carry out a drop. Errors (a pane dropped on its own one-pane tab, …) change nothing. A
-    /// drop is a placement by hand: the tab stays where it was dropped until the sidebar's order
-    /// next changes (S-7), even though the drop selects it.
+    /// Carry out a drop. Errors (a pane dropped on its own one-pane tab, …) change nothing.
     @discardableResult
     static func perform(_ payload: Payload, zone: Zone, row: UmiTab?, in controller: TerminalController) -> UmiTopology.Location? {
-        UmiTabOrder.hold { performHeld(payload, zone: zone, row: row, in: controller) }
-    }
-
-    private static func performHeld(_ payload: Payload, zone: Zone, row: UmiTab?, in controller: TerminalController) -> UmiTopology.Location? {
         let rowIndex = row.flatMap { controller.index(of: $0) }
         switch payload {
         case .tab(let dragged, let source):

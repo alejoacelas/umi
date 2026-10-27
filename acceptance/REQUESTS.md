@@ -172,6 +172,14 @@ Tern changes how the terminal looks (the prompt at the bottom, blocks with a hea
 bold, its output and a line between blocks, the folder box). Suggestions are done already: their
 `~/.zshrc` loads zsh-autosuggestions.
 
-On the sidebar order:
+On the sidebar order (superseded on 2026-10-27, below):
 > my idea was that other than the focused session, tabs should only move when an agent finishes
 > their turn
+
+## 2026-10-27: tabs keep their order, as in Warp (BRIEF-tab-order.md)
+
+> fix the tab reordering? right now it has a custom logic and I want to have the standard behavior
+> from warp that doesn't switch tab order depending on recency
+
+This supersedes the request above: selecting a tab and an agent finishing its turn no longer move
+tabs; only the user's own moves do (SPEC S-7).

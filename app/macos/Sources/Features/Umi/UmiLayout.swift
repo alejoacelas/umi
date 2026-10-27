@@ -130,10 +130,8 @@ enum UmiLayout {
         _ = try requireGhostty()
         let config = try surfaceConfig(options, inheritingFrom: source ?? window.selectedTab.effectiveFocusedSurface,
                                        context: GHOSTTY_SURFACE_CONTEXT_TAB)
-        let position = index.map { $0 - 1 }
-        // An explicit index is a placement: selecting the new tab doesn't move it to the top (S-7).
-        let add = { window.addTab(config: config, at: position, select: focus, focus: focus, name: tabName, color: color) }
-        guard let (tab, pane) = position == nil ? add() : UmiTabOrder.hold(add) else {
+        guard let (tab, pane) = window.addTab(config: config, at: index.map { $0 - 1 }, select: focus, focus: focus,
+                                              name: tabName, color: color) else {
             throw UmiError.failed("couldn't create the tab")
         }
         registerNewPane(pane, options: options, config: config)
@@ -415,7 +413,7 @@ enum UmiLayout {
 
         case .newTab(let window, let index):
             let tab = UmiTab(tree: .init(view: pane))
-            let position = index ?? ((window.index(of: source.tab).map { $0 + 1 }) ?? window.tabs.count)
+            let position = index ?? ((window.index(of: source.tab).map { $0 + 1 }) ?? window.newTabIndex(selecting: focus))
             window.insertTab(tab, at: position)
             removeFromSource(pane, node: node, source: source, adoptingInto: tab)
             if focus {
@@ -461,8 +459,7 @@ enum UmiLayout {
         var involved: [TerminalController] = [source]
         if let target, target !== source { involved.append(target) }
         var result = source
-        // A placement: selecting the moved tab doesn't move it to the top (S-7).
-        UmiTabOrder.hold { undoable("Move Tab", windows: involved) {
+        undoable("Move Tab", windows: involved) {
             if newWindow {
                 let frame = source.window?.frame
                 let width = source.sidebarWidth
@@ -486,7 +483,7 @@ enum UmiLayout {
                 source.moveTab(tab, to: (index ?? source.tabs.count) - 1)
                 if focus { focusTab(tab, in: source) }
             }
-        } }
+        }
         UmiEvents.shared.emit("tab.moved", ["tab": tab.idString, "from_window": source.umiIDString, "window": result.umiIDString])
         return result
     }

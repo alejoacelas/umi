@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 
 /// Moving between tabs and panes from the keyboard, the menus and the CLI: next and previous
 /// tab in sidebar order, ⌘1–9, back through the tabs visited (L-11), the sessions that need
@@ -18,7 +17,6 @@ enum UmiNavigation {
         guard let window = window ?? UmiTopology.currentWindow, window.tabs.count > 1, let index = window.index(of: window.selectedTab) else { return nil }
         let count = window.tabs.count
         let tab = window.tabs[((index + delta) % count + count) % count]
-        UmiTabOrder.freeze()
         UmiLayout.focusTab(tab, in: window)
         return tab
     }
@@ -28,7 +26,6 @@ enum UmiNavigation {
     static func selectTab(number: Int, in window: TerminalController? = nil) -> UmiTab? {
         guard let window = window ?? UmiTopology.currentWindow, !window.tabs.isEmpty, number >= 1 else { return nil }
         let tab = window.tabs[min(number, window.tabs.count) - 1]
-        UmiTabOrder.freeze()
         UmiLayout.focusTab(tab, in: window)
         return tab
     }
@@ -37,7 +34,6 @@ enum UmiNavigation {
     @discardableResult
     static func selectLastTab(in window: TerminalController? = nil) -> UmiTab? {
         guard let window = window ?? UmiTopology.currentWindow, let tab = window.tabs.last else { return nil }
-        UmiTabOrder.freeze()
         UmiLayout.focusTab(tab, in: window)
         return tab
     }
@@ -48,7 +44,6 @@ enum UmiNavigation {
     @discardableResult
     static func tabBack() -> (TerminalController, UmiTab)? {
         guard let (window, tab) = UmiTabHistory.back() else { return nil }
-        UmiTabOrder.freeze()
         UmiLayout.focusTab(tab, in: window)
         return (window, tab)
     }
@@ -68,10 +63,8 @@ enum UmiNavigation {
     static func moveTab(_ tab: UmiTab, by delta: Int, in window: TerminalController) -> Bool {
         guard canMoveTab(tab, by: delta, in: window), let index = window.index(of: tab) else { return false }
         let target = index + delta
-        UmiTabOrder.hold {
-            UmiLayout.undoable(delta < 0 ? "Move Tab Up" : "Move Tab Down", windows: [window]) {
-                window.moveTab(tab, to: target)
-            }
+        UmiLayout.undoable(delta < 0 ? "Move Tab Up" : "Move Tab Down", windows: [window]) {
+            window.moveTab(tab, to: target)
         }
         UmiEvents.shared.emit("tab.moved", ["tab": tab.idString, "from_window": window.umiIDString,
                                              "window": window.umiIDString, "index": target + 1])
@@ -247,159 +240,5 @@ enum UmiFocusHistory {
               let controller = window.windowController as? TerminalController,
               controller.focusedSurface === pane else { return }
         UmiAttention.shared.looked(atPane: pane.id)
-    }
-}
-
-// MARK: - Sidebar order (S-7)
-
-/// The order of each window's tabs, as the user put it: "other than the focused session, tabs
-/// should only move when an agent finishes their turn". Pinned tabs come first, in pin order.
-/// The selected tab moves to the top of the others; a tab whose agent stops or delivers moves
-/// to just below the selected one (several at once: the most recent stop first). Nothing else
-/// moves a tab: the tab the user leaves stays where it is. This is the window's real tab order,
-/// so `ls`, `#N` and ⌘1–9 follow it.
-///
-/// Explicit placements (dragging, `tab move`, Move Tab Up/Down, `tab new --index`) stay where
-/// they were put, even though they select the tab. During a burst of tab-switching keys the
-/// order stays as the user saw it, so ⌘⇧] walks down the list instead of bouncing between the
-/// two tabs at the top; a moment after the last press the selected tab moves up, along with any
-/// tab whose agent stopped meanwhile.
-@MainActor
-enum UmiTabOrder {
-    /// How long the order stays as it is after a tab-switching key.
-    static let settleDelay: TimeInterval = 1.2
-
-    /// A tab's first stop moves it only if it happened this recently.
-    static let recentStop: TimeInterval = 60
-
-    private static var frozenUntil = Date.distantPast
-    private static var settle: DispatchWorkItem?
-    private static var holding = 0
-    /// Each tab's last agent stop as of the last look, to notice new stops.
-    private static var knownStops: [UUID: Date] = [:]
-    /// Tabs whose agent stopped since their window's order last changed: they move up at the
-    /// next reorder (when the order isn't frozen).
-    private static var pendingStops: [UUID: Date] = [:]
-    /// Each window's tab placed by hand (and selected by the placement): it stays where it was put
-    /// until another tab is selected.
-    private static var placedByHand: [ObjectIdentifier: UUID] = [:]
-    private static var attentionObserver: AnyCancellable?
-
-    static func start() {
-        guard attentionObserver == nil else { return }
-        attentionObserver = UmiAttention.shared.$revision
-            .receive(on: DispatchQueue.main)
-            .sink { _ in MainActor.assumeIsolated { attentionChanged() } }
-    }
-
-    /// Run an explicit placement: the selection it makes doesn't move the tab to the top.
-    static func hold<T>(_ body: () throws -> T) rethrows -> T {
-        holding += 1
-        defer { holding -= 1 }
-        return try body()
-    }
-
-    /// Keep the order as it is for a moment (a tab-switching key was pressed).
-    static func freeze() {
-        frozenUntil = Date().addingTimeInterval(settleDelay)
-        settle?.cancel()
-        let work = DispatchWorkItem { MainActor.assumeIsolated { reorderAll() } }
-        settle = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay + 0.05, execute: work)
-    }
-
-    static var isFrozen: Bool { Date() < frozenUntil }
-
-    /// A window's selected tab changed.
-    static func selectionChanged(in window: TerminalController) {
-        let key = ObjectIdentifier(window)
-        if holding > 0 {
-            // A placement put the tab where it is: that's its place, not the top.
-            placedByHand[key] = window.selectedTab.id
-            return
-        }
-        if placedByHand[key] != window.selectedTab.id { placedByHand[key] = nil }
-        guard !isFrozen else { return }
-        reorder(window)
-    }
-
-    /// A tab was moved by hand: if it's the selected tab, it stays where it was put rather than going
-    /// back to the top (a move of the selected tab doesn't change the selection).
-    static func placed(_ tab: UmiTab, in window: TerminalController) {
-        if tab === window.selectedTab { placedByHand[ObjectIdentifier(window)] = tab.id }
-    }
-
-    /// A tab was pinned or unpinned (`setPinned` put it at the end of the pinned tabs, or at the
-    /// top of the others).
-    static func pinsChanged(in window: TerminalController) {
-        guard !isFrozen else { return }
-        reorder(window)
-    }
-
-    private static func attentionChanged() {
-        var changed: [TerminalController] = []
-        for window in UmiTopology.windows {
-            for tab in window.tabs {
-                let stop = UmiAttention.shared.lastStop(for: tab, in: window)
-                guard knownStops[tab.id] != stop else { continue }
-                // A newer stop moves the tab up; a mark cleared (no stop) doesn't move it, and
-                // neither does a stop first seen long after it happened (sessions restored at
-                // launch), which isn't something the user just saw happen.
-                let known = knownStops[tab.id]
-                if let stop, stop > (known ?? .distantPast),
-                   known != nil || stop.timeIntervalSinceNow > -Self.recentStop {
-                    pendingStops[tab.id] = stop
-                    if !changed.contains(where: { $0 === window }) { changed.append(window) }
-                }
-                knownStops[tab.id] = stop
-            }
-        }
-        guard !isFrozen else { return }
-        for window in changed { reorder(window) }
-    }
-
-    private static func reorderAll() {
-        guard !isFrozen else { return }
-        for window in UmiTopology.windows { reorder(window) }
-    }
-
-    /// The order after the moves the rules make now: the selected tab to the top of the
-    /// unpinned tabs (unless a placement put it where it is), tabs whose agents stopped since to
-    /// just below it, most recent stop first. Every other tab keeps its place.
-    static func ordered(_ window: TerminalController) -> [UmiTab] {
-        let selected = window.selectedTab
-        let pinned = window.tabs.filter(\.pinned)
-        var others = window.tabs.filter { !$0.pinned }
-        let key = ObjectIdentifier(window)
-
-        // A stable sort: tabs that stopped at the same moment keep their order.
-        var stopped: [(index: Int, tab: UmiTab, stop: Date)] = []
-        for (index, tab) in others.enumerated() where tab !== selected {
-            if let stop = pendingStops[tab.id] { stopped.append((index, tab, stop)) }
-        }
-        stopped.sort { a, b in a.stop != b.stop ? a.stop > b.stop : a.index < b.index }
-        let rising = stopped.map(\.tab)
-        others.removeAll { tab in rising.contains { $0 === tab } }
-
-        if !selected.pinned, placedByHand[key] == selected.id, let at = others.firstIndex(where: { $0 === selected }) {
-            // Placed by hand: it stays, and tabs whose agents stopped go just below it.
-            others.insert(contentsOf: rising, at: at + 1)
-        } else {
-            others.insert(contentsOf: rising, at: 0)
-            // The selected tab goes to the top.
-            if !selected.pinned {
-                others.removeAll { $0 === selected }
-                others.insert(selected, at: 0)
-            }
-        }
-        return pinned + others
-    }
-
-    static func reorder(_ window: TerminalController) {
-        guard !window.isClosed else { return }
-        let order = ordered(window)
-        for tab in window.tabs { pendingStops[tab.id] = nil }
-        guard order.count == window.tabs.count, !zip(order, window.tabs).allSatisfy({ $0 === $1 }) else { return }
-        window.reorderTabs(order)
     }
 }

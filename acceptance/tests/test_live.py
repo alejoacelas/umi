@@ -202,6 +202,48 @@ def test_the_users_focus_moves_only_when_asked(inst, win, shown):
     wait_until(lambda: inst.json("ls")["current_pane"] == pc, 10, message="--focus to switch to the new pane")
 
 
+def tab_ids(inst, window):
+    return [t["id"] for t in next(w for w in inst.tree()["windows"] if w["id"] == window)["tabs"]]
+
+
+def row_marks(inst, window):
+    return {r["tab"]: r["mark"] for r in inst.rpc("debug.ui.rows", window=window)["rows"]}
+
+
+@pytest.mark.req("S-7", "S-3", "AG-2")
+def test_a_turn_ending_never_moves_a_tab(inst, win, shown):
+    """S-7 with the fake agents: sessions shown in tabs finish their turns while the user is in another
+    tab, and every tab stays where it is (before 0.6.1 such a tab jumped to just below the current one);
+    the finish marks the tab's row instead."""
+    window = win["window"]
+    inst.cli("tab", "focus", win["tab"])
+    sa, pa = shown("claude", f"SLEEP 4 {nonce()}", "--tab", "--window", window)
+    sb, pb = shown("codex", f"SLEEP 4 {nonce()}", "--tab", "--window", window)
+    ta, tb = inst.find_pane(pa)[1]["id"], inst.find_pane(pb)[1]["id"]
+    plain = inst.json("tab", "new", "--window", window, "--no-focus")["tab"]
+    assert tab_ids(inst, window) == [win["tab"], ta, tb, plain], "tabs opened in the background go last"
+    # The user arranges the tabs and goes to the last one while the turns run.
+    inst.cli("tab", "move", tb, "--index", "1", "--no-focus")
+    inst.cli("tab", "focus", plain)
+    order = [tb, win["tab"], ta, plain]
+    assert tab_ids(inst, window) == order
+    for sid in (sa, sb):
+        assert inst.wait(sid)[1]["status"] == "DONE"
+    wait_until(lambda: row_marks(inst, window)[ta] == "finished" and row_marks(inst, window)[tb] == "finished",
+               10, message="the finished turns marked on their rows")
+    time.sleep(1.5)
+    assert tab_ids(inst, window) == order, "a turn ending moved a tab"
+    # Another turn ends while the user is in the session's own tab, then one in a tab behind it.
+    inst.cli("tab", "focus", ta)
+    for sid, kind in ((sa, "claude"), (sb, "codex")):
+        wait_live(inst, sid, kind)
+        code, out = inst.wait(sid, "--message", inst.send(sid, f"ECHO again {nonce()}"), timeout=30)
+        assert out["status"] == "DONE", out
+        time.sleep(1.5)
+        assert tab_ids(inst, window) == order, f"{kind}'s second turn ending moved a tab"
+    wait_until(lambda: row_marks(inst, window)[tb] == "finished", 10, message="the finish behind marked")
+
+
 @pytest.mark.req("AG-2")
 @pytest.mark.parametrize("kind", KINDS)
 def test_the_claude_and_codex_shortcuts_give_the_user_a_session(inst, win, shown, kind):

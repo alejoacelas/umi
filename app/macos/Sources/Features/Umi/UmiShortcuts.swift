@@ -189,7 +189,6 @@ enum UmiShortcuts {
             UmiAgentMenu.shared.install(in: windowMenu)
         }
         installMonitor()
-        UmiTabOrder.start()
         UmiGhosttyBindings.warm()
         // The CLI's commands for the palette, so the first ⌘P has them.
         UmiCLICatalog.shared.load {}
