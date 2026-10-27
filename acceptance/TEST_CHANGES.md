@@ -501,3 +501,6 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   so `test_idle_agents_in_panes_are_quiet` sends a prompt where it pressed Ctrl-C, checks that Ctrl-C
   keeps the line counted, and adds a prompt queued during a turn followed by a newer unsent draft
   (still counted once the turns are done). **Requirement:** I-4.
+- **Review round 6 (0.6.2)**: `test_idle_agents_in_panes_are_quiet` also checks that Shift-Return isn't
+  taken as sending, and that a turn interrupted with Esc keeps the moment from being quiet until the
+  agent's next hook (here, the next prompt). **Requirement:** I-4.

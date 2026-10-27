@@ -136,6 +136,11 @@ extension UmiAgentUI {
 
     // MARK: Typing in a live interface
 
+    func noteKey(pane: Ghostty.SurfaceView) {
+        if lastKeyAt.count > 512 { lastKeyAt.removeAll() }
+        lastKeyAt[pane.id] = Date()
+    }
+
     func keyTyped(pane: Ghostty.SurfaceView, event: NSEvent) {
         guard let session = attachments[pane.id] ?? Self.sessionLive(in: pane.id) else { return }
         let chars = event.charactersIgnoringModifiers ?? ""
@@ -150,7 +155,8 @@ extension UmiAgentUI {
         } else if [123, 124, 115, 119].contains(event.keyCode) && !event.modifierFlags.contains(.command) {
             input = .cursor                                       // left, right, home, end
         } else if event.keyCode == 36 || event.keyCode == 76 {   // return, enter
-            input = .submit
+            // With Shift, Option or Control it inserts a newline in Claude Code and Codex.
+            input = event.modifierFlags.isDisjoint(with: [.shift, .option, .control]) ? .submit : .edit
         } else if control && chars.lowercased() == "u" {
             input = .clear
         } else if event.keyCode == 51 && event.modifierFlags.isDisjoint(with: [.option, .command]) {
@@ -193,6 +199,8 @@ extension UmiAgentUI {
                 input = .cursor
             } else if ["enter", "return", "ret", "cr", "nl"].contains(spec) {
                 input = .submit
+            } else if spec.hasSuffix("+enter") || spec.hasSuffix("+return") {
+                input = .edit                                     // a newline, not a submit
             } else if ["ctrl+u", "control+u", "c+u"].contains(spec) {
                 input = .clear
             } else if ["backspace", "bs"].contains(spec) {

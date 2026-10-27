@@ -1573,7 +1573,9 @@ once a second while an update waits (one read of the process table, one terminal
 
 - **Sessions** (`UmiAgentSession.quietBlocker`): messages queued or being delivered; commands an agent
   left running after its turn (Codex's background terminals, which don't make a session `working`;
-  review round 3); something typed in a live interface; status `working`, `starting` or `needs_input` (a turn waiting on the user is
+  review round 3); something typed in a live interface; a live interface taken as idle only by
+  inference (an Esc or Ctrl-C followed by two seconds without a hook, AG-19: a remapped Ctrl-C may
+  have been a copy) until the agent's next hook says what it does (round 6); status `working`, `starting` or `needs_input` (a turn waiting on the user is
   still a turn: a relaunch would cut it off); an interface opening or closing. Every session the app
   knows counts, started by Umi or typed in a pane (AG-18).
 - **Panes**, each on its own:
@@ -1602,7 +1604,11 @@ once a second while an update waits (one read of the process table, one terminal
     A prompt sent counts only if nothing reached the line after the last Enter: a prompt queued during
     a turn and taken in later doesn't clear a newer draft (round 5). Ctrl-C doesn't count either: it
     clears the line in Claude Code and Codex, but a `key-remap` can turn it into Copy before the
-    interface sees it (round 5). Keys answering a permission or question dialog don't count. This can
+    interface sees it (round 5). Return with Shift, Option or Control inserts a newline: an edit, not a
+    send. A late SessionStart (a fresh or `/clear`ed interface) clears the line only if nothing reached
+    it after it opened or after the Enter that sent `/clear`; keys that reached a pane after an agent
+    typed there started, before its first hook made it a session Umi knows, count too (round 6). Keys
+    answering a permission or question dialog don't count. This can
     hold an update back until the next prompt is sent (the status says so); it never lets one discard
     a draft. Delivering messages to a live Claude (AG-9) keeps its own, finer tracking (Esc no longer
     counts as clearing a draft there, and neither does a queued prompt taken in after a newer draft).

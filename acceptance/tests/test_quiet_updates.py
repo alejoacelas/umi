@@ -265,6 +265,24 @@ def test_idle_agents_in_panes_are_quiet(calm):
     inst.cli("keys", "--pane", typed_pane, "ctrl+u")
     inst.type_line(typed_pane, f"ECHO last {nonce()}")
     wait_quiet(inst, timeout=30)
+    # Shift-Return inserts a newline: not a prompt sent.
+    inst.cli("send", "--pane", typed_pane, "x")
+    inst.cli("keys", "--pane", typed_pane, "shift+enter")
+    time.sleep(1)
+    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "Shift-Return counted as sending"
+    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+    inst.type_line(typed_pane, f"ECHO after {nonce()}")
+    wait_quiet(inst, timeout=30)
+    # A turn interrupted from the keyboard is taken as idle without the agent saying so: an update
+    # waits until it does.
+    inst.type_line(typed_pane, f"SLEEP 30 {nonce()}")
+    wait_until(lambda: inst.info(typed["id"])["status"] == "working", 10, message="the turn")
+    inst.cli("keys", "--pane", typed_pane, "esc")
+    wait_until(lambda: inst.info(typed["id"])["status"] == "idle", 15, message="the interrupt noticed")
+    found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
+    assert "interrupted" in found["reason"], found
+    inst.type_line(typed_pane, f"ECHO again {nonce()}")
+    wait_quiet(inst, timeout=30)
     for s in (lid, viewed, typed["id"]):
         inst.cli("agent", "stop", s, check=False, timeout=60)
 

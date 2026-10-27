@@ -1125,6 +1125,7 @@ extension Ghostty {
 
             // Umi: typing into a session's live interface (a draft there holds back
             // messages for it; Esc/Ctrl-C may interrupt its turn, which fires no hook).
+            UmiAgentUI.shared.noteKey(pane: self)
             if UmiAgentUI.shared.livePanes.contains(id) {
                 UmiAgentUI.shared.keyTyped(pane: self, event: event)
             }

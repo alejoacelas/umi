@@ -156,7 +156,7 @@ extension UmiAgentSession {
             record.livePID = nil
             record.goLiveWhenSettled = nil
             liveState = record.kind == .codex ? .idle : .starting
-            liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq
+            liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq; liveIdleInferred = false
             liveBackground = 0
             liveActivity = ""
             goingLive = false
@@ -222,6 +222,8 @@ extension UmiAgentSession {
 
     func hook(_ event: String, _ payload: [String: Any], pane: String?, pid: Int32?) {
         lastHookAt = Date()
+        // The agent said what it does: no longer only inferred.
+        liveIdleInferred = false
         if record.live != true {
             // A hook from an interface Umi didn't attach (the user typed `claude` in a pane
             // where this conversation lives, or the attach raced): it's live now.
@@ -262,8 +264,10 @@ extension UmiAgentSession {
             if record.kind == .codex || claudeConversationOnDisk { record.conversation = true }
             saveRecord()
             if liveState == .starting || liveState == nil { liveState = .idle }
-            // A fresh interface, or one `/clear` just reset: its input line is empty.
-            liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq
+            // A fresh interface, or one `/clear` just reset: its input line is empty, unless
+            // something reached it after it was opened or after the Enter that sent `/clear` (the
+            // hook may come late).
+            livePromptSent()
         case "UserPromptSubmit":
             liveState = .working
             livePromptSent()
@@ -392,6 +396,7 @@ extension UmiAgentSession {
             guard let self, self.liveState == .working || self.liveState == .needsInput else { return }
             if let last = self.lastHookAt, last > asked { return }
             self.liveState = .idle
+            self.liveIdleInferred = true
             self.liveActivity = ""
             self.addItem(kind: "notice", text: "Interrupted in its interface.")
             if self.record.openSelfTurn {
@@ -473,7 +478,7 @@ extension UmiAgentSession {
         record.livePID = nil
         record.liveAttached = nil
         liveState = nil
-        liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq
+        liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq; liveIdleInferred = false
         liveBackground = 0
         liveActivity = ""
         reclaiming = false

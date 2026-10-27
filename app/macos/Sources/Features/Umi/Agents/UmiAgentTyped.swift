@@ -45,6 +45,14 @@ enum UmiTypedCommand {
         return url.pathExtension == "js" && url.deletingLastPathComponent().lastPathComponent.lowercased().contains(name)
     }
 
+    /// When a process started.
+    static func startTime(_ pid: Int32) -> Date? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) + TimeInterval(info.pbi_start_tvusec) / 1_000_000)
+    }
+
     private static func parentPID(_ pid: Int32) -> Int32? {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)

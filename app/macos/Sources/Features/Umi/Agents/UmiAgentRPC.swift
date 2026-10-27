@@ -597,6 +597,13 @@ enum UmiAgentRPC {
         let kind = UmiAgentKind(rawValue: params.string("agent") ?? "claude") ?? .claude
         // A pane of this instance (a stale or foreign pane is no caller at all).
         let paneID = caller.pane.flatMap { UmiAgentUI.surface(umiID: $0) != nil ? $0 : nil }
+        // Keys that reached the pane after the agent started, before Umi knew it (I-4): its input
+        // line may hold them.
+        var keysBeforeKnown = false
+        if let pid, let surface = paneID.flatMap({ UmiAgentUI.surface(umiID: $0) }),
+           let key = UmiAgentUI.shared.lastKeyAt[surface.id], let started = UmiTypedCommand.startTime(pid) {
+            keysBeforeKnown = key > started
+        }
         let adopted: String? = try await agents.run {
             let harnessID = payload["session_id"] as? String
             var session: UmiAgentSession?
@@ -637,7 +644,9 @@ enum UmiAgentRPC {
                 session = created
             }
             guard let session else { return nil }
+            let wasLive = session.record.live == true
             session.hook(event, payload, pane: paneID, pid: pid)
+            if !wasLive, session.record.live == true, keysBeforeKnown { session.liveInputEdited() }
             return session.record.id
         }
         if let adopted, let paneID, let surface = UmiAgentUI.surface(umiID: paneID) {

@@ -25,6 +25,9 @@ final class UmiAgentUI: ObservableObject {
     @Published var livePanes: Set<UUID> = []
     /// Live interfaces removed from their panes (AG-8): out of sight, finishing their turn.
     var parked: [String: Ghostty.SurfaceView] = [:]
+    /// When a key last went to each pane: an agent the user typed is known only from its first
+    /// hook, and keys may reach it before (UmiAgentRPC.hook).
+    var lastKeyAt: [UUID: Date] = [:]
 
     private var models: [String: UmiAgentViewModel] = [:]
 

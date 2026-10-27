@@ -350,6 +350,9 @@ extension UmiAgentSession {
         default: break
         }
         if goingLive || reclaiming { return "its interface is opening or closing" }
+        if record.live == true, liveIdleInferred {
+            return "its interface was interrupted from the keyboard; it waits for the agent to say it is idle"
+        }
         if exclusiveLive, liveState != .idle { return "its interface is busy" }
         return nil
     }

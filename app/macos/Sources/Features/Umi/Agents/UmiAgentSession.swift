@@ -139,6 +139,9 @@ final class UmiAgentSession {
     /// one queued during a turn) leaves the line empty only if nothing reached it after that Enter.
     var liveInputSeq = 0
     var liveEnterSeq = 0
+    /// Umi took the interface as idle without a hook saying so (an Esc or Ctrl-C with no hook
+    /// for two seconds, AG-19): an update waits for the agent itself to say it is idle.
+    var liveIdleInferred = false
     var lastLiveKey: Date?
     /// Background work the live interface reported at its last Stop.
     var liveBackground = 0
