@@ -147,6 +147,8 @@ extension UmiAgentUI {
             input = .escape
         } else if [125, 126].contains(event.keyCode) && event.modifierFlags.isDisjoint(with: [.command, .control, .option]) {
             input = .history                                      // up, down: may recall a prompt
+        } else if [123, 124, 115, 119].contains(event.keyCode) && !event.modifierFlags.contains(.command) {
+            input = .cursor                                       // left, right, home, end
         } else if event.keyCode == 36 || event.keyCode == 76 {   // return, enter
             input = .submit
         } else if control && chars.lowercased() == "u" {
@@ -187,6 +189,8 @@ extension UmiAgentUI {
                 input = .escape
             } else if ["up", "down", "arrowup", "arrowdown"].contains(spec) {
                 input = .history
+            } else if ["left", "right", "home", "end", "arrowleft", "arrowright", "alt+left", "alt+right"].contains(spec) {
+                input = .cursor
             } else if ["enter", "return", "ret", "cr", "nl"].contains(spec) {
                 input = .submit
             } else if ["ctrl+u", "control+u", "c+u"].contains(spec) {
@@ -207,7 +211,7 @@ extension UmiAgentUI {
 
     /// What a key (or text) does to the live interface's input line, as far as Umi can tell.
     enum LiveInput {
-        case interrupt, escape, history, submit, clear, delete, other, edit
+        case interrupt, escape, history, cursor, submit, clear, delete, other, edit
         case text(Int)
     }
 
@@ -226,6 +230,8 @@ extension UmiAgentUI {
                 s.liveKey(interrupt: true, typed: 0, clearsInput: false)
             case .history:
                 s.liveHistory()
+            case .cursor:
+                s.liveCursor()
             case .delete:
                 s.liveKey(interrupt: false, typed: -1)
             case .text(let count):

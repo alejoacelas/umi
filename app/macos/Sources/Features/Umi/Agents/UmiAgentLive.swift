@@ -156,7 +156,7 @@ extension UmiAgentSession {
             record.livePID = nil
             record.goLiveWhenSettled = nil
             liveState = record.kind == .codex ? .idle : .starting
-            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false
+            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false; liveCursorMoved = false
             liveBackground = 0
             liveActivity = ""
             goingLive = false
@@ -264,7 +264,7 @@ extension UmiAgentSession {
             if liveState == .starting || liveState == nil { liveState = .idle }
         case "UserPromptSubmit":
             liveState = .working
-            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false
+            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false; liveCursorMoved = false
             liveActivity = ""
             liveTurnError = nil
             liveTurnFailedAt = nil
@@ -365,7 +365,14 @@ extension UmiAgentSession {
             }
             liveDraftChars = max(0, liveDraftChars + typed)
             let had = liveDraft
-            if typed > 0 { liveDraft = true } else if typed < 0 && liveDraftChars == 0 { liveDraft = false }
+            if typed > 0 {
+                liveDraft = true
+            } else if typed < 0 && liveCursorMoved {
+                // Where the cursor is, Umi can't tell what Backspace removed.
+                liveInputUnsure = true
+            } else if typed < 0 && liveDraftChars == 0 {
+                liveDraft = false
+            }
             changed()
             if had && !liveDraft { pump() }
             return
@@ -377,6 +384,7 @@ extension UmiAgentSession {
                 liveDraft = false
                 liveDraftChars = 0
                 liveInputUnsure = false
+                liveCursorMoved = false
                 pump()
             }
             changed()
@@ -409,9 +417,17 @@ extension UmiAgentSession {
         lastLiveKey = Date()
         liveDraft = false
         liveDraftChars = 0
-        liveInputUnsure = false
+        // With the cursor moved, Ctrl-U clears only what is before it.
+        if liveCursorMoved { liveInputUnsure = true } else { liveInputUnsure = false }
         changed()
         pump()
+    }
+
+    /// Left, Right, Home or End on the input line.
+    func liveCursor() {
+        lastLiveKey = Date()
+        if liveState == .idle || liveState == .working { liveCursorMoved = true }
+        changed()
     }
 
     /// Up or Down at the interface's prompt: it may have put an earlier prompt on the input line.
@@ -452,7 +468,7 @@ extension UmiAgentSession {
         record.livePID = nil
         record.liveAttached = nil
         liveState = nil
-        liveDraft = false; liveDraftChars = 0; liveInputUnsure = false
+        liveDraft = false; liveDraftChars = 0; liveInputUnsure = false; liveCursorMoved = false
         liveBackground = 0
         liveActivity = ""
         reclaiming = false

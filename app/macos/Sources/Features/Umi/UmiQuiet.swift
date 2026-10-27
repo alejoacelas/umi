@@ -330,6 +330,11 @@ extension UmiAgentSession {
     var quietBlocker: String? {
         if !queue.isEmpty { return "\(queue.count) message\(queue.count == 1 ? "" : "s") waiting to be delivered" }
         if !inFlight.isEmpty { return "a message is being delivered" }
+        // Commands its agent left running after its turn (Codex's background terminals): a
+        // relaunch would end them.
+        if let tasks = backgroundTasks, tasks > 0 {
+            return "\(tasks) background command\(tasks == 1 ? "" : "s") still running"
+        }
         // Any interface of its own in a pane, Codex's attached one included.
         if record.live == true, liveDraft { return "something is typed in its interface" }
         if record.live == true, liveInputUnsure {

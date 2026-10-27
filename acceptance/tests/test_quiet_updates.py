@@ -143,6 +143,13 @@ def test_a_running_turn_or_a_waiting_message_is_not_quiet(calm):
     assert inst.wait(sid, timeout=30)[1]["status"] == "DONE"
     wait_quiet(inst)
 
+    # A command Codex left running in a background terminal after its turn ended.
+    bg = inst.start_agent("codex", "BACKGROUND 8", name="bg-" + nonce())
+    assert inst.wait(bg, timeout=30)[1]["status"] == "DONE"
+    found = wait_reason(inst, lambda r: r.get("session") == bg)
+    assert "background command" in found["reason"], found
+    wait_quiet(inst, timeout=30)
+
     # A message waiting for a live Claude whose user has something typed in it.
     live = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
                      "--pane", pane, "--name", "live-" + nonce(), "ECHO hello")
@@ -158,7 +165,19 @@ def test_a_running_turn_or_a_waiting_message_is_not_quiet(calm):
     wait_reason(inst, lambda r: r.get("session") == lid and "waiting to be delivered" in r["reason"])
     inst.cli("keys", "--pane", lpane, "ctrl+u")
     wait_quiet(inst, timeout=60)
-    for s in (sid, lid):
+    # A prompt typed and sent in Codex's interface (attached to Umi's server): once its turn is
+    # done, the interface is empty again, and quiet.
+    cx = inst.json("agent", "start", "codex", "--cwd", inst.work, *fake_args(inst), "--split", "down",
+                   "--pane", pane, "--name", "cx-" + nonce(), "ECHO hello")
+    cid, cpane = cx["session"]["id"], cx["pane"]
+    assert inst.wait(cid, timeout=30)[1]["status"] == "DONE"
+    wait_until(lambda: inst.info(cid)["location"] == "live", 30, message="Codex live")
+    wait_until(lambda: "Fake Codex" in inst.screen(cpane, scrollback=True), 20, message="its interface")
+    inst.type_line(cpane, f"ECHO typed {nonce()}")
+    wait_until(lambda: inst.info(cid)["status"] == "working" or "typed" in inst.screen(cpane, scrollback=True), 15,
+               message="the typed turn")
+    wait_quiet(inst, timeout=30)
+    for s in (sid, lid, bg, cid):
         inst.cli("agent", "stop", s, check=False, timeout=60)
 
 
@@ -223,6 +242,17 @@ def test_idle_agents_in_panes_are_quiet(calm):
         assert "history" in found["reason"], (key, found)
         inst.cli("keys", "--pane", typed_pane, "ctrl+u")
         wait_quiet(inst)
+    # With the cursor moved, Backspace may delete nothing and Ctrl-U leaves what follows the cursor:
+    # what was typed still counts.
+    inst.cli("send", "--pane", typed_pane, "a")
+    inst.cli("keys", "--pane", typed_pane, "left", "backspace")
+    time.sleep(0.5)
+    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "a draft Umi lost track of counted as empty"
+    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+    time.sleep(0.5)
+    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "Ctrl-U after moving the cursor counted as empty"
+    inst.type_line(typed_pane, "ECHO sent")      # sending it empties the line
+    wait_quiet(inst, timeout=30)
     for s in (lid, viewed, typed["id"]):
         inst.cli("agent", "stop", s, check=False, timeout=60)
 

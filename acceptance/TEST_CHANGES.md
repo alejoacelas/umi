@@ -488,3 +488,7 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   holding text until it's cleared; new `test_a_job_beside_an_agent_interface_is_not_quiet`
   (`sleep 300 &` before the typed `claude`); new `tests/test_live.py::test_a_session_resumed_by_hand_takes_the_flags_typed_for_it`.
   **Requirements:** I-4, AG-10, AG-18.
+- **Review round 3 (0.6.2)**: `test_idle_agents_in_panes_are_quiet` also types `a`, Left, Backspace
+  and Ctrl-U (still not quiet), then sends the line (quiet); `test_a_running_turn_or_a_waiting_message_is_not_quiet`
+  also checks a Codex `BACKGROUND` command left running after its turn, and that a prompt sent in
+  Codex's attached interface leaves it quiet once its turn is done. **Requirement:** I-4.

@@ -132,6 +132,9 @@ final class UmiAgentSession {
     /// The input line may hold text Umi didn't see typed (a prompt recalled from history): an
     /// update doesn't install over it (I-4). Sending or clearing the line ends it.
     var liveInputUnsure = false
+    /// The cursor moved on the input line since it was last empty: deletions may not remove what
+    /// Umi counted, and Ctrl-U may leave text after the cursor.
+    var liveCursorMoved = false
     var lastLiveKey: Date?
     /// Background work the live interface reported at its last Stop.
     var liveBackground = 0
@@ -808,7 +811,9 @@ final class UmiAgentSession {
         activity = ""
         if fromInterface {
             // The user started it in the agent's own interface: theirs to finish, and recorded so
-            // a quit or crash continues it (AG-22).
+            // a quit or crash continues it (AG-22). What they typed was sent (attached Codex has
+            // no hook of its own that says so).
+            liveDraft = false; liveDraftChars = 0; liveInputUnsure = false; liveCursorMoved = false
             liveTurnError = nil
             liveTurnFailedAt = nil
             record.openSelfTurn = true

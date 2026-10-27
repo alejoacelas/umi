@@ -1571,8 +1571,9 @@ Every condition must hold, and whatever can't be determined counts as busy. `Umi
 decides from a snapshot (pure, unit-tested); `UmiQuiet.snapshot()` reads the app; the updater looks
 once a second while an update waits (one read of the process table, one terminal lock per pane).
 
-- **Sessions** (`UmiAgentSession.quietBlocker`): messages queued or being delivered; something typed
-  in a live interface; status `working`, `starting` or `needs_input` (a turn waiting on the user is
+- **Sessions** (`UmiAgentSession.quietBlocker`): messages queued or being delivered; commands an agent
+  left running after its turn (Codex's background terminals, which don't make a session `working`;
+  review round 3); something typed in a live interface; status `working`, `starting` or `needs_input` (a turn waiting on the user is
   still a turn: a relaunch would cut it off); an interface opening or closing. Every session the app
   knows counts, started by Umi or typed in a pane (AG-18).
 - **Panes**, each on its own:
@@ -1596,8 +1597,11 @@ once a second while an update waits (one read of the process table, one terminal
     conservative (review rounds 1 and 2): Esc at the prompt doesn't clear it (only a turn is
     interrupted); Up, Down and any edit Umi can't follow (Ctrl-P and Ctrl-N recall prompts, Ctrl-G opens
     an external editor, a word deleted) may leave text Umi didn't see, so the line counts as possibly
-    holding text until it is sent or cleared (Ctrl-C, Ctrl-U) or the interface ends. That can hold an
-    update back until the next prompt is sent; it never lets one discard a draft.
+    holding text until it is sent or cleared (Ctrl-C, Ctrl-U) or the interface ends. Once the cursor has
+    moved (Left, Right, Home, End), Backspace and Ctrl-U no longer count as emptying the line (round
+    3). A prompt sent in Codex's attached interface is seen as sent when its turn starts (that
+    interface has no hook of its own). That can hold an update back until the next prompt is sent; it
+    never lets one discard a draft.
   - A pane whose process exited is quiet.
 - **Unsaved work**: editor documents with unsaved changes; a modal window, a sheet, a text field being
   edited (a tab rename, a search), the command palette.
