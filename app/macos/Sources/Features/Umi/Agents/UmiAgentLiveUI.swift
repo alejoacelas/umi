@@ -184,6 +184,7 @@ extension UmiAgentUI {
     /// Text and keys put into a pane through Umi (`umi send`, `umi keys`): agents and scripts
     /// type into a live interface this way, so it counts like the keyboard (AG-9, AG-19).
     func inputSent(pane: Ghostty.SurfaceView, text: String, keys: [String]) {
+        noteKey(pane: pane)
         guard let session = attachments[pane.id] ?? Self.sessionLive(in: pane.id) else { return }
         if !text.isEmpty { Self.liveInput(session: session, .text(text.count)) }
         for key in keys {

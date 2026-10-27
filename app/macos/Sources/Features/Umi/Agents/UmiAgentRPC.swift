@@ -597,14 +597,7 @@ enum UmiAgentRPC {
         let kind = UmiAgentKind(rawValue: params.string("agent") ?? "claude") ?? .claude
         // A pane of this instance (a stale or foreign pane is no caller at all).
         let paneID = caller.pane.flatMap { UmiAgentUI.surface(umiID: $0) != nil ? $0 : nil }
-        // Keys that reached the pane after the agent started, before Umi knew it (I-4): its input
-        // line may hold them.
-        var keysBeforeKnown = false
-        if let pid, let surface = paneID.flatMap({ UmiAgentUI.surface(umiID: $0) }),
-           let key = UmiAgentUI.shared.lastKeyAt[surface.id], let started = UmiTypedCommand.startTime(pid) {
-            keysBeforeKnown = key > started
-        }
-        let adopted: String? = try await agents.run {
+        let adoption: (id: String, becameLive: Bool)? = try await agents.run {
             let harnessID = payload["session_id"] as? String
             var session: UmiAgentSession?
             var found = false
@@ -648,9 +641,9 @@ enum UmiAgentRPC {
             guard let session else { return nil }
             let wasLive = session.record.live == true && !found
             session.hook(event, payload, pane: paneID, pid: pid)
-            if !wasLive, session.record.live == true, keysBeforeKnown { session.markInputTouched() }
-            return session.record.id
+            return (session.record.id, !wasLive && session.record.live == true)
         }
+        let adopted = adoption?.id
         if let adopted, let paneID, let surface = UmiAgentUI.surface(umiID: paneID) {
             // The pane shows this session live (no read-only view over it).
             if UmiAgentUI.shared.attachments[surface.id] == nil || UmiAgentUI.shared.attachments[surface.id] == adopted {
@@ -658,6 +651,14 @@ enum UmiAgentRPC {
                     UmiAgentUI.shared.attachments[surface.id] = adopted
                     UmiAgentUI.shared.livePanes.insert(surface.id)
                 }
+            }
+            // Input that reached the pane after the agent started and before its keys were
+            // followed (from now on): its input line may hold it (I-4). Checked here, on the main
+            // actor where input arrives, so nothing slips between the check and the routing.
+            if adoption?.becameLive == true, let pid, let started = UmiTypedCommand.startTime(pid),
+               let input = UmiAgentUI.shared.lastKeyAt[surface.id], input > started,
+               let session = await agents.runQuietly({ agents.session(id: adopted) }) {
+                UmiAgents.queue.async { session.markInputTouched() }
             }
         }
         return ["session": adopted as Any]
