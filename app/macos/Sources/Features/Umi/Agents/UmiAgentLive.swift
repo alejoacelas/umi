@@ -417,6 +417,12 @@ extension UmiAgentSession {
     /// Up or Down at the interface's prompt: it may have put an earlier prompt on the input line.
     func liveHistory() {
         lastLiveKey = Date()
+        liveInputMayHoldText()
+    }
+
+    /// The input line may hold text Umi didn't see typed (it isn't a permission or question
+    /// dialog, where keys answer it).
+    func liveInputMayHoldText() {
         if liveState == .idle || liveState == .working { liveInputUnsure = true }
         changed()
     }

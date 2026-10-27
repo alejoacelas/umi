@@ -276,12 +276,8 @@ final class UmiUpdater: ObservableObject {
             guard staged != nil else { throw UmiError.failed("no update is waiting to install") }
             // Only what the user does right now may stand in the way: Install Now never cuts off
             // anything running without saying so (the sidebar asks first, with a dialog).
-            let blockers = UmiQuiet.reasons().filter { $0.kind != .input }
-            guard blockers.isEmpty else {
-                throw UmiError.failed("installing now would interrupt: " + blockers.map(\.line).joined(separator: "; ")
-                    + " (`\(UmiPaths.cliName) update --now` installs anyway)")
-            }
-            return try await installNow(force: false)
+            try refuseUnlessQuietExceptInput()
+            return try await installNow(force: false, quietExceptInput: true)
         }
         return status()
     }
@@ -833,7 +829,7 @@ final class UmiUpdater: ObservableObject {
         answers.notNowUntil = nil
         saveAnswers()
         UmiEvents.shared.emit("update.installing", ["version": target, "why": "rollback"])
-        beginInstall()
+        beginInstall(check: force ? .none : .noTurns)
         return ["installing": target, "rollback": true,
                 "message": "Going back to \(UmiPaths.productName) \(target) and relaunching. \(from) won't install by itself again "
                     + "(`\(UmiPaths.cliName) update` installs it)."]
@@ -847,7 +843,8 @@ final class UmiUpdater: ObservableObject {
     /// launch, wherever it was installed) and the one it runs from now. Paths are compared after
     /// resolving links.
     var installTargetProblem: String? {
-        guard UmiPaths.isIsolated else { return nil }
+        // (A development build never updates itself at all.)
+        guard UmiPaths.isIsolated, UmiVersion.isRelease else { return nil }
         let bundle = Self.canonical(Bundle.main.bundleURL.path)
         var installed = ["/Applications", NSHomeDirectory() + "/Applications"].map { "\($0)/\(UmiPaths.productName).app" }
         if let recorded = try? String(contentsOfFile: Self.userStatePath("installed-app"), encoding: .utf8) {
@@ -858,9 +855,18 @@ final class UmiUpdater: ObservableObject {
         if let protected = ProcessInfo.processInfo.environment["UMI_UPDATE_PROTECTED_APP"], !protected.isEmpty {
             installed.append(protected)
         }
-        guard installed.contains(where: { !$0.isEmpty && Self.canonical($0) == bundle }) else { return nil }
-        return "this is an isolated instance (UMI_STATE_DIR) running from the installed \(UmiPaths.productName) "
-            + "(\(bundle)); it never updates that copy"
+        if installed.contains(where: { !$0.isEmpty && Self.canonical($0) == bundle }) {
+            return "this is an isolated instance (UMI_STATE_DIR) running from the installed \(UmiPaths.productName) "
+                + "(\(bundle)); it never updates that copy"
+        }
+        // Anywhere else, only a copy that is positively disposable: one in a temporary folder
+        // (where the tests install theirs). The user's app may have been installed anywhere.
+        let temporary = [NSTemporaryDirectory(), "/tmp", "/private/tmp", "/private/var/folders"].map { Self.canonical($0) + "/" }
+        guard temporary.contains(where: { bundle.hasPrefix($0) }) else {
+            return "this is an isolated instance (UMI_STATE_DIR); it only updates a copy in a temporary folder, "
+                + "and this one runs from \(bundle), which may be the installed \(UmiPaths.productName)"
+        }
+        return nil
     }
 
     private static func canonical(_ path: String) -> String {
@@ -901,10 +907,11 @@ final class UmiUpdater: ObservableObject {
             + "or let the update install \(installsWhen).")
     }
 
-    /// Install the staged update and relaunch now (the user asked).
-    func installNow(force: Bool = true) async throws -> [String: Any] {
-        if let problem = installTargetProblem { throw UmiError.failed(problem) }
+    /// Install the staged update and relaunch now (the user asked). `quietExceptInput`: the
+    /// sidebar's Install now, which never interrupts anything without asking.
+    func installNow(force: Bool = true, quietExceptInput: Bool = false) async throws -> [String: Any] {
         try refuseWhileTurnsRun(force: force)
+        if let problem = installTargetProblem { throw UmiError.failed(problem) }
         if staged == nil { _ = try await download() }
         // A turn may have started during the download.
         let turnsNow = UmiAgents.shared.runningTurns()
@@ -921,27 +928,56 @@ final class UmiUpdater: ObservableObject {
         guard self.staged?.version == staged.version, phase != .installing else {
             throw UmiError.failed("the update changed meanwhile; run `\(UmiPaths.cliName) update --now` again")
         }
+        // Things may have started during the waits: ask again.
+        try refuseWhileTurnsRun(force: force)
+        if quietExceptInput { try refuseUnlessQuietExceptInput() }
         clearHolds(for: staged.version)
         UmiEvents.shared.emit("update.installing", ["version": staged.version, "why": "now"])
-        beginInstall()
+        beginInstall(check: quietExceptInput ? .quietExceptInput : (force ? .none : .noTurns))
         return ["installing": staged.version, "message": "Installing \(UmiPaths.productName) \(staged.version) and relaunching."]
     }
 
-    /// Quit to install the staged update, then relaunch: in front if the app was in front. An
-    /// install at a quiet moment looks once more just before quitting, and stands down if
-    /// anything started meanwhile.
-    private func beginInstall(atQuietMoment: Bool = false) {
+    private func refuseUnlessQuietExceptInput() throws {
+        let blockers = UmiQuiet.reasons().filter { $0.kind != .input }
+        guard blockers.isEmpty else {
+            throw UmiError.failed("installing now would interrupt: " + blockers.map(\.line).joined(separator: "; ")
+                + " (`\(UmiPaths.cliName) update --now` installs anyway)")
+        }
+    }
+
+    /// What a last look just before quitting requires (things may have started since).
+    enum LastCheck { case none, noTurns, quietExceptInput, quiet }
+
+    /// Quit to install the staged update, then relaunch: in front if the app was in front. A
+    /// last look just before quitting stands the install down if something started meanwhile
+    /// that it may not interrupt.
+    private func beginInstall(check: LastCheck = .none) {
         stopCountdown()
         relaunchAfterInstall = true
         relaunchInBackground = !NSApp.isActive
         phase = .installing
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
-            if atQuietMoment, !UmiQuiet.reasons().isEmpty, let staged = self.staged {
+            let blocked: Bool
+            switch check {
+            case .none: blocked = false
+            case .noTurns: blocked = UmiAgents.shared.runningTurns() > 0
+            case .quietExceptInput: blocked = UmiQuiet.reasons().contains { $0.kind != .input }
+            case .quiet: blocked = !UmiQuiet.reasons().isEmpty
+            }
+            if blocked, let staged = self.staged {
                 self.relaunchAfterInstall = false
+                UmiEvents.shared.emit("update.countdown", ["version": staged.version, "stopped": "something started"])
+                if Self.compare(staged.version, UmiVersion.current) != .orderedDescending {
+                    // A rollback stood down: it never goes ahead later by itself.
+                    self.staged = nil
+                    self.answers.rolledBackFrom = nil
+                    self.saveAnswers()
+                    self.phase = .idle
+                    return
+                }
                 self.phase = .ready(staged.version)
                 self.interrupted = true
-                UmiEvents.shared.emit("update.countdown", ["version": staged.version, "stopped": "activity"])
                 return
             }
             (NSApp.delegate as? AppDelegate)?.terminateForUpdate()
@@ -992,7 +1028,8 @@ final class UmiUpdater: ObservableObject {
             if phase != .installing { stopCountdown() }
             return
         }
-        guard mode == .install, installTargetProblem == nil, heldBack(staged.version) == nil, !notNow else {
+        guard mode == .install, Self.compare(staged.version, UmiVersion.current) == .orderedDescending,
+              installTargetProblem == nil, heldBack(staged.version) == nil, !notNow else {
             stopCountdown()
             return
         }
@@ -1022,7 +1059,7 @@ final class UmiUpdater: ObservableObject {
             return
         }
         UmiEvents.shared.emit("update.installing", ["version": staged.version, "why": "quiet"])
-        beginInstall(atQuietMoment: true)
+        beginInstall(check: .quiet)
     }
 
     // MARK: The installer

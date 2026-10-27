@@ -176,13 +176,16 @@ enum UmiTypedCommand {
 }
 
 extension UmiAgentSession {
-    /// A `claude`/`codex` the user typed in a pane: its flags become the session's settings
-    /// (UmiTypedCommand). Nothing changes when its process can't be read.
+    /// A `claude`/`codex` the user typed in a pane (a new one, or `--resume` of a session Umi
+    /// knows): its flags become the session's settings (UmiTypedCommand). An interface Umi
+    /// started itself (`agent attach`, which names the session in its environment) runs with the
+    /// session's settings already. Nothing changes when its process can't be read.
     func adoptTypedFlags(pid: Int32) {
-        guard record.origin == "typed", record.liveAttached != true,
-              let args = UmiTypedCommand.arguments(pid: pid, kind: record.kind),
-              // Only an interactive interface: never a one-off run (`-p`).
-              !args.contains("-p"), !args.contains("--print") else { return }
+        guard record.liveAttached != true,
+              UmiProcessTree.environment(pid)?["UMI_SESSION_ID"] != record.id,
+              let args = UmiTypedCommand.arguments(pid: pid, kind: record.kind) else { return }
+        // Only an interactive interface: never a one-off Claude run (`-p`; Codex's `-p` is a profile).
+        if record.kind == .claude && (args.contains("-p") || args.contains("--print")) { return }
         let flags = UmiTypedCommand.flags(args, kind: record.kind)
         record.model = flags.model
         record.effort = flags.effort

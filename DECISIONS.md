@@ -1593,9 +1593,11 @@ once a second while an update waits (one read of the process table, one terminal
     quiet when it is what's in front, known by its process (the group of the process its hooks came
     from) or by the session its environment names (Umi started it), never by its arguments, and its
     session is idle with nothing typed. "Nothing typed" is what Umi saw typed, pasted or cleared, made
-    conservative (review round 1): Esc at the prompt doesn't clear it (only a turn is interrupted), and
-    Up or Down at the prompt may recall an earlier prompt, so the line counts as possibly holding text
-    until it is sent or cleared (Ctrl-C, Ctrl-U).
+    conservative (review rounds 1 and 2): Esc at the prompt doesn't clear it (only a turn is
+    interrupted); Up, Down and any edit Umi can't follow (Ctrl-P and Ctrl-N recall prompts, Ctrl-G opens
+    an external editor, a word deleted) may leave text Umi didn't see, so the line counts as possibly
+    holding text until it is sent or cleared (Ctrl-C, Ctrl-U) or the interface ends. That can hold an
+    update back until the next prompt is sent; it never lets one discard a draft.
   - A pane whose process exited is quiet.
 - **Unsaved work**: editor documents with unsaved changes; a modal window, a sheet, a text field being
   edited (a tab rename, a search), the command palette.
@@ -1661,7 +1663,9 @@ feed.
 - A file that fails verification isn't downloaded again by the next check (the same file); a network
   failure is retried.
 - At the end of the countdown Umi looks once more just before quitting, and stands down if anything
-  started meanwhile.
+  started meanwhile; `update --now` and Install now look again for running turns (and Install now for
+  anything running) after waiting for the rollback copy and just before quitting. A rollback that
+  stands down is dropped, never carried out later.
 - After a rollback, §82's mark.
 - The feed serving an older or the same version never installs anything (versions are compared).
 - While an update waits, checks go on: a newer release replaces the staged one.
@@ -1672,7 +1676,9 @@ An isolated instance (`UMI_STATE_DIR`) refuses to download, install or roll back
 `/Applications/Umi.app`, `~/Applications/Umi.app`, the bundle the user's own instance runs from, or the
 one it last ran from (it records its location at each launch, `installed-app`, so a copy installed
 elsewhere is protected while it isn't running; review round 1). Paths are compared after resolving
-links. The
+links. And since the user's app may have been moved anywhere since, an isolated instance updates only a
+copy that is positively disposable: one inside a temporary folder, where the tests install theirs
+(review round 2). The
 tests stand their own copy in with `UMI_UPDATE_PROTECTED_APP` (it can only add protection). An isolated
 instance that does update (a test copy in a temporary Applications folder) relaunches through
 `updates/relaunch.sh` with its whole environment and arguments; before, the helper passed only the
@@ -1687,7 +1693,9 @@ no flags at all), and other flags were dropped. After a quit, a crash or an upda
 back as `claude --resume ID --plugin-dir …`, without `--dangerously-skip-permissions` (and, with the
 fakes, without `--model`). Now
 Umi reads the interface's arguments from its process (`KERN_PROCARGS2`, walking up from the hook's
-parent to the agent's program) at its first hook and whenever the user types it again, and keeps them:
+parent to the agent's program) at its first hook and whenever the user types it again, also for a
+session Umi started that the user resumes by hand (`claude --resume ID --model …`; review round 2), and
+keeps them (an interface Umi started itself names the session in its environment and is left alone):
 `--model`, `--effort`, `--dangerously-skip-permissions` and `--permission-mode` become the session's
 settings, other options its harness arguments. Parsing follows `claude --help` (2.1.311): options that
 take several values take them up to the next option, as Claude's own parser does. Left out: what picks

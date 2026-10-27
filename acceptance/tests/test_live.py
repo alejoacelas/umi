@@ -692,6 +692,30 @@ def test_a_claude_typed_with_flags_comes_back_with_them(target, fresh):
             os.remove(path)
 
 
+@pytest.mark.req("AG-10", "AG-18", "I-4")
+def test_a_session_resumed_by_hand_takes_the_flags_typed_for_it(inst, win):
+    """Review round 2 (0.6.2): a session Umi started, resumed by the user typing `claude --resume ID
+    --model … --dangerously-skip-permissions` in a pane, keeps those flags (they come back after a quit
+    or an update), as a `claude` typed from scratch does."""
+    sid = inst.start_agent("claude", f"ECHO first {nonce()}", name=f"resumed-{nonce()}")
+    assert inst.wait(sid)[1]["status"] == "DONE"
+    hid = inst.info(sid)["harness_id"]
+    # Its headless process ends first (one process per conversation, as a person would close it).
+    inst.cli("agent", "stop", sid, timeout=60)
+    wait_status(inst, sid, "stopped", 30)
+    plugin = os.path.join(inst.target.app, PLUGIN["claude"])
+    pane = win["pane"]
+    inst.type_line(pane, f"FAKE_AGENT_DIR='{inst.fake_dir}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}' "
+                         f"--resume {hid} --model fake-resumed --dangerously-skip-permissions")
+    wait_until(lambda: inst.info(sid)["location"] == "live", 20, message="the typed interface found as the session")
+    info = wait_until(lambda: (i := inst.info(sid)).get("model") == "fake-resumed" and i, 10,
+                      message="the typed flags adopted")
+    assert info["full_access"], info
+    inst.type_line(pane, "/exit")
+    wait_until(lambda: inst.info(sid)["location"] != "live", 15, message="the interface closed")
+    inst.cli("agent", "stop", sid, check=False, timeout=60)
+
+
 # ---- AG-8: remove from a pane ----------------------------------------------------------------------
 
 @pytest.mark.req("AG-8", "AG-14")

@@ -215,12 +215,14 @@ def test_idle_agents_in_panes_are_quiet(calm):
     assert any(r.get("session") == typed["id"] for r in reasons(inst)), "Esc counted as clearing the draft"
     inst.cli("keys", "--pane", typed_pane, "ctrl+u")
     wait_quiet(inst)
-    # Up may put an earlier prompt on the input line: not quiet until it's sent or cleared.
-    inst.cli("keys", "--pane", typed_pane, "up")
-    found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
-    assert "history" in found["reason"], found
-    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
-    wait_quiet(inst)
+    # Up (or Ctrl-P, or any edit Umi can't follow) may put an earlier prompt on the input line: not
+    # quiet until it's sent or cleared.
+    for key in ("up", "ctrl+p"):
+        inst.cli("keys", "--pane", typed_pane, key)
+        found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
+        assert "history" in found["reason"], (key, found)
+        inst.cli("keys", "--pane", typed_pane, "ctrl+u")
+        wait_quiet(inst)
     for s in (lid, viewed, typed["id"]):
         inst.cli("agent", "stop", s, check=False, timeout=60)
 

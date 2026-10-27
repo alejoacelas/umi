@@ -483,3 +483,8 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   on its conversation, with those flags, and its first prompt isn't run again.
 - **New, Swift unit tests `UmiQuietTests`**: the quiet decision from made-up snapshots with fake time,
   and the parsing of a typed agent's flags.
+- **Review rounds 1 and 2 (0.6.2)**: `test_idle_agents_in_panes_are_quiet` also checks that Esc at the
+  interface's prompt leaves a draft counted, and that Up and Ctrl-P make the line count as possibly
+  holding text until it's cleared; new `test_a_job_beside_an_agent_interface_is_not_quiet`
+  (`sleep 300 &` before the typed `claude`); new `tests/test_live.py::test_a_session_resumed_by_hand_takes_the_flags_typed_for_it`.
+  **Requirements:** I-4, AG-10, AG-18.

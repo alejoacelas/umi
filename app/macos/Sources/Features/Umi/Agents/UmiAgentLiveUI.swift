@@ -231,9 +231,11 @@ extension UmiAgentUI {
             case .text(let count):
                 s.liveKey(interrupt: false, typed: count)
             case .edit:
-                // Something changed the line by an amount Umi can't tell: if text was typed, it
-                // still counts as typed.
+                // Something changed the line by an amount Umi can't tell (a word deleted, Ctrl-P
+                // or Ctrl-N recalling a prompt, Ctrl-G opening an editor): if text was typed, it
+                // still counts as typed, and the line may now hold text Umi didn't see.
                 s.liveKey(interrupt: false, typed: 0)
+                s.liveInputMayHoldText()
             case .other:
                 s.lastLiveKey = Date()
                 s.changed()
