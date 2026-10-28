@@ -41,8 +41,9 @@ reasons; this is the short version.
 All of these must hold, and whatever Umi can't determine counts as busy (`UmiQuiet.swift`):
 
 - **Sessions**: no session Umi knows (started by Umi or typed in a pane) is working, starting or
-  waiting for you; no message is queued or being delivered; no command an agent left running after its
-  turn (Codex's background terminals).
+  waiting for you, or was only inferred idle after a keyboard interrupt; no message is queued or being
+  delivered; nothing an agent left running after its turn (Codex's background terminals, or any process
+  carrying a session's tag outside the panes' terminals, which the quit would end).
 - **Each pane**, one of:
   - *its own shell at an empty prompt*. The shell is the process on the pane's tty that Umi started
     (through `login`), and it must be what's in front (the pty's foreground process group, from the
@@ -51,8 +52,10 @@ All of these must hold, and whatever Umi can't determine counts as busy (`UmiQui
     input and nothing but blanks is typed there. No marks, or a full-screen program, means "can't
     tell", so busy.
   - *an idle agent*: its own interface in front (identified by its process or the session its
-    environment names, never by its arguments), its session idle, and nothing having reached its input
-    line since the last prompt was sent or Ctrl-C cleared it.
+    environment names, never by its arguments) in a pane whose input Umi follows, its session idle,
+    nothing it started still running (`caffeinate` aside), and nothing having reached its input line
+    since the last prompt was sent (typing, pasting, dropping, recalling history all count; Ctrl-C
+    doesn't clear it, since a remapped Ctrl-C may never reach the agent).
   - *a session's read-only view*, when the terminal under the view is itself quiet.
   - *a pane whose process exited*.
 - **No unsaved editor changes**, dialog, sheet, text field in use or open command palette.
