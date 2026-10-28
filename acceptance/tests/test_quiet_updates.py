@@ -338,8 +338,8 @@ def test_a_job_beside_an_agent_interface_is_not_quiet(calm):
 def test_an_agents_own_hook_still_running_is_not_quiet(calm):
     """Claude Code runs the hooks for an event side by side: Umi's Stop hook says the turn is done while
     the user's own Stop hook (a build, tests; here one that `exec`s its program) may still run. What an
-    agent started once its first prompt was under way (after its startup, when it starts the servers it
-    keeps) keeps its pane busy until it ends, also in its very first turn."""
+    agent runs keeps its pane busy until it ends, also after a fast first turn right after it opened
+    (Umi can't tell an agent's servers from its work, so it counts them all)."""
     inst, pane = calm
     slow = os.path.join(inst.dir, "slow-plugin")
     os.makedirs(os.path.join(slow, "hooks"))
@@ -356,7 +356,7 @@ def test_an_agents_own_hook_still_running_is_not_quiet(calm):
     wait_until(lambda: "Fake Claude Code" in inst.screen(pane, scrollback=True), 20, message="its interface")
     no_input(inst)
     wait_quiet(inst)
-    inst.type_line(pane, f"SLEEP 4 {nonce()}")        # its first turn, right after it opened
+    inst.type_line(pane, f"ECHO quick {nonce()}")     # a fast first turn, right after it opened
     # (Hooks' own shells come and go; the exec'd `sleep` stays until it ends.)
     wait_reason(inst, lambda r: r.get("pane") == pane and "sleep, started by its agent" in r["reason"], timeout=15)
     wait_quiet(inst, timeout=30)

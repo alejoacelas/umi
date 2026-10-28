@@ -69,7 +69,10 @@ Umi for two minutes. Half a minute before, a note at the bottom of the sidebar s
 X.Y.Z" (Not now waits at least an hour; Install now goes ahead); typing or clicking stops it. Umi then
 relaunches with its windows, tabs, folders and agent sessions as they were.
 
-- `umi update --status` says what is pending and what it waits for (which pane or session).
+- `umi update --status` says what is pending and what it waits for (which pane or session). Anything
+  Umi can't be sure of counts as busy: for example, a Claude Code or Codex interface waits until a
+  prompt is sent once something was typed into it, and one with MCP servers running holds the update
+  back until it closes.
 - `umi update` checks at once; `umi update --now` installs right away.
 - `umi update --rollback` goes back to the version installed before (Umi keeps its verified copy);
   the version you left doesn't install itself again until you run `umi update`.

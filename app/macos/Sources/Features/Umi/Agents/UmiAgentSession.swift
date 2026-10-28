@@ -142,9 +142,6 @@ final class UmiAgentSession {
     /// Umi took the interface as idle without a hook saying so (an Esc or Ctrl-C with no hook
     /// for two seconds, AG-19): an update waits for the agent itself to say it is idle.
     var liveIdleInferred = false
-    /// When this interface first sent a prompt: what it started before (and soon after) is its
-    /// startup (the servers it keeps); later processes are work (I-4).
-    var liveFirstPromptAt: Date?
     var lastLiveKey: Date?
     /// Background work the live interface reported at its last Stop.
     var liveBackground = 0
@@ -824,7 +821,6 @@ final class UmiAgentSession {
             // a quit or crash continues it (AG-22). What they typed was sent (attached Codex has
             // no hook of its own that says so).
             livePromptSent()
-            if liveFirstPromptAt == nil { liveFirstPromptAt = Date() }
             liveTurnError = nil
             liveTurnFailedAt = nil
             record.openSelfTurn = true
