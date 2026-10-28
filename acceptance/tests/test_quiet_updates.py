@@ -335,10 +335,12 @@ def test_a_job_beside_an_agent_interface_is_not_quiet(calm):
 
 @pytest.mark.req("I-4", "AG-18")
 @pytest.mark.harness
+@pytest.mark.slow
 def test_an_agents_own_hook_still_running_is_not_quiet(calm):
     """Claude Code runs the hooks for an event side by side: Umi's Stop hook says the turn is done while
-    the user's own Stop hook (a build, tests) may still run. Work an agent runs through a shell keeps
-    its pane busy until it ends."""
+    the user's own Stop hook (a build, tests; here one that `exec`s its program) may still run. What an
+    agent started after its first 20 s (when it starts the servers it keeps) keeps its pane busy until
+    it ends."""
     inst, pane = calm
     slow = os.path.join(inst.dir, "slow-plugin")
     os.makedirs(os.path.join(slow, "hooks"))
@@ -346,7 +348,7 @@ def test_an_agents_own_hook_still_running_is_not_quiet(calm):
     with open(os.path.join(slow, ".claude-plugin", "plugin.json"), "w") as f:
         f.write('{"name": "slow", "version": "1.0.0"}')
     with open(os.path.join(slow, "hooks", "hooks.json"), "w") as f:
-        f.write('{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "sleep 8", "timeout": 30}]}]}}')
+        f.write('{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "exec sleep 8", "timeout": 30}]}]}}')
     plugin = os.path.join(inst.target.app, PLUGIN)
     known = {s["id"] for s in inst.agents()}
     inst.type_line(pane, f"FAKE_AGENT_DIR='{inst.fake_dir}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}:{slow}' '{FAKE_CLAUDE}'")
@@ -355,8 +357,9 @@ def test_an_agents_own_hook_still_running_is_not_quiet(calm):
     wait_until(lambda: "Fake Claude Code" in inst.screen(pane, scrollback=True), 20, message="its interface")
     no_input(inst)
     wait_quiet(inst)
+    time.sleep(21)                     # past the agent's startup, when it starts the servers it keeps
     inst.type_line(pane, f"ECHO done {nonce()}")
-    found = wait_reason(inst, lambda r: r.get("pane") == pane and "started by its agent" in r["reason"], timeout=15)
-    assert "sh" in found["reason"], found
+    # (Hooks' own shells come and go; the exec'd `sleep` stays until it ends.)
+    wait_reason(inst, lambda r: r.get("pane") == pane and "sleep, started by its agent" in r["reason"], timeout=15)
     wait_quiet(inst, timeout=30)
     inst.cli("agent", "stop", typed["id"], check=False, timeout=60)

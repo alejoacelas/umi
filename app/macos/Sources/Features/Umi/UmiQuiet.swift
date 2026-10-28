@@ -284,6 +284,11 @@ enum UmiQuiet {
         }
     }
 
+    /// How long after an agent's interface starts the servers it keeps (MCP) are started.
+    static let agentStartupSeconds: TimeInterval = 20
+
+    static func seconds(_ time: timeval) -> TimeInterval { TimeInterval(time.tv_sec) + TimeInterval(time.tv_usec) / 1_000_000 }
+
     /// Helpers a shell runs for its prompt that live as long as it does, and `caffeinate`, which
     /// agents run to keep the Mac awake: they hold no work.
     static let promptHelpers: Set<String> = ["gitstatusd", "gitstatusd-darwin-arm64", "caffeinate"]
@@ -327,13 +332,17 @@ enum UmiQuiet {
             if let live {
                 let group = live.pid.flatMap { processes.byPID[$0]?.pgid }
                 if group == front || UmiProcessTree.environment(front)?["UMI_SESSION_ID"] == live.id {
-                    // Work the agent runs through a shell (its hooks: Claude Code runs a Stop hook
-                    // alongside Umi's, which may still be building; its commands) is still running.
-                    // Its own servers (MCP) it starts directly.
-                    for pid in processes.descendants(of: front) {
-                        guard let name = UmiProcess.name(pid) else { continue }
-                        let bare = name.hasPrefix("-") ? String(name.dropFirst()) : name
-                        if UmiProcess.shells.contains(bare) { return .job("\(bare), started by its agent,") }
+                    // Work the agent started during its turns is still running: its hooks (Claude
+                    // Code runs an event's hooks side by side, so the user's own Stop hook may still
+                    // build after Umi's says the turn is done), its commands. Told apart from the
+                    // servers it keeps (MCP) by when it started: those start with the interface.
+                    if let opened = processes.byPID[front]?.start {
+                        for pid in processes.descendants(of: front) {
+                            guard let info = processes.byPID[pid], !info.zombie,
+                                  Self.seconds(info.start) - Self.seconds(opened) > agentStartupSeconds else { continue }
+                            let job = UmiProcess.name(pid) ?? "a process"
+                            if !promptHelpers.contains(job) { return .job("\(job), started by its agent,") }
+                        }
                     }
                     return .live(live.id)
                 }
