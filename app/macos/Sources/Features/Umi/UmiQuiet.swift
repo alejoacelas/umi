@@ -172,7 +172,39 @@ enum UmiQuiet {
     // MARK: Reading the app
 
     @MainActor
-    static func reasons() -> [Reason] { reasons(in: snapshot()) }
+    static func reasons() -> [Reason] {
+        let found = reasons(in: snapshot())
+        // Only once everything else is quiet (it reads every process's environment).
+        return found.isEmpty ? leftovers() : found
+    }
+
+    /// Processes a session started that still run on their own (a build or server a headless
+    /// agent left behind, with its output redirected): the quit ends whatever carries a session's
+    /// tag, so they keep the moment from being quiet. The harnesses themselves, what runs in panes
+    /// (judged there) and `caffeinate` don't count.
+    @MainActor
+    static func leftovers() -> [Reason] {
+        let (own, names): (Set<pid_t>, [String: String]) = UmiAgents.queue.sync {
+            var own = Set<pid_t>()
+            var names: [String: String] = [:]
+            for session in UmiAgents.shared.sessions {
+                names[session.record.id] = session.record.name
+                if session.live, let pid = session.record.pid { own.insert(pid) }
+                if let pid = session.record.livePID { own.insert(pid) }
+            }
+            return (own, names)
+        }
+        for (pid, session) in UmiProcessTree.tagged(sessions: nil, stateDir: UmiPaths.stateDirectory, excluding: own) {
+            // What runs in a pane (an interface `agent attach` started, what it runs) is the
+            // pane's to judge.
+            if UmiProcessTree.environment(pid)?["UMI_PANE_ID"] != nil { continue }
+            let name = UmiProcess.name(pid) ?? "a process"
+            if promptHelpers.contains(name) { continue }
+            return [Reason(kind: .session, text: "\(name), which it started, is still running", session: session,
+                           sessionName: names[session] ?? session)]
+        }
+        return []
+    }
 
     @MainActor
     static func report() -> [String: Any] {

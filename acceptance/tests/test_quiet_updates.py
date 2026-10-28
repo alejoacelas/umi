@@ -170,6 +170,16 @@ def test_a_running_turn_or_a_waiting_message_is_not_quiet(calm):
     assert "background command" in found["reason"], found
     wait_quiet(inst, timeout=30)
 
+    # A process a headless agent left running on its own (output redirected), after its turn: the quit
+    # would end it (it carries the session's tag). (Not `sleep`: macOS hides a system binary's
+    # environment, so neither this check nor the quit can tell it belongs to the session.)
+    left = inst.start_agent("claude", "RUN python3 -c 'import time; time.sleep(9)' > /dev/null 2>&1 &",
+                            name="left-" + nonce())
+    assert inst.wait(left, timeout=30)[1]["status"] == "DONE"
+    found = wait_reason(inst, lambda r: r.get("session") == left)
+    assert "still running" in found["reason"], found
+    wait_quiet(inst, timeout=30)
+
     # A message waiting for a live Claude whose user has something typed in it.
     live = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
                      "--pane", pane, "--name", "live-" + nonce(), "ECHO hello")
@@ -199,7 +209,7 @@ def test_a_running_turn_or_a_waiting_message_is_not_quiet(calm):
     wait_until(lambda: inst.info(cid)["status"] == "working" or "typed" in inst.screen(cpane, scrollback=True), 15,
                message="the typed turn")
     wait_quiet(inst, timeout=30)
-    for s in (sid, lid, bg, cid):
+    for s in (sid, lid, bg, cid, left):
         inst.cli("agent", "stop", s, check=False, timeout=60)
 
 
