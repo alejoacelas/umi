@@ -122,6 +122,16 @@ def test_a_busy_pane_is_not_quiet(calm):
     inst.cli("send", "--pane", pane, "--enter", "pkill -f 'sleep 302'")
     wait_quiet(inst)
 
+    # A right prompt (RPROMPT) is prompt, not typed input.
+    inst.cli("send", "--pane", pane, "--enter", "RPROMPT='[right side]'")
+    wait_until(lambda: "[right side]" in inst.screen(pane), 10, message="the right prompt")
+    wait_quiet(inst)
+    inst.cli("send", "--pane", pane, "half")
+    busy_with(["typed"])
+    inst.cli("keys", "--pane", pane, "ctrl+u")
+    inst.cli("send", "--pane", pane, "--enter", "RPROMPT=")
+    wait_quiet(inst)
+
     # A shell started from the pane's shell is a program running there (its state would be lost).
     inst.cli("send", "--pane", pane, "--enter", "/bin/zsh")
     busy_with(["zsh", "running"])

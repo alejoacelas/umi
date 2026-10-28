@@ -509,3 +509,8 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   that keys typed while a permission dialog is up keep the line counted. (Keys reaching a typed agent
   before its first hook come from the keyboard only, so no non-`ui` test can drive them.)
   **Requirement:** I-4.
+- **Review rounds 8 to 13 (0.6.2)**: `test_a_busy_pane_is_not_quiet` adds a right prompt (`RPROMPT`):
+  quiet with nothing typed, not quiet with something typed. Swift unit tests for `--` and for Claude's
+  unlisted value options. (Input reaching a pane before Umi follows it, while an interface is being
+  prepared, and IME composition come from the keyboard or exact timing, so no non-`ui` test can drive
+  them.) **Requirement:** I-4.

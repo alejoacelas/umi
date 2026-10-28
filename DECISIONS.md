@@ -1592,7 +1592,9 @@ once a second while an update waits (one read of the process table, one terminal
     `ghostty_surface_umi_prompt_state` (0 can't tell, 1 empty, 2 typed). No marks seen, a full-screen
     program's screen or a cursor outside the input is "can't tell". zsh-autosuggestions' grey text only
     shows after something typed, so it never makes an empty prompt look typed. Text still being
-    composed with an input method (not yet on the terminal) counts as typed (round 8).
+    composed with an input method (not yet on the terminal) counts as typed (round 8). zsh draws a
+    right prompt (`RPROMPT`) after PS1's end mark, so Umi's zsh integration now marks it as prompt
+    too; unmarked, its text looked typed and would have held updates back forever (round 13).
   - *An idle agent.* A session's read-only view is quiet when the terminal it covers is (its shell at
     an empty prompt, or exited: the terminal can be shown and used under the view). A live interface is
     quiet when it is what's in front, known by its process (the group of the process its hooks came
@@ -1617,7 +1619,8 @@ once a second while an update waits (one read of the process table, one terminal
     like keys for an agent Umi doesn't know yet (rounds 8 and 9), and the check runs on the main
     thread right when the pane starts being followed as live, so nothing slips in between (round 9);
     the same goes for input that reached a pane while Umi prepared an interface for it (Take Over
-    waiting for the headless process to stop; round 12).
+    waiting for the headless process to stop), counted from when Umi typed the attach command (rounds
+    12 and 13).
     This can
     hold an update back until the next prompt is sent (the status says so); it never lets one discard
     a draft. Delivering messages to a live Claude (AG-9) keeps its own, finer tracking (Esc no longer

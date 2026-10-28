@@ -183,6 +183,19 @@ _ghostty_deferred_init() {
                 _ghostty_saved_ps1=$PS1
                 _ghostty_saved_ps2=$PS2
 
+                # Umi: the right prompt is prompt too. zsh draws it after PS1's
+                # end mark, so unmarked its text would count as typed input
+                # (Umi installs updates only at an empty prompt). Marked the
+                # same way: taken off again first if nothing changed it since.
+                if [[ -n ${_umi_saved_rps1+x} && $RPS1 == $_umi_marked_rps1 ]]; then
+                    RPS1=$_umi_saved_rps1
+                fi
+                _umi_saved_rps1=$RPS1
+                if [[ -n $RPS1 ]]; then
+                    RPS1=$'%{\e]133;P;k=r\a%}'${RPS1}$'%{\e]133;B\a%}'
+                fi
+                _umi_marked_rps1=$RPS1
+
                 # Add our marks. Since we always start from a clean PS1
                 # (either restored above or freshly set by a theme), we can
                 # unconditionally add mark1 and markB.
@@ -252,6 +265,10 @@ _ghostty_deferred_init() {
         if [[ -n ${_ghostty_saved_ps1+x} && $PS1 == $_ghostty_marked_ps1 ]]; then
             PS1=$_ghostty_saved_ps1
             PS2=$_ghostty_saved_ps2
+        fi
+        # Umi: the right prompt likewise.
+        if [[ -n ${_umi_saved_rps1+x} && $RPS1 == $_umi_marked_rps1 ]]; then
+            RPS1=$_umi_saved_rps1
         fi
 
         # This will work incorrectly in the presence of a preexec hook that

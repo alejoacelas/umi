@@ -562,9 +562,10 @@ enum UmiAgentRPC {
             throw UmiError.badRequest("`agent attach` runs in one of \(UmiPaths.productName)'s panes (it shows the session there); "
                 + "elsewhere use `\(UmiPaths.cliName) agent open SESSION --live`")
         }
+        // Keys from when the attach command was typed (by Umi, or else shortly before this request)
+        // reach the interface: the terminal buffers them while it starts.
+        let attachStarted = UmiAgentUI.shared.attachTypedAt.removeValue(forKey: surface.id) ?? Date().addingTimeInterval(-2)
         let session = try await agents.run { try agents.resolve(params.string("session"), caller: caller) }
-        // Keys from now on reach the interface (the terminal buffers them while it starts).
-        let attachStarted = Date()
         // What the pane was before, put back if the session can't go live here. (Take Over marks
         // the pane live before this runs: it counts as live only if an interface really ran here.)
         let previous = UmiAgentUI.shared.attachments[surface.id]

@@ -61,6 +61,7 @@ extension UmiAgentUI {
                 return
             }
             // `$UMI_CLI` is this app's own CLI (an older `umi` elsewhere on PATH must not answer).
+            shared.attachTypedAt[surface.id] = Date()
             try? await UmiInput.send(text: "\"$UMI_CLI\" agent attach \(quoted)", to: surface, enter: true)
         }
         if UmiLayout.isFocusedPane(surface) {

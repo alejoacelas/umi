@@ -28,6 +28,8 @@ final class UmiAgentUI: ObservableObject {
     /// When a key last went to each pane: an agent the user typed is known only from its first
     /// hook, and keys may reach it before (UmiAgentRPC.hook).
     var lastKeyAt: [UUID: Date] = [:]
+    /// When Umi typed `agent attach` into each pane: keys after it reach the interface it starts.
+    var attachTypedAt: [UUID: Date] = [:]
 
     private var models: [String: UmiAgentViewModel] = [:]
 
