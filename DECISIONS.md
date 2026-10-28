@@ -1601,7 +1601,10 @@ once a second while an update waits (one read of the process table, one terminal
     from) or by the session its environment names (Umi started it), never by its arguments, in a pane
     whose input Umi follows for that session (another agent typed under a view whose terminal is shown
     isn't; review round 10), and its
-    session is idle with nothing typed. Umi can't read an agent's input line, and following it keystroke
+    session is idle with nothing typed, and nothing it runs through a shell is still running (Claude
+    Code runs an event's hooks side by side: Umi's Stop hook can say the turn is done while the user's
+    own Stop hook still builds; review round 14). The servers an agent starts itself (MCP) don't count,
+    nor does `caffeinate`. Umi can't read an agent's input line, and following it keystroke
     by keystroke failed four review rounds in a row (Esc, history recall, Ctrl-P, Ctrl-G, cursor moves
     before Backspace or Ctrl-U, multi-line pastes, drops, dictation). So for an update the rule is
     blunt: once anything reaches the input line (a key other than Enter, a paste, a drop, dictated

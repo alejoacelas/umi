@@ -514,3 +514,5 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   unlisted value options. (Input reaching a pane before Umi follows it, while an interface is being
   prepared, and IME composition come from the keyboard or exact timing, so no non-`ui` test can drive
   them.) **Requirement:** I-4.
+- **Review round 14 (0.6.2)**: new `test_an_agents_own_hook_still_running_is_not_quiet` (a second
+  plugin whose Stop hook sleeps 8 s). **Requirement:** I-4.

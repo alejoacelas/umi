@@ -284,8 +284,9 @@ enum UmiQuiet {
         }
     }
 
-    /// Helpers a shell runs for its prompt that live as long as it does; they hold no work.
-    static let promptHelpers: Set<String> = ["gitstatusd", "gitstatusd-darwin-arm64"]
+    /// Helpers a shell runs for its prompt that live as long as it does, and `caffeinate`, which
+    /// agents run to keep the Mac awake: they hold no work.
+    static let promptHelpers: Set<String> = ["gitstatusd", "gitstatusd-darwin-arm64", "caffeinate"]
 
     /// What a pane's terminal holds. `live`: the session whose own interface Umi shows there.
     @MainActor
@@ -326,6 +327,14 @@ enum UmiQuiet {
             if let live {
                 let group = live.pid.flatMap { processes.byPID[$0]?.pgid }
                 if group == front || UmiProcessTree.environment(front)?["UMI_SESSION_ID"] == live.id {
+                    // Work the agent runs through a shell (its hooks: Claude Code runs a Stop hook
+                    // alongside Umi's, which may still be building; its commands) is still running.
+                    // Its own servers (MCP) it starts directly.
+                    for pid in processes.descendants(of: front) {
+                        guard let name = UmiProcess.name(pid) else { continue }
+                        let bare = name.hasPrefix("-") ? String(name.dropFirst()) : name
+                        if UmiProcess.shells.contains(bare) { return .job("\(bare), started by its agent,") }
+                    }
                     return .live(live.id)
                 }
             }
