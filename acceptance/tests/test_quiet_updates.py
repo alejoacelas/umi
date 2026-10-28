@@ -290,6 +290,11 @@ def test_idle_agents_in_panes_are_quiet(calm):
     inst.cli("keys", "--pane", typed_pane, "ctrl+u")
     inst.type_line(typed_pane, f"ECHO last {nonce()}")
     wait_quiet(inst, timeout=30)
+    # Work an interface Umi opened left running detached (no terminal, output redirected): the quit
+    # would end it (it carries the session's tag).
+    inst.type_line(lpane, "RUN python3 -c 'import os, time; os.setsid(); time.sleep(9)' < /dev/null > /dev/null 2>&1 &")
+    found = wait_reason(inst, lambda r: r.get("session") == lid and "still running" in r["reason"], timeout=20)
+    wait_quiet(inst, timeout=30)
     # Shift-Return inserts a newline: not a prompt sent.
     inst.cli("send", "--pane", typed_pane, "x")
     inst.cli("keys", "--pane", typed_pane, "shift+enter")

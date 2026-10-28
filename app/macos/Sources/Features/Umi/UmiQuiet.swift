@@ -180,8 +180,8 @@ enum UmiQuiet {
 
     /// Processes a session started that still run on their own (a build or server a headless
     /// agent left behind, with its output redirected): the quit ends whatever carries a session's
-    /// tag, so they keep the moment from being quiet. The harnesses themselves, what runs in panes
-    /// (judged there) and `caffeinate` don't count.
+    /// tag, so they keep the moment from being quiet. The harnesses themselves, what still runs on
+    /// a pane's terminal (judged with the pane) and `caffeinate` don't count.
     @MainActor
     static func leftovers() -> [Reason] {
         let (own, names): (Set<pid_t>, [String: String]) = UmiAgents.queue.sync {
@@ -194,10 +194,18 @@ enum UmiQuiet {
             }
             return (own, names)
         }
+        // What still runs on a pane's terminal was judged with the pane (and found quiet); work
+        // that left it (detached, no terminal) wasn't.
+        var terminals = Set<dev_t>()
+        for controller in TerminalController.all where !controller.isClosed {
+            for pane in controller.tabs.flatMap(\.panes) {
+                var info = stat()
+                if let tty = pane.surfaceModel?.ttyName, stat(tty, &info) == 0 { terminals.insert(info.st_rdev) }
+            }
+        }
+        let processes = Processes()
         for (pid, session) in UmiProcessTree.tagged(sessions: nil, stateDir: UmiPaths.stateDirectory, excluding: own) {
-            // What runs in a pane (an interface `agent attach` started, what it runs) is the
-            // pane's to judge.
-            if UmiProcessTree.environment(pid)?["UMI_PANE_ID"] != nil { continue }
+            if let info = processes.byPID[pid], info.tpgid > 0, terminals.contains(info.tdev) { continue }
             let name = UmiProcess.name(pid) ?? "a process"
             if promptHelpers.contains(name) { continue }
             return [Reason(kind: .session, text: "\(name), which it started, is still running", session: session,

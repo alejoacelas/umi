@@ -523,3 +523,5 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   opens. **Requirement:** I-4.
 - **Review round 18 (0.6.2)**: `test_a_running_turn_or_a_waiting_message_is_not_quiet` adds a process a
   headless agent leaves running after its turn (`RUN python3 … &`). **Requirement:** I-4.
+- **Review round 19 (0.6.2)**: `test_idle_agents_in_panes_are_quiet` adds work a live interface leaves
+  running detached from its terminal. **Requirement:** I-4.

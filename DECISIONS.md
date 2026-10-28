@@ -1573,9 +1573,10 @@ once a second while an update waits (one read of the process table, one terminal
 
 - **Sessions** (`UmiAgentSession.quietBlocker`): messages queued or being delivered; commands an agent
   left running after its turn (Codex's background terminals, which don't make a session `working`;
-  review round 3), and any other process carrying a session's tag outside a pane (a build a headless
-  agent left behind with its output redirected), which the quit would end (round 18; checked last,
-  once everything else is quiet, since it reads every process's environment); something typed in a live interface; a live interface taken as idle only by
+  review round 3), and any other process carrying a session's tag that no longer runs on one of the
+  panes' terminals (a build a headless agent left behind, or one a live interface detached, with its
+  output redirected), which the quit would end (rounds 18 and 19; checked last, once everything else is
+  quiet, since it reads every process's environment); something typed in a live interface; a live interface taken as idle only by
   inference (an Esc or Ctrl-C followed by two seconds without a hook, AG-19: a remapped Ctrl-C may
   have been a copy) until the agent's next hook says what it does (round 6); status `working`, `starting` or `needs_input` (a turn waiting on the user is
   still a turn: a relaunch would cut it off); an interface opening or closing. Every session the app
