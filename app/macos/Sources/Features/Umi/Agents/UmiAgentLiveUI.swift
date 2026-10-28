@@ -156,8 +156,9 @@ extension UmiAgentUI {
         } else if [123, 124, 115, 119].contains(event.keyCode) && !event.modifierFlags.contains(.command) {
             input = .cursor                                       // left, right, home, end
         } else if event.keyCode == 36 || event.keyCode == 76 {   // return, enter
-            // With Shift, Option or Control it inserts a newline in Claude Code and Codex.
-            input = event.modifierFlags.isDisjoint(with: [.shift, .option, .control]) ? .submit : .edit
+            // With Shift, Option or Control it inserts a newline in Claude Code and Codex; while an
+            // input method composes, it confirms the composition.
+            input = event.modifierFlags.isDisjoint(with: [.shift, .option, .control]) && !pane.hasMarkedText() ? .submit : .edit
         } else if control && chars.lowercased() == "u" {
             input = .clear
         } else if event.keyCode == 51 && event.modifierFlags.isDisjoint(with: [.option, .command]) {

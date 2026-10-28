@@ -516,3 +516,5 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   them.) **Requirement:** I-4.
 - **Review round 14 (0.6.2)**: new `test_an_agents_own_hook_still_running_is_not_quiet` (a second
   plugin whose Stop hook sleeps 8 s). **Requirement:** I-4.
+- **Review rounds 15 and 16 (0.6.2)**: `test_an_agents_own_hook_still_running_is_not_quiet` uses a hook
+  that `exec`s its program and runs it in the interface's very first turn. **Requirement:** I-4.

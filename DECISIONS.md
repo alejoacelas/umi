@@ -1605,8 +1605,10 @@ once a second while an update waits (one read of the process table, one terminal
     Code runs an event's hooks side by side: Umi's Stop hook can say the turn is done while the user's
     own Stop hook still builds; rounds 14 and 15). Work is told apart from the servers an agent keeps
     (MCP, however they are wrapped) by when it started: servers start with the interface, so anything
-    it started more than 20 seconds after it opened counts, whatever its name (a hook that `exec`s its
-    program too); `caffeinate`, which agents run with a timeout to keep the Mac awake, doesn't. Umi can't read an agent's input line, and following it keystroke
+    it started more than 20 seconds after it opened, or more than 3 seconds after its first prompt went
+    out (round 16: a first turn right after opening), counts, whatever its name (a hook that `exec`s
+    its program too); `caffeinate`, which agents run with a timeout to keep the Mac awake, doesn't.
+    Return that confirms an input method's composition is an edit, not a send (round 16). Umi can't read an agent's input line, and following it keystroke
     by keystroke failed four review rounds in a row (Esc, history recall, Ctrl-P, Ctrl-G, cursor moves
     before Backspace or Ctrl-U, multi-line pastes, drops, dictation). So for an update the rule is
     blunt: once anything reaches the input line (a key other than Enter, a paste, a drop, dictated

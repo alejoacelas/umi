@@ -156,7 +156,7 @@ extension UmiAgentSession {
             record.livePID = nil
             record.goLiveWhenSettled = nil
             liveState = record.kind == .codex ? .idle : .starting
-            liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq; liveIdleInferred = false
+            liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq; liveIdleInferred = false; liveFirstPromptAt = nil
             liveBackground = 0
             liveActivity = ""
             goingLive = false
@@ -245,6 +245,8 @@ extension UmiAgentSession {
         }
         if let pid, pid > 1, record.livePID != pid {
             record.livePID = pid
+            // Another interface process: its startup begins again.
+            liveFirstPromptAt = nil
             saveRecord()
             // Typed again (`claude --resume … --model …`): the latest command's flags count.
             if event == "SessionStart" { adoptTypedFlags(pid: pid) }
@@ -271,6 +273,7 @@ extension UmiAgentSession {
         case "UserPromptSubmit":
             liveState = .working
             livePromptSent()
+            if liveFirstPromptAt == nil { liveFirstPromptAt = Date() }
             liveActivity = ""
             liveTurnError = nil
             liveTurnFailedAt = nil
@@ -485,7 +488,7 @@ extension UmiAgentSession {
         record.livePID = nil
         record.liveAttached = nil
         liveState = nil
-        liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq; liveIdleInferred = false
+        liveDraft = false; liveDraftChars = 0; liveInputTouched = false; liveEnterSeq = liveInputSeq; liveIdleInferred = false; liveFirstPromptAt = nil
         liveBackground = 0
         liveActivity = ""
         reclaiming = false

@@ -184,12 +184,12 @@ enum UmiQuiet {
     @MainActor
     static func snapshot() -> Snapshot {
         var snapshot = Snapshot(lastInput: lastInput, now: now, idle: idleInterval)
-        struct Live { let id: String; let kind: UmiAgentKind; let pid: Int32?; let pane: String? }
+        struct Live { let id: String; let kind: UmiAgentKind; let pid: Int32?; let firstPrompt: Date? }
         let (sessions, live): ([Session], [Live]) = UmiAgents.queue.sync {
             let all = UmiAgents.shared.sessions
             return (all.map { Session(id: $0.record.id, name: $0.record.name, busy: $0.quietBlocker) },
                     all.filter { $0.record.live == true }.map {
-                        Live(id: $0.record.id, kind: $0.record.kind, pid: $0.record.livePID, pane: $0.record.pane)
+                        Live(id: $0.record.id, kind: $0.record.kind, pid: $0.record.livePID, firstPrompt: $0.liveFirstPromptAt)
                     })
         }
         snapshot.sessions = sessions
@@ -211,7 +211,7 @@ enum UmiQuiet {
                 // whose terminal is shown) is a program Umi can't vouch for.
                 let followed = ui.livePanes.contains(pane.id) ? ui.attachments[pane.id] : nil
                 let session = live.first { $0.id == followed }
-                state = paneState(pane, live: session.map { ($0.id, $0.kind, $0.pid) }, processes: processes)
+                state = paneState(pane, live: session.map { ($0.id, $0.kind, $0.pid, $0.firstPrompt) }, processes: processes)
             }
             snapshot.panes.append(Pane(id: umiID, tab: tab, state: state))
         }
@@ -284,7 +284,7 @@ enum UmiQuiet {
         }
     }
 
-    /// How long after an agent's interface starts the servers it keeps (MCP) are started.
+    /// How long after an agent's interface starts (at most) the servers it keeps (MCP) are started.
     static let agentStartupSeconds: TimeInterval = 20
 
     static func seconds(_ time: timeval) -> TimeInterval { TimeInterval(time.tv_sec) + TimeInterval(time.tv_usec) / 1_000_000 }
@@ -295,7 +295,7 @@ enum UmiQuiet {
 
     /// What a pane's terminal holds. `live`: the session whose own interface Umi shows there.
     @MainActor
-    static func paneState(_ pane: Ghostty.SurfaceView, live: (id: String, kind: UmiAgentKind, pid: Int32?)?,
+    static func paneState(_ pane: Ghostty.SurfaceView, live: (id: String, kind: UmiAgentKind, pid: Int32?, firstPrompt: Date?)?,
                           processes: Processes) -> PaneState {
         guard let surface = pane.surface else { return .unknown("it has no terminal") }
         if ghostty_surface_process_exited(surface) { return .exited }
@@ -335,11 +335,13 @@ enum UmiQuiet {
                     // Work the agent started during its turns is still running: its hooks (Claude
                     // Code runs an event's hooks side by side, so the user's own Stop hook may still
                     // build after Umi's says the turn is done), its commands. Told apart from the
-                    // servers it keeps (MCP) by when it started: those start with the interface.
+                    // servers it keeps (MCP) by when it started: those start with the interface,
+                    // before its first prompt is under way.
                     if let opened = processes.byPID[front]?.start {
+                        var startup = Self.seconds(opened) + agentStartupSeconds
+                        if let first = live.firstPrompt?.timeIntervalSince1970 { startup = min(startup, first + 3) }
                         for pid in processes.descendants(of: front) {
-                            guard let info = processes.byPID[pid], !info.zombie,
-                                  Self.seconds(info.start) - Self.seconds(opened) > agentStartupSeconds else { continue }
+                            guard let info = processes.byPID[pid], !info.zombie, Self.seconds(info.start) > startup else { continue }
                             let job = UmiProcess.name(pid) ?? "a process"
                             if !promptHelpers.contains(job) { return .job("\(job), started by its agent,") }
                         }
