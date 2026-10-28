@@ -563,6 +563,8 @@ enum UmiAgentRPC {
                 + "elsewhere use `\(UmiPaths.cliName) agent open SESSION --live`")
         }
         let session = try await agents.run { try agents.resolve(params.string("session"), caller: caller) }
+        // Keys from now on reach the interface (the terminal buffers them while it starts).
+        let attachStarted = Date()
         // What the pane was before, put back if the session can't go live here. (Take Over marks
         // the pane live before this runs: it counts as live only if an interface really ran here.)
         let previous = UmiAgentUI.shared.attachments[surface.id]
@@ -585,6 +587,11 @@ enum UmiAgentRPC {
             throw error
         }
         UmiState.shared.layoutDidChange()
+        // Input that reached the pane while the interface was being prepared (its tracking starts
+        // empty): the interface's input line may hold it (I-4).
+        if let input = UmiAgentUI.shared.lastKeyAt[surface.id], input > attachStarted {
+            UmiAgents.queue.async { session.markInputTouched() }
+        }
         return spec
     }
 

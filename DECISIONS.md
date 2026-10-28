@@ -1615,7 +1615,9 @@ once a second while an update waits (one read of the process table, one terminal
     typed while a permission or question dialog is up count as well: Umi can't tell when the dialog
     closed (round 7). Pastes, drops, dictation, clipboard pastes and `umi send` into a pane are recorded
     like keys for an agent Umi doesn't know yet (rounds 8 and 9), and the check runs on the main
-    thread right when the pane starts being followed as live, so nothing slips in between (round 9).
+    thread right when the pane starts being followed as live, so nothing slips in between (round 9);
+    the same goes for input that reached a pane while Umi prepared an interface for it (Take Over
+    waiting for the headless process to stop; round 12).
     This can
     hold an update back until the next prompt is sent (the status says so); it never lets one discard
     a draft. Delivering messages to a live Claude (AG-9) keeps its own, finer tracking (Esc no longer
