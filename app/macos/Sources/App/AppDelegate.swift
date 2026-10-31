@@ -209,6 +209,8 @@ class AppDelegate: NSObject,
         // Umi: the control socket comes up before any window exists, so panes created
         // during restoration can already be reached.
         UmiControlServer.shared.start()
+        // `umi://open?path=…` links (I-6), including one that launches the app.
+        UmiOpenURL.EventHandler.shared.install()
         // Agent sessions: load them, clean up after an earlier run, continue cut-off turns.
         UmiAgents.shared.bootstrap()
         MainActor.assumeIsolated {
@@ -250,6 +252,7 @@ class AppDelegate: NSObject,
         undoManager.enableUndoRegistration()
         UmiQuiet.start()
         UmiUpdater.shared.startBackgroundChecks()
+        UmiOpenURL.claimSchemeIfNeeded()
 
         // Register our service provider. This must happen after everything is initialized.
         NSApp.servicesProvider = ServiceProvider()

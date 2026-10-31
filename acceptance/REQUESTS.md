@@ -196,3 +196,11 @@ quiet moment should be the default:
 
 This supersedes "updates should ask" (above) and the rule that updates install only on quit or when
 asked (SPEC I-4).
+
+## 2026-10-31: `umi://open` links
+
+Agents on the server write files into `~/best` repositories (for example
+`desk/generated/2026-11/2026-11-01-lizzie-storage.md`), push them, and send Alejo a link. The brief
+(relayed by Alejo's agent, not his own words): `umi://open?path=<path relative to ~/best>` opens the
+file in Umi's editor as `open FILE` does, pulling the repository first if it is behind, and refuses
+paths that escape `~/best` (SPEC I-6).

@@ -4,6 +4,19 @@
 <dict>
 	<key>NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Umi link</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>umi</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSDockTilePlugIn</key>
 	<string>DockTilePlugin.plugin</string>
 	<key>CFBundleDocumentTypes</key>

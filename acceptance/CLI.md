@@ -93,6 +93,10 @@ pinned; nothing reorders them on its own (SPEC S-7).
 | `editor mode [preview\|source]` | toggles without an argument |
 | `editor default [--dry-run]` | make the app the default for `.md`; `--dry-run` prints the app bundle path |
 
+Links: the app also answers `umi://open?path=PATH` (SPEC I-6). PATH is URL-encoded and relative to
+`~/best`; the link opens what `edit` would for a file (in the closest tab, E-10), after pulling its
+repository if it is behind. `open 'umi://open?path=desk/AGENTS.md'` runs it from a shell.
+
 ## Updates
 
 | Command | Notes |
