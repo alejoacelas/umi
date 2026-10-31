@@ -47,6 +47,12 @@ Full-screen programs (vim, less, agents' interfaces) get the whole pane. To keep
 Umi reads your Ghostty config (`~/.config/ghostty/config`), then its own, `~/.config/umi/config`, for
 settings that only Umi should see (Ghostty never reads it). Umi's Settings (⌘,) edits shortcuts.
 
+## Links
+
+`umi://open?path=PATH` opens a file under `~/best` (PATH relative to it, URL-encoded) in Umi's editor,
+as `open FILE` would. If the file's git repository is behind its upstream, Umi pulls it first, so a
+link to a file another machine just pushed works. Paths that leave `~/best` are refused.
+
 ## Agents
 
 `umi claude "task"` and `umi codex "task"` start a Claude Code or Codex session that works in the
