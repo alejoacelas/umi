@@ -9,7 +9,7 @@ until 0.5.0 (see "Names" below). This repository holds the source and publishes 
 | `app/` | The app: Ghostty with Ghostty's full history, plus Umi. Umi's Swift is in `app/macos/Sources/Features/Umi`, its CLI in `app/macos/UmiCLI`, its agent plugins in `app/macos/UmiPlugins`; Zig changes are marked `Umi:` in comments. `app/AGENTS.md` and `app/macos/AGENTS.md` are Ghostty's own guides. |
 | `app/dist/` | `release.sh`, `install.sh`, `sign-update.swift`, `local-icon.sh`, `icon/` (the icon's drawing code). |
 | `acceptance/` | The black-box acceptance suite: `SPEC.md` (requirements), `CLI.md` (the CLI contract), `REQUESTS.md` (the user's words), `tests/`, fake agents in `fakes/`, `targets/umi.json`. |
-| `*.md` at the root | Briefs (`BRIEF*.md`), `DECISIONS.md`, `COMPROMISES.md`, reports (`REPORT.md`, `REPORT-umi.md`). Records from before 0.6.0 say Tern and stay that way. |
+| `*.md` at the root | Briefs (`BRIEF*.md`), `COMPROMISES.md`, reports (`REPORT.md`, `REPORT-umi.md`). Records from before 0.6.0 say Tern and stay that way. |
 | `logs/`, `.worktrees/`, `.ref/` | Local only (ignored): run logs, agent worktrees, reference copies. |
 
 ## Build
@@ -132,6 +132,5 @@ same way and folded into the root.
 
 ## Conventions
 
-- Record decisions in `DECISIONS.md` (numbered, with the options and the evidence), compromises in
-  `COMPROMISES.md`, and a report per run.
+- Record compromises in `COMPROMISES.md` and a report per run.
 - Commit early, push after every commit. Commits end with a `Co-Authored-By` line when an agent made them.
