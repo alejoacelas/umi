@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 
 /// `umi://open?path=<path>` (SPEC I-6): open a file or folder under `~/best` from a link.
 ///
@@ -262,12 +263,32 @@ enum UmiOpenURL {
 
     /// The installed app answers `umi://` links, not a dev or test copy that also declares the
     /// scheme. Isolated instances never claim it.
+    /// Right after an update replaces the bundle, LaunchServices may not know the new copy's
+    /// schemes yet: register it first, and try again a little later if setting the default fails.
     static func claimSchemeIfNeeded() {
         guard !UmiPaths.isIsolated, let probe = URL(string: "\(scheme)://open") else { return }
-        if let current = NSWorkspace.shared.urlForApplication(toOpen: probe),
-           current.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL {
-            return
+        let app = Bundle.main.bundleURL
+        DispatchQueue.global(qos: .utility).async {
+            for attempt in 1...4 {
+                if let current = NSWorkspace.shared.urlForApplication(toOpen: probe),
+                   current.standardizedFileURL == app.standardizedFileURL {
+                    return
+                }
+                LSRegisterURL(app as CFURL, true)
+                let done = DispatchSemaphore(value: 0)
+                var failure: Error?
+                NSWorkspace.shared.setDefaultApplication(at: app, toOpenURLsWithScheme: scheme) { error in
+                    failure = error
+                    done.signal()
+                }
+                _ = done.wait(timeout: .now() + 20)
+                let message = failure.map { "\($0)" } ?? "ok"
+                logger.info("claiming \(scheme, privacy: .public):// (attempt \(attempt)): \(message, privacy: .public)")
+                if failure == nil { return }
+                sleep(UInt32(15 * attempt))
+            }
         }
-        NSWorkspace.shared.setDefaultApplication(at: Bundle.main.bundleURL, toOpenURLsWithScheme: scheme) { _ in }
     }
+
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "dev.umi.app", category: "links")
 }
