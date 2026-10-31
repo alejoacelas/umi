@@ -525,3 +525,8 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   headless agent leaves running after its turn (`RUN python3 … &`). **Requirement:** I-4.
 - **Review round 19 (0.6.2)**: `test_idle_agents_in_panes_are_quiet` adds work a live interface leaves
   running detached from its terminal. **Requirement:** I-4.
+- **`umi://open` links (0.6.4)**: new `test_open_links_pull_first_and_stay_inside_the_root` in
+  `test_umi_panes_ui.py`, through the internal `debug.ui.open_url` (what the link's Apple Event runs,
+  with a scratch folder standing in for `~/best`): a file pushed to the remote opens after the pull, an
+  unreachable remote opens the local copy with a notice, and five escaping paths (`..`, absolute, `~`,
+  `..` inside a repository, a symlink out) are refused. **Requirement:** I-6.
