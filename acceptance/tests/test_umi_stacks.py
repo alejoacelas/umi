@@ -70,7 +70,8 @@ def test_stacking_can_be_undone(inst, win):
     b = split(inst, "right", a)
     rpc(inst, "debug.ui.split.drop", pane=b, target=a, zone="center")
     assert shown(inst, win["tab"]) == [b]
-    rpc(inst, "debug.undo")
+    assert inst.rpc("debug.undo")["undo"] == "Stack Pane"
+    inst.rpc("debug.menu.perform", title="Undo")
     wait_until(lambda: sorted(shown(inst, win["tab"])) == sorted([a, b]), 5, message="undone: side by side")
     assert not stack_of(inst, win["tab"], a)
 

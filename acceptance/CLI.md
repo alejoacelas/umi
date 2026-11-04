@@ -92,7 +92,7 @@ pinned; nothing reorders them on its own (SPEC S-7).
 | `edit FILE… [--source\|--preview] [--tab T \| --pane P]` | opens each file in a pane of its own: the first to the right of the pane (the calling pane, or the tab's focused pane), each next one to the right of the one before; a tab already showing three panes gets a new tab after it instead. A file already open shows where it is. Keyboard focus stays where it was |
 | `editor ls [--tab T \| --pane P]` | JSON: `{"documents": [{"path", "pane", "mode": "preview"\|"source", "dirty": bool}], "active"}`: the files open in that tab's panes |
 | `editor close [FILE] [--force]` | refuses dirty documents without `--force` |
-| `editor mode [preview\|source]` | toggles without an argument |
+| `editor mode [preview\|source] [FILE]` | toggles without a mode; FILE picks one of the tab's files (default: the focused one) |
 | `editor default [--dry-run]` | make the app the default for `.md`; `--dry-run` prints the app bundle path |
 | `comments [ls] FILE [--all]` | the file's open comments (E-11): id, line, the words each is on, its text, replies; `--all` adds resolved ones. JSON: `{"path", "comments": [{"id", "body", "by", "at", "status": "open"\|"resolved", "quote", "line", "detached", "anchor_deleted", "resolved_note"?, "replies": [{"id", "body", "by", "at"}]}]}`. Works on the file without the app |
 | `comments add FILE --on TEXT [--nth N] TEXT… [--by NAME]` | comment on the first (or Nth) occurrence of TEXT outside code and other comments; prints `added ID` (JSON `{"id", "action", "path"}`) |

@@ -1169,9 +1169,14 @@ func editorCommand(_ argv: [String]) {
         if args.has("--force") { params["force"] = true }
         printOK(call("editor.close", params))
     case "mode", "toggle":
-        if let mode = args.positional.first {
-            guard mode == "preview" || mode == "source" else { fail("editor mode: use preview or source") }
+        var positional = args.positional
+        if let mode = positional.first, mode == "preview" || mode == "source" {
             params["mode"] = mode
+            positional.removeFirst()
+        }
+        if let file = positional.first {
+            guard positional.count == 1 else { fail("editor mode: use preview or source, then at most one file") }
+            params["path"] = absolutePath(file)
         }
         let result = callDict("editor.mode", params)
         if jsonOutput { printJSON(result) }

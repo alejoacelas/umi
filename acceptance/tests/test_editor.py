@@ -141,6 +141,8 @@ def test_refuses_what_it_cannot_edit(inst, win, tmp_path):
         path.write_bytes(b"a" * cut + "é".encode("utf-8") + b"\n")
         inst.cli("edit", str(path), "--pane", win["pane"])
         assert doc(inst, win["pane"], str(path)) is not None
+        # Closed again, so the next one opens in this tab too (three panes fill a tab).
+        inst.cli("editor", "close", str(path), "--pane", win["pane"])
 
 
 @pytest.mark.req("E-9", "P-4")

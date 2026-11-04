@@ -58,7 +58,7 @@ def tab_of(inst, tab_id):
 
 
 def frames(inst, tab_id):
-    return {p["id"]: p["frame"] for p in tab_of(inst, tab_id)["panes"]}
+    return {p["id"]: p["frame"] for p in tab_of(inst, tab_id)["panes"] if "frame" in p}
 
 
 def split(inst, direction, pane, *extra):

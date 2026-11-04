@@ -605,3 +605,18 @@ REQUESTS.md (2026-11-04).
 - **New, `tests/test_umi_panes_ui.py`** (branch `pane-tab-drop`):
   `test_a_pane_dropped_on_the_previous_or_next_tab_target_moves_there` and its real-mouse `_ui` twin
   (M-4).
+- **Changed, `tests/test_comments.py`**: the helpers sized the editor panel (`debug.ui.editor.divider`);
+  they now drag the divider between the caller and the file's pane to give the file the same share.
+- **Changed, `tests/test_editor.py` `test_refuses_what_it_cannot_edit`**: each of the three cut-UTF-8
+  files is closed after it is checked, so all three open in the caller's tab (a third would go to a
+  new tab, which `editor ls --pane` doesn't list).
+- **Replaced, `tests/test_umi_extra.py`** `test_editor_documents_follow_a_pane_out_of_its_dissolving_tab`
+  became `test_a_file_stays_open_when_the_pane_that_opened_it_moves_away`: files no longer belong to a
+  tab, so the tab keeps the file's pane and the file.
+- **Changed, `tests/test_review_agents.py` `test_hiding_the_last_pane_of_a_tab_keeps_its_editors_edits`**:
+  the edits also count as kept when the file's pane is still open with them (its tab no longer goes).
+- **Changed, `tests/test_umi_blocks.py` `test_the_top_padding_extends_again_once_the_view_fills`**: the
+  rows are an exact 24-bit red; Warp's palette red (#ff8272) is lighter than the test's idea of red.
+- **Fixed, `tests/test_umi_stacks.py`**: the undo test read the undo state (`debug.undo`) without
+  undoing; it now checks the step is "Stack Pane" and performs Undo. `frames()` in
+  `test_umi_panes_ui.py` skips stack members that aren't on show (they have no frame).

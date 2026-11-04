@@ -214,15 +214,24 @@ def test_hiding_the_last_pane_of_a_tab_keeps_its_editors_edits(inst, win):
         f.write("# notes\n")
     inst.cli("edit", path, "--source", "--pane", pane)
     inst.rpc("debug.editor.type", pane=pane, path=path, text="kept line\n")
+    tab = inst.find_pane(pane)[1]["id"]
     assert any(d["dirty"] for d in inst.json("editor", "ls", "--pane", pane)["documents"])
     inst.type_line(pane, f"SLEEP 3 {nonce()}")
     wait_until(lambda: inst.info(sid)["status"] == "working", 10, message="the typed turn runs")
     inst.cli("agent", "hide", sid)
     wait_until(lambda: not inst.find_pane(pane), 10, message="the pane out of sight")
+    # The file is a pane of its own: it stays open with its edits, or, if its tab went, the
+    # edits are saved or kept as a recovery copy.
     recovery = os.path.join(inst.dir, "recovery")
-    wait_until(lambda: "kept line" in open(path).read()
-               or any("kept line" in open(f).read() for f in glob.glob(os.path.join(recovery, "*"))), 10,
-               message="the edits saved or kept as a recovery copy")
+
+    def kept():
+        listed = inst.cli("--json", "editor", "ls", "--tab", tab, check=False)
+        if listed.returncode == 0 and any(d["dirty"] and os.path.realpath(d["path"]) == os.path.realpath(path)
+                                          for d in json.loads(listed.stdout)["documents"]):
+            return True
+        return ("kept line" in open(path).read()
+                or any("kept line" in open(f).read() for f in glob.glob(os.path.join(recovery, "*"))))
+    wait_until(kept, 10, message="the edits still open, saved or kept as a recovery copy")
 
 
 @pytest.mark.req("L-17")
