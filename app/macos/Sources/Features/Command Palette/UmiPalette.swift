@@ -64,10 +64,25 @@ final class UmiPaletteModel: ObservableObject {
         open(mode, in: window)
     }
 
+    /// How many times a palette has opened, in any window (changed on the main thread only).
+    nonisolated(unsafe) private(set) static var openings = 0
+
+    /// Whether a palette opened since a delayed focus move was asked for (when `openings` was
+    /// `since`) still shows in `window`. The move then gives way, so ⌘P pressed right after a
+    /// tab switch types into the palette. Moves asked for while it shows (a command it runs
+    /// splits and focuses a pane) still happen. Call it on the main thread.
+    nonisolated static func keepsFocus(in window: NSWindow?, since: Int) -> Bool {
+        MainActor.assumeIsolated {
+            guard openings != since, let controller = window?.windowController as? TerminalController else { return false }
+            return controller.palette.isPresented
+        }
+    }
+
     func open(_ mode: Mode, in window: TerminalController) {
         cancelRun()
         filesTask?.cancel()
         if !isPresented {
+            Self.openings += 1
             previousResponder = window.window?.firstResponder
             pane = UmiTopology.currentWindow === window ? UmiTopology.currentPane : window.focusedSurface
             pane = pane ?? window.selectedTab.effectiveFocusedSurface

@@ -221,13 +221,17 @@ enum UmiLayout {
     /// Give a pane keyboard focus once its view is in the window, unless the window was asked
     /// to focus something else meanwhile. (Ghostty's own retry would still focus a pane whose
     /// tab was shown, hidden and shown again in quick succession, after a later request.)
-    static func moveFocus(to pane: Ghostty.SurfaceView, in window: TerminalController, attempt: Int = 0) {
+    /// A palette opened meanwhile keeps the focus (`UmiPaletteModel.keepsFocus`).
+    static func moveFocus(to pane: Ghostty.SurfaceView, in window: TerminalController, attempt: Int = 0,
+                          paletteOpenings: Int? = nil) {
+        let openings = paletteOpenings ?? UmiPaletteModel.openings
         let delay = attempt == 0 ? 0 : 0.05 * Double(1 << (attempt - 1))
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             guard window.focusedSurface === pane || window.selectedTab.focusedSurface === pane,
-                  window.surfaceTree.contains(pane) else { return }
+                  window.surfaceTree.contains(pane),
+                  !UmiPaletteModel.keepsFocus(in: window.window, since: openings) else { return }
             guard let host = pane.window else {
-                if attempt < 5 { moveFocus(to: pane, in: window, attempt: attempt + 1) }
+                if attempt < 5 { moveFocus(to: pane, in: window, attempt: attempt + 1, paletteOpenings: openings) }
                 return
             }
             host.makeFirstResponder(pane)

@@ -1070,8 +1070,13 @@ extension Ghostty {
     static func moveFocus(
         to: SurfaceView,
         from: SurfaceView? = nil,
-        delay: TimeInterval? = nil
+        delay: TimeInterval? = nil,
+        paletteOpenings: Int? = nil
     ) {
+        // Umi: a palette opened since this move was asked for keeps the focus (⌘P right after
+        // a tab switch types into it; see UmiPaletteModel.keepsFocus).
+        let paletteOpenings = paletteOpenings ?? UmiPaletteModel.openings
+
         // The whole delay machinery is a bit of a hack to work around a
         // situation where the window is destroyed and the surface view
         // will never be attached to a window. Realistically, we should
@@ -1094,9 +1099,10 @@ extension Ghostty {
             // If the callback runs before the surface is attached to a view
             // then the window will be nil. We just reschedule in that case.
             guard let window = to.window else {
-                moveFocus(to: to, from: from, delay: nextDelay)
+                moveFocus(to: to, from: from, delay: nextDelay, paletteOpenings: paletteOpenings)
                 return
             }
+            if UmiPaletteModel.keepsFocus(in: window, since: paletteOpenings) { return }
 
             // If we had a previously focused node and its not where we're sending
             // focus, make sure that we explicitly tell it to lose focus. In theory
