@@ -139,6 +139,18 @@ enum UmiUIDebug {
             }
             return ["pane": pane.umiID]
 
+        case "debug.ui.editor.divider":
+            // Dragging the divider of a tab's editor panel to `fraction` of the tab's width.
+            let (window, tab) = try UmiEditor.targetTab(params, caller: caller, createWindow: false)
+            guard tab === window.selectedTab, !tab.editor.isEmpty else {
+                throw UmiError.badRequest("the tab must be shown and have files open")
+            }
+            guard let fraction = params.double("fraction"), fraction > 0, fraction < 1 else {
+                throw UmiError.badRequest("give a fraction between 0 and 1")
+            }
+            window.editorDividerMoved(to: CGFloat(fraction))
+            return ["fraction": Double(tab.editor.fraction)]
+
         case "debug.ui.open_file":
             // What Finder's double-click and `open FILE` call (AppDelegate's openFile).
             guard let path = params.string("path") else { throw UmiError.badRequest("give a path") }

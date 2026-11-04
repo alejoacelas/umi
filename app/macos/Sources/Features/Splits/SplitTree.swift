@@ -327,8 +327,9 @@ extension SplitTree {
         }
 
         // Umi: move only this divider. In a row of three or more, the two panes beside
-        // it change size and the others keep theirs (as in Warp).
-        let newRoot = try root.movingDivider(at: splitPath, to: newRatio)
+        // it change size and the others keep theirs (as in Warp). Dragging a divider is
+        // different (`movingDivider`).
+        let newRoot = try root.movingDividerBetweenNeighbors(at: splitPath, to: newRatio)
         return .init(root: newRoot, zoomed: nil)
     }
 
@@ -1432,12 +1433,34 @@ extension SplitTree {
         return .init(root: newRoot, zoomed: zoomed)
     }
 
-    /// Move the divider of `node` (a split) to `ratio` of that split. In a row of three or
-    /// more only the two panes beside the divider change size (as in Warp).
+    /// Move the divider of `node` (a split) to `ratio` of that split: the divider stays where
+    /// it's dropped and the members of its run on each side share that side equally (L-19).
     func movingDivider(of node: Node, to ratio: Double) throws -> Self {
+        try movingDivider(of: node, to: ratio, trailing: nil).tree
+    }
+
+    /// `movingDivider(of:to:)` in a row that ends, after the tree, with one more member of
+    /// `trailing` share of the whole row (the editor panel beside a tab's panes). It counts
+    /// as a member on the right of the divider when the divider is in the tree's top
+    /// horizontal run, and the result says its new share (`trailing` unchanged otherwise).
+    /// `limits` bound that member's share.
+    func movingDivider(of node: Node, to ratio: Double, trailing: Double?,
+                       limits: ClosedRange<Double> = 0...1) throws -> (tree: Self, trailing: Double?) {
         guard let root else { throw SplitError.viewNotFound }
         guard let path = root.path(to: node) else { throw SplitError.viewNotFound }
-        return .init(root: try root.movingDivider(at: path, to: ratio), zoomed: zoomed)
+        let moved = try root.movingDivider(at: path, to: ratio, trailing: trailing, limits: limits)
+        return (.init(root: moved.node, zoomed: zoomed), moved.trailing)
+    }
+
+    /// Give every member of the tree's top horizontal run the same share (what dragging the
+    /// divider of a panel after the tree, the editor's, does to the panes before it).
+    /// Nil when they already have.
+    func equalizingTopRow() -> Self? {
+        guard let root, case .split(let split) = root, split.direction == .horizontal else { return nil }
+        let members = root.runMembers(.horizontal)
+        let even = 1 / Double(members.count)
+        guard members.contains(where: { abs($0.share - even) > 0.0001 }) else { return nil }
+        return .init(root: root.withShares(Array(repeating: 1, count: members.count), .horizontal), zoomed: zoomed)
     }
 
     /// Give `view` `share` of its row (`.horizontal`) or column (`.vertical`); the others keep
@@ -1540,9 +1563,58 @@ extension SplitTree.Node {
         return (try? replacingNode(at: runPath, with: replacement)) ?? remove(target)
     }
 
+    /// Move the divider of the split at `path` to `ratio` (of that split). The divider ends up
+    /// where `ratio` puts it, and the members of its run on each side of it share that side
+    /// equally (L-19): in a row of three, dragging the first divider gives the first pane the
+    /// width dragged to and the other two half the rest each. Members split the other way count
+    /// as one each and keep their insides. `trailing` is a member after this whole node (see
+    /// `SplitTree.movingDivider(of:to:trailing:)`).
+    func movingDivider(at path: Path, to ratio: Double, trailing: Double? = nil,
+                       limits: ClosedRange<Double> = 0...1) throws -> (node: Self, trailing: Double?) {
+        guard case .split(let split) = node(at: path) else { throw SplitError.viewNotFound }
+        let runPath = runRoot(of: path)
+        guard let runNode = node(at: runPath) else { throw SplitError.viewNotFound }
+        let members = runNode.runMembers(split.direction)
+        let leftMembers = split.left.runMembers(split.direction)
+        let rightMembers = split.right.runMembers(split.direction)
+        guard let first = members.firstIndex(where: { $0.node == leftMembers[0].node }),
+              first + leftMembers.count + rightMembers.count <= members.count else {
+            let moved = try replacingNode(at: path, with: .split(.init(
+                direction: split.direction, ratio: ratio, left: split.left, right: split.right)))
+            return (moved, trailing)
+        }
+        // The split's slot in the run, and where its divider should be in the run.
+        let last = first + leftMembers.count - 1
+        let slot = members[first...(last + rightMembers.count)].reduce(0) { $0 + $1.share }
+        let before = members[..<first].reduce(0) { $0 + $1.share }
+        let leftCount = Double(last + 1)
+        let rightCount = Double(members.count - last - 1)
+        // Keep every member visible.
+        let minimum = 0.02
+        // The panel after the tree joins the right side when the run is the tree's top row.
+        let extra = runPath.isEmpty && split.direction == .horizontal ? trailing : nil
+        guard let extra else {
+            let position = Swift.min(Swift.max(before + ratio * slot, minimum * leftCount), 1 - minimum * rightCount)
+            let shares = members.indices.map { $0 <= last ? position / leftCount : (1 - position) / rightCount }
+            return (try replacingNode(at: runPath, with: runNode.withShares(shares, split.direction)), trailing)
+        }
+        // In the whole row (tree, then panel): the panel shares the right side with the run's
+        // members there, within its own limits.
+        let treeShare = 1 - extra
+        let position = Swift.min(Swift.max((before + ratio * slot) * treeShare, minimum * leftCount),
+                                 1 - minimum * (rightCount + 1))
+        let even = (1 - position) / (rightCount + 1)
+        let panel = Swift.min(Swift.max(even, limits.lowerBound), limits.upperBound)
+        let rightEach = Swift.max((1 - position - panel) / rightCount, minimum)
+        let leftEach = position / leftCount
+        let shares = members.indices.map { $0 <= last ? leftEach : rightEach }
+        return (try replacingNode(at: runPath, with: runNode.withShares(shares, split.direction)), Double(panel))
+    }
+
     /// Move the divider of the split at `path` to `ratio` (of that split). Only the two
-    /// members beside the divider change; the rest of the run keeps its sizes.
-    func movingDivider(at path: Path, to ratio: Double) throws -> Self {
+    /// members beside the divider change; the rest of the run keeps its sizes. What a
+    /// keyboard or `pane resize` resize does: it grows or shrinks one pane (L-19).
+    func movingDividerBetweenNeighbors(at path: Path, to ratio: Double) throws -> Self {
         guard case .split(let split) = node(at: path) else { throw SplitError.viewNotFound }
         let runPath = runRoot(of: path)
         guard let runNode = node(at: runPath) else { throw SplitError.viewNotFound }

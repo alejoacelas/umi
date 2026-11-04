@@ -236,17 +236,89 @@ struct SplitTreeTests {
         #expect(widths(tree.removing(.leaf(view: b))).map { ($0 / 12).rounded() } == [71, 29])
     }
 
-    @Test func aDividerMovesOnlyItsNeighbors() throws {
+    /// A row of `count` panes, each split to the right of the last.
+    private func row(_ views: [MockView]) throws -> SplitTree<MockView> {
+        var tree = SplitTree<MockView>(view: views[0])
+        for (previous, view) in zip(views, views.dropFirst()) {
+            tree = try tree.inserting(view: view, at: previous, direction: .right)
+        }
+        return tree
+    }
+
+    /// The split right above `view`.
+    private func parentSplit(of view: MockView, in tree: SplitTree<MockView>) -> SplitTree<MockView>.Node? {
+        guard let root = tree.root, let path = root.path(to: .leaf(view: view)), !path.isEmpty else { return nil }
+        return root.node(at: .init(path: Array(path.path.dropLast())))
+    }
+
+    @Test func draggingADividerSharesEachSideEqually() throws {
         let a = MockView(), b = MockView(), c = MockView()
-        var tree = SplitTree<MockView>(view: a)
-        tree = try tree.inserting(view: b, at: a, direction: .right)
-        tree = try tree.inserting(view: c, at: b, direction: .right)
-        guard let root = tree.root else { Issue.record("empty tree"); return }
-        // The divider between a and the rest: a grows to 50%, b shrinks, c keeps its third.
-        tree = try tree.movingDivider(of: root, to: 0.5)
-        #expect(widths(tree).map { $0.rounded() } == [600, 200, 400])
+        var tree = try row([a, b, c])
+        // The first divider to the middle: a gets half, b and c share the rest.
+        tree = try tree.movingDivider(of: tree.root!, to: 0.5)
+        #expect(widths(tree).map { $0.rounded() } == [600, 300, 300])
+        // The second divider (the split of b and c, the right half of the row) to 5/6 of the
+        // row: a and b share 1000 points, c gets the rest.
+        tree = try tree.movingDivider(of: parentSplit(of: c, in: tree)!, to: (5.0 / 6.0 - 0.5) / 0.5)
+        #expect(widths(tree).map { $0.rounded() } == [500, 500, 200])
         tree = tree.equalizingRun(containing: tree.root!)
         #expect(widths(tree).map { $0.rounded() } == [400, 400, 400])
+    }
+
+    @Test func draggingAMiddleDividerSharesBothSides() throws {
+        let a = MockView(), b = MockView(), c = MockView(), d = MockView()
+        var tree = try row([a, b, c, d])
+        // The divider between b and c, to 3/4 of the row. Its split holds b, c and d (the last
+        // 3/4 of the row) and its ratio puts the divider after b.
+        tree = try tree.movingDivider(of: parentSplit(of: b, in: tree)!, to: (0.75 - 0.25) / 0.75)
+        #expect(widths(tree).map { $0.rounded() } == [450, 450, 150, 150])
+    }
+
+    @Test func aColumnInARowCountsAsOneAndKeepsItsInside() throws {
+        let a = MockView(), b = MockView(), c = MockView(), d = MockView()
+        var tree = try row([a, b, c])
+        tree = try tree.inserting(view: d, at: b, direction: .down)
+        tree = try tree.movingDivider(of: parentSplit(of: d, in: tree)!, to: 0.3)
+        tree = try tree.movingDivider(of: tree.root!, to: 0.4)
+        let frames = tree.root?.frames(in: CGSize(width: 1200, height: 600)) ?? []
+        #expect(frames.map { Double($0.frame.width).rounded() } == [480, 360, 360, 360])
+        // b over d keep 30/70.
+        #expect(frames.map { Double($0.frame.height).rounded() } == [600, 180, 420, 600])
+    }
+
+    @Test func thePanelAfterTheTreeSharesTheRightSide() throws {
+        let a = MockView(), b = MockView()
+        let tree = try row([a, b])
+        // a | b | editor at 25/25/50; the divider between a and b to a quarter of the row
+        // (half of the tree's width): a keeps a quarter, b and the editor share the rest.
+        let moved = try tree.movingDivider(of: tree.root!, to: 0.5, trailing: 0.5, limits: 0.2...0.85)
+        #expect(abs((moved.trailing ?? 0) - 0.375) < 0.0001)
+        #expect(widths(moved.tree).map { $0.rounded() } == [480, 720])
+        // Within the panel's limits: dragged far left, the editor stops at its widest.
+        let far = try tree.movingDivider(of: tree.root!, to: 0.02, trailing: 0.5, limits: 0.2...0.4)
+        #expect(abs((far.trailing ?? 0) - 0.4) < 0.0001)
+        // A divider in a column isn't in the panel's row.
+        let c = MockView()
+        let column = try SplitTree<MockView>(view: a).inserting(view: c, at: a, direction: .down)
+        let vertical = try column.movingDivider(of: column.root!, to: 0.3, trailing: 0.5)
+        #expect(vertical.trailing == 0.5)
+    }
+
+    @Test func equalizingTheTopRowLeavesAnEvenRow() throws {
+        let a = MockView(), b = MockView(), c = MockView()
+        var tree = try row([a, b, c])
+        #expect(tree.equalizingTopRow() == nil)
+        tree = try tree.movingDivider(of: tree.root!, to: 0.6)
+        tree = try #require(tree.equalizingTopRow())
+        #expect(widths(tree).map { $0.rounded() } == [400, 400, 400])
+    }
+
+    @Test func aKeyboardResizeMovesOnlyTheTwoNeighbors() throws {
+        let a = MockView(), b = MockView(), c = MockView()
+        let tree = try row([a, b, c])
+        let resized = try tree.resizing(node: .leaf(view: a), by: 200, in: .right,
+                                        with: CGRect(x: 0, y: 0, width: 1200, height: 600))
+        #expect(widths(resized).map { $0.rounded() } == [600, 200, 400])
     }
 
     // MARK: - Resizing

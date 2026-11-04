@@ -340,7 +340,11 @@ final class UmiEditorGroup: ObservableObject {
     @Published var documents: [UmiDocument] = []
     @Published var active: UmiDocument?
     /// Panel width as a fraction of the tab's width.
-    @Published var fraction: CGFloat = 0.5
+    @Published var fraction: CGFloat = 0.5 {
+        didSet { if fraction != oldValue { UmiState.shared.layoutDidChange(persistOnly: true) } }
+    }
+    /// How narrow and how wide the panel can be dragged.
+    static let fractionLimits: ClosedRange<CGFloat> = 0.2...0.85
 
     var isEmpty: Bool { documents.isEmpty }
 
@@ -457,7 +461,8 @@ enum UmiEditor {
     static func handleList(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
         let (window, tab) = try targetTab(params, caller: caller, createWindow: false)
         return ["documents": tab.editor.documents.map(json), "tab": tab.idString, "window": window.umiIDString,
-                "active": tab.editor.active?.url.path ?? ""]
+                "active": tab.editor.active?.url.path ?? "",
+                "fraction": tab.editor.isEmpty ? 0 : Double(tab.editor.fraction)]
     }
 
     static func handleClose(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
@@ -672,6 +677,8 @@ enum UmiEditor {
 struct UmiEditorSplit<Content: View>: View {
     @ObservedObject var group: UmiEditorGroup
     let background: Color
+    /// Dragging the divider (to a fraction of the tab's width).
+    let resize: (CGFloat) -> Void
     @ViewBuilder let content: () -> Content
     @State private var dragStart: CGFloat?
 
@@ -694,7 +701,7 @@ struct UmiEditorSplit<Content: View>: View {
                                     let start = dragStart ?? group.fraction
                                     dragStart = start
                                     let delta = value.translation.width / max(geometry.size.width, 1)
-                                    group.fraction = min(0.85, max(0.2, start - delta))
+                                    resize(start - delta)
                                 }.onEnded { _ in dragStart = nil })
                         )
                     UmiEditorPanel(group: group, background: background)

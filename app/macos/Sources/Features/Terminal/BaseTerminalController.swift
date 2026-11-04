@@ -995,10 +995,19 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Umi: a panel laid out after the tree in the same row (the editor), as its share of
+    /// the row, the limits of that share, and how to set it. Nil when there's none.
+    var umiTrailingPanel: (share: Double, limits: ClosedRange<Double>, set: (Double) -> Void)? { nil }
+
     private func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
-        // Umi: only the two panes beside the dragged divider change size (L-19).
+        // Umi: the divider stays where it's dropped and the panes on each side of it in its
+        // row (or column), the editor panel included, share that side equally (L-19).
         do {
-            surfaceTree = try surfaceTree.movingDivider(of: node, to: newRatio)
+            let panel = umiTrailingPanel
+            let moved = try surfaceTree.movingDivider(of: node, to: newRatio, trailing: panel?.share,
+                                                      limits: panel?.limits ?? 0...1)
+            surfaceTree = moved.tree
+            if let panel, let share = moved.trailing, abs(share - panel.share) > 0.0001 { panel.set(share) }
         } catch {
             Ghostty.logger.warning("failed to replace node during split resize: \(error, privacy: .public)")
         }

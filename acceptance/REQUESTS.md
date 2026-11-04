@@ -204,3 +204,10 @@ Agents on the server write files into `~/best` repositories (for example
 (relayed by Alejo's agent, not his own words): `umi://open?path=<path relative to ~/best>` opens the
 file in Umi's editor as `open FILE` does, pulling the repository first if it is behind, and refuses
 paths that escape `~/best` (SPEC I-6).
+
+## 2026-11-04: even pane sizes after a resize (BRIEF-comments-and-pane-sizes.md)
+
+> when I resize a panel, the remaining panels split the remaining screen equally.
+
+This supersedes "dragging a divider changes only the two panes beside it" (SPEC L-19): the panes on
+each side of a dragged divider now share that side equally.

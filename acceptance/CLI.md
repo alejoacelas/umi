@@ -88,7 +88,7 @@ pinned; nothing reorders them on its own (SPEC S-7).
 | Command | Notes |
 |---|---|
 | `edit FILE… [--source\|--preview] [--tab T \| --pane P]` | opens in that tab's editor panel |
-| `editor ls [--tab T \| --pane P]` | JSON: `{"documents": [{"path", "mode": "preview"\|"source", "dirty": bool}]}` |
+| `editor ls [--tab T \| --pane P]` | JSON: `{"documents": [{"path", "mode": "preview"\|"source", "dirty": bool}], "fraction"}` (`fraction`: the panel's share of the tab's width, 0 with no files open) |
 | `editor close [FILE] [--force]` | refuses dirty documents without `--force` |
 | `editor mode [preview\|source]` | toggles without an argument |
 | `editor default [--dry-run]` | make the app the default for `.md`; `--dry-run` prints the app bundle path |

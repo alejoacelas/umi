@@ -302,9 +302,17 @@ the menu.
     (33/33/33 → 50/50; 40/40/20 → 67/33 when a 40 closes);
   - this holds for every way of making or removing panes: the shortcuts and menus, `split`,
     dragging and dropping panes, `pane move`, and closes;
-  - dragging a divider changes only the two panes beside it; double-clicking a divider gives its
-    row (or column) equal shares and leaves the rest of the tab alone. ⌃⌘= and `tab equalize`
-    still equalize the whole tab;
+  - dragging a divider leaves it where it's dropped, and the panes of its row (or column) on each
+    side of it share that side equally: in a row of three, dragging the first divider gives the
+    first pane the width dragged to and the other two half the rest each; dragging the middle
+    divider of four gives the two on each side equal halves of their side. A pane split the other
+    way (a column in a row) counts as one pane of the row and keeps its inside. The editor panel
+    counts as the last pane of the tab's top row: dragging a divider of that row shares the right
+    side with the editor too, and dragging the editor's own divider gives the panes before it
+    equal shares. Keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one
+    pane's edge, changing only the two panes beside it. Double-clicking a divider gives its row
+    (or column) equal shares and leaves the rest of the tab alone. ⌃⌘= and `tab equalize` still
+    equalize the whole tab;
   - `split --ratio R` gives the new pane R of its row (or column); the others keep their
     proportions.
 

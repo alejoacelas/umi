@@ -530,3 +530,24 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   with a scratch folder standing in for `~/best`): a file pushed to the remote opens after the pull, an
   unreachable remote opens the local copy with a notice, and five escaping paths (`..`, absolute, `~`,
   `..` inside a repository, a symlink out) are refused. **Requirement:** I-6.
+
+## Even pane sizes after a resize, and comments (BRIEF-comments-and-pane-sizes.md)
+
+L-19 changed: a dragged divider stays where it's dropped and the panes on each side of it share that
+side equally (the editor panel counts as the last pane of the top row). **Requirement:** L-19, "when I
+resize a panel, the remaining panels split the remaining screen equally."
+
+- **Replaced, `tests/test_umi_panes_ui.py`**: `test_a_divider_moves_its_neighbors_and_double_click_equalizes_its_row`
+  asserted the old rule (only the two panes beside the divider change: 50/16.7/33.3). It is now
+  `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row` (50/25/25, then
+  40/40/20 from the second divider; a column in the row keeps its 70/30 inside; double-click as before).
+- **New, `tests/test_umi_panes_ui.py`**: `test_a_dragged_middle_divider_shares_both_sides` (four panes,
+  37.5/37.5/12.5/12.5); `test_a_keyboard_resize_still_moves_only_the_two_neighbors` (`pane resize`
+  keeps the old rule, the third pane unchanged); `test_the_editor_panel_is_the_last_pane_of_the_top_row`
+  (a terminal divider shares the right side with the editor; the editor's divider, through the new
+  internal `debug.ui.editor.divider`, evens the panes before it). `editor ls` now reports the panel's
+  `fraction` for this.
+- **Changed, Swift unit tests `SplitTreeTests`**: `aDividerMovesOnlyItsNeighbors` became
+  `draggingADividerSharesEachSideEqually`; new `draggingAMiddleDividerSharesBothSides`,
+  `aColumnInARowCountsAsOneAndKeepsItsInside`, `thePanelAfterTheTreeSharesTheRightSide`,
+  `equalizingTheTopRowLeavesAnEvenRow`, `aKeyboardResizeMovesOnlyTheTwoNeighbors`.

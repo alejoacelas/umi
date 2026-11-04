@@ -102,7 +102,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         Group {
                             if let controller {
                                 UmiEditorSplit(group: controller.selectedTab.editor,
-                                                background: ghostty.config.backgroundColor) {
+                                                background: ghostty.config.backgroundColor,
+                                                resize: { [weak controller] in controller?.editorDividerMoved(to: $0) }) {
                                     terminals
                                 }
                                 .id(controller.selectedTab.id)

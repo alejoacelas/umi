@@ -297,6 +297,23 @@ class TerminalController: BaseTerminalController {
         tab === selectedTabStorage ? surfaceTree : tab.tree
     }
 
+    /// The selected tab's editor panel is the last member of its top row (L-19).
+    override var umiTrailingPanel: (share: Double, limits: ClosedRange<Double>, set: (Double) -> Void)? {
+        guard let editor = selectedTabStorage?.editor, !editor.isEmpty else { return nil }
+        let limits = UmiEditorGroup.fractionLimits
+        return (Double(editor.fraction), Double(limits.lowerBound)...Double(limits.upperBound),
+                { [weak editor] in editor?.fraction = CGFloat($0) })
+    }
+
+    /// The editor panel's divider was dragged: the panes of the tab's top row share the rest
+    /// equally (L-19).
+    func editorDividerMoved(to fraction: CGFloat) {
+        let editor = selectedTab.editor
+        let limits = UmiEditorGroup.fractionLimits
+        editor.fraction = min(limits.upperBound, max(limits.lowerBound, fraction))
+        if let even = surfaceTree.equalizingTopRow() { surfaceTree = even }
+    }
+
     /// Replace the whole tab list (undo and restoration).
     func restoreTabs(_ newTabs: [UmiTab], selected: UmiTab, focusedPane: Ghostty.SurfaceView?) {
         guard !newTabs.isEmpty else { return }
