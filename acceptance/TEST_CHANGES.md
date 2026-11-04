@@ -650,3 +650,8 @@ every other test runs as before.
   page the agent server serves. Opening files from Finder and `open FILE` (I-3, E-10) is unchanged.
   - **Removed, `tests/test_umi_panes_ui.py`**: `test_open_links_pull_first_and_stay_inside_the_root`
     and the internal `debug.ui.open_url` it used (its entry above is removed with it).
+- **Changed, `tests/test_umi_panes_ui.py` `test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`**:
+  the second drag finds the right-hand pane from the app's pane frames (offset from the pane area the
+  accessibility tree gave for the single pane): the tree reports one "Terminal pane" element for two
+  split panes. The drag is still the real mouse on the grab handle. Seen on mac-air-2: a lingering
+  notification banner over the top right of the screen covers that handle and fails the test.

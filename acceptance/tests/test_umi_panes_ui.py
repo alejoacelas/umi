@@ -770,11 +770,15 @@ def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(in
     assert tab_of(inst, t2) is None, "its tab, left empty, closed"
 
     # Back down: the first tab is shown with two panes; drag the second one (the right half).
-    wait_until(lambda: len(ui.find_all(lambda e: ui.label(e) == "Terminal pane")) == 2, 5, message="two panes shown")
-    panes = sorted(ui.find_all(lambda e: ui.label(e) == "Terminal pane"), key=lambda e: _frame(ui, e)[0])
-    x, y, w, h = _frame(ui, panes[-1])
-    area_centre = (_frame(ui, panes[0])[0] + x + w) / 2
-    _mouse_drag((x + w / 2, y + 6), (area_centre, y + h - 36))
+    # The accessibility tree doesn't tell split panes apart, so the app's frames (relative to the
+    # same pane area) place it.
+    area_x, area_y = x, y
+    wait_until(lambda: len(tab_of(inst, t1)["panes"]) == 2, 5, message="two panes shown")
+    f = frames(inst, t1)[p2]
+    left = frames(inst, t1)[win["pane"]]
+    px, py, pw, ph = area_x + f["x"], area_y + f["y"], f["width"], f["height"]
+    area_centre = area_x + (left["x"] + f["x"] + pw) / 2
+    _mouse_drag((px + pw / 2, py + 6), (area_centre, py + ph - 36))
     wait_until(lambda: len(tab_ids(inst, win["window"])) == 2 and [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"]],
                5, message="moved to a new tab after the last")
 
