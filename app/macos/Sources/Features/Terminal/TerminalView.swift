@@ -49,6 +49,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     /// The most recently focused surface, equal to `focusedSurface` when it is non-nil.
     @State private var lastFocusedSurface: Weak<Ghostty.SurfaceView>?
+    /// Umi: the pane being dragged, if any (for the previous/next tab drop targets).
+    @State private var draggingPane: Ghostty.SurfaceView.ID?
 
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
@@ -145,6 +147,12 @@ extension TerminalView {
                         .onAppear { controller?.terminalAreaSize = geo.size }
                         .onChange(of: geo.size) { controller?.terminalAreaSize = $0 }
                 })
+                .onPreferenceChange(Ghostty.DraggingSurfaceKey.self) { draggingPane = $0 }
+                .overlay {
+                    if let controller = viewModel as? TerminalController {
+                        UmiPaneTabDropTargets(controller: controller, draggingPane: draggingPane)
+                    }
+                }
                 .environmentObject(ghostty)
                 .ghosttyLastFocusedSurface(lastFocusedSurface)
                 .focused($focused)

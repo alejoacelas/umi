@@ -212,6 +212,14 @@ paths that escape `~/best` (SPEC I-6).
 This supersedes "dragging a divider changes only the two panes beside it" (SPEC L-19): the panes on
 each side of a dragged divider now share that side equally.
 
+## 2026-11-04: files open in panes; dragging a pane to the previous or next tab
+
+> what I care about is that by default new files should be opened on a new pane, up to three per tab,
+> then go to new tab. and if opened from umi the file should show on a pane next to the pane that
+> called to open it
+>
+> also, dragging pane to top center should move to prev tab and to down center to next tab
+
 ## 2026-11-04: Warp's blacks
 
 > also, make umi use the same blacks as the warp blacks I currenlty use (the defaults I think)
