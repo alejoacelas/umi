@@ -405,6 +405,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
   row, quietly.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
   Ghostty config and theme override the product's defaults.
+  The default background is Warp's default Dark theme's, pure black (`#000000`), with the chrome on
+  top of it, as in Warp.
 - **S-6 [W]** The "running/last command" line updates for commands that finish instantly.
 - **S-7 [A+W]** The sidebar's order, in the user's words (2026-10-27): "the standard behavior from warp
   that doesn't switch tab order depending on recency". Tabs stay where they are until the user moves

@@ -211,3 +211,10 @@ paths that escape `~/best` (SPEC I-6).
 
 This supersedes "dragging a divider changes only the two panes beside it" (SPEC L-19): the panes on
 each side of a dragged divider now share that side equally.
+
+## 2026-11-04: Warp's blacks
+
+> also, make umi use the same blacks as the warp blacks I currenlty use (the defaults I think)
+
+His Warp follows the system theme, which in dark mode is Warp's default "Dark" theme (background
+`#000000`).
