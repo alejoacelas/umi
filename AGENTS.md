@@ -32,7 +32,8 @@ the user's Umi or its sessions. `app/dist/dev.sh umi ls` drives it; `--help` lis
 
 Rebuild the library whenever something outside `app/macos` changes. `app/dist/release.sh --version
 X.Y.Z --build --no-publish` does both steps and stamps a release copy without publishing. The built
-bundle is `Umi.app` (`dev.umi.app`), with `Contents/MacOS/umi-app` (the app) and
+bundle is `Umi.app` (`dev.umi.app.local`; `release.sh` stamps published releases `dev.umi.app`, so
+files opened from Finder go to the installed app and never to a build folder), with `Contents/MacOS/umi-app` (the app) and
 `Contents/MacOS/umi` (the CLI, built by `app/macos/UmiCLI/build.sh` during the Xcode build).
 
 ## Test

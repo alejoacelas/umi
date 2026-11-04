@@ -95,6 +95,12 @@ plutil -replace UmiBuildKind -string release "$plist"
 # Where this release's own feed is: an installed copy keeps its own zip from there, so
 # `umi update --rollback` can come back to it after the next update.
 plutil -replace UmiReleaseFeedURL -string "${base_url}appcast.json" "$plist"
+# Local builds are `dev.umi.app.local`, so macOS never sends files opened from Finder to a
+# build folder instead of the installed app. A published release is the real `dev.umi.app`;
+# an unpublished copy keeps the build's identity, so it can update the build it came from.
+if [[ "$publish" == 1 ]]; then
+    plutil -replace CFBundleIdentifier -string dev.umi.app "$plist"
+fi
 xattr -cr "$out/Umi.app"
 codesign --force --deep --sign - "$out/Umi.app" >/dev/null 2>&1
 codesign --verify --deep --strict "$out/Umi.app"
@@ -138,4 +144,8 @@ if [[ "$publish" == 1 ]]; then
     gh release create "$tag" "$out/$zip_name" "$out/appcast.json" "$out/install.sh" \
         --repo "$repo" --title "Umi $version" --notes "${notes:-Umi $version}" --latest
     echo "published $tag: https://github.com/$repo/releases/tag/$tag"
+    # The unpacked copy is a `dev.umi.app` outside /Applications: macOS would offer it for files
+    # opened from Finder. The zip keeps the release.
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$out/Umi.app" 2>/dev/null || true
+    trash "$out/Umi.app"
 fi
