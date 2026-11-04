@@ -213,13 +213,43 @@ def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_i
     # b's column counts as one pane of the row: b and d keep their 70/30.
     assert shares(inst, win["tab"], [b, d], key="height") == pytest.approx([70, 30], abs=0.3)
     # The divider between b and c (its split holds b and c, half the row) to 80% of the row:
-    # a and b share 80, c gets 20.
+    # a was sized by hand and keeps its 50; b takes the rest of its stretch, c gets 20.
     rpc(inst, "debug.ui.split.divider", pane=c, action="move", ratio=0.6)
-    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([40, 40, 20], abs=0.3)
+    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([50, 30, 20], abs=0.3)
     # Double-clicking a column divider equalizes the columns only: b/d keep their 70/30.
     rpc(inst, "debug.ui.split.divider", pane=a, action="equalize")
     assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
     assert shares(inst, win["tab"], [b, d], key="height") == pytest.approx([70, 30], abs=0.3)
+
+
+@pytest.mark.req("L-19")
+def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
+    """Alejo: "only the panes that have not been manually resized shrink/grow in response to
+    other pane resizing." """
+    a = win["pane"]
+    b = split(inst, "right", a)
+    c = split(inst, "right", b)
+    d = split(inst, "right", c)
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.4)
+    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([40, 20, 20, 20], abs=0.3)
+    # The c|d divider (its split holds c and d, the last 40%) to 90%: a keeps its 40, d gets 10,
+    # b and c (never sized) share the 50 between.
+    rpc(inst, "debug.ui.split.divider", pane=d, action="move", ratio=(0.9 - 0.6) / 0.4)
+    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([40, 25, 25, 10], abs=0.3)
+    # A split keeps a's divider placed: dragging the divider next to the new pane leaves a alone.
+    e = split(inst, "right", b)
+    before = shares(inst, win["tab"], [a, b, e, c, d])
+    rpc(inst, "debug.ui.split.divider", pane=e, action="move", ratio=0.5)
+    after = shares(inst, win["tab"], [a, b, e, c, d])
+    assert after[0] == pytest.approx(before[0], abs=0.2) and after[4] == pytest.approx(before[4], abs=0.2)
+    # Double-clicking a divider evens the row and forgets the sizes set by hand.
+    rpc(inst, "debug.ui.split.divider", pane=a, action="equalize")
+    assert shares(inst, win["tab"], [a, b, e, c, d]) == pytest.approx([20] * 5, abs=0.2)
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.2)
+    assert shares(inst, win["tab"], [a, b, e, c, d]) == pytest.approx([20] * 5, abs=0.2)
+    # d's divider to 90%: a (just sized again) keeps its 20, b, e and c share 70.
+    rpc(inst, "debug.ui.split.divider", pane=d, action="move", ratio=0.75)
+    assert shares(inst, win["tab"], [a, b, e, c, d]) == pytest.approx([20, 23.3, 23.3, 23.3, 10], abs=0.3)
 
 
 @pytest.mark.req("L-19")
@@ -259,12 +289,25 @@ def test_the_editor_panel_is_the_last_pane_of_the_top_row(inst, win, tmp_path):
     fraction = inst.json("editor", "ls", "--tab", win["tab"])["fraction"]
     assert fraction == pytest.approx(0.375, abs=0.005)
     assert shares(inst, win["tab"], [a, b]) == pytest.approx([40, 60], abs=0.3)
-    # Dragging the editor's divider: the panes before it share the rest equally.
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.2)
-    assert shares(inst, win["tab"], [a, b]) != pytest.approx([50, 50], abs=1)
+    # Dragging the editor's divider: a was sized by hand and keeps its quarter of the tab; b,
+    # never sized, takes what the editor gives up.
     rpc(inst, "debug.ui.editor.divider", tab=win["tab"], fraction=0.3)
     assert inst.json("editor", "ls", "--tab", win["tab"])["fraction"] == pytest.approx(0.3, abs=0.005)
+    assert shares(inst, win["tab"], [a, b]) == pytest.approx([25 / 0.7, 45 / 0.7], abs=0.3)
+    # Now the editor is sized by hand too: dragging a's divider changes only a and b.
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.5)
+    assert inst.json("editor", "ls", "--tab", win["tab"])["fraction"] == pytest.approx(0.3, abs=0.005)
     assert shares(inst, win["tab"], [a, b]) == pytest.approx([50, 50], abs=0.3)
+    # Panes nobody sized by hand (70/30 from `split --ratio`): dragging the editor's divider
+    # evens them.
+    p, tab = new_tab(inst, win)
+    inst.cli("tab", "focus", tab)
+    q = split(inst, "right", p, "--ratio", "0.3")
+    assert shares(inst, tab, [p, q]) == pytest.approx([70, 30], abs=0.3)
+    inst.cli("edit", str(doc), "--pane", p)
+    wait_until(lambda: inst.json("editor", "ls", "--tab", tab)["documents"], 5, message="opened")
+    rpc(inst, "debug.ui.editor.divider", tab=tab, fraction=0.4)
+    assert shares(inst, tab, [p, q]) == pytest.approx([50, 50], abs=0.3)
 
 
 @pytest.mark.req("L-7", "L-19")

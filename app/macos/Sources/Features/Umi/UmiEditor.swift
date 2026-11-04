@@ -345,10 +345,18 @@ final class UmiEditorGroup: ObservableObject {
     @Published var fraction: CGFloat = 0.5 {
         didSet { if fraction != oldValue { UmiState.shared.layoutDidChange(persistOnly: true) } }
     }
+    /// The user dragged the panel's divider: the panel is sized by hand (L-19).
+    var dividerPlaced = false
     /// How narrow and how wide the panel can be dragged.
     static let fractionLimits: ClosedRange<CGFloat> = 0.2...0.85
 
     var isEmpty: Bool { documents.isEmpty }
+
+    /// The panel as the last member of its tab's top row (L-19).
+    var trailingPanel: SplitTrailingPanel {
+        SplitTrailingPanel(share: Double(fraction), placed: dividerPlaced,
+                           limits: Double(Self.fractionLimits.lowerBound)...Double(Self.fractionLimits.upperBound))
+    }
 
     func document(for url: URL) -> UmiDocument? {
         let target = url.standardizedFileURL.resolvingSymlinksInPath()

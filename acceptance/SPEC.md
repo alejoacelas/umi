@@ -302,17 +302,25 @@ the menu.
     (33/33/33 → 50/50; 40/40/20 → 67/33 when a 40 closes);
   - this holds for every way of making or removing panes: the shortcuts and menus, `split`,
     dragging and dropping panes, `pane move`, and closes;
-  - dragging a divider leaves it where it's dropped, and the panes of its row (or column) on each
-    side of it share that side equally: in a row of three, dragging the first divider gives the
-    first pane the width dragged to and the other two half the rest each; dragging the middle
-    divider of four gives the two on each side equal halves of their side. A pane split the other
-    way (a column in a row) counts as one pane of the row and keeps its inside. The editor panel
-    counts as the last pane of the tab's top row: dragging a divider of that row shares the right
-    side with the editor too, and dragging the editor's own divider gives the panes before it
-    equal shares. Keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one
-    pane's edge, changing only the two panes beside it. Double-clicking a divider gives its row
-    (or column) equal shares and leaves the rest of the tab alone. ⌃⌘= and `tab equalize` still
-    equalize the whole tab;
+  - dragging a divider leaves it where it's dropped, and that divider now sizes its panes by hand.
+    A pane between dividers placed by hand (or one such divider and the end of its row or
+    column) keeps its size when another divider is dragged; only the panes not sized by hand
+    grow or shrink, sharing equally the stretch between the dragged divider and the nearest
+    divider placed by hand (or the row's end) on each side. In a row of three, dragging the first
+    divider gives the first pane the width dragged to and the other two half the rest each;
+    dragging the second divider then leaves the first pane as it is. In a row of four, dragging
+    the first divider to 40% and the last to 90% gives 40/25/25/10. A pane split the other way (a
+    column in a row) counts as one pane of the row and keeps its inside;
+  - the editor panel counts as the last pane of the tab's top row, and dragging its divider
+    sizes it by hand. Until then, dragging a divider of that row shares the right side with the
+    editor too, and dragging the editor's divider gives the panes before it (those not sized by
+    hand) equal shares of what's left;
+  - keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one pane's edge,
+    changing only the two panes beside it, and that divider counts as placed by hand;
+  - splits and closes share space as above and keep the other dividers placed by hand (the
+    dividers beside the new or closed pane are not). Double-clicking a divider gives its row (or
+    column) equal shares, leaves the rest of the tab alone, and forgets which of its dividers
+    were placed by hand; ⌃⌘= and `tab equalize` equalize the whole tab and forget them all;
   - `split --ratio R` gives the new pane R of its row (or column); the others keep their
     proportions.
 

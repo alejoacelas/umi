@@ -209,8 +209,12 @@ paths that escape `~/best` (SPEC I-6).
 
 > when I resize a panel, the remaining panels split the remaining screen equally.
 
-This supersedes "dragging a divider changes only the two panes beside it" (SPEC L-19): the panes on
-each side of a dragged divider now share that side equally.
+Clarified the same day:
+> only the panes that have not been manually resized shrink/grow in response to other pane resizing.
+
+This supersedes "dragging a divider changes only the two panes beside it" (SPEC L-19): a pane sized
+by hand keeps its size, and the panes not sized by hand on each side of a dragged divider share
+that stretch equally.
 
 ## 2026-11-04: Warp's blacks
 

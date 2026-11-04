@@ -108,6 +108,7 @@ final class UmiPersistence {
                 "documents": tab.editor.documents.map { ["path": $0.url.path, "mode": $0.mode.rawValue] },
                 "active": tab.editor.active?.url.path ?? "",
                 "fraction": Double(tab.editor.fraction),
+                "placed": tab.editor.dividerPlaced,
             ]
         }
         return json
@@ -124,6 +125,7 @@ final class UmiPersistence {
             return ["split": [
                 "direction": split.direction == .horizontal ? "horizontal" : "vertical",
                 "ratio": split.ratio,
+                "placed": split.placed,
                 "left": encode(node: split.left),
                 "right": encode(node: split.right),
             ]]
@@ -190,6 +192,7 @@ final class UmiPersistence {
                         tab.editor.active = doc
                     }
                     if let fraction = editor["fraction"] as? Double { tab.editor.fraction = CGFloat(fraction) }
+                    tab.editor.dividerPlaced = editor["placed"] as? Bool ?? false
                 }
                 tabs.append(tab)
                 if tabJSON["id"] as? String == windowJSON["selected_tab"] as? String { selected = tab }
@@ -245,7 +248,8 @@ final class UmiPersistence {
                 let direction: SplitTree<Ghostty.SurfaceView>.Direction =
                     (split["direction"] as? String) == "vertical" ? .vertical : .horizontal
                 let ratio = split["ratio"] as? Double ?? 0.5
-                return .split(.init(direction: direction, ratio: ratio, left: l, right: r))
+                return .split(.init(direction: direction, ratio: ratio, left: l, right: r,
+                                    placed: split["placed"] as? Bool ?? false))
             case let (l?, nil): return l
             case let (nil, r?): return r
             default: return nil

@@ -298,20 +298,19 @@ class TerminalController: BaseTerminalController {
     }
 
     /// The selected tab's editor panel is the last member of its top row (L-19).
-    override var umiTrailingPanel: (share: Double, limits: ClosedRange<Double>, set: (Double) -> Void)? {
+    override var umiTrailingPanel: (panel: SplitTrailingPanel, set: (Double) -> Void)? {
         guard let editor = selectedTabStorage?.editor, !editor.isEmpty else { return nil }
-        let limits = UmiEditorGroup.fractionLimits
-        return (Double(editor.fraction), Double(limits.lowerBound)...Double(limits.upperBound),
-                { [weak editor] in editor?.fraction = CGFloat($0) })
+        return (editor.trailingPanel, { [weak editor] in editor?.fraction = CGFloat($0) })
     }
 
-    /// The editor panel's divider was dragged: the panes of the tab's top row share the rest
-    /// equally (L-19).
+    /// The editor panel's divider was dragged: the editor is sized by hand, and the panes of
+    /// the tab's top row not sized by hand share what's left of their stretch equally (L-19).
     func editorDividerMoved(to fraction: CGFloat) {
         let editor = selectedTab.editor
-        let limits = UmiEditorGroup.fractionLimits
-        editor.fraction = min(limits.upperBound, max(limits.lowerBound, fraction))
-        if let even = surfaceTree.equalizingTopRow() { surfaceTree = even }
+        let moved = surfaceTree.movingTrailingDivider(editor.trailingPanel, to: Double(fraction))
+        editor.dividerPlaced = true
+        editor.fraction = CGFloat(moved.share)
+        surfaceTree = moved.tree
     }
 
     /// Replace the whole tab list (undo and restoration).
