@@ -211,17 +211,35 @@ def test_cmd_click_on_a_link_opens_a_web_pane_ui(web):
     x, y, w, h = _frame(ui, area)
     point = (x + 60, y + h / 2)
     cmd = Quartz.kCGEventFlagMaskCommand
+    source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
 
-    def post(kind):
-        event = Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft)
-        Quartz.CGEventSetFlags(event, cmd)
+    def mouse(kind, flags=0):
+        event = Quartz.CGEventCreateMouseEvent(source, kind, point, Quartz.kCGMouseButtonLeft)
+        Quartz.CGEventSetFlags(event, flags)
+        if kind != Quartz.kCGEventMouseMoved:
+            Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventClickState, 1)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-        time.sleep(0.15)
+        time.sleep(0.2)
 
-    post(Quartz.kCGEventMouseMoved)
-    time.sleep(0.3)
-    post(Quartz.kCGEventLeftMouseDown)
-    post(Quartz.kCGEventLeftMouseUp)
+    def command_key(down):
+        event = Quartz.CGEventCreateKeyboardEvent(source, 55, down)
+        Quartz.CGEventSetFlags(event, cmd if down else 0)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+        time.sleep(0.2)
+
+    # A plain click puts the pane in focus; then ⌘ goes down, the pointer moves onto the link
+    # (the terminal underlines it) and clicks.
+    mouse(Quartz.kCGEventMouseMoved)
+    mouse(Quartz.kCGEventLeftMouseDown)
+    mouse(Quartz.kCGEventLeftMouseUp)
+    time.sleep(0.5)
+    command_key(True)
+    point = (point[0] + 5, point[1])
+    mouse(Quartz.kCGEventMouseMoved, cmd)
+    time.sleep(0.5)
+    mouse(Quartz.kCGEventLeftMouseDown, cmd)
+    mouse(Quartz.kCGEventLeftMouseUp, cmd)
+    command_key(False)
     try:
         page = wait_until(lambda: web_panes(inst), 10, message="a web pane from the ⌘-click")[0]
     except AssertionError:
