@@ -91,7 +91,7 @@ pinned; nothing reorders them on its own (SPEC S-7).
 | `editor ls [--tab T \| --pane P]` | JSON: `{"documents": [{"path", "mode": "preview"\|"source", "dirty": bool}], "fraction"}` (`fraction`: the panel's share of the tab's width, 0 with no files open) |
 | `editor close [FILE] [--force]` | refuses dirty documents without `--force` |
 | `editor mode [preview\|source]` | toggles without an argument |
-| `editor default [--dry-run]` | make the app the default for `.md`; `--dry-run` prints the app bundle path |
+| `editor default [--dry-run]` | make the app the default for Markdown, plain text, JSON, CSV, TSV and YAML; `--dry-run` prints the app bundle path |
 | `comments [ls] FILE [--all]` | the file's open comments (E-11): id, line, the words each is on, its text, replies; `--all` adds resolved ones. JSON: `{"path", "comments": [{"id", "body", "by", "at", "status": "open"\|"resolved", "quote", "line", "detached", "anchor_deleted", "resolved_note"?, "replies": [{"id", "body", "by", "at"}]}]}`. Works on the file without the app |
 | `comments add FILE --on TEXT [--nth N] TEXT… [--by NAME]` | comment on the first (or Nth) occurrence of TEXT outside code and other comments; prints `added ID` (JSON `{"id", "action", "path"}`) |
 | `comments reply FILE ID TEXT… [--by NAME]` | reply to a thread (`-` reads stdin); `--by` defaults to `AI` |

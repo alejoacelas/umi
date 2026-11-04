@@ -498,8 +498,8 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
 - **E-8 [W]** Editor shortcuts work regardless of Caps Lock.
 - **E-9 [A]** `<cli> edit FILE` opens a file in the calling pane's tab, or a given tab. An explicitly
   named pane or tab that doesn't exist is an error, never a fallback to another tab.
-- **E-10 [A]** A Markdown (or text) file opened from outside the app (Finder, `open FILE`, the app
-  being the default for Markdown) opens in the tab whose folder is closest to the file: the tab with
+- **E-10 [A]** A Markdown, text, JSON, CSV, TSV or YAML file opened from outside the app (Finder,
+  `open FILE`, the app being the default for these types) opens in the tab whose folder is closest to the file: the tab with
   a pane whose working directory is the deepest folder containing the file. Any pane of a tab counts;
   `/` doesn't. A file already open somewhere shows there. Ties go to the current tab, then the
   current window's tabs in sidebar order, then other windows'. With no such tab it opens in a new

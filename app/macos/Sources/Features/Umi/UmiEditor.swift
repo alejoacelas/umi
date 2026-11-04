@@ -452,7 +452,7 @@ enum UmiEditor {
         if let type = UTType(filenameExtension: ext), type.conforms(to: .plainText) || type.conforms(to: .sourceCode) {
             return true
         }
-        if ["txt", "text", "log", "json", "yaml", "yml", "toml", "ini", "conf", "cfg", "env", "csv"].contains(ext) {
+        if ["txt", "text", "log", "json", "yaml", "yml", "toml", "ini", "conf", "cfg", "env", "csv", "tsv"].contains(ext) {
             return true
         }
         return ext.isEmpty && (try? UmiTextFile.read(url)) != nil

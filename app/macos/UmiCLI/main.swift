@@ -1206,12 +1206,15 @@ func makeDefaultMarkdownApp(dryRun: Bool) {
     let url = URL(fileURLWithPath: app)
     LSRegisterURL(url as CFURL, true)
     var failures: [String] = []
-    for type in ["net.daringfireball.markdown", "public.markdown"] {
+    // `public.markdown` is a newer alias of Markdown that older macOS versions don't know, so it may fail.
+    let types = ["net.daringfireball.markdown", "public.markdown", "public.plain-text", "public.json",
+                 "public.comma-separated-values-text", "public.tab-separated-values-text", "public.yaml"]
+    for type in types {
         let status = LSSetDefaultRoleHandlerForContentType(type as CFString, .all, id as CFString)
-        if status != noErr && type == "net.daringfireball.markdown" { failures.append("\(type) (\(status))") }
+        if status != noErr && type != "public.markdown" { failures.append("\(type) (\(status))") }
     }
     if !failures.isEmpty { fail("couldn't make \(productName) the default for \(failures.joined(separator: ", "))") }
-    if jsonOutput { printJSON(["app": app, "default": true]) } else { print("\(productName) now opens Markdown files") }
+    if jsonOutput { printJSON(["app": app, "default": true]) } else { print("\(productName) now opens Markdown, text, JSON, CSV, TSV and YAML files") }
 }
 
 // MARK: - Interactive agents
