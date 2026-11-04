@@ -498,7 +498,7 @@ SHORTCUTS = {
     # L-9 as rewritten after the user's decisions (L-11 to L-17).
     "cmd+shift+[": "back to the tab visited before", "cmd+shift+]": "the next tab in sidebar order",
     "cmd+1": "the first tab", "cmd+8": "the eighth tab", "cmd+9": "the last tab",
-    "cmd+p": "the command palette", "cmd+shift+p": "the pane palette", "cmd+,": "Settings (shortcuts)",
+    "cmd+p": "the command palette", "cmd+shift+p": "the pane palette", "cmd+,": "Settings (the config file)",
     "cmd+ctrl+j": "the next session that needs the user", "cmd+ctrl+k": "back from that jump",
     # L-20, AG-6, AG-8.
     "cmd+shift+t": "reopen the last closed pane, tab or window",

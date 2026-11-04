@@ -122,7 +122,6 @@ enum UmiNavigationRPC {
                 "can_go_back": UmiTabHistory.canGoBack,
                 "can_jump_back": UmiNavigation.canJumpBack,
                 "shown_sessions": shownSessions,
-                "settings_visible": UmiSettingsWindow.isVisible,
                 "key_monitor": UmiShortcuts.monitorInstalled,
                 "app_active": NSApp.isActive,
             ]
@@ -162,15 +161,12 @@ enum UmiNavigationRPC {
                   let code = keyCodes[shortcut.key] else {
                 throw UmiError.badRequest("keys like cmd+shift+] (US layout letters, digits, [ ] , tab and arrows)")
             }
-            var target = window.window
+            let target: NSWindow? = window.window
             switch params.string("focus") ?? "terminal" {
             case "editor", "preview":
                 UmiDebug.focusEditor(in: window)
             case "palette":
                 window.palette.open(.commands, in: window)
-            case "settings":
-                UmiSettingsWindow.show()
-                target = NSApp.windows.first { $0.title == "Settings" && $0.isVisible }
             default:
                 if let pane = window.selectedTab.effectiveFocusedSurface { Ghostty.moveFocus(to: pane) }
             }

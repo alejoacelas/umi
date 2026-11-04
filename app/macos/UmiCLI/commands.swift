@@ -238,7 +238,7 @@ let commandTable: [CommandHelp] = [
 
     // Other
     CommandHelp(section: "Other", usage: "shortcuts [ls | set ID KEYS | clear ID | reset [ID]]",
-                summary: "keyboard shortcuts (also in Settings, ⌘,)",
+                summary: "keyboard shortcuts",
                 actions: [PaletteAction(title: "List Keyboard Shortcuts", argv: ["shortcuts"])]),
     CommandHelp(section: "Other", usage: "update", summary: """
         check now and download the newest version (it installs at the next

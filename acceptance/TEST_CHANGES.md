@@ -587,3 +587,23 @@ of leaving a comment on the doc … make sure comments are visible to you."
   above the prompt in both screenshots (1709 against 1709); it now runs in `/`, so the band is the
   command again. The command is drawn bold (checked in the screenshot). **Requirements:** the
   tests' own (padding colour, bold commands), unchanged.
+
+## Removed features: the shortcuts editor, the copy from Tern, `umi://open` links (2026-11-04)
+
+Alejo removed three features (relayed by his agent). Only tests of the removed features were deleted;
+every other test runs as before.
+
+- **Settings opens the config file (L-17)**. ⌘, no longer opens a shortcuts editor: it opens
+  `~/.config/umi/config` in the editor, and `umi shortcuts` is the way to change shortcuts.
+  - **Replaced, `tests/test_umi_nav.py`**: `test_settings_opens_from_the_menu` (the Settings window
+    showed) is now `test_settings_opens_the_config_file_in_the_editor` (Settings… opens the file in
+    the editor, made empty when missing, left as it was when it exists; `XDG_CONFIG_HOME` points at
+    a scratch folder). The `ui` test `test_cmd_comma_opens_settings_where_a_shortcut_is_recorded`
+    (recording a key in the editor) is now `test_cmd_comma_opens_the_config_file` (a real ⌘, press
+    opens the file).
+  - **Removed**: the `settings` case of `test_tab_keys_work_whatever_has_focus` (no Settings window
+    to have focus), and the internal `debug.navigation` field `settings_visible` and `debug.key`
+    focus `settings` it used.
+  - **Unchanged**: every `umi shortcuts` test (`test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart`
+    and the review-round tests in `test_review_agents.py` and `test_umi_panes_ui.py`) still covers L-17.
+    The written check L-17 is gone: L-17 is now checked by script only.

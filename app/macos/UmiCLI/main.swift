@@ -771,7 +771,7 @@ func layoutCommand(_ argv: [String]) {
     }
 }
 
-/// `shortcuts`: list, change, clear or reset keyboard shortcuts (Settings, ⌘,).
+/// `shortcuts`: list, change, clear or reset keyboard shortcuts.
 func shortcutsCommand(_ argv: [String]) {
     let args = parse(argv, ArgSpec())
     let words = args.positional

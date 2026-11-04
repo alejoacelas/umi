@@ -441,7 +441,7 @@ def test_shift_cmd_t_is_reopen_in_the_file_menu(inst, win):
 
 @pytest.mark.req("L-17", "L-20")
 def test_shift_cmd_t_is_listed_where_shortcuts_are_edited(inst, win):
-    """⇧⌘T is one of the shortcuts ⌘, (and `umi shortcuts`) edits: it can be given another key, which the
+    """⇧⌘T is one of the shortcuts `umi shortcuts` edits: it can be given another key, which the
     menu item then shows, and reset."""
     listed = {s["id"]: s for s in inst.json("shortcuts")["shortcuts"]}
     reopen = listed.get("file.reopen")

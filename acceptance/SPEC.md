@@ -222,7 +222,7 @@ the menu.
   - ⌘B toggles the sidebar; ⇧⌘E shows the project explorer;
   - ⌘O opens a file (quick search, L-16; File ▸ Open File… keeps the Open panel);
   - ⇧⌘M toggles the Markdown preview and source;
-  - ⌘P opens the command palette (L-14); ⇧⌘P lists panes (L-15); ⌘, opens Settings (L-17);
+  - ⌘P opens the command palette (L-14); ⇧⌘P lists panes (L-15); ⌘, opens the config file (L-17);
   - ⇧⌘[ goes back to the tab visited before; ⇧⌘] shows the next tab in sidebar order; ⌃Tab and
     ⌃⇧Tab cycle to the next and previous tab; ⌘1–⌘8 show that tab and ⌘9 the last one (L-11);
   - ⌃⇧← / ⌃⇧→ move the tab up or down (L-13);
@@ -236,11 +236,11 @@ the menu.
   - ⌃⌘O takes over the focused pane's session, and ⌃⌘W removes the session from its pane, where
     it keeps running (AG-6, AG-8).
 
-  Each is a menu item, and the command palette lists them. Settings changes them (L-17).
+  Each is a menu item, and the command palette lists them. `<cli> shortcuts` changes them (L-17).
 
 - **L-10 [A+W]** Shortcuts work from anywhere: with keyboard focus in a terminal, the editor (source
   or preview), the sidebar (its rename field and the file tree), a session's read-only view in a
-  pane, the palette or the Settings window. A terminal never takes one of these keys first.
+  pane or the palette. A terminal never takes one of these keys first.
 
 - **L-11 [A+W]** Moving between tabs:
   - ⇧⌘[ (`<cli> tab back`) goes to the tab the user was in before, in any window. Pressed again,
@@ -281,14 +281,13 @@ the menu.
   then changed ones. `path:line` opens the file at that line. Enter opens the file in the tab's
   editor; a "Browse…" entry opens the Open panel.
 
-- **L-17 [A+W]** ⌘, opens Settings, where shortcuts are edited: every Umi menu shortcut and every
-  Ghostty keybinding is listed, searchable, and each can be changed (press the new keys), cleared
-  or reset to its default, or all reset at once. A change applies at once, without a restart, and
-  is kept across restarts in Umi's state directory (`shortcuts.json`, and `keybindings.conf` for
-  Ghostty keybindings, loaded after the user's Ghostty config files). The user's Ghostty config
-  files are never changed; Settings says so and has a button that opens them. A key given to one
-  shortcut is taken from any other that had it, and Settings says which. `<cli> shortcuts` lists,
-  sets, clears and resets the same shortcuts.
+- **L-17 [A]** ⌘, (Settings…) opens the user's config file (`~/.config/<cli>/config`) in the app's
+  editor, as Ghostty opens its own config file; a missing one is made, empty, first. `<cli>
+  shortcuts` lists every Umi menu shortcut and every Ghostty keybinding, and sets, clears or resets
+  each, or all at once. A change applies at once, without a restart, and is kept across restarts in
+  the app's state directory (`shortcuts.json`, and `keybindings.conf` for Ghostty keybindings,
+  loaded after the user's Ghostty config files); it never changes the user's config files. A key
+  given to one shortcut is taken from any other that had it, and the command says which.
 
 - **L-18 [A]** After a pane closes (⌘W, `pane close`, its program exiting), focus goes to the pane
   of that tab the user used most recently, as in Warp; tree order only when there's no history.

@@ -139,7 +139,7 @@ enum UmiTheme {
             .joined(separator: "\n")
     }
 
-    /// Ghostty keybindings changed in Umi's shortcuts editor, loaded after the user's own
+    /// Ghostty keybindings changed with `umi shortcuts`, loaded after the user's own
     /// config files (nil when there are none).
     static func keybindingsConfigPath() -> String? {
         let path = UmiShortcutStore.ghosttyFile

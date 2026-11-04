@@ -45,7 +45,8 @@ Full-screen programs (vim, less, agents' interfaces) get the whole pane. To keep
 ## Settings
 
 Umi reads your Ghostty config (`~/.config/ghostty/config`), then its own, `~/.config/umi/config`, for
-settings that only Umi should see (Ghostty never reads it). Umi's Settings (⌘,) edits shortcuts.
+settings that only Umi should see (Ghostty never reads it). Settings (⌘,) opens that file in Umi's
+editor. `umi shortcuts` lists and changes keyboard shortcuts.
 
 ## Links
 
