@@ -559,3 +559,23 @@ pane resizing."
   `aColumnInARowCountsAsOneAndKeepsItsInside`, `splitsAndClosesKeepTheDividersPlacedByHand`,
   `theEditorPanelIsTheRowsLastMember`, `draggingTheEditorsDividerSharesAmongPanesNotSizedByHand`,
   `aKeyboardResizeMovesOnlyTheTwoNeighbors`.
+
+Comments (E-11). **Requirement:** E-11, "when I select text in Umi I want it to offer me the option
+of leaving a comment on the doc … make sure comments are visible to you."
+
+- **New, `tests/test_comments.py`** (through the internal `debug.ui.comments`, which runs the
+  margin's own script in the preview: select words, press Comment, type, submit, click controls):
+  the comment lands in the file beside its words in Roughdraft's format and its card is level with
+  them, beside the text; a narrow panel shows the selected thread under its words; reply, edit,
+  resolve, show resolved, reopen and delete (with its confirmation, leaving the file as it was);
+  links taken whole, table cells, overlaps and code blocks refused with a reason; Edit ▸ Add Comment
+  (and, as a `ui` test, its ⌥⌘M menu key); a comment being written survives an agent changing the
+  file; `comments` with no app running (add, list, reply from stdin, resolve, delete, errors); a git
+  pull merging another edit keeps the anchor, and removing the markup leaves a detached comment
+  shown in the margin; the review loop (`comments wait` returns on Done with the comments, the
+  margin says an agent waits, the agent's reply and resolve show in the margin).
+- **New, Swift unit tests `UmiCommentsTests`**: the format (round trips, endmatter, block scalars,
+  CRLF, Roughdraft files), placement, relocation, the preview's offsets, and a comment keeping
+  unsaved edits unsaved.
+- **Changed, `tests/test_comments.py` helpers hide the sidebar in their window**: another test leaves
+  new windows' sidebar 600 points wide, which made the editor too narrow for the margin.

@@ -205,6 +205,14 @@ Agents on the server write files into `~/best` repositories (for example
 file in Umi's editor as `open FILE` does, pulling the repository first if it is behind, and refuses
 paths that escape `~/best` (SPEC I-6).
 
+## 2026-11-02: comments on documents in the editor (BRIEF-comments-and-pane-sizes.md)
+
+> when I select text in Umi I want it to offer me the option of leaving a comment on the doc, on a
+> manner similar to google docs. see how roughdraft handles comments for inspiration and make sure
+> comments are visible to you. main use case is reacting to the documents you present here.
+
+(SPEC E-11.)
+
 ## 2026-11-04: even pane sizes after a resize (BRIEF-comments-and-pane-sizes.md)
 
 > when I resize a panel, the remaining panels split the remaining screen equally.

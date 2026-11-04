@@ -92,6 +92,11 @@ pinned; nothing reorders them on its own (SPEC S-7).
 | `editor close [FILE] [--force]` | refuses dirty documents without `--force` |
 | `editor mode [preview\|source]` | toggles without an argument |
 | `editor default [--dry-run]` | make the app the default for `.md`; `--dry-run` prints the app bundle path |
+| `comments [ls] FILE [--all]` | the file's open comments (E-11): id, line, the words each is on, its text, replies; `--all` adds resolved ones. JSON: `{"path", "comments": [{"id", "body", "by", "at", "status": "open"\|"resolved", "quote", "line", "detached", "anchor_deleted", "resolved_note"?, "replies": [{"id", "body", "by", "at"}]}]}`. Works on the file without the app |
+| `comments add FILE --on TEXT [--nth N] TEXT… [--by NAME]` | comment on the first (or Nth) occurrence of TEXT outside code and other comments; prints `added ID` (JSON `{"id", "action", "path"}`) |
+| `comments reply FILE ID TEXT… [--by NAME]` | reply to a thread (`-` reads stdin); `--by` defaults to `AI` |
+| `comments edit FILE ID TEXT…` / `comments resolve FILE ID [--note TEXT]` / `comments reopen FILE ID` / `comments delete FILE ID` | change, resolve, reopen or delete (a thread goes with its replies and its markup; its words stay) |
+| `comments wait FILE [--timeout SECS]` | block until the user presses Done on FILE's comments in the editor, then print its open comments as `comments ls` does; exits 124 on timeout. Needs the app |
 
 Links: the app also answers `umi://open?path=PATH` (SPEC I-6). PATH is URL-encoded and relative to
 `~/best`; the link opens what `edit` would for a file (in the closest tab, E-10), after pulling its

@@ -9,7 +9,10 @@ import Foundation
 /// Content-Security-Policy that allows no scripts: raw HTML in a document can show images
 /// but never run code (E-7).
 enum UmiMarkdown {
-    static func html(from markdown: String, baseURL: URL?) -> String {
+    /// `positions` (for comments, E-11) maps a stretch of `markdown` to the file offset it was
+    /// copied from; when given, each run of text is wrapped in `<span data-s="offset">`, so a
+    /// selection in the preview can be traced back to the file.
+    static func html(from markdown: String, baseURL: URL?, positions: ((NSRange) -> Int?)? = nil) -> String {
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: false,
             interpretedSyntax: .full,
@@ -17,6 +20,22 @@ enum UmiMarkdown {
         let source = linkedImagesAsHTML(markdown)
         guard let doc = try? AttributedString(markdown: source, options: options, baseURL: baseURL) else {
             return "<pre><code>\(escape(markdown))</code></pre>"
+        }
+        // Runs are found in the source in order: their text is copied from it, except for
+        // escapes and entities, whose runs go unmarked.
+        let ns = source as NSString
+        var cursor = 0
+        let tracing = positions != nil && source == markdown
+        func offset(of text: String) -> Int? {
+            guard tracing, !text.isEmpty, cursor < ns.length else { return nil }
+            let window = NSRange(location: cursor, length: min(ns.length - cursor, (text as NSString).length + 4000))
+            let found = ns.range(of: text, options: [], range: window)
+            guard found.location != NSNotFound else { return nil }
+            cursor = NSMaxRange(found)
+            return positions?(found)
+        }
+        func marked(_ html: String, _ offset: Int?) -> String {
+            offset.map { "<span data-s=\"\($0)\">\(html)</span>" } ?? html
         }
 
         var html = ""
@@ -42,10 +61,18 @@ enum UmiMarkdown {
                 continue
             }
             if open.contains(where: { if case .codeBlock = $0.kind { return true }; return false }) {
-                html += escape(text)
+                html += marked(escape(text), offset(of: text))
                 continue
             }
-            html += inline(text, run: run, baseURL: baseURL)
+            let intent = run.inlinePresentationIntent ?? []
+            if intent.contains(.softBreak) || intent.contains(.lineBreak) || run.imageURL != nil {
+                html += inline(text, run: run, baseURL: baseURL, offset: nil)
+            } else if intent.contains(.blockHTML) || intent.contains(.inlineHTML) {
+                _ = offset(of: text)
+                html += inline(text, run: run, baseURL: baseURL, offset: nil)
+            } else {
+                html += inline(text, run: run, baseURL: baseURL, offset: offset(of: text))
+            }
         }
         for block in open.reversed() { html += closeTag(block, parents: open) }
         return headingAnchors(taskLists(html))
@@ -166,7 +193,7 @@ enum UmiMarkdown {
 
     // MARK: Inline
 
-    private static func inline(_ text: String, run: AttributedString.Runs.Run, baseURL: URL?) -> String {
+    private static func inline(_ text: String, run: AttributedString.Runs.Run, baseURL: URL?, offset: Int?) -> String {
         let intent = run.inlinePresentationIntent ?? []
         if intent.contains(.blockHTML) || intent.contains(.inlineHTML) {
             // Raw HTML from the document (the preview disables JavaScript),
@@ -176,7 +203,7 @@ enum UmiMarkdown {
         if intent.contains(.softBreak) { return "\n" }
         if intent.contains(.lineBreak) { return "<br>\n" }
 
-        var out = escape(text)
+        var out = offset.map { "<span data-s=\"\($0)\">\(escape(text))</span>" } ?? escape(text)
         if intent.contains(.code) { out = "<code>\(out)</code>" }
         if intent.contains(.stronglyEmphasized) { out = "<strong>\(out)</strong>" }
         if intent.contains(.emphasized) { out = "<em>\(out)</em>" }
@@ -285,10 +312,22 @@ enum UmiMarkdown {
 
     /// GitHub-style task list items.
     private static func taskLists(_ html: String) -> String {
-        html
-            .replacingOccurrences(of: "<li><p>[ ] ", with: "<li class=\"task\"><p><input type=\"checkbox\" disabled> ")
-            .replacingOccurrences(of: "<li><p>[x] ", with: "<li class=\"task\"><p><input type=\"checkbox\" checked disabled> ")
-            .replacingOccurrences(of: "<li><p>[X] ", with: "<li class=\"task\"><p><input type=\"checkbox\" checked disabled> ")
+        guard let regex = try? NSRegularExpression(pattern: #"<li><p>(<span data-s="(\d+)">)?\[([ xX])\] "#) else { return html }
+        let ns = html as NSString
+        var result = ""
+        var cursor = 0
+        for match in regex.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
+            result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            let checked = ns.substring(with: match.range(at: 3)) != " "
+            result += "<li class=\"task\"><p><input type=\"checkbox\"\(checked ? " checked" : "") disabled> "
+            // The run's text now starts four characters later in the file.
+            if match.range(at: 2).location != NSNotFound, let start = Int(ns.substring(with: match.range(at: 2))) {
+                result += "<span data-s=\"\(start + 4)\">"
+            }
+            cursor = NSMaxRange(match.range)
+        }
+        result += ns.substring(from: cursor)
+        return result
     }
 
     static func escape(_ text: String) -> String {
@@ -308,7 +347,7 @@ enum UmiMarkdown {
 
     // MARK: Page
 
-    static func page(body: String, background: String, light: Bool = false) -> String {
+    static func page(body: String, background: String, light: Bool = false, head: String = "") -> String {
         // Light and dark palettes: text, headings, muted text, code/rule tints.
         let (fg, heading, muted, tint, scheme) = light
             ? ("#24292f", "#111111", "#57606a", "0,0,0", "light")
@@ -336,7 +375,7 @@ enum UmiMarkdown {
         table { border-collapse: collapse; } th, td { padding: 6px 12px; border-bottom: 1px solid rgba(\(tint),0.08); }
         th { text-align: left; color: \(heading); font-weight: 600; }
         img { max-width: 100%; }
-        </style></head><body>\(body)</body></html>
+        </style>\(head)</head><body>\(body)</body></html>
         """
     }
 }

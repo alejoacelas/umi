@@ -67,6 +67,10 @@ enum UmiShortcuts {
                          state.sidebarVisible = true
                      }
                  }),
+            // E-11: like Google Docs' ⌥⌘M.
+            Item(id: "edit.comment", title: "Add Comment", key: "m", modifiers: [.command, .option], symbol: "text.bubble",
+                 menu: "Edit", action: { UmiEditor.currentDocument?.commentTarget?.startComment() },
+                 enabled: { UmiEditor.currentDocument.map { $0.isMarkdown && $0.commentTarget != nil } ?? false }),
             Item(id: "view.markdown", title: "Toggle Markdown Preview", key: "m", modifiers: [.command, .shift], symbol: "doc.richtext",
                  menu: "View", action: { UmiEditor.currentDocument?.toggleMode() },
                  enabled: { UmiEditor.currentDocument?.hasPreview ?? false }),

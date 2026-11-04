@@ -12,6 +12,8 @@ final class UmiEvents {
         weak var connection: UmiConnection?
         let filters: [String]
         let pane: String?
+        /// Only events about this file (`umi comments wait`).
+        var path: String?
     }
 
     private var subscribers: [ObjectIdentifier: Subscriber] = [:]
@@ -22,13 +24,20 @@ final class UmiEvents {
     /// A subscriber's backlog limit before it's disconnected.
     static let subscriberBacklogLimit = 4 * 1024 * 1024
 
-    func addSubscriber(_ connection: UmiConnection, filters: [String], pane: String?) {
+    func addSubscriber(_ connection: UmiConnection, filters: [String], pane: String?, path: String? = nil) {
         connection.setOutgoingLimit(Self.subscriberBacklogLimit)
-        subscribers[ObjectIdentifier(connection)] = .init(connection: connection, filters: filters, pane: pane)
+        subscribers[ObjectIdentifier(connection)] = .init(connection: connection, filters: filters, pane: pane, path: path)
+        if path != nil { UmiCommentsUI.waitersChanged() }
     }
 
     func removeSubscriber(_ connection: UmiConnection) {
-        subscribers.removeValue(forKey: ObjectIdentifier(connection))
+        let removed = subscribers.removeValue(forKey: ObjectIdentifier(connection))
+        if removed?.path != nil { UmiCommentsUI.waitersChanged() }
+    }
+
+    /// Connections waiting for the review of `path` to be done (E-11).
+    func waiters(on path: String) -> Int {
+        subscribers.values.filter { $0.connection != nil && $0.path == path && Self.matches("comments.done", filters: $0.filters) }.count
     }
 
     @discardableResult
@@ -57,6 +66,9 @@ final class UmiEvents {
             if let pane = sub.pane {
                 // Pane-filtered streams only carry events about that pane.
                 guard let eventPane = data["pane"] as? String, eventPane == pane else { continue }
+            }
+            if let path = sub.path {
+                guard let eventPath = data["path"] as? String, eventPath == path else { continue }
             }
             connection.sendRaw(event)
         }

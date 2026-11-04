@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build the umi CLI: build.sh --out PATH
-# Self-contained: compiles the .swift files next to this script with swiftc.
+# Self-contained: compiles the .swift files next to this script with swiftc, plus the app's
+# Foundation-only comment format (UmiComments.swift), which `umi comments` shares with the editor.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 out=""
@@ -20,4 +21,4 @@ mkdir -p "$scratch/tmp"
 trap 'rm -rf "$scratch"' EXIT
 TMPDIR="$scratch/tmp/" xcrun --sdk macosx swiftc -O -target arm64-apple-macos13.0 \
     -module-cache-path "$scratch/module-cache" \
-    -o "$out" "$here"/*.swift
+    -o "$out" "$here"/*.swift "$here/../Sources/Features/Umi/UmiComments.swift"

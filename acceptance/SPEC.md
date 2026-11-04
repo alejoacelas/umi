@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-6, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-10.
+Requirements: P-1 to P-4, I-1 to I-6, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-11.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -505,6 +505,31 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   current window's tabs in sidebar order, then other windows'. With no such tab it opens in a new
   tab in the file's folder, in the current window (a new window if there is none). The ⌘O Open
   panel still opens in the current tab.
+- **E-11 [A]** Comments on Markdown documents, as in Google Docs, so the user can react to what
+  agents show them and agents can act on it:
+  - selecting text in the preview offers Comment (a button by the selection, Edit ▸ Add Comment,
+    ⌥⌘M); in the source view ⌥⌘M asks for the comment in a sheet. A comment shows in a margin beside
+    the words it's on, level with them, which are highlighted; clicking either selects the thread.
+    Comments can be replied to, edited, resolved (hidden until "Show resolved"), reopened and
+    deleted (after a confirmation). In a panel too narrow for a margin, the selected thread shows
+    under its words;
+  - comments are stored in the file itself, in Roughdraft Flavored Markdown: the anchor and the
+    comment inline (`{==words==}{>>comment<<}{#c1}`), and author, time, replies and resolved state
+    in YAML endmatter at the end of the file. Every change is written to the file at once; unsaved
+    edits stay unsaved. Roughdraft's own files (attribute blocks, comments without ids, suggestions)
+    are read, and what Umi doesn't change is kept. Markup in code is literal text;
+  - an anchor stays within one block (paragraph, list item, table cell), takes a partly selected
+    link or code span whole, and never overlaps another comment (refused with a reason). Comments
+    move with their words through edits by agents and git merges. When the words under an anchor
+    are deleted but its markup stays, the comment stays at that spot ("the words were deleted");
+    when an edit removes the markup itself, the comment is *detached*: it still shows, with the
+    words it was on, from a copy kept in the endmatter, until it's resolved or deleted;
+  - an agent given only the file path reads every comment and the words it's on by reading the
+    file, or with `<cli> comments` (CLI.md), with or without the app running, and replies, resolves,
+    edits, adds or deletes the same way;
+  - the review loop: `<cli> comments wait FILE` blocks until the user presses Done on that file in
+    the editor, then prints its open comments; while an agent waits the margin says so. A comment
+    being written isn't lost when an agent changes the file meanwhile.
 
 ## AG. Agent sessions
 
