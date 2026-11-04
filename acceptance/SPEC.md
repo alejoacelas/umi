@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-6, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-10.
+Requirements: P-1 to P-4, I-1 to I-6, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-11.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -302,15 +302,22 @@ the menu.
     (33/33/33 → 50/50; 40/40/20 → 67/33 when a 40 closes);
   - this holds for every way of making or removing panes: the shortcuts and menus, `split`,
     dragging and dropping panes, `pane move`, and closes;
-  - dragging a divider leaves it where it's dropped, and the panes of its row (or column) on each
-    side of it share that side equally: in a row of three, dragging the first divider gives the
-    first pane the width dragged to and the other two half the rest each; dragging the middle
-    divider of four gives the two on each side equal halves of their side. A pane split the other
-    way (a column in a row) counts as one pane of the row and keeps its inside. File panes
-    (E-1) are panes like any other. Keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one
-    pane's edge, changing only the two panes beside it. Double-clicking a divider gives its row
-    (or column) equal shares and leaves the rest of the tab alone. ⌃⌘= and `tab equalize` still
-    equalize the whole tab;
+  - dragging a divider leaves it where it's dropped, and that divider now sizes its panes by hand.
+    A pane between dividers placed by hand (or one such divider and the end of its row or
+    column) keeps its size when another divider is dragged; only the panes not sized by hand
+    grow or shrink, sharing equally the stretch between the dragged divider and the nearest
+    divider placed by hand (or the row's end) on each side. In a row of three, dragging the first
+    divider gives the first pane the width dragged to and the other two half the rest each;
+    dragging the second divider then leaves the first pane as it is. In a row of four, dragging
+    the first divider to 40% and the last to 90% gives 40/25/25/10. A pane split the other way (a
+    column in a row) counts as one pane of the row and keeps its inside;
+  - file panes (E-1) are panes like any other;
+  - keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one pane's edge,
+    changing only the two panes beside it, and that divider counts as placed by hand;
+  - splits and closes share space as above and keep the other dividers placed by hand (the
+    dividers beside the new or closed pane are not). Double-clicking a divider gives its row (or
+    column) equal shares, leaves the rest of the tab alone, and forgets which of its dividers
+    were placed by hand; ⌃⌘= and `tab equalize` equalize the whole tab and forget them all;
   - `split --ratio R` gives the new pane R of its row (or column); the others keep their
     proportions.
 
@@ -519,6 +526,31 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   current window's tabs in sidebar order, then other windows'. With no such tab it opens in a new
   tab in the file's folder, in the current window (a new window if there is none). The ⌘O Open
   panel still opens in the current tab.
+- **E-11 [A]** Comments on Markdown documents, as in Google Docs, so the user can react to what
+  agents show them and agents can act on it:
+  - selecting text in the preview offers Comment (a button by the selection, Edit ▸ Add Comment,
+    ⌥⌘M); in the source view ⌥⌘M asks for the comment in a sheet. A comment shows in a margin beside
+    the words it's on, level with them, which are highlighted; clicking either selects the thread.
+    Comments can be replied to, edited, resolved (hidden until "Show resolved"), reopened and
+    deleted (after a confirmation). In a panel too narrow for a margin, the selected thread shows
+    under its words;
+  - comments are stored in the file itself, in Roughdraft Flavored Markdown: the anchor and the
+    comment inline (`{==words==}{>>comment<<}{#c1}`), and author, time, replies and resolved state
+    in YAML endmatter at the end of the file. Every change is written to the file at once; unsaved
+    edits stay unsaved. Roughdraft's own files (attribute blocks, comments without ids, suggestions)
+    are read, and what Umi doesn't change is kept. Markup in code is literal text;
+  - an anchor stays within one block (paragraph, list item, table cell), takes a partly selected
+    link or code span whole, and never overlaps another comment (refused with a reason). Comments
+    move with their words through edits by agents and git merges. When the words under an anchor
+    are deleted but its markup stays, the comment stays at that spot ("the words were deleted");
+    when an edit removes the markup itself, the comment is *detached*: it still shows, with the
+    words it was on, from a copy kept in the endmatter, until it's resolved or deleted;
+  - an agent given only the file path reads every comment and the words it's on by reading the
+    file, or with `<cli> comments` (CLI.md), with or without the app running, and replies, resolves,
+    edits, adds or deletes the same way;
+  - the review loop: `<cli> comments wait FILE` blocks until the user presses Done on that file in
+    the editor, then prints its open comments; while an agent waits the margin says so. A comment
+    being written isn't lost when an agent changes the file meanwhile.
 
 ## AG. Agent sessions
 

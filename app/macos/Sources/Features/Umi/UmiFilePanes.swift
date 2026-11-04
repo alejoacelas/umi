@@ -83,6 +83,7 @@ final class UmiFilePanes: ObservableObject {
             return (existing, doc)
         }
         let doc = try UmiDocument(url: url, mode: mode)
+        doc.reviewWaiters = UmiEvents.shared.waiters(on: doc.url.path)
         guard let location = UmiTopology.locate(anchor) else { throw UmiError.notFound("the pane isn't in a window") }
         let window = location.window
         let tab = location.tab

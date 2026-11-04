@@ -1420,6 +1420,8 @@ func main() {
         editCommand(rest)
     case "editor":
         editorCommand(rest)
+    case "comments", "comment":
+        commentsCommand(rest)
     case "claude", "codex":
         agentShortcut(command, rest)
     case "update":

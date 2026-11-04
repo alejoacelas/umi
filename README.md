@@ -53,6 +53,21 @@ settings that only Umi should see (Ghostty never reads it). Umi's Settings (⌘,
 as `open FILE` would. If the file's git repository is behind its upstream, Umi pulls it first, so a
 link to a file another machine just pushed works. Paths that leave `~/best` are refused.
 
+## Comments
+
+Select text in a Markdown file's preview and press Comment (or ⌥⌘M) to comment on it, as in Google
+Docs; comments show in a margin beside the text and can be replied to, edited, resolved and deleted.
+They're saved in the file itself, in [Roughdraft](https://github.com/Lex-Inc/roughdraft)'s format
+(`{==words==}{>>comment<<}`, plus a short YAML block at the end), so an agent reading the file sees
+them. `umi comments FILE` lists them with the words each is on, `umi comments reply|resolve` answers
+them, and `umi comments wait FILE` waits until you press Done in the margin.
+
+## Panes
+
+Dragging a divider leaves it where you drop it; the panes you haven't sized by hand share the
+space around it equally, and a pane you sized keeps its size. The editor panel counts as the last
+pane of the row. Double-click a divider to even out its row.
+
 ## Agents
 
 `umi claude "task"` and `umi codex "task"` start a Claude Code or Codex session that works in the

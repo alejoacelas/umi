@@ -337,6 +337,12 @@ enum UmiRPC {
             return try UmiEditor.handleClose(params, caller: caller)
         case "editor.mode":
             return try UmiEditor.handleMode(params, caller: caller)
+        case "comments.wait":
+            // `umi comments wait FILE`: this connection gets `comments.done` for that file (E-11).
+            guard let path = params.string("path"), !path.isEmpty else { throw UmiError.badRequest("give a path") }
+            let canonical = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+            UmiEvents.shared.addSubscriber(connection, filters: ["comments.done"], pane: nil, path: canonical)
+            return ["waiting": true, "path": canonical, "open": !UmiCommentsUI.documents(at: canonical).isEmpty]
 
         // MARK: Updates
         case "update.check":
@@ -416,6 +422,8 @@ enum UmiRPC {
         case "debug.agent.pane", "debug.agent.type", "debug.agent.press":
             return try UmiAgentDebug.handle(method, params, caller: caller)
 
+        case "debug.ui.comments":
+            return try await UmiCommentsUI.debug(params)
         case let ui where ui.hasPrefix("debug.ui."):
             return try UmiUIDebug.handle(method, params, caller: caller)
 

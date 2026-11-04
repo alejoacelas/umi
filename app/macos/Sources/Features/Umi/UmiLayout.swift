@@ -330,7 +330,7 @@ enum UmiLayout {
                     return node
                 case .split(let split):
                     return .split(.init(direction: split.direction, ratio: split.ratio,
-                                        left: swapped(split.left), right: swapped(split.right)))
+                                        left: swapped(split.left), right: swapped(split.right), placed: split.placed))
                 }
             }
             let ta = la.window.tree(of: la.tab)
@@ -562,12 +562,12 @@ struct UmiSnapshot {
 
     indirect enum WeakNode {
         case leaf(Weak<Ghostty.SurfaceView>)
-        case split(SplitTree<Ghostty.SurfaceView>.Direction, Double, WeakNode, WeakNode)
+        case split(SplitTree<Ghostty.SurfaceView>.Direction, Double, WeakNode, WeakNode, Bool)
 
         init(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
             switch node {
             case .leaf(let view): self = .leaf(Weak(view))
-            case .split(let split): self = .split(split.direction, split.ratio, WeakNode(split.left), WeakNode(split.right))
+            case .split(let split): self = .split(split.direction, split.ratio, WeakNode(split.left), WeakNode(split.right), split.placed)
             }
         }
 
@@ -577,11 +577,11 @@ struct UmiSnapshot {
             case .leaf(let weak):
                 guard let view = weak.value, UmiSnapshot.isAlive(view) else { return nil }
                 return .leaf(view: view)
-            case .split(let direction, let ratio, let left, let right):
+            case .split(let direction, let ratio, let left, let right, let placed):
                 let l = left.resolve()
                 let r = right.resolve()
                 switch (l, r) {
-                case let (l?, r?): return .split(.init(direction: direction, ratio: ratio, left: l, right: r))
+                case let (l?, r?): return .split(.init(direction: direction, ratio: ratio, left: l, right: r, placed: placed))
                 case let (l?, nil): return l
                 case let (nil, r?): return r
                 default: return nil

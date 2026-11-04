@@ -533,21 +533,52 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
 
 ## Even pane sizes after a resize, and comments (BRIEF-comments-and-pane-sizes.md)
 
-L-19 changed: a dragged divider stays where it's dropped and the panes on each side of it share that
-side equally (the editor panel counts as the last pane of the top row). **Requirement:** L-19, "when I
-resize a panel, the remaining panels split the remaining screen equally."
+L-19 changed: a dragged divider stays where it's dropped and counts as placed by hand; a pane
+between placed dividers keeps its size, and only the panes not sized by hand share the stretch on
+each side of the dragged divider (the editor panel counts as the last pane of the top row).
+**Requirement:** L-19, "when I resize a panel, the remaining panels split the remaining screen
+equally" and "only the panes that have not been manually resized shrink/grow in response to other
+pane resizing."
 
 - **Replaced, `tests/test_umi_panes_ui.py`**: `test_a_divider_moves_its_neighbors_and_double_click_equalizes_its_row`
   asserted the old rule (only the two panes beside the divider change: 50/16.7/33.3). It is now
-  `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row` (50/25/25, then
-  40/40/20 from the second divider; a column in the row keeps its 70/30 inside; double-click as before).
-- **New, `tests/test_umi_panes_ui.py`**: `test_a_dragged_middle_divider_shares_both_sides` (four panes,
-  37.5/37.5/12.5/12.5); `test_a_keyboard_resize_still_moves_only_the_two_neighbors` (`pane resize`
-  keeps the old rule, the third pane unchanged); `test_the_editor_panel_is_the_last_pane_of_the_top_row`
-  (a terminal divider shares the right side with the editor; the editor's divider, through the new
-  internal `debug.ui.editor.divider`, evens the panes before it). `editor ls` now reports the panel's
+  `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row` (50/25/25,
+  then 50/30/20 from the second divider, the first pane keeping its size; a column in the row keeps
+  its 70/30 inside; double-click as before).
+- **New, `tests/test_umi_panes_ui.py`**: `test_panes_sized_by_hand_keep_their_size_and_the_others_share`
+  (40/20/20/20, then 40/25/25/10; a split keeps the placed dividers; double-click forgets them);
+  `test_a_dragged_middle_divider_shares_both_sides` (37.5/37.5/12.5/12.5);
+  `test_a_keyboard_resize_still_moves_only_the_two_neighbors` (`pane resize` keeps the old rule);
+  `test_the_editor_panel_is_the_last_pane_of_the_top_row` (a free editor shares the right side; its
+  divider, through the new internal `debug.ui.editor.divider`, leaves panes sized by hand alone and
+  evens the others; once dragged, the editor keeps its size). `editor ls` now reports the panel's
   `fraction` for this.
 - **Changed, Swift unit tests `SplitTreeTests`**: `aDividerMovesOnlyItsNeighbors` became
+  `draggingADividerSharesEachSideEqually`; new `aPaneSizedByHandKeepsItsSize`,
+  `panesNotSizedByHandShareTheStretchBetweenPlacedDividers`, `draggingAMiddleDividerSharesBothSides`,
+  `aColumnInARowCountsAsOneAndKeepsItsInside`, `splitsAndClosesKeepTheDividersPlacedByHand`,
+  `theEditorPanelIsTheRowsLastMember`, `draggingTheEditorsDividerSharesAmongPanesNotSizedByHand`,
+  `aKeyboardResizeMovesOnlyTheTwoNeighbors`.
+
+Comments (E-11). **Requirement:** E-11, "when I select text in Umi I want it to offer me the option
+of leaving a comment on the doc … make sure comments are visible to you."
+
+- **New, `tests/test_comments.py`** (through the internal `debug.ui.comments`, which runs the
+  margin's own script in the preview: select words, press Comment, type, submit, click controls):
+  the comment lands in the file beside its words in Roughdraft's format and its card is level with
+  them, beside the text; a narrow panel shows the selected thread under its words; reply, edit,
+  resolve, show resolved, reopen and delete (with its confirmation, leaving the file as it was);
+  links taken whole, table cells, overlaps and code blocks refused with a reason; Edit ▸ Add Comment
+  (and, as a `ui` test, its ⌥⌘M menu key); a comment being written survives an agent changing the
+  file; `comments` with no app running (add, list, reply from stdin, resolve, delete, errors); a git
+  pull merging another edit keeps the anchor, and removing the markup leaves a detached comment
+  shown in the margin; the review loop (`comments wait` returns on Done with the comments, the
+  margin says an agent waits, the agent's reply and resolve show in the margin).
+- **New, Swift unit tests `UmiCommentsTests`**: the format (round trips, endmatter, block scalars,
+  CRLF, Roughdraft files), placement, relocation, the preview's offsets, and a comment keeping
+  unsaved edits unsaved.
+- **Changed, `tests/test_comments.py` helpers hide the sidebar in their window**: another test leaves
+  new windows' sidebar 600 points wide, which made the editor too narrow for the margin.
   `draggingADividerSharesEachSideEqually`; new `draggingAMiddleDividerSharesBothSides`,
   `aColumnInARowCountsAsOneAndKeepsItsInside`, `thePanelAfterTheTreeSharesTheRightSide`,
   `equalizingTheTopRowLeavesAnEvenRow`, `aKeyboardResizeMovesOnlyTheTwoNeighbors`.

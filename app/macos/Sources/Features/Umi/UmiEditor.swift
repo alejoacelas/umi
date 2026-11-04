@@ -162,6 +162,10 @@ final class UmiDocument: ObservableObject, Identifiable {
     /// A line to show and put the cursor on (1-based), from the quick file search's
     /// `path:line`. The source view clears it once shown.
     @Published var revealLine: Int?
+    /// How many agents wait for the user to finish commenting (`umi comments wait`, E-11).
+    @Published var reviewWaiters = 0
+    /// The shown view, which starts a comment on its selection (E-11).
+    weak var commentTarget: UmiCommentTarget?
 
     private(set) var encoding: String.Encoding
     private var bom: Data
@@ -243,6 +247,16 @@ final class UmiDocument: ObservableObject, Identifiable {
             self.error = "Reload failed: \(error.localizedDescription)"
             watch()
         }
+    }
+
+    /// The file now holds `saved` (written by a comment change): it's the new baseline.
+    func adoptSaved(_ saved: String, encoding: String.Encoding, bom: Data) {
+        self.encoding = encoding
+        self.bom = bom
+        savedText = saved
+        isDirty = text != savedText
+        error = nil
+        watch()
     }
 
     /// Keep the edits as they are and stop warning about the disk.
@@ -774,12 +788,14 @@ struct UmiSourceEditor: NSViewRepresentable {
             guard let doc, let group else { return }
             UmiEditor.confirmClose(doc, in: group, window: container?.window)
         }
+        doc.commentTarget = context.coordinator
         let scroll = UmiEditorTextView.scrollable()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         if let textView = scroll.documentView as? NSTextView {
+            context.coordinator.textView = textView
             textView.delegate = context.coordinator
             textView.drawsBackground = false
             textView.isRichText = false
@@ -849,9 +865,28 @@ struct UmiSourceEditor: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, UmiCommentTarget {
         let doc: UmiDocument
+        weak var textView: NSTextView?
         init(doc: UmiDocument) { self.doc = doc }
+
+        /// Comment on the selection (E-11): the margin is the preview's, so here the text is
+        /// asked for in a sheet, and the markup appears in the source.
+        func startComment() {
+            guard doc.isMarkdown, let textView else { return }
+            let range = textView.selectedRange()
+            guard range.length > 0 else {
+                doc.error = "Select the text to comment on first."
+                NSSound.beep()
+                return
+            }
+            let base = doc.text
+            let quote = (base as NSString).substring(with: range)
+            UmiCommentsUI.prompt(quote: quote, window: textView.window) { [weak self] body in
+                guard let self else { return }
+                do { try self.doc.addComment(body, on: range, base: base) } catch { UmiCommentsUI.show(error, for: self.doc) }
+            }
+        }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
@@ -863,14 +898,15 @@ struct UmiSourceEditor: NSViewRepresentable {
     }
 }
 
-/// Rendered Markdown (E-1, E-7): JavaScript off, relative links open in the editor,
-/// `#anchors` scroll within the page, local images are inlined.
+/// Rendered Markdown (E-1, E-7): the document's JavaScript off, relative links open in the editor,
+/// `#anchors` scroll within the page, local images are inlined. Comments (E-11) show in a margin
+/// drawn by Umi's own script, which runs apart from the page (`UmiCommentsScript`).
 struct UmiMarkdownPreview: NSViewRepresentable {
     @ObservedObject var doc: UmiDocument
     let group: UmiEditorGroup
     let background: Color
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(doc: doc) }
 
     func makeNSView(context: Context) -> UmiEditorContainerView {
         let container = UmiEditorContainerView()
@@ -882,6 +918,10 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         config.websiteDataStore = .nonPersistent()
+        let scripts = config.userContentController
+        scripts.addUserScript(WKUserScript(source: UmiCommentsScript.source, injectionTime: .atDocumentEnd,
+                                           forMainFrameOnly: true, in: UmiCommentsUI.world))
+        scripts.add(UmiScriptHandlerProxy(context.coordinator), contentWorld: UmiCommentsUI.world, name: "umi")
         let web = UmiPreviewWebView(frame: .zero, configuration: config)
         container.attach(to: group, focusTarget: web)
         web.navigationDelegate = context.coordinator
@@ -894,33 +934,153 @@ struct UmiMarkdownPreview: NSViewRepresentable {
             web.topAnchor.constraint(equalTo: container.topAnchor),
             web.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
-        render(web, context: context)
+        context.coordinator.web = web
+        context.coordinator.group = group
+        if doc.isMarkdown { doc.commentTarget = context.coordinator }
+        context.coordinator.render()
         return container
     }
 
     func updateNSView(_ container: UmiEditorContainerView, context: Context) {
-        guard let web = container.subviews.first as? WKWebView else { return }
         context.coordinator.group = group
-        render(web, context: context)
-    }
-
-    private func render(_ web: WKWebView, context: Context) {
-        let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight)"
-        guard context.coordinator.lastKey != key else { return }
-        context.coordinator.lastKey = key
-        context.coordinator.documentURL = doc.url
-        context.coordinator.group = group
-        let body = doc.isMarkdown
-            ? UmiMarkdown.html(from: doc.text, baseURL: doc.url.deletingLastPathComponent())
-            : UmiDataPreview.html(for: doc.url, text: doc.text)
-        web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight), baseURL: nil)
+        context.coordinator.render()
+        context.coordinator.showWaiters()
     }
 
     @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        var lastKey: String?
-        var documentURL: URL?
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, UmiCommentTarget {
+        let doc: UmiDocument
+        weak var web: WKWebView?
         weak var group: UmiEditorGroup?
+        var lastKey: String?
+        /// The text the page shows: a new comment's offsets are in it.
+        private(set) var renderedText = ""
+        /// While a comment or reply is being written, the page isn't reloaded under it.
+        private var composing = false
+        private var renderPending = false
+        // Kept across reloads.
+        private var scroll: Double = 0
+        private var focus: String?
+        private var showResolved = false
+        private var shownWaiters = 0
+
+        init(doc: UmiDocument) { self.doc = doc }
+
+        func render(force: Bool = false) {
+            guard let web else { return }
+            let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight)"
+            guard force || lastKey != key else { return }
+            if composing && !force {
+                renderPending = true
+                return
+            }
+            renderPending = false
+            lastKey = key
+            renderedText = doc.text
+            guard doc.isMarkdown else {
+                // JSON and CSV/TSV previews have no comments.
+                let body = UmiDataPreview.html(for: doc.url, text: doc.text)
+                web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight), baseURL: nil)
+                return
+            }
+            let threads = UmiComments.Document(doc.text).threads
+            let preview = UmiComments.preview(doc.text, resolvedIDs: Set(threads.filter(\.resolved).map(\.id)))
+            let body = UmiMarkdown.html(from: preview.source, baseURL: doc.url.deletingLastPathComponent(),
+                                        positions: preview.fileOffset(of:))
+            shownWaiters = doc.reviewWaiters
+            let data: [String: Any] = [
+                "threads": threads.map(\.json), "focus": focus ?? NSNull(), "scroll": scroll,
+                "waiting": doc.reviewWaiters, "showResolved": showResolved, "reveal": focus != nil,
+            ]
+            let head = UmiCommentsScript.head(data: data, light: UmiTheme.isLight)
+            web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight, head: head),
+                               baseURL: nil)
+        }
+
+        func showWaiters() {
+            guard let web, shownWaiters != doc.reviewWaiters else { return }
+            shownWaiters = doc.reviewWaiters
+            web.evaluateJavaScript("window.umiComments && umiComments.setWaiting(\(doc.reviewWaiters))", in: nil, in: UmiCommentsUI.world)
+        }
+
+        func startComment() {
+            web?.window?.makeFirstResponder(web)
+            web?.evaluateJavaScript("window.umiComments && umiComments.startCompose()", in: nil, in: UmiCommentsUI.world)
+        }
+
+        private func call(_ js: String) {
+            web?.evaluateJavaScript(js, in: nil, in: UmiCommentsUI.world)
+        }
+
+        private func jsString(_ text: String) -> String {
+            let data = (try? JSONSerialization.data(withJSONObject: [text], options: [])) ?? Data("[\"\"]".utf8)
+            let array = String(decoding: data, as: UTF8.self)
+            return String(array.dropFirst().dropLast())
+        }
+
+        // MARK: Messages from the margin
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+            switch type {
+            case "scroll":
+                scroll = (body["y"] as? Double) ?? scroll
+            case "select":
+                focus = body["id"] as? String
+            case "show_resolved":
+                showResolved = (body["on"] as? Bool) ?? false
+            case "composing":
+                composing = (body["on"] as? Bool) ?? false
+                if !composing && renderPending { render() }
+            case "done":
+                call("umiComments.notice(\(jsString(UmiCommentsUI.reviewDone(doc))))")
+            case "add", "reply", "edit", "resolve", "delete":
+                perform(type, body)
+            default:
+                break
+            }
+        }
+
+        private func perform(_ type: String, _ body: [String: Any]) {
+            let id = body["id"] as? String ?? ""
+            let text = body["body"] as? String ?? ""
+            do {
+                switch type {
+                case "add":
+                    guard let start = body["start"] as? Int, let end = body["end"] as? Int, end >= start else {
+                        throw UmiComments.Failure("Umi can't place a comment on that text")
+                    }
+                    focus = try doc.addComment(text, on: NSRange(location: start, length: end - start), base: renderedText)
+                case "reply":
+                    try doc.changeComments("replied") { try UmiComments.replying(to: id, text, in: $0, by: UmiComments.userAuthor).text }
+                    focus = UmiComments.Document(doc.text).thread(id)?.id ?? focus
+                case "edit":
+                    try doc.changeComments("edited") { try UmiComments.editing(id, to: text, in: $0) }
+                case "resolve":
+                    let resolved = (body["resolved"] as? Bool) ?? true
+                    try doc.changeComments(resolved ? "resolved" : "reopened") { try UmiComments.resolving(id, resolved, in: $0) }
+                    if resolved { focus = nil }
+                case "delete":
+                    try doc.changeComments("deleted") { try UmiComments.deleting(id, in: $0) }
+                    focus = nil
+                default:
+                    return
+                }
+                composing = false
+                render(force: true)
+            } catch {
+                let message = (error as? UmiComments.Failure)?.message ?? (error as? UmiError)?.message ?? error.localizedDescription
+                call("umiComments.failed(\(jsString(message)))")
+            }
+        }
+
+        /// A page that just loaded has the count from when it was made: give it the current one.
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            shownWaiters = doc.reviewWaiters
+            call("window.umiComments && umiComments.setWaiting(\(doc.reviewWaiters))")
+        }
+
+        // MARK: Links
 
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,

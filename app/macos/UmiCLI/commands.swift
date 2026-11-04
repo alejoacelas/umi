@@ -200,6 +200,13 @@ let commandTable: [CommandHelp] = [
                 actions: [PaletteAction(title: "Toggle Preview and Source", argv: ["editor", "mode"])]),
     CommandHelp(section: "Editor", usage: "editor default [--dry-run]", summary: "make \(productName) the default app for Markdown",
                 actions: [PaletteAction(title: "Make \(productName) the Default for Markdown", argv: ["editor", "default"])]),
+    CommandHelp(section: "Editor", usage: "comments [ls] FILE [--all]",
+                summary: "a Markdown file's comments: the text each is on, replies (works without \(productName) running)"),
+    CommandHelp(section: "Editor", usage: "comments reply|edit FILE ID TEXT… [--by NAME]", summary: "answer a comment, or change one"),
+    CommandHelp(section: "Editor", usage: "comments resolve|reopen|delete FILE ID", summary: "resolve (--note TEXT), reopen or delete a thread"),
+    CommandHelp(section: "Editor", usage: "comments add FILE --on TEXT [--nth N] TEXT…", summary: "comment on some words of the file"),
+    CommandHelp(section: "Editor", usage: "comments wait FILE [--timeout SECS]",
+                summary: "until the user presses Done on the file in the editor; then its open comments"),
 
     // Agents
     CommandHelp(section: "Agents (Claude Code and Codex sessions; `\(cliName) agent --help` explains them)",

@@ -5,7 +5,7 @@ import GhosttyKit
 /// per-bundle saved state or user defaults, which every instance of the app would share):
 ///
 /// - `layout.json`: windows, tabs (names, colors, pins, order), split trees with each pane's
-///   folder and name, and each tab's open editor documents;
+///   folder and name, each file pane's file and each tab's stacks;
 /// - `ui.json`: the sidebar's visibility and mode, and the width new windows start with
 ///   (each window's own width is in `layout.json`).
 ///
@@ -129,6 +129,7 @@ final class UmiPersistence {
             return ["split": [
                 "direction": split.direction == .horizontal ? "horizontal" : "vertical",
                 "ratio": split.ratio,
+                "placed": split.placed,
                 "left": encode(node: split.left),
                 "right": encode(node: split.right),
             ]]
@@ -259,7 +260,8 @@ final class UmiPersistence {
                 let direction: SplitTree<Ghostty.SurfaceView>.Direction =
                     (split["direction"] as? String) == "vertical" ? .vertical : .horizontal
                 let ratio = split["ratio"] as? Double ?? 0.5
-                return .split(.init(direction: direction, ratio: ratio, left: l, right: r))
+                return .split(.init(direction: direction, ratio: ratio, left: l, right: r,
+                                    placed: split["placed"] as? Bool ?? false))
             case let (l?, nil): return l
             case let (nil, r?): return r
             default: return nil

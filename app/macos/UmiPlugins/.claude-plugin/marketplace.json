@@ -7,7 +7,7 @@
       "name": "umi",
       "description": "Reports a session's state (working, finished, needs you) to Umi when it runs inside Umi. Silent anywhere else.",
       "source": "./claude",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "category": "productivity"
     }
   ]
