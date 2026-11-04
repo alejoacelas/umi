@@ -67,31 +67,32 @@ enum UmiTheme {
 
     /// Umi's colors, shipped as a Ghostty theme so a user's own `theme` replaces them
     /// entirely (explicit colors would otherwise override it). The background is Warp's default
-    /// Dark theme's (`warp_dark.yaml` in warpdotdev/themes): pure black (S-5).
+    /// Dark theme (`warp_bundled/warp_dark.yaml` in warpdotdev/themes): pure black, white text, its
+    /// cursor accent and its 16 terminal colors (S-5).
     static let themeConfig = """
     background = #000000
-    foreground = #e6e6e6
-    cursor-color = #19aad8
+    foreground = #ffffff
+    cursor-color = #00c2ff
     selection-background = #24435c
     selection-foreground = #ffffff
     split-divider-color = #1f1f1f
     unfocused-split-fill = #000000
-    palette = 0=#2b2b2b
-    palette = 1=#cd3131
-    palette = 2=#0dbc79
-    palette = 3=#e5e510
-    palette = 4=#2472c8
-    palette = 5=#bc3fbc
-    palette = 6=#11a8cd
-    palette = 7=#e5e5e5
-    palette = 8=#666666
-    palette = 9=#f14c4c
-    palette = 10=#23d18b
-    palette = 11=#f5f543
-    palette = 12=#3b8eea
-    palette = 13=#d670d6
-    palette = 14=#29b8db
-    palette = 15=#ffffff
+    palette = 0=#616161
+    palette = 1=#ff8272
+    palette = 2=#b4fa72
+    palette = 3=#fefdc2
+    palette = 4=#a5d5fe
+    palette = 5=#ff8ffd
+    palette = 6=#d0d1fe
+    palette = 7=#f1f1f1
+    palette = 8=#8e8e8e
+    palette = 9=#ffc4bd
+    palette = 10=#d6fcb9
+    palette = 11=#fefdd5
+    palette = 12=#c1e3fe
+    palette = 13=#ffb1fe
+    palette = 14=#e5e6fe
+    palette = 15=#feffff
     """
 
     /// Configuration Umi loads before the user's Ghostty config files, so every value here

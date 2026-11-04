@@ -218,3 +218,6 @@ each side of a dragged divider now share that side equally.
 
 His Warp follows the system theme, which in dark mode is Warp's default "Dark" theme (background
 `#000000`).
+
+Then:
+> though let's use warp's terminal color config as well if it's straightforward to implement
