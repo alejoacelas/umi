@@ -98,10 +98,6 @@ pinned; nothing reorders them on its own (SPEC S-7).
 | `comments edit FILE ID TEXT…` / `comments resolve FILE ID [--note TEXT]` / `comments reopen FILE ID` / `comments delete FILE ID` | change, resolve, reopen or delete (a thread goes with its replies and its markup; its words stay) |
 | `comments wait FILE [--timeout SECS]` | block until the user presses Done on FILE's comments in the editor, then print its open comments as `comments ls` does; exits 124 on timeout. Needs the app |
 
-Links: the app also answers `umi://open?path=PATH` (SPEC I-6). PATH is URL-encoded and relative to
-`~/best`; the link opens what `edit` would for a file (in the closest tab, E-10), after pulling its
-repository if it is behind. `open 'umi://open?path=desk/AGENTS.md'` runs it from a shell.
-
 ## Updates
 
 | Command | Notes |

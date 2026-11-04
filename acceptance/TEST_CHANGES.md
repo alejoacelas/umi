@@ -525,11 +525,6 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   headless agent leaves running after its turn (`RUN python3 … &`). **Requirement:** I-4.
 - **Review round 19 (0.6.2)**: `test_idle_agents_in_panes_are_quiet` adds work a live interface leaves
   running detached from its terminal. **Requirement:** I-4.
-- **`umi://open` links (0.6.4)**: new `test_open_links_pull_first_and_stay_inside_the_root` in
-  `test_umi_panes_ui.py`, through the internal `debug.ui.open_url` (what the link's Apple Event runs,
-  with a scratch folder standing in for `~/best`): a file pushed to the remote opens after the pull, an
-  unreachable remote opens the local copy with a notice, and five escaping paths (`..`, absolute, `~`,
-  `..` inside a repository, a symlink out) are refused. **Requirement:** I-6.
 
 ## Even pane sizes after a resize, and comments (BRIEF-comments-and-pane-sizes.md)
 
@@ -611,3 +606,7 @@ every other test runs as before.
   launch no longer copies Tern's, and inherited `TERN_*` variables are no longer cleared.
   - **Removed, `tests/test_umi_import.py`** (all seven R-11 tests) and the `UMI_IMPORT_STATE_DIR`
     hook it used. Coexisting with Tern stays covered by P-1 (`other_products` still lists Tern).
+- **No `umi://open` links (I-6 is gone)**. Documents from the server are read and edited on a web
+  page the agent server serves. Opening files from Finder and `open FILE` (I-3, E-10) is unchanged.
+  - **Removed, `tests/test_umi_panes_ui.py`**: `test_open_links_pull_first_and_stay_inside_the_root`
+    and the internal `debug.ui.open_url` it used (its entry above is removed with it).

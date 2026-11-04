@@ -233,3 +233,11 @@ His Warp follows the system theme, which in dark mode is Warp's default "Dark" t
 
 Then:
 > though let's use warp's terminal color config as well if it's straightforward to implement
+
+## 2026-11-04: three features removed
+
+Relayed by Alejo's agent, not his own words; Alejo approved: remove the Settings shortcuts editor
+(⌘, opens the config file in Umi's editor instead, as Ghostty does, and `umi shortcuts` stays;
+SPEC L-17), the copy of Tern's state on the first launch (both Macs already have Umi state), and
+`umi://open` links (documents from the server are read and edited on a web page the agent server
+serves).

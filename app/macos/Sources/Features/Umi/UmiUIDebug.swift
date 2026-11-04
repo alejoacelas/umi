@@ -157,13 +157,6 @@ enum UmiUIDebug {
             let (window, tab) = try UmiEditor.open(URL(fileURLWithPath: path), inCurrentTab: false)
             return ["tab": tab.idString, "window": window.umiIDString]
 
-        case "debug.ui.open_url":
-            // What a `umi://open?path=…` link does (I-6), synchronously; `root` stands in for ~/best.
-            guard let text = params.string("url"), let url = URL(string: text) else { throw UmiError.badRequest("give a url") }
-            let root = params.string("root") ?? UmiOpenURL.defaultRoot
-            let target = try UmiOpenURL.resolve(url, root: root)
-            return try UmiOpenURL.show(target, root: root, notice: UmiOpenURL.pullIfBehind(target, root: root))
-
         default:
             throw UmiError.badRequest("unknown method \(method)")
         }

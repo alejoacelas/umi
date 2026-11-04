@@ -43,12 +43,6 @@ Umi reads your Ghostty config (`~/.config/ghostty/config`), then its own, `~/.co
 settings that only Umi should see (Ghostty never reads it). Settings (⌘,) opens that file in Umi's
 editor. `umi shortcuts` lists and changes keyboard shortcuts.
 
-## Links
-
-`umi://open?path=PATH` opens a file under `~/best` (PATH relative to it, URL-encoded) in Umi's editor,
-as `open FILE` would. If the file's git repository is behind its upstream, Umi pulls it first, so a
-link to a file another machine just pushed works. Paths that leave `~/best` are refused.
-
 ## Comments
 
 Select text in a Markdown file's preview and press Comment (or ⌥⌘M) to comment on it, as in Google

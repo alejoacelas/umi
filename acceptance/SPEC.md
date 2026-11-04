@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-6, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-11.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-11.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -182,17 +182,6 @@ and agents reaching the app from their own processes.
 - **I-5 [W]** One-line install. On another Mac, one command pasted into Terminal installs the latest
   release, with no Gatekeeper prompt and nothing to install first. The release repository's README
   gives the command.
-- **I-6 [A]** Links. The app answers `<scheme>://open?path=PATH` (REQUESTS.md, 2026-10-31), where PATH
-  is URL-encoded and relative to the user's work folder (`~/best`):
-  - a file opens as in I-3 and E-10, and the app comes to the front; a folder opens as a folder
-    opened on the app (a terminal in it); anything else is shown in Finder, never run;
-  - a PATH that leaves the work folder (absolute, `~`, `..`, or through a symlink) is refused with a
-    message, and nothing opens;
-  - before opening, the git repository holding PATH (inside the work folder) is fetched and, when it
-    is behind its upstream, fast-forwarded, so a file pushed from another machine opens. If that
-    fails, the local copy opens with a short notice saying so; a file that still doesn't exist is
-    reported, not created;
-  - the installed copy is the scheme's handler, not a development or test copy.
 
 ## L. Windows, tabs and panes
 
