@@ -67,11 +67,12 @@ made the user's `~/Library/Application Support/Umi`.
   also breaks the suite's screenshot and size tests). `release.sh --build` always does.
 - The suite tests the build at `app/macos/build/ReleaseLocal/Umi.app` (`targets/umi.json`; paths in
   it are relative to the file). `results/traceability.md` maps each SPEC requirement to its tests.
-- Run tests that bring windows to the front (the UI tests, and anything else that activates or
-  types into windows) on the other MacBook Air (`ssh mac-air-2`), never on the Mac Alejo is using.
-  Other agents may be working in its checkout (`~/best/projects/2026-10-26-umi`), so test in a
-  worktree of it (`git worktree add ~/umi-test-<branch> <branch>`), and only while no other run
-  there is typing into windows.
+- Run the acceptance suite and the Swift tests on the other MacBook Air (`ssh mac-air-2`), never on
+  the Mac Alejo is using: they open windows there. Other agents may be working in its checkout
+  (`~/best/projects/2026-10-26-umi`), so test in a worktree of it
+  (`git worktree add ~/umi-test-<branch> <branch>`), and only while no other run there is using the
+  screen. A new worktree needs libghostty: build it there, or copy `app/macos/GhosttyKit.xcframework`
+  and `app/zig-out` from a worktree whose files outside `app/macos` are the same.
 - UI tests need the terminal running pytest to have the Accessibility permission and an unlocked
   screen; otherwise they are skipped, and they type into windows, so don't use the Mac meanwhile.
 - `ACCEPTANCE_REAL=1` runs the user's own `claude` and `codex` logins; a fixture removes afterwards
