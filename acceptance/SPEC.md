@@ -351,6 +351,11 @@ A "live session" is a pane with a running program, its scrollback and its state.
   - a tab dropped on the top or bottom half of a row lands before or after it, with the same line;
   - a tab dragged out of its window and dropped where nothing takes it becomes a window of its own
     at the drop point. Dropped back over its own window, nothing changes.
+  - while a pane is dragged, two targets show over the panes: at the top centre, "Move to previous
+    tab" (absent in the first tab), and at the bottom centre, "Move to next tab" ("Move to a new
+    tab" in the last tab). A pane dropped on one goes to the end of that tab (beside its last pane),
+    and that tab is shown with the pane focused. They take a tab's only pane too; its tab then
+    closes.
 
   Programs keep running through all of these (M-1, M-2).
 - **M-5 [A]** A pane moved to a new window gets a window large enough to keep its columns and rows,

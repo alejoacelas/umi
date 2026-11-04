@@ -686,6 +686,77 @@ def test_sidebar_widths_are_restored_with_the_layout(target, fresh):
     assert {210, 333} <= set(widths.values()), widths
 
 
+# ---- M-4: dragging a pane to the previous or next tab ---------------------------------------------
+
+def _select(inst, win, tab):
+    inst.cli("tab", "focus", tab)
+    wait_until(lambda: window_of(inst, win["window"])["selected_tab"] == tab, 5, message="the tab shown")
+
+
+@pytest.mark.req("M-4", "M-1")
+def test_a_pane_dropped_on_the_previous_or_next_tab_target_moves_there(inst, win):
+    t1 = win["tab"]
+    p2, t2 = new_tab(inst, win)
+    q2 = split(inst, "right", p2, "--no-focus")
+    p3, t3 = new_tab(inst, win)
+    marker = "TABDROP-" + uuid.uuid4().hex[:8]
+    type_and_wait(inst, q2, f"echo {marker}", marker)
+    _select(inst, win, t2)
+
+    # Top centre: q2 goes to the end of the previous tab, which is shown with q2 focused.
+    result = rpc(inst, "debug.ui.pane.tabdrop", pane=q2, target="previous")
+    assert result["tab"] == t1
+    assert [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"], q2]
+    assert window_of(inst, win["window"])["selected_tab"] == t1
+    assert inst.tree().get("current_pane") == q2
+    assert marker in inst.cli("read", "--pane", q2, "--scrollback").stdout, "the session kept running"
+    # The first tab has no previous tab.
+    with pytest.raises(AssertionError, match="no previous tab"):
+        rpc(inst, "debug.ui.pane.tabdrop", pane=q2, target="previous")
+
+    # Bottom centre: back to the next tab, beside its last pane.
+    rpc(inst, "debug.ui.pane.tabdrop", pane=q2, target="next")
+    assert [p["id"] for p in tab_of(inst, t2)["panes"]] == [p2, q2]
+    assert window_of(inst, win["window"])["selected_tab"] == t2
+
+    # A tab's only pane: in the last tab, "next" makes a new tab after it, and its old tab closes.
+    _select(inst, win, t3)
+    result = rpc(inst, "debug.ui.pane.tabdrop", pane=p3, target="next")
+    ids = tab_ids(inst, win["window"])
+    assert t3 not in ids and ids[:2] == [t1, t2] and ids[2] == result["tab"]
+    assert [p["id"] for p in tab_of(inst, result["tab"])["panes"]] == [p3]
+
+
+@pytest.mark.req("M-4")
+def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(inst, win, ui):
+    """The real mouse: the pane's grab handle (top centre of the pane) dragged onto the targets."""
+    t1 = win["tab"]
+    p2, t2 = new_tab(inst, win)
+    ready(inst, p2)
+    _select(inst, win, t2)
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+
+    def pane_area():
+        element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane"), 5, message="the pane")
+        return _frame(ui, element)
+
+    x, y, w, h = pane_area()
+    _mouse_drag((x + w / 2, y + 6), (x + w / 2, y + 36))
+    wait_until(lambda: [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"], p2], 5,
+               message="moved to the end of the previous tab")
+    assert tab_of(inst, t2) is None, "its tab, left empty, closed"
+
+    # Back down: the first tab is shown with two panes; drag the second one (the right half).
+    wait_until(lambda: len(ui.find_all(lambda e: ui.label(e) == "Terminal pane")) == 2, 5, message="two panes shown")
+    panes = sorted(ui.find_all(lambda e: ui.label(e) == "Terminal pane"), key=lambda e: _frame(ui, e)[0])
+    x, y, w, h = _frame(ui, panes[-1])
+    area_centre = (_frame(ui, panes[0])[0] + x + w) / 2
+    _mouse_drag((x + w / 2, y + 6), (area_centre, y + h - 36))
+    wait_until(lambda: len(tab_ids(inst, win["window"])) == 2 and [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"]],
+               5, message="moved to a new tab after the last")
+
+
 # ---- M-4: dropping panes and tabs on the sidebar, dragging tabs out ------------------------------
 
 @pytest.mark.req("M-4", "M-1")
