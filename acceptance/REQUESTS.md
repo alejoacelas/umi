@@ -224,6 +224,14 @@ This supersedes "dragging a divider changes only the two panes beside it" (SPEC 
 by hand keeps its size, and the panes not sized by hand on each side of a dragged divider share
 that stretch equally.
 
+## 2026-11-04: files open in panes; dragging a pane to the previous or next tab
+
+> what I care about is that by default new files should be opened on a new pane, up to three per tab,
+> then go to new tab. and if opened from umi the file should show on a pane next to the pane that
+> called to open it
+>
+> also, dragging pane to top center should move to prev tab and to down center to next tab
+
 ## 2026-11-04: Warp's blacks
 
 > also, make umi use the same blacks as the warp blacks I currenlty use (the defaults I think)
@@ -233,6 +241,15 @@ His Warp follows the system theme, which in dark mode is Warp's default "Dark" t
 
 Then:
 > though let's use warp's terminal color config as well if it's straightforward to implement
+
+## 2026-11-04: stacks
+
+> also, if I drag a session on top of another, they should come to occupy the same pane space and be
+> accessible through the cmd [] shortcuts + a small tab thing at the top similarly to what we
+> currently do for files
+
+With files in panes of their own (above), the editor's file tabs became this strip: any panes can
+share a place, files included.
 
 ## 2026-11-04: three features removed
 

@@ -49,6 +49,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     /// The most recently focused surface, equal to `focusedSurface` when it is non-nil.
     @State private var lastFocusedSurface: Weak<Ghostty.SurfaceView>?
+    /// Umi: the pane being dragged, if any (for the previous/next tab drop targets).
+    @State private var draggingPane: Ghostty.SurfaceView.ID?
 
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
@@ -58,7 +60,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     @FocusedValue(\.ghosttySurfacePwd) private var surfacePwd
     @FocusedValue(\.ghosttySurfaceCellSize) private var cellSize
 
-    // Umi: the sidebar and editor around a window's terminals.
+    // Umi: the sidebar beside a window's panes.
     @ObservedObject private var umiState = UmiState.shared
 
     /// The focused terminal's initial size plus the sidebar.
@@ -99,19 +101,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                                 .transition(.move(edge: .leading))
                         }
 
-                        Group {
-                            if let controller {
-                                UmiEditorSplit(group: controller.selectedTab.editor,
-                                                background: ghostty.config.backgroundColor,
-                                                resize: { [weak controller] in controller?.editorDividerMoved(to: $0) }) {
-                                    terminals
-                                }
-                                .id(controller.selectedTab.id)
-                            } else {
-                                terminals
-                            }
-                        }
-                        .padding(.top, topInset)
+                        terminals
+                            .padding(.top, topInset)
                     }
                     .animation(.easeInOut(duration: 0.16), value: umiState.sidebarVisible)
                     .ignoresSafeArea(.container, edges: .top)
@@ -156,6 +147,12 @@ extension TerminalView {
                         .onAppear { controller?.terminalAreaSize = geo.size }
                         .onChange(of: geo.size) { controller?.terminalAreaSize = $0 }
                 })
+                .onPreferenceChange(Ghostty.DraggingSurfaceKey.self) { draggingPane = $0 }
+                .overlay {
+                    if let controller = viewModel as? TerminalController {
+                        UmiPaneTabDropTargets(controller: controller, draggingPane: draggingPane)
+                    }
+                }
                 .environmentObject(ghostty)
                 .ghosttyLastFocusedSurface(lastFocusedSurface)
                 .focused($focused)

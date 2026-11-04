@@ -78,6 +78,11 @@ enum UmiShortcuts {
             // Moving between tabs and panes (L-11, L-15).
             Item(id: "pane.go_to", title: "Go to Pane…", key: "p", modifiers: [.command, .shift], symbol: "rectangle.on.rectangle",
                  menu: "Window", action: { UmiPaletteModel.present(.panes) }),
+            // A stack's members (M-7); outside a stack, the previous or next pane.
+            Item(id: "pane.stack_previous", title: "Previous in Stack", key: "[", modifiers: [.command],
+                 symbol: "chevron.left.square", menu: "Window", action: { UmiStacks.cycle(-1) }),
+            Item(id: "pane.stack_next", title: "Next in Stack", key: "]", modifiers: [.command],
+                 symbol: "chevron.right.square", menu: "Window", action: { UmiStacks.cycle(1) }),
             Item(id: "tab.back", title: "Back to Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.uturn.backward",
                  menu: "Window", action: { if UmiNavigation.tabBack() == nil { NSSound.beep() } },
                  enabled: { UmiTabHistory.canGoBack }),

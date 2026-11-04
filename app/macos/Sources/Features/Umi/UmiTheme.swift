@@ -123,6 +123,8 @@ enum UmiTheme {
         keybind = super+shift+t=unbind
         # Tab switching, the palettes and Settings are Umi menu items that work whatever
         # has focus (terminal, editor, sidebar, palette): ⇧⌘[ ⇧⌘] ⌘1–9 ⌃Tab ⌃⇧Tab ⇧⌘P ⌘,.
+        keybind = super+[=unbind
+        keybind = super+]=unbind
         keybind = super+shift+[=unbind
         keybind = super+shift+]=unbind
         keybind = ctrl+tab=unbind

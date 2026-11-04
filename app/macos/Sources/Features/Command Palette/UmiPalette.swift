@@ -429,15 +429,14 @@ final class UmiPaletteModel: ObservableObject {
         let url = URL(fileURLWithPath: path)
         guard let window else { return }
         let tab = pane.flatMap { UmiTopology.locate($0) }.map(\.tab) ?? window.selectedTab
-        let target = UmiTopology.locate(tab: tab) ?? window
         do {
             try UmiTextFile.checkOpenable(url)
-            let doc = try tab.editor.open(url, mode: line != nil ? .source : nil)
-            if let line { doc.revealLine = line }
-            UmiFileIndex.noteOpened(url.path)
+            // Beside the pane the palette was opened from (E-9), focused.
             close(restoreFocus: false)
-            UmiLayout.focusTab(tab, in: target)
-            UmiEvents.shared.emit("editor.opened", ["path": doc.url.path, "tab": tab.idString, "window": target.umiIDString])
+            let anchor = pane ?? tab.effectiveFocusedSurface
+            guard let anchor else { throw UmiError.notFound("the tab has no panes") }
+            let doc = try UmiFilePanes.open(url, mode: line != nil ? .source : nil, near: anchor, focus: true).doc
+            if let line { doc.revealLine = line }
         } catch let error as UmiError {
             output = ("Open \(url.lastPathComponent)", error.message, true)
             step = .output
@@ -888,6 +887,8 @@ final class UmiFileIndex {
     private static var recent: [String] = []
 
     static func noteOpened(_ path: String) {
+        // Resolved, so a folder reached through a symlink (/var and /private/var) matches.
+        let path = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         recent.removeAll { $0 == path }
         recent.insert(path, at: 0)
         if recent.count > 100 { recent.removeLast(recent.count - 100) }
@@ -910,8 +911,9 @@ final class UmiFileIndex {
                 var candidates: [Candidate] = []
                 candidates.reserveCapacity(listing.files.count)
                 let changed = Set(listing.changed)
+                let resolvedRoot = URL(fileURLWithPath: listing.root).resolvingSymlinksInPath().path
                 for path in listing.files {
-                    let absolute = listing.root + "/" + path
+                    let absolute = resolvedRoot + "/" + path
                     let recentIndex = recent.firstIndex(of: absolute)
                     let isChanged = changed.contains(path)
                     let nameStart = (path.lastIndex(of: "/").map { path.utf8.distance(from: path.startIndex, to: $0) + 1 }) ?? 0

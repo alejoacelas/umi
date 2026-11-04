@@ -5,7 +5,7 @@ import GhosttyKit
 /// per-bundle saved state or user defaults, which every instance of the app would share):
 ///
 /// - `layout.json`: windows, tabs (names, colors, pins, order), split trees with each pane's
-///   folder and name, and each tab's open editor documents;
+///   folder and name, each file pane's file and each tab's stacks;
 /// - `ui.json`: the sidebar's visibility and mode, and the width new windows start with
 ///   (each window's own width is in `layout.json`).
 ///
@@ -103,13 +103,13 @@ final class UmiPersistence {
             json["focused_pane"] = focused.umiID
         }
         if let zoomed = tree.zoomed, case .leaf(let view) = zoomed { json["zoomed_pane"] = view.umiID }
-        if !tab.editor.isEmpty {
-            json["editor"] = [
-                "documents": tab.editor.documents.map { ["path": $0.url.path, "mode": $0.mode.rawValue] },
-                "active": tab.editor.active?.url.path ?? "",
-                "fraction": Double(tab.editor.fraction),
-                "placed": tab.editor.dividerPlaced,
-            ]
+        // Stacks (M-7): every member, in strip order; the one on show is also in the tree.
+        if !tab.stacks.isEmpty {
+            json["stacks"] = tab.stacks.map { stack in
+                stack.members.map { member -> [String: Any] in
+                    tree.contains(member) ? ["shown": member.umiID] : encode(node: .leaf(view: member))
+                }
+            }
         }
         return json
     }
@@ -120,6 +120,10 @@ final class UmiPersistence {
             var pane: [String: Any] = ["id": view.umiID, "cwd": UmiTopology.cwd(of: view)]
             if let name = UmiState.shared.paneName(view.id) { pane["name"] = name }
             if let session = UmiAgentUI.shared.session(forPane: view.id) { pane["agent"] = session }
+            if let doc = UmiFilePanes.shared.document(of: view) {
+                pane["file"] = doc.url.path
+                pane["mode"] = doc.mode.rawValue
+            }
             return ["pane": pane]
         case .split(let split):
             return ["split": [
@@ -182,17 +186,18 @@ final class UmiPersistence {
                 if let focusedID = tabJSON["focused_pane"] as? String {
                     tab.focusedSurface = root.leaves().first { $0.umiID == focusedID }
                 }
-                if let editor = tabJSON["editor"] as? [String: Any] {
-                    for doc in editor["documents"] as? [[String: Any]] ?? [] {
-                        guard let path = doc["path"] as? String else { continue }
-                        let mode = (doc["mode"] as? String).flatMap(UmiDocument.Mode.init(rawValue:))
-                        _ = try? tab.editor.open(URL(fileURLWithPath: path), mode: mode)
+                for stackJSON in tabJSON["stacks"] as? [[[String: Any]]] ?? [] {
+                    var members: [Ghostty.SurfaceView] = []
+                    for member in stackJSON {
+                        if let shown = member["shown"] as? String {
+                            if let view = root.leaves().first(where: { $0.umiID == shown }) { members.append(view) }
+                        } else if let node = decode(node: member, app: app), case .leaf(let view) = node {
+                            members.append(view)
+                        }
                     }
-                    if let active = editor["active"] as? String, let doc = tab.editor.document(for: URL(fileURLWithPath: active)) {
-                        tab.editor.active = doc
+                    if members.count > 1, members.contains(where: { root.leaves().contains($0) }) {
+                        tab.stacks.append(UmiPaneStack(members: members))
                     }
-                    if let fraction = editor["fraction"] as? Double { tab.editor.fraction = CGFloat(fraction) }
-                    tab.editor.dividerPlaced = editor["placed"] as? Bool ?? false
                 }
                 tabs.append(tab)
                 if tabJSON["id"] as? String == windowJSON["selected_tab"] as? String { selected = tab }
@@ -237,6 +242,13 @@ final class UmiPersistence {
             if let name = pane["name"] as? String { UmiState.shared.setPaneName(view.id, name) }
             // A pane that showed a managed session shows it again (AP-11).
             if let session = pane["agent"] as? String { UmiAgentUI.shared.attach(view.id, session: session) }
+            // A file pane shows its file again (a file that's gone or unreadable leaves the shell).
+            if let path = pane["file"] as? String {
+                let mode = (pane["mode"] as? String).flatMap(UmiDocument.Mode.init(rawValue:))
+                if let doc = try? UmiDocument(url: URL(fileURLWithPath: path), mode: mode) {
+                    UmiFilePanes.shared.attach(doc, to: view)
+                }
+            }
             return .leaf(view: view)
         }
         if let split = json["split"] as? [String: Any],

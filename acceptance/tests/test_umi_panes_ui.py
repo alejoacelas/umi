@@ -58,7 +58,7 @@ def tab_of(inst, tab_id):
 
 
 def frames(inst, tab_id):
-    return {p["id"]: p["frame"] for p in tab_of(inst, tab_id)["panes"]}
+    return {p["id"]: p["frame"] for p in tab_of(inst, tab_id)["panes"] if "frame" in p}
 
 
 def split(inst, direction, pane, *extra):
@@ -276,38 +276,17 @@ def test_a_keyboard_resize_still_moves_only_the_two_neighbors(inst, win):
 
 
 @pytest.mark.req("L-19", "E-1")
-def test_the_editor_panel_is_the_last_pane_of_the_top_row(inst, win, tmp_path):
+def test_a_file_pane_shares_its_row_like_any_pane(inst, win, tmp_path):
     a = win["pane"]
     b = split(inst, "right", a)
     doc = tmp_path / "row.md"
     doc.write_text("# Row\n")
     inst.cli("edit", str(doc), "--pane", a)
-    wait_until(lambda: inst.json("editor", "ls", "--tab", win["tab"])["documents"], 5, message="opened")
-    # a | b | editor at 25/25/50. Dragging a's divider to a quarter of the tab (half the terminals):
-    # a keeps 25%, b and the editor share the other 75%.
+    order = [p["id"] for p in tab_of(inst, win["tab"])["panes"]]
+    assert len(order) == 3 and order[0] == a and order[2] == b
+    assert shares(inst, win["tab"], order) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
     rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.5)
-    fraction = inst.json("editor", "ls", "--tab", win["tab"])["fraction"]
-    assert fraction == pytest.approx(0.375, abs=0.005)
-    assert shares(inst, win["tab"], [a, b]) == pytest.approx([40, 60], abs=0.3)
-    # Dragging the editor's divider: a was sized by hand and keeps its quarter of the tab; b,
-    # never sized, takes what the editor gives up.
-    rpc(inst, "debug.ui.editor.divider", tab=win["tab"], fraction=0.3)
-    assert inst.json("editor", "ls", "--tab", win["tab"])["fraction"] == pytest.approx(0.3, abs=0.005)
-    assert shares(inst, win["tab"], [a, b]) == pytest.approx([25 / 0.7, 45 / 0.7], abs=0.3)
-    # Now the editor is sized by hand too: dragging a's divider changes only a and b.
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.5)
-    assert inst.json("editor", "ls", "--tab", win["tab"])["fraction"] == pytest.approx(0.3, abs=0.005)
-    assert shares(inst, win["tab"], [a, b]) == pytest.approx([50, 50], abs=0.3)
-    # Panes nobody sized by hand (70/30 from `split --ratio`): dragging the editor's divider
-    # evens them.
-    p, tab = new_tab(inst, win)
-    inst.cli("tab", "focus", tab)
-    q = split(inst, "right", p, "--ratio", "0.3")
-    assert shares(inst, tab, [p, q]) == pytest.approx([70, 30], abs=0.3)
-    inst.cli("edit", str(doc), "--pane", p)
-    wait_until(lambda: inst.json("editor", "ls", "--tab", tab)["documents"], 5, message="opened")
-    rpc(inst, "debug.ui.editor.divider", tab=tab, fraction=0.4)
-    assert shares(inst, tab, [p, q]) == pytest.approx([50, 50], abs=0.3)
+    assert shares(inst, win["tab"], order) == pytest.approx([50, 25, 25], abs=0.3)
 
 
 @pytest.mark.req("L-7", "L-19")
@@ -727,6 +706,77 @@ def test_sidebar_widths_are_restored_with_the_layout(target, fresh):
     for w in other.tree()["windows"]:
         widths[w["id"]] = other.json("sidebar", "status", "--window", w["id"])["width"]
     assert {210, 333} <= set(widths.values()), widths
+
+
+# ---- M-4: dragging a pane to the previous or next tab ---------------------------------------------
+
+def _select(inst, win, tab):
+    inst.cli("tab", "focus", tab)
+    wait_until(lambda: window_of(inst, win["window"])["selected_tab"] == tab, 5, message="the tab shown")
+
+
+@pytest.mark.req("M-4", "M-1")
+def test_a_pane_dropped_on_the_previous_or_next_tab_target_moves_there(inst, win):
+    t1 = win["tab"]
+    p2, t2 = new_tab(inst, win)
+    q2 = split(inst, "right", p2, "--no-focus")
+    p3, t3 = new_tab(inst, win)
+    marker = "TABDROP-" + uuid.uuid4().hex[:8]
+    type_and_wait(inst, q2, f"echo {marker}", marker)
+    _select(inst, win, t2)
+
+    # Top centre: q2 goes to the end of the previous tab, which is shown with q2 focused.
+    result = rpc(inst, "debug.ui.pane.tabdrop", pane=q2, target="previous")
+    assert result["tab"] == t1
+    assert [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"], q2]
+    assert window_of(inst, win["window"])["selected_tab"] == t1
+    assert inst.tree().get("current_pane") == q2
+    assert marker in inst.cli("read", "--pane", q2, "--scrollback").stdout, "the session kept running"
+    # The first tab has no previous tab.
+    with pytest.raises(AssertionError, match="no previous tab"):
+        rpc(inst, "debug.ui.pane.tabdrop", pane=q2, target="previous")
+
+    # Bottom centre: back to the next tab, beside its last pane.
+    rpc(inst, "debug.ui.pane.tabdrop", pane=q2, target="next")
+    assert [p["id"] for p in tab_of(inst, t2)["panes"]] == [p2, q2]
+    assert window_of(inst, win["window"])["selected_tab"] == t2
+
+    # A tab's only pane: in the last tab, "next" makes a new tab after it, and its old tab closes.
+    _select(inst, win, t3)
+    result = rpc(inst, "debug.ui.pane.tabdrop", pane=p3, target="next")
+    ids = tab_ids(inst, win["window"])
+    assert t3 not in ids and ids[:2] == [t1, t2] and ids[2] == result["tab"]
+    assert [p["id"] for p in tab_of(inst, result["tab"])["panes"]] == [p3]
+
+
+@pytest.mark.req("M-4")
+def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(inst, win, ui):
+    """The real mouse: the pane's grab handle (top centre of the pane) dragged onto the targets."""
+    t1 = win["tab"]
+    p2, t2 = new_tab(inst, win)
+    ready(inst, p2)
+    _select(inst, win, t2)
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+
+    def pane_area():
+        element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane"), 5, message="the pane")
+        return _frame(ui, element)
+
+    x, y, w, h = pane_area()
+    _mouse_drag((x + w / 2, y + 6), (x + w / 2, y + 36))
+    wait_until(lambda: [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"], p2], 5,
+               message="moved to the end of the previous tab")
+    assert tab_of(inst, t2) is None, "its tab, left empty, closed"
+
+    # Back down: the first tab is shown with two panes; drag the second one (the right half).
+    wait_until(lambda: len(ui.find_all(lambda e: ui.label(e) == "Terminal pane")) == 2, 5, message="two panes shown")
+    panes = sorted(ui.find_all(lambda e: ui.label(e) == "Terminal pane"), key=lambda e: _frame(ui, e)[0])
+    x, y, w, h = _frame(ui, panes[-1])
+    area_centre = (_frame(ui, panes[0])[0] + x + w) / 2
+    _mouse_drag((x + w / 2, y + 6), (area_centre, y + h - 36))
+    wait_until(lambda: len(tab_ids(inst, win["window"])) == 2 and [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"]],
+               5, message="moved to a new tab after the last")
 
 
 # ---- M-4: dropping panes and tabs on the sidebar, dragging tabs out ------------------------------

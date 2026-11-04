@@ -389,8 +389,7 @@ enum UmiRPC {
             if params.bool("replace") ?? false || !text.isEmpty {
                 doc.text = (params.bool("replace") ?? false) ? text : doc.text + text
             }
-            tab.editor.active = doc
-            var json = UmiEditor.json(doc)
+            var json = UmiEditor.json(doc, pane: tab.editor.pane(of: doc))
             json["text"] = doc.text
             json["error"] = doc.error ?? ""
             return json

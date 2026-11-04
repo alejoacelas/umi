@@ -181,7 +181,12 @@ enum UmiLayout {
 
     /// Show a pane's tab and give the pane keyboard focus, bringing its window forward.
     static func focusPane(_ pane: Ghostty.SurfaceView, activate: Bool) {
-        guard let location = UmiTopology.locate(pane) else { return }
+        guard var location = UmiTopology.locate(pane) else { return }
+        // A stack member that isn't on show comes on show (M-7).
+        if !location.window.tree(of: location.tab).contains(pane) {
+            try? UmiStacks.show(pane, focus: false)
+            location = UmiTopology.locate(pane) ?? location
+        }
         let window = location.window
         // A zoomed tab shows only its zoomed pane: focusing another one unzooms, so the
         // focused pane is the one on screen.
@@ -245,6 +250,11 @@ enum UmiLayout {
         let window = location.window
         let tab = location.tab
         let tree = window.tree(of: tab)
+        if !tree.contains(pane), tab.stack(of: pane) != nil {
+            // A stack member that isn't on show: it leaves its stack and its program ends.
+            window.removeHiddenMember(pane, from: tab)
+            return
+        }
         guard let node = tree.root?.node(view: pane) else { throw UmiError.notFound("the pane isn't in its tab") }
         UmiEvents.shared.emit("pane.closed", ["pane": pane.umiID, "tab": tab.idString, "window": window.umiIDString])
         if tab === window.selectedTab {
@@ -356,7 +366,12 @@ enum UmiLayout {
     /// window) closes if it becomes empty. Returns where the pane ended up.
     @discardableResult
     static func move(_ pane: Ghostty.SurfaceView, to destination: PaneDestination, focus: Bool) throws -> UmiTopology.Location {
-        guard let source = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
+        guard var source = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
+        if !source.window.tree(of: source.tab).contains(pane) {
+            // A stack member that isn't on show moves from its stack's place.
+            try UmiStacks.show(pane, focus: false)
+            source = UmiTopology.locate(pane) ?? source
+        }
         if case .besidePane(let target, _) = destination, target === pane {
             throw UmiError.badRequest("can't move a pane next to itself")
         }
@@ -399,14 +414,14 @@ enum UmiLayout {
         case .besidePane(let target, let direction):
             guard let dest = UmiTopology.locate(target) else { throw UmiError.notFound("the target pane isn't in a window") }
             if dest.tab === source.tab {
-                let without = sourceTree.removing(node)
+                let without = source.window.umiRemoving(node, from: sourceTree, in: source.tab).tree
                 let newTree = try without.inserting(view: pane, at: target, direction: direction)
                 source.window.setTree(SplitTree(root: newTree.root, zoomed: nil), for: source.tab)
             } else {
                 let destTree = dest.window.tree(of: dest.tab)
                 let newDestTree = try destTree.inserting(view: pane, at: target, direction: direction)
                 dest.window.setTree(SplitTree(root: newDestTree.root, zoomed: nil), for: dest.tab)
-                removeFromSource(pane, node: node, source: source, adoptingInto: dest.tab)
+                removeFromSource(pane, node: node, source: source)
             }
             if focus { focusPane(pane, activate: true) }
             return UmiTopology.Location(window: dest.window, tab: dest.tab, pane: pane)
@@ -415,7 +430,7 @@ enum UmiLayout {
             let tab = UmiTab(tree: .init(view: pane))
             let position = index ?? ((window.index(of: source.tab).map { $0 + 1 }) ?? window.newTabIndex(selecting: focus))
             window.insertTab(tab, at: position)
-            removeFromSource(pane, node: node, source: source, adoptingInto: tab)
+            removeFromSource(pane, node: node, source: source)
             if focus {
                 focusPane(pane, activate: true)
             }
@@ -424,7 +439,7 @@ enum UmiLayout {
 
         case .newWindow:
             let tab = UmiTab(tree: .init(view: pane))
-            removeFromSource(pane, node: node, source: source, adoptingInto: tab)
+            removeFromSource(pane, node: node, source: source)
             if size.width > 0, size.height > 0 { pane.frame.size = size }
             let controller = TerminalController.newWindow(
                 ghostty, tabs: [tab], selected: tab,
@@ -434,13 +449,12 @@ enum UmiLayout {
         }
     }
 
-    /// Take a pane out of its tab. A tab left empty closes (and a window left without tabs);
-    /// its editor documents go with the pane to `adoptingInto`, so no edit is dropped.
+    /// Take a pane out of its tab (its stack's next member takes its place). A tab left empty
+    /// closes (and a window left without tabs).
     private static func removeFromSource(_ pane: Ghostty.SurfaceView, node: SplitTree<Ghostty.SurfaceView>.Node,
-                                         source: UmiTopology.Location, adoptingInto destination: UmiTab) {
-        let newTree = source.window.tree(of: source.tab).removing(node)
+                                         source: UmiTopology.Location) {
+        let newTree = source.window.umiRemoving(node, from: source.window.tree(of: source.tab), in: source.tab).tree
         if newTree.isEmpty {
-            destination.editor.adopt(from: source.tab.editor)
             source.window.detachTab(source.tab, focusNeighbor: false)
             UmiEvents.shared.emit("tab.closed", ["tab": source.tab.idString, "window": source.window.umiIDString])
         } else {
@@ -585,6 +599,8 @@ struct UmiSnapshot {
         let tree: WeakNode?
         let zoomed: Weak<Ghostty.SurfaceView>?
         let focused: Weak<Ghostty.SurfaceView>?
+        /// The tab's stacks (M-7), members in strip order.
+        let stacks: [[Weak<Ghostty.SurfaceView>]]
     }
 
     struct WindowState {
@@ -608,7 +624,8 @@ struct UmiSnapshot {
                 if let node = tree.zoomed, case .leaf(let view) = node { zoomed = Weak(view) }
                 let focused = (tab === controller.selectedTab ? controller.focusedSurface : nil) ?? tab.focusedSurface
                 return TabState(tab: Weak(tab), id: tab.id, name: tab.name, color: tab.color, pinned: tab.pinned,
-                                tree: tree.root.map(WeakNode.init), zoomed: zoomed, focused: focused.map { Weak($0) })
+                                tree: tree.root.map(WeakNode.init), zoomed: zoomed, focused: focused.map { Weak($0) },
+                                stacks: tab.stacks.map { $0.members.map { Weak($0) } })
             }
             states.append(WindowState(box: UmiSnapshot.box(for: controller), tabs: tabs, selected: controller.selectedTab.id,
                                       frame: controller.window?.frame,
@@ -666,9 +683,7 @@ struct UmiSnapshot {
 
         // 2. Once, before restoring anything: take restored tabs out of other windows, and
         //    the panes being placed out of every tab that isn't being restored, so no pane
-        //    is ever in two trees and nothing restored is touched again. A tab this empties
-        //    leaves its editor documents to the restored tab that gets its panes back.
-        var orphans: [(editor: UmiEditorGroup, panes: Set<ObjectIdentifier>)] = []
+        //    is ever in two trees and nothing restored is touched again.
         for controller in TerminalController.all where !controller.isClosed {
             for existing in controller.tabs {
                 if let target = targetOf[ObjectIdentifier(existing)] {
@@ -684,7 +699,6 @@ struct UmiSnapshot {
                 }
                 guard newTree.root != tree.root else { continue }
                 if newTree.isEmpty {
-                    orphans.append((existing.editor, Set((tree.root?.leaves() ?? []).map(ObjectIdentifier.init))))
                     controller.detachTab(existing, focusNeighbor: false, keepWindow: true)
                 } else {
                     controller.setTree(newTree, for: existing)
@@ -706,9 +720,11 @@ struct UmiSnapshot {
                 if let z = tabState.zoomed?.value, let node = tabPlan.root.node(view: z) { zoomedNode = node }
                 tab.tree = SplitTree(root: tabPlan.root, zoomed: zoomedNode)
                 if let f = tabState.focused?.value, tab.tree.contains(f) { tab.focusedSurface = f }
-                let leaves = Set(tabPlan.root.leaves().map(ObjectIdentifier.init))
-                for orphan in orphans where !orphan.panes.isDisjoint(with: leaves) {
-                    tab.editor.adopt(from: orphan.editor)
+                // Stacks: their live members, each stack still holding the member on show.
+                tab.stacks = tabState.stacks.compactMap { weak in
+                    let members = weak.compactMap { $0.value }.filter { UmiSnapshot.isAlive($0) }
+                    guard members.count > 1, members.contains(where: { tab.tree.contains($0) }) else { return nil }
+                    return UmiPaneStack(members: members)
                 }
                 tabs.append(tab)
             }
@@ -748,11 +764,6 @@ struct UmiSnapshot {
                 state.box.controller = controller
                 UmiSnapshot.boxes[ObjectIdentifier(controller)] = state.box
             }
-        }
-
-        // Documents no restored tab took are saved, or kept as a recovery copy.
-        for orphan in orphans {
-            for doc in orphan.editor.documents { doc.preserveEdits() }
         }
 
         // 4. Windows the undone step created, now holding only panes that moved back, and

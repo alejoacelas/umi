@@ -1,3 +1,4 @@
+import WebKit
 import AppKit
 import GhosttyKit
 import UserNotifications
@@ -218,6 +219,11 @@ enum UmiNotify {
 /// An image of a window, terminal contents included (T-7).
 @MainActor
 enum UmiScreenshot {
+    private static func webViews(in view: NSView) -> [WKWebView] {
+        if let web = view as? WKWebView { return [web] }
+        return view.subviews.flatMap { webViews(in: $0) }
+    }
+
     static func capture(_ controller: TerminalController, to path: String) async throws {
         guard let window = controller.window, let content = window.contentView else {
             throw UmiError.failed("the window has no content")
@@ -233,6 +239,14 @@ enum UmiScreenshot {
         }
         content.cacheDisplay(in: bounds, to: rep)
 
+        // Web views (a file pane's preview) don't draw into that cache: snapshot each one.
+        var webImages: [(NSImage, NSRect)] = []
+        for web in Self.webViews(in: content) where !web.isHiddenOrHasHiddenAncestor && web.bounds.width > 0 {
+            if let image = try? await web.takeSnapshot(configuration: nil) {
+                webImages.append((image, web.convert(web.bounds, to: content)))
+            }
+        }
+
         // Terminal panes draw with Metal; draw each visible pane's own image on top.
         let image = NSImage(size: bounds.size)
         image.addRepresentation(rep)
@@ -242,12 +256,14 @@ enum UmiScreenshot {
         bounds.fill()
         image.draw(in: bounds)
         // (A pane showing a session's read-only view is drawn by its AppKit view, already in the capture.)
+        // (A file pane is drawn by its editor's views, also in the capture.)
         for pane in controller.surfaceTree.root?.leaves() ?? [] where pane.window === window && !pane.isHiddenOrHasHiddenAncestor
-            && !UmiAgentUI.shared.isShowingAgent(pane.id) {
+            && !UmiAgentUI.shared.isShowingAgent(pane.id) && !UmiFilePanes.shared.isFilePane(pane.id) {
             guard let paneImage = pane.terminalImage() else { continue }
             let frame = pane.convert(pane.bounds, to: content)
             paneImage.draw(in: frame)
         }
+        for (webImage, frame) in webImages { webImage.draw(in: frame) }
         // Overlays drawn above the terminals (the palettes) go on top again.
         if controller.palette.isPresented, let overlay = controller.palette.capturedImage(in: content) {
             overlay.image.draw(in: overlay.frame)

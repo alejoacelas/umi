@@ -49,12 +49,20 @@ def margin(inst, path, action="state", **params):
 
 
 def shown(inst, win, path, fraction=0.75):
-    """Open the file in the preview, with the editor panel at `fraction` of the tab (and no
+    """Open the file in the preview, in a pane beside win's taking `fraction` of the tab (and no
     sidebar, whose width other tests change, taking the window's width)."""
     inst.cli("sidebar", "off", "--window", win["window"])
     inst.cli("edit", path, "--pane", win["pane"])
-    inst.rpc("debug.ui.editor.divider", tab=win["tab"], fraction=fraction)
+    size_file_pane(inst, win, path, fraction)
     wait_until(lambda: _ready(inst, path), 10, message="the preview's comment margin")
+
+
+def size_file_pane(inst, win, path, fraction):
+    """Drag the divider between win's pane and the file's pane (to its right) so the file's
+    pane takes `fraction` of the row."""
+    pane = next(d["pane"] for d in inst.json("editor", "ls", "--tab", win["tab"])["documents"]
+                if os.path.realpath(d["path"]) == os.path.realpath(path))
+    inst.rpc("debug.ui.split.divider", pane=pane, action="move", ratio=1 - fraction)
 
 
 def _ready(inst, path):
@@ -128,7 +136,7 @@ def test_a_narrow_editor_shows_the_selected_thread_under_its_words(inst, win, do
     margin(inst, doc, "mark", id="c1")
     wait_until(lambda: [c["id"] for c in margin(inst, doc)["cards"]] == ["c1"], 5, message="c1 shown when its words are clicked")
     # Wider again: the margin comes back with both.
-    inst.rpc("debug.ui.editor.divider", tab=win["tab"], fraction=0.75)
+    size_file_pane(inst, win, doc, 0.75)
     wait_until(lambda: margin(inst, doc)["margin"] and len(margin(inst, doc)["cards"]) == 2, 5, message="the margin")
 
 
@@ -300,7 +308,7 @@ def test_the_review_loop_an_agent_shows_waits_reads_and_answers(inst, win, doc):
     gets the comments, answers and changes the text, and the user sees it in the margin."""
     inst.cli("sidebar", "off", "--window", win["window"])
     inst.cli("edit", doc, "--pane", win["pane"])
-    inst.rpc("debug.ui.editor.divider", tab=win["tab"], fraction=0.75)
+    size_file_pane(inst, win, doc, 0.75)
     waiter = subprocess.Popen([inst.target.cli_path, "comments", "wait", doc, "--timeout", "60"], env=inst.env,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:

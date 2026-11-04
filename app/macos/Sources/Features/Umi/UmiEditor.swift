@@ -350,78 +350,6 @@ final class UmiDocument: ObservableObject, Identifiable {
     }
 }
 
-/// The open files of one tab, shown in a panel beside its terminals.
-@MainActor
-final class UmiEditorGroup: ObservableObject {
-    @Published var documents: [UmiDocument] = []
-    @Published var active: UmiDocument?
-    /// Panel width as a fraction of the tab's width.
-    @Published var fraction: CGFloat = 0.5 {
-        didSet { if fraction != oldValue { UmiState.shared.layoutDidChange(persistOnly: true) } }
-    }
-    /// The user dragged the panel's divider: the panel is sized by hand (L-19).
-    var dividerPlaced = false
-    /// How narrow and how wide the panel can be dragged.
-    static let fractionLimits: ClosedRange<CGFloat> = 0.2...0.85
-
-    var isEmpty: Bool { documents.isEmpty }
-
-    /// The panel as the last member of its tab's top row (L-19).
-    var trailingPanel: SplitTrailingPanel {
-        SplitTrailingPanel(share: Double(fraction), placed: dividerPlaced,
-                           limits: Double(Self.fractionLimits.lowerBound)...Double(Self.fractionLimits.upperBound))
-    }
-
-    func document(for url: URL) -> UmiDocument? {
-        let target = url.standardizedFileURL.resolvingSymlinksInPath()
-        return documents.first { $0.url.resolvingSymlinksInPath() == target }
-    }
-
-    @discardableResult
-    func open(_ url: URL, mode: UmiDocument.Mode?) throws -> UmiDocument {
-        let standardized = url.standardizedFileURL.resolvingSymlinksInPath()
-        if let existing = document(for: standardized) {
-            if let mode, existing.hasPreview { existing.mode = mode }
-            active = existing
-            return existing
-        }
-        let doc = try UmiDocument(url: standardized, mode: mode)
-        doc.reviewWaiters = UmiEvents.shared.waiters(on: doc.url.path)
-        documents.append(doc)
-        active = doc
-        UmiState.shared.layoutDidChange()
-        UmiFileIndex.noteOpened(standardized.path)
-        return doc
-    }
-
-    /// Take over another group's documents (its tab is going away). A file this group
-    /// already has open keeps this group's copy; the other copy's unsaved edits are saved
-    /// or kept as a recovery copy.
-    func adopt(from other: UmiEditorGroup) {
-        guard other !== self, !other.documents.isEmpty else { return }
-        for doc in other.documents {
-            if document(for: doc.url) != nil {
-                doc.preserveEdits()
-            } else {
-                documents.append(doc)
-            }
-        }
-        if active == nil { active = other.active.flatMap { a in documents.first { $0 === a } } ?? documents.first }
-        other.documents = []
-        other.active = nil
-        UmiState.shared.layoutDidChange()
-    }
-
-    func close(_ doc: UmiDocument) {
-        guard let index = documents.firstIndex(where: { $0 === doc }) else { return }
-        documents.remove(at: index)
-        if active === doc {
-            active = documents.isEmpty ? nil : documents[min(index, documents.count - 1)]
-        }
-        UmiState.shared.layoutDidChange()
-    }
-}
-
 // MARK: - Opening and the CLI
 
 @MainActor
@@ -478,76 +406,89 @@ enum UmiEditor {
         return (window, window.selectedTab)
     }
 
+    /// The pane a file opened by a request goes beside (E-9): an explicit pane, else the focused
+    /// pane of an explicit tab (both must exist), else the caller's pane, else the focused pane.
+    static func anchorPane(_ params: UmiParams, caller: UmiCaller) throws -> Ghostty.SurfaceView {
+        if let pane = params.string("pane") { return try UmiTopology.resolvePane(pane, caller: caller) }
+        if let tab = params.string("tab") {
+            let (_, found) = try UmiTopology.resolveTab(tab, caller: caller)
+            guard let pane = found.effectiveFocusedSurface else { throw UmiError.notFound("that tab has no panes") }
+            return pane
+        }
+        if let callerPane = try UmiTopology.callerPane(caller) { return callerPane }
+        let (_, tab) = try targetTab(params, caller: caller, createWindow: true)
+        guard let pane = tab.effectiveFocusedSurface else { throw UmiError.notFound("no Umi windows are open") }
+        return pane
+    }
+
+    /// `edit FILE…`: each file in a pane of its own, the first beside the anchor pane and each
+    /// next one beside the one before, three panes to a tab (E-1, E-9). Keyboard focus stays
+    /// where it is.
     static func handleOpen(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
         guard let paths = params.strings("paths"), !paths.isEmpty else { throw UmiError.badRequest("edit: name a file") }
         let mode = params.string("mode").flatMap(UmiDocument.Mode.init(rawValue:))
         // Check every file first: a refusal changes nothing.
         for path in paths { try UmiTextFile.checkOpenable(URL(fileURLWithPath: path)) }
-        let (window, tab) = try targetTab(params, caller: caller, createWindow: true)
+        var anchor = try anchorPane(params, caller: caller)
         var opened: [[String: Any]] = []
         for path in paths {
-            let doc = try tab.editor.open(URL(fileURLWithPath: path), mode: mode)
-            opened.append(json(doc))
-            UmiEvents.shared.emit("editor.opened", ["path": doc.url.path, "tab": tab.idString, "window": window.umiIDString])
+            let (pane, doc) = try UmiFilePanes.open(URL(fileURLWithPath: path), mode: mode, near: anchor, focus: false)
+            opened.append(json(doc, pane: pane))
+            anchor = pane
         }
-        return ["documents": opened, "tab": tab.idString, "window": window.umiIDString]
+        let location = UmiTopology.locate(anchor)
+        return ["documents": opened, "tab": location?.tab.idString ?? "", "window": location?.window.umiIDString ?? ""]
     }
 
     static func handleList(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
         let (window, tab) = try targetTab(params, caller: caller, createWindow: false)
-        return ["documents": tab.editor.documents.map(json), "tab": tab.idString, "window": window.umiIDString,
-                "active": tab.editor.active?.url.path ?? "",
-                "fraction": tab.editor.isEmpty ? 0 : Double(tab.editor.fraction)]
+        return ["documents": tab.editor.files.map { json($0.doc, pane: $0.pane) }, "tab": tab.idString,
+                "window": window.umiIDString, "active": tab.editor.active?.url.path ?? ""]
     }
 
-    static func handleClose(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
-        let (_, tab) = try targetTab(params, caller: caller, createWindow: false)
-        let doc: UmiDocument
+    /// The document a request names (`path`) or, without one, the tab's active one.
+    private static func document(_ params: UmiParams, in tab: UmiTab) throws -> UmiDocument {
         if let path = params.string("path") {
             guard let found = tab.editor.document(for: URL(fileURLWithPath: path)) else {
                 throw UmiError.notFound("\(path) isn't open in that tab")
             }
-            doc = found
-        } else {
-            guard let active = tab.editor.active else { throw UmiError.notFound("no file is open in that tab") }
-            doc = active
+            return found
         }
+        guard let active = tab.editor.active else { throw UmiError.notFound("no file is open in that tab") }
+        return active
+    }
+
+    static func handleClose(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
+        let (_, tab) = try targetTab(params, caller: caller, createWindow: false)
+        let doc = try document(params, in: tab)
         if doc.isDirty && !(params.bool("force") ?? false) {
             throw UmiError.badRequest("\(doc.name) has unsaved changes; save it first or use --force to discard them")
         }
         tab.editor.close(doc)
-        UmiEvents.shared.emit("editor.closed", ["path": doc.url.path, "tab": tab.idString])
         return ["path": doc.url.path, "closed": true]
     }
 
     static func handleMode(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
         let (_, tab) = try targetTab(params, caller: caller, createWindow: false)
-        let doc: UmiDocument
-        if let path = params.string("path") {
-            guard let found = tab.editor.document(for: URL(fileURLWithPath: path)) else {
-                throw UmiError.notFound("\(path) isn't open in that tab")
-            }
-            doc = found
-        } else {
-            guard let active = tab.editor.active else { throw UmiError.notFound("no file is open in that tab") }
-            doc = active
-        }
+        let doc = try document(params, in: tab)
         if let raw = params.string("mode") {
             guard let mode = UmiDocument.Mode(rawValue: raw) else { throw UmiError.badRequest("use preview or source") }
             guard doc.hasPreview || mode == .source else {
-                throw UmiError.badRequest("\(doc.name) isn't Markdown; it only has a source view")
+                throw UmiError.badRequest("\(doc.name) has no preview; it only has a source view")
             }
             doc.mode = mode
         } else {
-            guard doc.hasPreview else { throw UmiError.badRequest("\(doc.name) isn't Markdown; it only has a source view") }
+            guard doc.hasPreview else { throw UmiError.badRequest("\(doc.name) has no preview; it only has a source view") }
             doc.toggleMode()
         }
-        return json(doc)
+        return json(doc, pane: tab.editor.pane(of: doc))
     }
 
-    static func json(_ doc: UmiDocument) -> [String: Any] {
-        ["path": doc.url.path, "mode": doc.mode.rawValue, "dirty": doc.isDirty,
-         "encoding": UmiTextFile.encodingName(doc.encoding), "changed_on_disk": doc.changedOnDisk]
+    static func json(_ doc: UmiDocument, pane: Ghostty.SurfaceView? = nil) -> [String: Any] {
+        var json: [String: Any] = ["path": doc.url.path, "mode": doc.mode.rawValue, "dirty": doc.isDirty,
+                                   "encoding": UmiTextFile.encodingName(doc.encoding), "changed_on_disk": doc.changedOnDisk]
+        if let pane { json["pane"] = pane.umiID }
+        return json
     }
 
     /// Open a file from Finder or `open FILE` (Umi is the default Markdown app), bringing it
@@ -573,12 +514,12 @@ enum UmiEditor {
     @discardableResult
     static func open(_ url: URL, inCurrentTab: Bool) throws -> (TerminalController, UmiTab) {
         try UmiTextFile.checkOpenable(url)
-        let (window, tab) = inCurrentTab
+        let (_, tab) = inCurrentTab
             ? try targetTab(UmiParams([:]), caller: UmiCaller([:]), createWindow: true)
             : try closestTab(to: url)
-        try tab.editor.open(url, mode: nil)
-        UmiLayout.focusTab(tab, in: window)
-        return (window, tab)
+        let pane = try tab.editor.open(url, mode: nil, focus: true).pane
+        guard let location = UmiTopology.locate(pane) else { throw UmiError.failed("the file's pane went away") }
+        return (location.window, location.tab)
     }
 
     /// The tab a file from outside Umi opens in (E-10):
@@ -639,9 +580,9 @@ enum UmiEditor {
         return resolved.count > 1 && resolved.hasSuffix("/") ? String(resolved.dropLast()) : resolved
     }
 
-    /// The active document of the current tab (for menu commands).
+    /// The focused pane's document (for menu commands).
     static var currentDocument: UmiDocument? {
-        UmiTopology.currentWindow?.selectedTab.editor.active
+        UmiTopology.currentPane.flatMap { UmiFilePanes.shared.document(of: $0) }
     }
 
     /// True when keyboard focus is in an editor view.
@@ -707,158 +648,8 @@ enum UmiEditor {
 
 // MARK: - Views
 
-/// A tab's terminals with its editor panel (when files are open) on the right,
-/// separated by a draggable divider.
-struct UmiEditorSplit<Content: View>: View {
-    @ObservedObject var group: UmiEditorGroup
-    let background: Color
-    /// Dragging the divider (to a fraction of the tab's width).
-    let resize: (CGFloat) -> Void
-    @ViewBuilder let content: () -> Content
-    @State private var dragStart: CGFloat?
-
-    var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 0) {
-                content()
-                if !group.isEmpty {
-                    Rectangle()
-                        .fill(UmiTheme.hairline)
-                        .frame(width: 1)
-                        .overlay(
-                            Color.clear
-                                .frame(width: 8)
-                                .contentShape(Rectangle())
-                                .onHover { inside in
-                                    if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-                                }
-                                .gesture(DragGesture(minimumDistance: 1).onChanged { value in
-                                    let start = dragStart ?? group.fraction
-                                    dragStart = start
-                                    let delta = value.translation.width / max(geometry.size.width, 1)
-                                    resize(start - delta)
-                                }.onEnded { _ in dragStart = nil })
-                        )
-                    UmiEditorPanel(group: group, background: background)
-                        .frame(width: geometry.size.width * group.fraction)
-                }
-            }
-        }
-    }
-}
-
-/// The editor panel: file tabs, the preview/source toggle, and the document.
-struct UmiEditorPanel: View {
-    @ObservedObject var group: UmiEditorGroup
-    let background: Color
-
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            if let doc = group.active {
-                UmiDocumentView(doc: doc, group: group, background: background)
-                    .id(doc.id)
-            }
-        }
-        .background(background)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Editor")
-    }
-
-    /// One row when the file tabs and the Preview/Source control fit side by side; in a narrow
-    /// panel the control goes on a row of its own, so the tabs (the active one included) stay
-    /// readable.
-    private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 2) {
-                tabs(shrinking: false)
-                Spacer(minLength: 8)
-                modeToggle
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 34)
-            VStack(alignment: .leading, spacing: 0) {
-                tabs(shrinking: true)
-                    .padding(.horizontal, 10)
-                    .frame(height: 34)
-                if group.active?.hasPreview == true {
-                    HStack {
-                        Spacer(minLength: 0)
-                        modeToggle
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 4)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var modeToggle: some View {
-        if let doc = group.active, doc.hasPreview {
-            UmiModeToggle(doc: doc)
-                .fixedSize()
-        }
-    }
-
-    /// The file tabs. Shrinking, they share the row and their names truncate.
-    @ViewBuilder
-    private func tabs(shrinking: Bool) -> some View {
-        HStack(spacing: 2) {
-            ForEach(group.documents) { doc in
-                UmiEditorTabChip(doc: doc, selected: doc === group.active,
-                                  select: { group.active = doc },
-                                  close: { UmiEditor.confirmClose(doc, in: group, window: nil) })
-                    .frame(minWidth: shrinking ? 44 : nil, alignment: .leading)
-                    .fixedSize(horizontal: !shrinking, vertical: false)
-                    .layoutPriority(doc === group.active ? 1 : 0)
-            }
-        }
-        .clipped()
-    }
-}
-
-private struct UmiEditorTabChip: View {
-    @ObservedObject var doc: UmiDocument
-    let selected: Bool
-    let select: () -> Void
-    let close: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: UmiEditor.icon(for: doc.url))
-                .font(.system(size: 10))
-            Text(doc.name)
-                .font(UmiTheme.uiFont)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            if doc.isDirty && !hovering {
-                Circle().fill(UmiTheme.textSecondary).frame(width: 6, height: 6).frame(width: 14)
-                    .accessibilityLabel("Unsaved changes")
-            } else {
-                Button(action: close) {
-                    Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
-                }
-                .buttonStyle(.plain)
-                .opacity(hovering || selected ? 1 : 0)
-                .help("Close (⌘W)")
-                .accessibilityLabel("Close \(doc.name)")
-            }
-        }
-        .foregroundColor(selected ? UmiTheme.textPrimary : UmiTheme.textTertiary)
-        .padding(.horizontal, 8)
-        .frame(height: 24)
-        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? UmiTheme.selectedFill : (hovering ? UmiTheme.hoverFill : .clear)))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: select)
-        .help(doc.url.path)
-    }
-}
-
 /// The visible preview/source control (E-2).
-private struct UmiModeToggle: View {
+struct UmiModeToggle: View {
     @ObservedObject var doc: UmiDocument
 
     var body: some View {
@@ -932,6 +723,31 @@ struct UmiDocumentView: View {
 final class UmiEditorContainerView: NSView {
     weak var document: UmiDocument?
     var closeDocument: (() -> Void)?
+    /// The editor inside took keyboard focus.
+    var didFocus: (() -> Void)?
+
+    /// Tell the container around `view` that it took keyboard focus.
+    static func focused(_ view: NSView) {
+        var current = view.superview
+        while let candidate = current {
+            if let container = candidate as? UmiEditorContainerView {
+                container.didFocus?()
+                return
+            }
+            current = candidate.superview
+        }
+    }
+
+    /// The pane this editor is in takes focus with it, and its editor is what focusing the pane
+    /// focuses.
+    func attach(to group: UmiEditorGroup, focusTarget: NSView) {
+        guard let pane = group.pane else { return }
+        UmiFilePanes.shared.registerFocusTarget(focusTarget, for: pane.id)
+        didFocus = { [weak pane] in
+            guard let pane else { return }
+            UmiFilePanes.shared.editorFocused(pane: pane)
+        }
+    }
 
     @objc func saveDocument(_ sender: Any?) { document?.save() }
     @objc func toggleMarkdownPreview(_ sender: Any?) { document?.toggleMode() }
@@ -973,7 +789,7 @@ struct UmiSourceEditor: NSViewRepresentable {
             UmiEditor.confirmClose(doc, in: group, window: container?.window)
         }
         doc.commentTarget = context.coordinator
-        let scroll = NSTextView.scrollableTextView()
+        let scroll = UmiEditorTextView.scrollable()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -997,6 +813,7 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.textContainerInset = NSSize(width: 12, height: 10)
             textView.string = doc.text
             textView.setAccessibilityLabel(doc.name)
+            container.attach(to: group, focusTarget: textView)
         }
         container.addSubview(scroll)
         NSLayoutConstraint.activate([
@@ -1105,7 +922,8 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         scripts.addUserScript(WKUserScript(source: UmiCommentsScript.source, injectionTime: .atDocumentEnd,
                                            forMainFrameOnly: true, in: UmiCommentsUI.world))
         scripts.add(UmiScriptHandlerProxy(context.coordinator), contentWorld: UmiCommentsUI.world, name: "umi")
-        let web = WKWebView(frame: .zero, configuration: config)
+        let web = UmiPreviewWebView(frame: .zero, configuration: config)
+        container.attach(to: group, focusTarget: web)
         web.navigationDelegate = context.coordinator
         web.setValue(false, forKey: "drawsBackground")
         web.translatesAutoresizingMaskIntoConstraints = false
@@ -1288,5 +1106,40 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                 NSWorkspace.shared.open(url)
             }
         }
+    }
+}
+
+/// The source editor's text view: tells its pane when it takes keyboard focus.
+final class UmiEditorTextView: NSTextView {
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        if result { UmiEditorContainerView.focused(self) }
+        return result
+    }
+
+    /// A scroll view holding one, set up as `NSTextView.scrollableTextView()` sets up its own.
+    static func scrollable() -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        let size = scroll.contentSize
+        let textView = UmiEditorTextView(frame: NSRect(origin: .zero, size: size))
+        textView.minSize = NSSize(width: 0, height: size.height)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        scroll.documentView = textView
+        return scroll
+    }
+}
+
+/// The preview's web view: tells its pane when it takes keyboard focus.
+final class UmiPreviewWebView: WKWebView {
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        if result { UmiEditorContainerView.focused(self) }
+        return result
     }
 }

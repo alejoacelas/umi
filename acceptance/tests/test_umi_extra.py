@@ -184,15 +184,16 @@ def test_moving_a_windows_only_pane_to_a_new_tab_keeps_it(inst):
 
 
 @pytest.mark.req("E-1", "E-3", "M-1")
-def test_editor_documents_follow_a_pane_out_of_its_dissolving_tab(inst, win, tmp_path):
-    """A tab's editor documents belong to the tab; when its last pane moves away the tab goes,
-    and its documents go with the pane rather than vanishing."""
+def test_a_file_stays_open_when_the_pane_that_opened_it_moves_away(inst, win, tmp_path):
+    """A file is a pane of its own: when the pane that opened it moves to another tab, the file's
+    pane stays where it was, and its tab with it."""
     doc = tmp_path / "carried.md"
     doc.write_text("# carried\n")
     pane = inst.cli("tab", "new", "--window", win["window"], "--no-focus").stdout.strip()
+    tab = inst.find_pane(pane)[1]["id"]
     inst.cli("edit", str(doc), "--pane", pane)
     inst.cli("pane", "move", pane, "--to", win["pane"], "--dir", "right", "--no-focus")
-    docs = inst.json("editor", "ls", "--pane", pane)["documents"]
+    docs = inst.json("editor", "ls", "--tab", tab)["documents"]
     assert any(os.path.realpath(d["path"]) == os.path.realpath(doc) for d in docs), docs
 
 
