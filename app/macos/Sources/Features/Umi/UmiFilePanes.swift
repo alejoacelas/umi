@@ -17,6 +17,9 @@ final class UmiFilePanes: ObservableObject {
     @Published private var entries: [UUID: Entry] = [:]
     /// Panes whose dirty documents were already preserved when they left every window.
     private var preserved: Set<UUID> = []
+    /// Panes closed on purpose without saving ("Don't Save", `editor close --force`): their
+    /// edits are dropped, not preserved, unless undo brings the pane back.
+    private var discarded: Set<UUID> = []
 
     func document(of pane: Ghostty.SurfaceView) -> UmiDocument? { entries[pane.id]?.doc }
     func host(of pane: Ghostty.SurfaceView) -> UmiEditorGroup? { entries[pane.id]?.host }
@@ -50,14 +53,16 @@ final class UmiFilePanes: ObservableObject {
         let live = Set(UmiTopology.allSurfaces.map(\.id))
         for (id, entry) in entries {
             guard entry.pane != nil else {
-                if entry.doc.isDirty { entry.doc.preserveEdits() }
+                if entry.doc.isDirty, !discarded.contains(id) { entry.doc.preserveEdits() }
                 entries[id] = nil
                 preserved.remove(id)
+                discarded.remove(id)
                 continue
             }
             if live.contains(id) {
                 preserved.remove(id)
-            } else if entry.doc.isDirty, !preserved.contains(id) {
+                discarded.remove(id)
+            } else if entry.doc.isDirty, !preserved.contains(id), !discarded.contains(id) {
                 entry.doc.preserveEdits()
                 preserved.insert(id)
             }
@@ -127,8 +132,9 @@ final class UmiFilePanes: ObservableObject {
         UmiEditor.confirmClose(doc, in: host, window: pane.window)
     }
 
-    static func closePane(_ pane: Ghostty.SurfaceView) {
+    static func closePane(_ pane: Ghostty.SurfaceView, discarding: Bool = false) {
         let doc = shared.document(of: pane)
+        if discarding { shared.discarded.insert(pane.id) }
         try? UmiLayout.closePane(pane)
         if let doc { UmiEvents.shared.emit("editor.closed", ["path": doc.url.path, "pane": pane.umiID]) }
     }
@@ -172,9 +178,9 @@ final class UmiEditorGroup {
     }
 
     /// Close the document: its pane closes.
-    func close(_ doc: UmiDocument) {
+    func close(_ doc: UmiDocument, discarding: Bool = false) {
         guard let pane else { return }
-        UmiFilePanes.closePane(pane)
+        UmiFilePanes.closePane(pane, discarding: discarding)
     }
 }
 
@@ -217,8 +223,8 @@ final class UmiTabFiles {
         return try UmiFilePanes.open(url, mode: mode, near: anchor, focus: focus)
     }
 
-    func close(_ doc: UmiDocument) {
-        if let pane = pane(of: doc) { UmiFilePanes.closePane(pane) }
+    func close(_ doc: UmiDocument, discarding: Bool = false) {
+        if let pane = pane(of: doc) { UmiFilePanes.closePane(pane, discarding: discarding) }
     }
 }
 

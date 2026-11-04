@@ -464,7 +464,7 @@ enum UmiEditor {
         if doc.isDirty && !(params.bool("force") ?? false) {
             throw UmiError.badRequest("\(doc.name) has unsaved changes; save it first or use --force to discard them")
         }
-        tab.editor.close(doc)
+        tab.editor.close(doc, discarding: true)   // dirty only with --force
         return ["path": doc.url.path, "closed": true]
     }
 
@@ -633,7 +633,7 @@ enum UmiEditor {
             case .alertFirstButtonReturn:
                 if doc.save() { group.close(doc) }
             case .alertThirdButtonReturn:
-                group.close(doc)
+                group.close(doc, discarding: true)
             default:
                 break
             }
