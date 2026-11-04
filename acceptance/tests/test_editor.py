@@ -1,4 +1,5 @@
-"""The editor panel (SPEC E). The CLI says what is open; the accessibility tree shows the text."""
+"""The editor: files in panes of their own (SPEC E). The CLI says what is open; the accessibility tree
+shows the text."""
 
 import os
 import time
@@ -6,6 +7,7 @@ import time
 import pytest
 
 from harness import wait_until
+from test_umi_panes_ui import rpc
 
 pytestmark = pytest.mark.editor
 
@@ -160,3 +162,77 @@ def test_edit_targets_the_calling_pane_and_never_falls_back(inst, win, files):
 def test_editor_default_dry_run_names_this_app(inst):
     out = inst.cli("editor", "default", "--dry-run").stdout.strip()
     assert os.path.realpath(out) == os.path.realpath(inst.target.app)
+
+
+def panes_of(inst, tab_id):
+    for w in inst.tree()["windows"]:
+        for t in w["tabs"]:
+            if t["id"] == tab_id:
+                return t["panes"]
+    return None
+
+
+def tab_ids(inst, window_id):
+    return [t["id"] for w in inst.tree()["windows"] if w["id"] == window_id for t in w["tabs"]]
+
+
+@pytest.mark.req("E-1", "E-9")
+def test_files_open_in_panes_beside_the_caller_three_to_a_tab(inst, win, tmp_path):
+    names = ["one.md", "two.json", "three.csv", "four.txt"]
+    paths = []
+    for name in names:
+        (tmp_path / name).write_text({"md": "# One\n", "json": '{"a": [1, 2]}\n', "csv": "a,b\n1,2\n",
+                                      "txt": "four\n"}[name.split(".")[1]])
+        paths.append(str(tmp_path / name))
+    inst.cli("edit", *paths[:3], "--pane", win["pane"])
+    panes = panes_of(inst, win["tab"])
+    # The caller, then each file to the right of the one before; three panes fill the tab.
+    assert panes[0]["id"] == win["pane"] and "file" not in panes[0]
+    assert [os.path.basename(p.get("file", "")) for p in panes[1:]] == ["one.md", "two.json"]
+    assert [p["frame"]["x"] for p in panes] == sorted(p["frame"]["x"] for p in panes)
+    # The third goes to a new tab right after the caller's.
+    ids = tab_ids(inst, win["window"])
+    third_tab = ids[ids.index(win["tab"]) + 1]
+    assert [os.path.basename(p.get("file", "")) for p in panes_of(inst, third_tab)] == ["three.csv"]
+    # A fourth goes beside the third, in that tab.
+    inst.cli("edit", paths[3], "--tab", third_tab)
+    assert [os.path.basename(p.get("file", "")) for p in panes_of(inst, third_tab)] == ["three.csv", "four.txt"]
+    # Opening an open file again shows it where it is: no second pane.
+    before = sum(len(panes_of(inst, t)) for t in tab_ids(inst, win["window"]))
+    inst.cli("edit", paths[0], "--pane", win["pane"])
+    assert sum(len(panes_of(inst, t)) for t in tab_ids(inst, win["window"])) == before
+    # Keyboard focus stayed in the caller.
+    assert inst.tree().get("current_pane") == win["pane"]
+    # Modes: Markdown, JSON and CSV open as previews, other text as source; each document names its pane.
+    modes = {os.path.basename(d["path"]): d["mode"] for d in docs(inst, win["pane"]) + docs(inst, panes_of(inst, third_tab)[0]["id"])}
+    assert modes == {"one.md": "preview", "two.json": "preview", "three.csv": "preview", "four.txt": "source"}
+    assert all(d.get("pane") for d in docs(inst, win["pane"]))
+    proc = inst.cli("editor", "mode", "preview", paths[3], "--tab", third_tab, check=False)
+    assert proc.returncode != 0 and "source" in proc.stderr
+
+
+@pytest.mark.req("E-9")
+def test_a_file_opened_from_a_pane_goes_beside_that_pane(inst, win, tmp_path):
+    md = tmp_path / "beside.md"
+    md.write_text("# Beside\n")
+    left = win["pane"]
+    right = inst.cli("split", "right", "--pane", left).stdout.strip()
+    wait_until(lambda: inst.cli("read", "--pane", left, check=False).stdout.strip() != "", 20, message="prompt")
+    inst.cli("send", "--pane", left, "-e", f"{inst.target.cli_name} edit '{md}' && echo EDIT-OK")
+    inst.cli("wait", "--pane", left, "--pattern", "^EDIT-OK$", "--timeout", "15")
+    order = [p["id"] for p in panes_of(inst, win["tab"])]
+    file_pane = next(p["id"] for p in panes_of(inst, win["tab"]) if p.get("file"))
+    assert order == [left, file_pane, right], "right of the calling pane, before its neighbour"
+
+
+@pytest.mark.req("E-3")
+def test_closing_a_file_pane_never_loses_edits(inst, win, tmp_path):
+    txt = tmp_path / "keep.txt"
+    txt.write_text("original\n")
+    inst.cli("edit", str(txt), "--pane", win["pane"])
+    pane = next(p["id"] for p in panes_of(inst, win["tab"]) if p.get("file"))
+    assert inst.json("editor", "ls", "--pane", pane)["documents"][0]["pane"] == pane
+    rpc(inst, "debug.editor.type", tab=win["tab"], path=str(txt), text="edited\n", replace=True)
+    assert doc(inst, win["pane"], str(txt))["dirty"]
+    inst.cli("pane", "close", pane)
+    wait_until(lambda: txt.read_text() == "edited\n", 5, message="saved (the file was unchanged on disk)")

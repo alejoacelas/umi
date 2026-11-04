@@ -246,25 +246,17 @@ def test_a_keyboard_resize_still_moves_only_the_two_neighbors(inst, win):
 
 
 @pytest.mark.req("L-19", "E-1")
-def test_the_editor_panel_is_the_last_pane_of_the_top_row(inst, win, tmp_path):
+def test_a_file_pane_shares_its_row_like_any_pane(inst, win, tmp_path):
     a = win["pane"]
     b = split(inst, "right", a)
     doc = tmp_path / "row.md"
     doc.write_text("# Row\n")
     inst.cli("edit", str(doc), "--pane", a)
-    wait_until(lambda: inst.json("editor", "ls", "--tab", win["tab"])["documents"], 5, message="opened")
-    # a | b | editor at 25/25/50. Dragging a's divider to a quarter of the tab (half the terminals):
-    # a keeps 25%, b and the editor share the other 75%.
+    order = [p["id"] for p in tab_of(inst, win["tab"])["panes"]]
+    assert len(order) == 3 and order[0] == a and order[2] == b
+    assert shares(inst, win["tab"], order) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
     rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.5)
-    fraction = inst.json("editor", "ls", "--tab", win["tab"])["fraction"]
-    assert fraction == pytest.approx(0.375, abs=0.005)
-    assert shares(inst, win["tab"], [a, b]) == pytest.approx([40, 60], abs=0.3)
-    # Dragging the editor's divider: the panes before it share the rest equally.
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.2)
-    assert shares(inst, win["tab"], [a, b]) != pytest.approx([50, 50], abs=1)
-    rpc(inst, "debug.ui.editor.divider", tab=win["tab"], fraction=0.3)
-    assert inst.json("editor", "ls", "--tab", win["tab"])["fraction"] == pytest.approx(0.3, abs=0.005)
-    assert shares(inst, win["tab"], [a, b]) == pytest.approx([50, 50], abs=0.3)
+    assert shares(inst, win["tab"], order) == pytest.approx([50, 25, 25], abs=0.3)
 
 
 @pytest.mark.req("L-7", "L-19")

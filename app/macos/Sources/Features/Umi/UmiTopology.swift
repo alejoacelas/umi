@@ -263,11 +263,12 @@ enum UmiTopology {
         var zoomedPane: Ghostty.SurfaceView?
         if let zoomed = tree.zoomed, case .leaf(let view) = zoomed { zoomedPane = view }
         let frames = paneFrames(tree, in: window)
+        // The panes on show, then stack members that aren't (M-7), marked `"shown": false`.
         json["panes"] = panes.map { pane in
             var paneJSON = paneJSON(pane, focused: pane === focused, zoomed: pane === zoomedPane)
             if let frame = frames[ObjectIdentifier(pane)] { paneJSON["frame"] = frameJSON(frame) }
             return paneJSON
-        }
+        } + window.hiddenPanes(of: tab).map { paneJSON($0, focused: false, zoomed: false) }
         if let zoomedPane { json["zoomed_pane"] = zoomedPane.umiID }
         if let name = tab.name, !name.isEmpty { json["name"] = name }
         if tab.color != .none { json["color"] = UmiTopology.colorName(tab.color) }
@@ -283,6 +284,11 @@ enum UmiTopology {
             "title": pane.title,
         ]
         if let name = UmiState.shared.paneName(pane.id) { json["name"] = name }
+        if let doc = UmiFilePanes.shared.document(of: pane) { json["file"] = doc.url.path }
+        if let location = locate(pane) {
+            json["shown"] = location.window.tree(of: location.tab).contains(pane)
+            if let stack = location.tab.stack(of: pane) { json["stack"] = stack.members.map(\.umiID) }
+        }
         if let session = UmiAgentUI.shared.session(forPane: pane.id) {
             json["agent"] = session
             json["showing"] = UmiAgentUI.shared.livePanes.contains(pane.id) ? "live"

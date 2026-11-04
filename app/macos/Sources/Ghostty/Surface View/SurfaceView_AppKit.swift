@@ -844,6 +844,13 @@ extension Ghostty {
                     UmiAgentUI.shared.focusAgentView(of: self)
                 }
             }
+            // Umi: a file pane's keyboard focus is its editor.
+            if result, UmiFilePanes.shared.isFilePane(id) {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    UmiFilePanes.shared.focusEditor(of: self)
+                }
+            }
             return result
         }
 

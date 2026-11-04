@@ -221,3 +221,12 @@ His Warp follows the system theme, which in dark mode is Warp's default "Dark" t
 
 Then:
 > though let's use warp's terminal color config as well if it's straightforward to implement
+
+## 2026-11-04: stacks
+
+> also, if I drag a session on top of another, they should come to occupy the same pane space and be
+> accessible through the cmd [] shortcuts + a small tab thing at the top similarly to what we
+> currently do for files
+
+With files in panes of their own (above), the editor's file tabs became this strip: any panes can
+share a place, files included.

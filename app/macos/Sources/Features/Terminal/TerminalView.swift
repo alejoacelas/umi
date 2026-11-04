@@ -58,7 +58,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     @FocusedValue(\.ghosttySurfacePwd) private var surfacePwd
     @FocusedValue(\.ghosttySurfaceCellSize) private var cellSize
 
-    // Umi: the sidebar and editor around a window's terminals.
+    // Umi: the sidebar beside a window's panes.
     @ObservedObject private var umiState = UmiState.shared
 
     /// The focused terminal's initial size plus the sidebar.
@@ -99,19 +99,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                                 .transition(.move(edge: .leading))
                         }
 
-                        Group {
-                            if let controller {
-                                UmiEditorSplit(group: controller.selectedTab.editor,
-                                                background: ghostty.config.backgroundColor,
-                                                resize: { [weak controller] in controller?.editorDividerMoved(to: $0) }) {
-                                    terminals
-                                }
-                                .id(controller.selectedTab.id)
-                            } else {
-                                terminals
-                            }
-                        }
-                        .padding(.top, topInset)
+                        terminals
+                            .padding(.top, topInset)
                     }
                     .animation(.easeInOut(duration: 0.16), value: umiState.sidebarVisible)
                     .ignoresSafeArea(.container, edges: .top)

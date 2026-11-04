@@ -429,15 +429,14 @@ final class UmiPaletteModel: ObservableObject {
         let url = URL(fileURLWithPath: path)
         guard let window else { return }
         let tab = pane.flatMap { UmiTopology.locate($0) }.map(\.tab) ?? window.selectedTab
-        let target = UmiTopology.locate(tab: tab) ?? window
         do {
             try UmiTextFile.checkOpenable(url)
-            let doc = try tab.editor.open(url, mode: line != nil ? .source : nil)
-            if let line { doc.revealLine = line }
-            UmiFileIndex.noteOpened(url.path)
+            // Beside the pane the palette was opened from (E-9), focused.
             close(restoreFocus: false)
-            UmiLayout.focusTab(tab, in: target)
-            UmiEvents.shared.emit("editor.opened", ["path": doc.url.path, "tab": tab.idString, "window": target.umiIDString])
+            let anchor = pane ?? tab.effectiveFocusedSurface
+            guard let anchor else { throw UmiError.notFound("the tab has no panes") }
+            let doc = try UmiFilePanes.open(url, mode: line != nil ? .source : nil, near: anchor, focus: true).doc
+            if let line { doc.revealLine = line }
         } catch let error as UmiError {
             output = ("Open \(url.lastPathComponent)", error.message, true)
             step = .output

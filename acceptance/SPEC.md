@@ -306,10 +306,8 @@ the menu.
     side of it share that side equally: in a row of three, dragging the first divider gives the
     first pane the width dragged to and the other two half the rest each; dragging the middle
     divider of four gives the two on each side equal halves of their side. A pane split the other
-    way (a column in a row) counts as one pane of the row and keeps its inside. The editor panel
-    counts as the last pane of the tab's top row: dragging a divider of that row shares the right
-    side with the editor too, and dragging the editor's own divider gives the panes before it
-    equal shares. Keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one
+    way (a column in a row) counts as one pane of the row and keeps its inside. File panes
+    (E-1) are panes like any other. Keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one
     pane's edge, changing only the two panes beside it. Double-clicking a divider gives its row
     (or column) equal shares and leaves the rest of the tab alone. ⌃⌘= and `tab equalize` still
     equalize the whole tab;
@@ -357,6 +355,18 @@ A "live session" is a pane with a running program, its scrollback and its state.
   and a window never ends up unusably small.
 - **M-6 [A]** A new window created by moving is a separate window. It isn't merged into an existing
   window's tabs.
+- **M-7 [A+W]** Stacks, in the user's words (2026-11-04): "if I drag a session on top of another, they
+  should come to occupy the same pane space and be accessible through the cmd [] shortcuts + a small
+  tab thing at the top similarly to what we currently do for files". A pane dropped on the middle of
+  another pane (the middle third each way; "Stack here" shows) joins it in its place, on show and
+  focused; its old place closes. Any panes can stack: terminals, file panes, agent sessions.
+  - A strip along the top of the place names each member; clicking one shows it, its ✕ closes it.
+  - ⌘[ and ⌘] show the previous and next member of the focused pane's stack. In a pane that isn't
+    stacked they go to the previous and next pane, as before.
+  - Members not on show keep running. Focusing one (`pane focus`, the palette, `jump`) shows it.
+  - Closing the member on show, or moving it away, shows the next member in its place; a member
+    whose program ends leaves its stack; a stack left with one pane is an ordinary pane again.
+  - `ls` lists every member (M-7 fields in CLI.md); stacks survive a restart and undo.
 
 ## T. Terminal input and output, and events
 
@@ -466,11 +476,12 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
 
 ## E. Editor and Markdown
 
-- **E-1 [A+W]** Opening a Markdown or text file shows it in an editor panel beside the tab's
-  terminals. Markdown opens rendered (headings, lists, task lists, tables, code blocks, links,
+- **E-1 [A+W]** Opening a Markdown or text file shows it in a pane of its own: a file pane, which
+  splits, moves, stacks (M-7), closes and is restored like a terminal pane, with the file's name, the
+  preview/source control and a close button along its top. Markdown opens rendered (headings, lists, task lists, tables, code blocks, links,
   images); JSON opens as a tree whose objects and arrays fold, keys in file order; CSV and TSV open
   as a table (row numbers, a header that stays in view, numbers right-aligned); other text opens as
-  source. Several files can be open as editor tabs.
+  source.
 - **E-2 [A+W]** Preview and source can be toggled with ⇧⌘M, with a visible control, and from the CLI.
 - **E-3 [A+W]** Edits can be saved with ⌘S. Closing a file with unsaved changes asks first. Closing a
   tab or quitting never silently loses edits: they are saved, or a recovery copy is kept.
@@ -488,8 +499,14 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   document, in Markdown or raw HTML, display, and so do remote images and linked badges. Page
   scripts never run.
 - **E-8 [W]** Editor shortcuts work regardless of Caps Lock.
-- **E-9 [A]** `<cli> edit FILE` opens a file in the calling pane's tab, or a given tab. An explicitly
-  named pane or tab that doesn't exist is an error, never a fallback to another tab.
+- **E-9 [A]** Where a new file pane goes, in the user's words (2026-11-04): "by default new files
+  should be opened on a new pane, up to three per tab, then go to new tab. and if opened from umi
+  the file should show on a pane next to the pane that called to open it". A file opened from a
+  pane (`<cli> edit FILE` in it, the palette, the file tree, a link in a preview) goes to the right
+  of that pane, or of the given pane or the given tab's focused pane; several files go one after
+  another. When the tab already shows three panes (a stack counts once), the file gets a new tab
+  right after it. A file already open shows where it is, without a second pane. An explicitly named
+  pane or tab that doesn't exist is an error, never a fallback to another tab.
 - **E-10 [A]** A Markdown (or text) file opened from outside the app (Finder, `open FILE`, the app
   being the default for Markdown) opens in the tab whose folder is closest to the file: the tab with
   a pane whose working directory is the deepest folder containing the file. Any pane of a tab counts;

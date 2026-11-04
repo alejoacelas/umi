@@ -107,7 +107,7 @@ enum UmiUIDebug {
             guard let targetSelector = params.string("target") else { throw UmiError.badRequest("give a target pane") }
             let target = try UmiTopology.resolvePane(targetSelector, caller: caller)
             guard let zone = params.string("zone").flatMap(TerminalSplitDropZone.init(rawValue:)) else {
-                throw UmiError.badRequest("zone is top, bottom, left or right")
+                throw UmiError.badRequest("zone is top, bottom, left, right or center")
             }
             guard let location = UmiTopology.locate(target), location.tab === location.window.selectedTab else {
                 throw UmiError.badRequest("the target pane must be in its window's shown tab")
@@ -139,17 +139,19 @@ enum UmiUIDebug {
             }
             return ["pane": pane.umiID]
 
-        case "debug.ui.editor.divider":
-            // Dragging the divider of a tab's editor panel to `fraction` of the tab's width.
-            let (window, tab) = try UmiEditor.targetTab(params, caller: caller, createWindow: false)
-            guard tab === window.selectedTab, !tab.editor.isEmpty else {
-                throw UmiError.badRequest("the tab must be shown and have files open")
+        case "debug.ui.views":
+            // The window's AppKit views, as an indented list of class names and frames.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            var lines: [String] = []
+            func walk(_ view: NSView, _ depth: Int) {
+                guard depth < (params.int("depth") ?? 40) else { return }
+                let f = view.frame
+                lines.append(String(repeating: "  ", count: depth)
+                    + "\(type(of: view)) \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))\(view.isHidden ? " hidden" : "")")
+                for sub in view.subviews { walk(sub, depth + 1) }
             }
-            guard let fraction = params.double("fraction"), fraction > 0, fraction < 1 else {
-                throw UmiError.badRequest("give a fraction between 0 and 1")
-            }
-            window.editorDividerMoved(to: CGFloat(fraction))
-            return ["fraction": Double(tab.editor.fraction)]
+            if let content = window.window?.contentView { walk(content, 0) }
+            return ["views": lines]
 
         case "debug.ui.open_file":
             // What Finder's double-click and `open FILE` call (AppDelegate's openFile).

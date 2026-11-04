@@ -4,8 +4,7 @@ import SwiftUI
 import Combine
 import GhosttyKit
 
-/// An Umi window: a sidebar of tabs, each tab a split tree of terminal panes, and an
-/// editor panel per tab.
+/// An Umi window: a sidebar of tabs, each tab a split tree of panes (terminals and files).
 ///
 /// Umi keeps its own list of tabs per window instead of AppKit's native window tabs. The
 /// window shows the selected tab's split tree (`surfaceTree`); the other tabs' panes keep
@@ -156,8 +155,14 @@ class TerminalController: BaseTerminalController {
         tabs.filter(\.pinned) + tabs.filter { !$0.pinned }
     }
 
-    /// Every pane of every tab in this window.
-    var allSurfaces: [Ghostty.SurfaceView] { tabs.flatMap(\.panes) }
+    /// Every pane of every tab in this window, stack members not on show included.
+    var allSurfaces: [Ghostty.SurfaceView] { tabs.flatMap { tree(of: $0).root?.leaves() ?? [] } + tabs.flatMap { hiddenPanes(of: $0) } }
+
+    override func umiTreeRemoving(_ node: SplitTree<Ghostty.SurfaceView>.Node)
+        -> (tree: SplitTree<Ghostty.SurfaceView>, replacement: Ghostty.SurfaceView?) {
+        guard let tab = selectedTabStorage else { return super.umiTreeRemoving(node) }
+        return umiRemoving(node, from: surfaceTree, in: tab)
+    }
 
     override func ownsSurface(_ surface: Ghostty.SurfaceView) -> Bool {
         tabs.contains { $0.contains(surface) } || surfaceTree.contains(surface)
@@ -297,23 +302,6 @@ class TerminalController: BaseTerminalController {
         tab === selectedTabStorage ? surfaceTree : tab.tree
     }
 
-    /// The selected tab's editor panel is the last member of its top row (L-19).
-    override var umiTrailingPanel: (share: Double, limits: ClosedRange<Double>, set: (Double) -> Void)? {
-        guard let editor = selectedTabStorage?.editor, !editor.isEmpty else { return nil }
-        let limits = UmiEditorGroup.fractionLimits
-        return (Double(editor.fraction), Double(limits.lowerBound)...Double(limits.upperBound),
-                { [weak editor] in editor?.fraction = CGFloat($0) })
-    }
-
-    /// The editor panel's divider was dragged: the panes of the tab's top row share the rest
-    /// equally (L-19).
-    func editorDividerMoved(to fraction: CGFloat) {
-        let editor = selectedTab.editor
-        let limits = UmiEditorGroup.fractionLimits
-        editor.fraction = min(limits.upperBound, max(limits.lowerBound, fraction))
-        if let even = surfaceTree.equalizingTopRow() { surfaceTree = even }
-    }
-
     /// Replace the whole tab list (undo and restoration).
     func restoreTabs(_ newTabs: [UmiTab], selected: UmiTab, focusedPane: Ghostty.SurfaceView?) {
         guard !newTabs.isEmpty else { return }
@@ -332,7 +320,7 @@ class TerminalController: BaseTerminalController {
     }
 
     /// Tell libghostty that panes of hidden tabs aren't visible, so they stop rendering.
-    private func setOccluded(_ panes: [Ghostty.SurfaceView], occluded: Bool) {
+    func setOccluded(_ panes: [Ghostty.SurfaceView], occluded: Bool) {
         for view in panes {
             guard let surface = view.surface else { continue }
             let visible = !occluded && (window?.occlusionState.contains(.visible) ?? false)
@@ -813,9 +801,14 @@ class TerminalController: BaseTerminalController {
     @objc private func onCloseHiddenSurface(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard !surfaceTree.contains(target) else { return }   // the base class handles visible panes
-        guard let tab = tabs.first(where: { $0.contains(target) }),
-              let node = tab.tree.root?.node(view: target) else { return }
-        let newTree = tab.tree.removing(node)
+        guard let tab = tabs.first(where: { $0.contains(target) }) else { return }
+        // A stack member that isn't on show (in any tab) leaves its stack (M-7).
+        if !tree(of: tab).contains(target) {
+            removeHiddenMember(target, from: tab)
+            return
+        }
+        guard let node = tab.tree.root?.node(view: target) else { return }
+        let newTree = umiRemoving(node, from: tab.tree, in: tab).tree
         UmiEvents.shared.emit("pane.closed", ["pane": target.umiID, "tab": tab.idString, "window": umiIDString])
         if newTree.isEmpty {
             closeTabImmediately(tab)
@@ -848,7 +841,7 @@ class TerminalController: BaseTerminalController {
     /// and reopened (⇧⌘T).
     func closeHiddenNode(_ node: SplitTree<Ghostty.SurfaceView>.Node, in tab: UmiTab) {
         let oldTree = tree(of: tab)
-        let newTree = oldTree.removing(node)
+        let newTree = umiRemoving(node, from: oldTree, in: tab).tree
         if newTree.isEmpty {
             closeTabImmediately(tab)
         } else {

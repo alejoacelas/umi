@@ -551,3 +551,26 @@ resize a panel, the remaining panels split the remaining screen equally."
   `draggingADividerSharesEachSideEqually`; new `draggingAMiddleDividerSharesBothSides`,
   `aColumnInARowCountsAsOneAndKeepsItsInside`, `thePanelAfterTheTreeSharesTheRightSide`,
   `equalizingTheTopRowLeavesAnEvenRow`, `aKeyboardResizeMovesOnlyTheTwoNeighbors`.
+
+## Files in panes, stacks, Warp's colors (2026-11-04)
+
+E-1 and E-9 changed: each file opens in a pane of its own, to the right of the pane it was opened
+from, three panes to a tab, then a new tab. The editor panel (and its divider) is gone, so L-19's
+rule for it is gone too. M-7 is new (stacks). **Requirements:** E-1, E-9, L-19, M-7; Alejo's words in
+REQUESTS.md (2026-11-04).
+
+- **Replaced, `tests/test_umi_panes_ui.py`**: `test_the_editor_panel_is_the_last_pane_of_the_top_row`
+  (the panel's `fraction`, `debug.ui.editor.divider`) became `test_a_file_pane_shares_its_row_like_any_pane`:
+  a file pane is the middle of three equal columns and a dragged divider treats it as a pane.
+- **New, `tests/test_editor.py`**: `test_files_open_in_panes_beside_the_caller_three_to_a_tab` (order,
+  the fourth file's new tab, no second pane for an open file, focus stays, preview modes for Markdown,
+  JSON and CSV, `pane` in `editor ls`); `test_a_file_opened_from_a_pane_goes_beside_that_pane` (between
+  the caller and its right neighbour); `test_closing_a_file_pane_never_loses_edits` (E-3 through
+  `pane close`). The existing editor tests keep their assertions: `editor ls --pane P` still lists the
+  files of P's tab.
+- **New, `tests/test_umi_stacks.py`**: stacking by a drop on a pane's middle (from the same and another
+  tab), focusing a member shows it, closing the member on show, a member whose program ends, a stack
+  left with one pane, undo, files stacking with terminals, and (UI) ⌘[ / ⌘] and the strip.
+- **New, `tests/test_umi_panes_ui.py`** (branch `pane-tab-drop`):
+  `test_a_pane_dropped_on_the_previous_or_next_tab_target_moves_there` and its real-mouse `_ui` twin
+  (M-4).

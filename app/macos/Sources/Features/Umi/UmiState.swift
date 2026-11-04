@@ -61,6 +61,7 @@ final class UmiState: ObservableObject {
             self.pendingBump = false
             self.revision &+= 1
             self.prune()
+            UmiFilePanes.shared.prune()
             // Panes opened, closed or moved: Window > Agent Sessions marks the shown sessions,
             // and `agent ls` says where each session is.
             UmiAgentMenu.shared.setNeedsRebuild()

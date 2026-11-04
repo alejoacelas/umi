@@ -538,6 +538,13 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Umi: the tree without `node`. Overridden where panes can share a place (stacks, M-7):
+    /// then the next member takes the removed one's place and is returned.
+    func umiTreeRemoving(_ node: SplitTree<Ghostty.SurfaceView>.Node)
+        -> (tree: SplitTree<Ghostty.SurfaceView>, replacement: Ghostty.SurfaceView?) {
+        (surfaceTree.removing(node), nil)
+    }
+
     /// Umi: the pane to focus after `node` closes, from the panes focused before it. Nil
     /// falls back to tree order.
     func previouslyFocusedSurface(excluding node: SplitTree<Ghostty.SurfaceView>.Node) -> Ghostty.SurfaceView? {
@@ -550,17 +557,19 @@ class BaseTerminalController: NSWindowController,
     ///
     /// This does no confirmation and assumes confirmation is already done.
     private func removeSurfaceNode(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
+        // Umi: a stack's next member takes the closed one's place (M-7) and gets its focus.
+        let removed = umiTreeRemoving(node)
         // Move focus if the closed surface was focused and we have a next target
         let nextFocus: Ghostty.SurfaceView? = if node.contains(
             where: { $0 == focusedSurface }
         ) {
-            findNextFocusTargetAfterClosing(node: node)
+            removed.replacement ?? findNextFocusTargetAfterClosing(node: node)
         } else {
             nil
         }
 
         replaceSurfaceTree(
-            surfaceTree.removing(node),
+            removed.tree,
             // When a non-focused surface is removed and this window stays as the key window,
             // we should refocus the `focusedSurface` to make sure the window's firstResponder remains as it is.
             //
@@ -859,8 +868,8 @@ class BaseTerminalController: NSWindowController,
             focusedSurface = findNextFocusTargetAfterClosing(node: targetNode)
         }
 
-        // Remove the surface from our tree
-        let removedTree = surfaceTree.removing(targetNode)
+        // Remove the surface from our tree (Umi: its stack's next member takes its place)
+        let removedTree = umiTreeRemoving(targetNode).tree
 
         // Create a new tree with the dragged surface and open a new window
         let newTree = SplitTree<Ghostty.SurfaceView>(view: target)
@@ -995,19 +1004,11 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Umi: a panel laid out after the tree in the same row (the editor), as its share of
-    /// the row, the limits of that share, and how to set it. Nil when there's none.
-    var umiTrailingPanel: (share: Double, limits: ClosedRange<Double>, set: (Double) -> Void)? { nil }
-
     private func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
         // Umi: the divider stays where it's dropped and the panes on each side of it in its
-        // row (or column), the editor panel included, share that side equally (L-19).
+        // row (or column) share that side equally (L-19).
         do {
-            let panel = umiTrailingPanel
-            let moved = try surfaceTree.movingDivider(of: node, to: newRatio, trailing: panel?.share,
-                                                      limits: panel?.limits ?? 0...1)
-            surfaceTree = moved.tree
-            if let panel, let share = moved.trailing, abs(share - panel.share) > 0.0001 { panel.set(share) }
+            surfaceTree = try surfaceTree.movingDivider(of: node, to: newRatio)
         } catch {
             Ghostty.logger.warning("failed to replace node during split resize: \(error, privacy: .public)")
         }
@@ -1018,8 +1019,17 @@ class BaseTerminalController: NSWindowController,
         destination: Ghostty.SurfaceView,
         zone: TerminalSplitDropZone
     ) {
+        // Umi: the middle of a pane stacks the dropped pane there (M-7).
+        if zone == .center {
+            do { try UmiStacks.stack(source, onto: destination) } catch {
+                Ghostty.logger.warning("failed to stack surface during drop: \(error, privacy: .public)")
+            }
+            return
+        }
+
         // Map drop zone to split direction
         let direction: SplitTree<Ghostty.SurfaceView>.NewDirection = switch zone {
+        case .center: .right
         case .top: .up
         case .bottom: .down
         case .left: .left
@@ -1029,7 +1039,7 @@ class BaseTerminalController: NSWindowController,
         // Check if source is in our tree
         if let sourceNode = surfaceTree.root?.node(view: source) {
             // Source is in our tree - same window move
-            let treeWithoutSource = surfaceTree.removing(sourceNode)
+            let treeWithoutSource = umiTreeRemoving(sourceNode).tree
             let newTree: SplitTree<Ghostty.SurfaceView>
             do {
                 newTree = try treeWithoutSource.inserting(view: source, at: destination, direction: direction)
