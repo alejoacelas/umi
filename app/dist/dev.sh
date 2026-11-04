@@ -85,11 +85,12 @@ stop
 [[ "$fresh" == 1 ]] && rm -rf "$state"
 mkdir -p "$state"
 # A LaunchServices launch, so the dev copy doesn't inherit this terminal's environment (it may be a
-# pane of the installed Umi, with its UMI_* variables).
+# pane of the installed Umi, with its UMI_* variables). -g keeps it in the background, so a restart
+# doesn't take focus from what Alejo is doing; `umi screenshot` still captures it.
 for attempt in 1 2 3; do
     # Just after the old copy quits, LaunchServices can still refuse a new one (error -600):
     # wait and try again.
-    open -n -a "$app" --env "UMI_STATE_DIR=$state" 2>/dev/null || { sleep 1; continue; }
+    open -g -n -a "$app" --env "UMI_STATE_DIR=$state" 2>/dev/null || { sleep 1; continue; }
     for _ in $(seq 40); do
         if UMI_STATE_DIR="$state" "$app/Contents/MacOS/umi" ls >/dev/null 2>&1; then
             echo "Umi (dev) is running with state in $state. Its CLI: app/dist/dev.sh umi ls"
