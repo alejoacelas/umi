@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-6, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-11.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-11.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -68,7 +68,7 @@ tab or window they choose; second, agents supervising and steering other agents.
 - **A CLI agents can use with no instructions.**
 - **Robustness:** crashes, restarts, upgrades, isolation, long runs, no orphans.
 
-Requirements: AG-1 to AG-23, R-3 to R-7, R-11.
+Requirements: AG-1 to AG-23, R-3 to R-7.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
@@ -182,17 +182,6 @@ and agents reaching the app from their own processes.
 - **I-5 [W]** One-line install. On another Mac, one command pasted into Terminal installs the latest
   release, with no Gatekeeper prompt and nothing to install first. The release repository's README
   gives the command.
-- **I-6 [A]** Links. The app answers `<scheme>://open?path=PATH` (REQUESTS.md, 2026-10-31), where PATH
-  is URL-encoded and relative to the user's work folder (`~/best`):
-  - a file opens as in I-3 and E-10, and the app comes to the front; a folder opens as a folder
-    opened on the app (a terminal in it); anything else is shown in Finder, never run;
-  - a PATH that leaves the work folder (absolute, `~`, `..`, or through a symlink) is refused with a
-    message, and nothing opens;
-  - before opening, the git repository holding PATH (inside the work folder) is fetched and, when it
-    is behind its upstream, fast-forwarded, so a file pushed from another machine opens. If that
-    fails, the local copy opens with a short notice saying so; a file that still doesn't exist is
-    reported, not created;
-  - the installed copy is the scheme's handler, not a development or test copy.
 
 ## L. Windows, tabs and panes
 
@@ -222,7 +211,7 @@ the menu.
   - ⌘B toggles the sidebar; ⇧⌘E shows the project explorer;
   - ⌘O opens a file (quick search, L-16; File ▸ Open File… keeps the Open panel);
   - ⇧⌘M toggles the Markdown preview and source;
-  - ⌘P opens the command palette (L-14); ⇧⌘P lists panes (L-15); ⌘, opens Settings (L-17);
+  - ⌘P opens the command palette (L-14); ⇧⌘P lists panes (L-15); ⌘, opens the config file (L-17);
   - ⇧⌘[ goes back to the tab visited before; ⇧⌘] shows the next tab in sidebar order; ⌃Tab and
     ⌃⇧Tab cycle to the next and previous tab; ⌘1–⌘8 show that tab and ⌘9 the last one (L-11);
   - ⌃⇧← / ⌃⇧→ move the tab up or down (L-13);
@@ -236,11 +225,11 @@ the menu.
   - ⌃⌘O takes over the focused pane's session, and ⌃⌘W removes the session from its pane, where
     it keeps running (AG-6, AG-8).
 
-  Each is a menu item, and the command palette lists them. Settings changes them (L-17).
+  Each is a menu item, and the command palette lists them. `<cli> shortcuts` changes them (L-17).
 
 - **L-10 [A+W]** Shortcuts work from anywhere: with keyboard focus in a terminal, the editor (source
   or preview), the sidebar (its rename field and the file tree), a session's read-only view in a
-  pane, the palette or the Settings window. A terminal never takes one of these keys first.
+  pane or the palette. A terminal never takes one of these keys first.
 
 - **L-11 [A+W]** Moving between tabs:
   - ⇧⌘[ (`<cli> tab back`) goes to the tab the user was in before, in any window. Pressed again,
@@ -281,14 +270,13 @@ the menu.
   then changed ones. `path:line` opens the file at that line. Enter opens the file in the tab's
   editor; a "Browse…" entry opens the Open panel.
 
-- **L-17 [A+W]** ⌘, opens Settings, where shortcuts are edited: every Umi menu shortcut and every
-  Ghostty keybinding is listed, searchable, and each can be changed (press the new keys), cleared
-  or reset to its default, or all reset at once. A change applies at once, without a restart, and
-  is kept across restarts in Umi's state directory (`shortcuts.json`, and `keybindings.conf` for
-  Ghostty keybindings, loaded after the user's Ghostty config files). The user's Ghostty config
-  files are never changed; Settings says so and has a button that opens them. A key given to one
-  shortcut is taken from any other that had it, and Settings says which. `<cli> shortcuts` lists,
-  sets, clears and resets the same shortcuts.
+- **L-17 [A]** ⌘, (Settings…) opens the user's config file (`~/.config/<cli>/config`) in the app's
+  editor, as Ghostty opens its own config file; a missing one is made, empty, first. `<cli>
+  shortcuts` lists every Umi menu shortcut and every Ghostty keybinding, and sets, clears or resets
+  each, or all at once. A change applies at once, without a restart, and is kept across restarts in
+  the app's state directory (`shortcuts.json`, and `keybindings.conf` for Ghostty keybindings,
+  loaded after the user's Ghostty config files); it never changes the user's config files. A key
+  given to one shortcut is taken from any other that had it, and the command says which.
 
 - **L-18 [A]** After a pane closes (⌘W, `pane close`, its program exiting), focus goes to the pane
   of that tab the user used most recently, as in Warp; tree order only when there's no history.
@@ -519,8 +507,8 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   another. When the tab already shows three panes (a stack counts once), the file gets a new tab
   right after it. A file already open shows where it is, without a second pane. An explicitly named
   pane or tab that doesn't exist is an error, never a fallback to another tab.
-- **E-10 [A]** A Markdown (or text) file opened from outside the app (Finder, `open FILE`, the app
-  being the default for Markdown) opens in the tab whose folder is closest to the file: the tab with
+- **E-10 [A]** A Markdown, text, JSON, CSV, TSV or YAML file opened from outside the app (Finder,
+  `open FILE`, the app being the default for these types) opens in the tab whose folder is closest to the file: the tab with
   a pane whose working directory is the deepest folder containing the file. Any pane of a tab counts;
   `/` doesn't. A file already open somewhere shows there. Ties go to the current tab, then the
   current window's tabs in sidebar order, then other windows'. With no such tab it opens in a new
@@ -702,12 +690,6 @@ runs, it is the same session: same id, conversation, folder and settings.
   other: CLI calls, agents and the panes of one never reach the other.
 - **R-6 [A]** The app and its CLI keep working, and tell the truth, while sessions are busy,
   approvals are pending, or event consumers are slow.
-- **R-11 [A]** Coming from Tern. The product was called Tern before 0.6.0. The first time it runs
-  without state of its own, it opens with Tern's windows, tabs, panes, sidebar and agent sessions:
-  a copy, and Tern's folder is never changed. Copied sessions don't resume by themselves (Tern may
-  be running them, now or later): the product never delivers a message again or starts a process
-  on a copied conversation until the user takes the session over, and Tern finishes what it was
-  doing. Later launches copy nothing.
 - **R-7 [A]** Stale environments. A CLI run with stale pane, socket or agent variables (for example
   from a terminal that outlived its app) either reaches the right instance or fails clearly. It
   never acts on the wrong one.

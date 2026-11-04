@@ -431,7 +431,7 @@
 				"$(PROJECT_DIR)/UmiCLI/agent.swift",
 				"$(PROJECT_DIR)/UmiCLI/commands.swift",
 				"$(PROJECT_DIR)/UmiCLI/comments.swift",
-				"$(PROJECT_DIR)/Sources/Features/Umi/UmiComments.swift",
+				"$(PROJECT_DIR)/UmiCLI/UmiComments.swift",
 				"$(PROJECT_DIR)/UmiCLI/build.sh",
 				"$(PROJECT_DIR)/UmiPlugins/.claude-plugin/marketplace.json",
 				"$(PROJECT_DIR)/UmiPlugins/.agents/plugins/marketplace.json",
@@ -608,7 +608,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 0.1;
 				"OTHER_LDFLAGS[arch=*]" = "-lstdc++";
-				PRODUCT_BUNDLE_IDENTIFIER = dev.umi.app;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.umi.app.local;
 				PRODUCT_MODULE_NAME = Ghostty;
 				PRODUCT_NAME = Umi;
 				SWIFT_EMIT_LOC_STRINGS = YES;

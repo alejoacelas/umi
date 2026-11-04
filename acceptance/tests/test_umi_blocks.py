@@ -316,6 +316,10 @@ def test_the_command_of_a_block_that_ran_is_bold(inst, win, tmp_path):
     in the written check)."""
     pane = win["pane"]
     active(inst, pane)
+    # In `/`, so the folder shown above the prompt and in the block's header (bright in the default
+    # palette) isn't a denser band of text than the W's.
+    run(inst, pane, "cd /")
+    active(inst, pane)
     command = ": " + "W" * 30
 
     def lit(shot):
@@ -522,7 +526,8 @@ def test_the_top_padding_extends_again_once_the_view_fills(fresh, tmp_path):
     other.cli("screenshot", "--window", created["window"], str(tmp_path / "extend.png"))
     w, h, buf = load_png(tmp_path / "extend.png")
     px = lambda x, y: tuple(buf[(y * w + x) * 4:(y * w + x) * 4 + 3])
-    red = lambda c: c[0] > 120 and c[1] < 90 and c[2] < 90
+    # The palette's red (Warp's default is a salmon #ff8272): red well above green and blue.
+    red = lambda c: c[0] > 120 and c[0] - max(c[1], c[2]) > 60
     x = w // 2
     reds = [y for y in range(h) if red(px(x, y))]
     assert reds, "the red rows are drawn"

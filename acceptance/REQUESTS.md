@@ -250,3 +250,11 @@ Then:
 
 With files in panes of their own (above), the editor's file tabs became this strip: any panes can
 share a place, files included.
+
+## 2026-11-04: three features removed
+
+Relayed by Alejo's agent, not his own words; Alejo approved: remove the Settings shortcuts editor
+(⌘, opens the config file in Umi's editor instead, as Ghostty does, and `umi shortcuts` stays;
+SPEC L-17), the copy of Tern's state on the first launch (both Macs already have Umi state), and
+`umi://open` links (documents from the server are read and edited on a web page the agent server
+serves).

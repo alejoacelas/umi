@@ -525,11 +525,6 @@ let's make install when quiet the default"; AG-7 and AG-22 for what comes back.
   headless agent leaves running after its turn (`RUN python3 … &`). **Requirement:** I-4.
 - **Review round 19 (0.6.2)**: `test_idle_agents_in_panes_are_quiet` adds work a live interface leaves
   running detached from its terminal. **Requirement:** I-4.
-- **`umi://open` links (0.6.4)**: new `test_open_links_pull_first_and_stay_inside_the_root` in
-  `test_umi_panes_ui.py`, through the internal `debug.ui.open_url` (what the link's Apple Event runs,
-  with a scratch folder standing in for `~/best`): a file pushed to the remote opens after the pull, an
-  unreachable remote opens the local copy with a notice, and five escaping paths (`..`, absolute, `~`,
-  `..` inside a repository, a symlink out) are refused. **Requirement:** I-6.
 
 ## Even pane sizes after a resize, and comments (BRIEF-comments-and-pane-sizes.md)
 
@@ -618,3 +613,40 @@ REQUESTS.md (2026-11-04).
 - **Fixed, `tests/test_umi_stacks.py`**: the undo test read the undo state (`debug.undo`) without
   undoing; it now checks the step is "Stack Pane" and performs Undo. `frames()` in
   `test_umi_panes_ui.py` skips stack members that aren't on show (they have no frame).
+
+- **Changed, `tests/test_umi_blocks.py`** (found by this run's quick loop, after `d29e2c90b` gave Umi
+  Warp's default Dark palette): `test_the_top_padding_extends_again_once_the_view_fills` detected red
+  as green and blue below 90, which the palette's red `#ff8272` isn't; it now takes red well above
+  green and blue (60 or more). `test_the_command_of_a_block_that_ran_is_bold` measured the densest
+  band of text in the pane's left half, which with the brighter palette was the long working folder
+  above the prompt in both screenshots (1709 against 1709); it now runs in `/`, so the band is the
+  command again. The command is drawn bold (checked in the screenshot). **Requirements:** the
+  tests' own (padding colour, bold commands), unchanged.
+
+## Removed features: the shortcuts editor, the copy from Tern, `umi://open` links (2026-11-04)
+
+Alejo removed three features (relayed by his agent). Only tests of the removed features were deleted;
+every other test runs as before.
+
+- **Settings opens the config file (L-17)**. ⌘, no longer opens a shortcuts editor: it opens
+  `~/.config/umi/config` in the editor, and `umi shortcuts` is the way to change shortcuts.
+  - **Replaced, `tests/test_umi_nav.py`**: `test_settings_opens_from_the_menu` (the Settings window
+    showed) is now `test_settings_opens_the_config_file_in_the_editor` (Settings… opens the file in
+    the editor, made empty when missing, left as it was when it exists; `XDG_CONFIG_HOME` points at
+    a scratch folder). The `ui` test `test_cmd_comma_opens_settings_where_a_shortcut_is_recorded`
+    (recording a key in the editor) is now `test_cmd_comma_opens_the_config_file` (a real ⌘, press
+    opens the file).
+  - **Removed**: the `settings` case of `test_tab_keys_work_whatever_has_focus` (no Settings window
+    to have focus), and the internal `debug.navigation` field `settings_visible` and `debug.key`
+    focus `settings` it used.
+  - **Unchanged**: every `umi shortcuts` test (`test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart`
+    and the review-round tests in `test_review_agents.py` and `test_umi_panes_ui.py`) still covers L-17.
+    The written check L-17 is gone: L-17 is now checked by script only.
+- **No copy from Tern (R-11 is gone)**. Both of Alejo's Macs already have Umi state, so the first
+  launch no longer copies Tern's, and inherited `TERN_*` variables are no longer cleared.
+  - **Removed, `tests/test_umi_import.py`** (all seven R-11 tests) and the `UMI_IMPORT_STATE_DIR`
+    hook it used. Coexisting with Tern stays covered by P-1 (`other_products` still lists Tern).
+- **No `umi://open` links (I-6 is gone)**. Documents from the server are read and edited on a web
+  page the agent server serves. Opening files from Finder and `open FILE` (I-3, E-10) is unchanged.
+  - **Removed, `tests/test_umi_panes_ui.py`**: `test_open_links_pull_first_and_stay_inside_the_root`
+    and the internal `debug.ui.open_url` it used (its entry above is removed with it).

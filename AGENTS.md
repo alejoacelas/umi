@@ -32,7 +32,8 @@ the user's Umi or its sessions. `app/dist/dev.sh umi ls` drives it; `--help` lis
 
 Rebuild the library whenever something outside `app/macos` changes. `app/dist/release.sh --version
 X.Y.Z --build --no-publish` does both steps and stamps a release copy without publishing. The built
-bundle is `Umi.app` (`dev.umi.app`), with `Contents/MacOS/umi-app` (the app) and
+bundle is `Umi.app` (`dev.umi.app.local`; `release.sh` stamps published releases `dev.umi.app`, so
+files opened from Finder go to the installed app and never to a build folder), with `Contents/MacOS/umi-app` (the app) and
 `Contents/MacOS/umi` (the CLI, built by `app/macos/UmiCLI/build.sh` during the Xcode build).
 
 ## Test
@@ -57,7 +58,7 @@ cd app/macos && env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
 
 The Swift tests run inside the app (their host). The app detects that it hosts XCTest and then uses a
 temporary state directory of its own (`UmiPaths.isTestHost`), so it never acts as the user's Umi (no
-copy of Tern's state, no agent plugins registered); the `TEST_RUNNER_*` variables above (they reach the
+agent plugins registered); the `TEST_RUNNER_*` variables above (they reach the
 host) only choose that directory and are optional. Keep it that way: before this guard, `zig build test`
 made the user's `~/Library/Application Support/Umi`.
 
@@ -67,11 +68,12 @@ made the user's `~/Library/Application Support/Umi`.
   also breaks the suite's screenshot and size tests). `release.sh --build` always does.
 - The suite tests the build at `app/macos/build/ReleaseLocal/Umi.app` (`targets/umi.json`; paths in
   it are relative to the file). `results/traceability.md` maps each SPEC requirement to its tests.
-- Run tests that bring windows to the front (the UI tests, and anything else that activates or
-  types into windows) on the other MacBook Air (`ssh mac-air-2`), never on the Mac Alejo is using.
-  Other agents may be working in its checkout (`~/best/projects/2026-10-26-umi`), so test in a
-  worktree of it (`git worktree add ~/umi-test-<branch> <branch>`), and only while no other run
-  there is typing into windows.
+- Run the acceptance suite and the Swift tests on the other MacBook Air (`ssh mac-air-2`), never on
+  the Mac Alejo is using: they open windows there. Other agents may be working in its checkout
+  (`~/best/projects/2026-10-26-umi`), so test in a worktree of it
+  (`git worktree add ~/umi-test-<branch> <branch>`), and only while no other run there is using the
+  screen. A new worktree needs libghostty: build it there, or copy `app/macos/GhosttyKit.xcframework`
+  and `app/zig-out` from a worktree whose files outside `app/macos` are the same.
 - UI tests need the terminal running pytest to have the Accessibility permission and an unlocked
   screen; otherwise they are skipped, and they type into windows, so don't use the Mac meanwhile.
 - `ACCEPTANCE_REAL=1` runs the user's own `claude` and `codex` logins; a fixture removes afterwards
@@ -121,8 +123,7 @@ Product: **Umi** (`Umi.app`, bundle id `dev.umi.app`, CLI `umi`, state directory
 agent plugins `umi@umi`, releases on `alejoacelas/umi`).
 
 Before 0.6.0 it was **Tern** (`dev.tern.app`, `tern`, `TERN_*`, `~/Library/Application Support/Tern`,
-`alejoacelas/tern`). Umi copies Tern's state on its first launch (`UmiTernImport.swift`, SPEC R-11)
-and clears inherited `TERN_*` variables; nothing else refers to Tern on purpose. Historical records
+`alejoacelas/tern`). Umi shares nothing with Tern and runs next to it (SPEC P-1). Historical records
 (old briefs, decisions, reports, commit history) keep the old name.
 
 ## History

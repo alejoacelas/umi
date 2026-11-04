@@ -23,11 +23,6 @@ morning (*umi* is Japanese for "sea").
 
 Umi was called Tern until 0.5.0. Tern can stay installed next to it; they don't share anything.
 
-- The first time Umi opens, it copies Tern's windows, tabs, panes, sidebar, shortcuts and agent
-  sessions from `~/Library/Application Support/Tern` (a copy: Tern's folder is never changed).
-  Copied sessions show in their panes as before but don't resume by themselves, since Tern may
-  still be running them: Take Over continues one in Umi. To copy again, quit Umi, remove
-  `~/Library/Application Support/Umi` and open Umi.
 - The command is `umi` (was `tern`), the state folder `~/Library/Application Support/Umi`, the
   environment variables `UMI_*` (were `TERN_*`), the bundle id `dev.umi.app`, and the agent plugins
   `umi@umi` (were `tern@tern`). Updates come from this repository's releases.
@@ -45,13 +40,8 @@ Full-screen programs (vim, less, agents' interfaces) get the whole pane. To keep
 ## Settings
 
 Umi reads your Ghostty config (`~/.config/ghostty/config`), then its own, `~/.config/umi/config`, for
-settings that only Umi should see (Ghostty never reads it). Umi's Settings (⌘,) edits shortcuts.
-
-## Links
-
-`umi://open?path=PATH` opens a file under `~/best` (PATH relative to it, URL-encoded) in Umi's editor,
-as `open FILE` would. If the file's git repository is behind its upstream, Umi pulls it first, so a
-link to a file another machine just pushed works. Paths that leave `~/best` are refused.
+settings that only Umi should see (Ghostty never reads it). Settings (⌘,) opens that file in Umi's
+editor. `umi shortcuts` lists and changes keyboard shortcuts.
 
 ## Comments
 

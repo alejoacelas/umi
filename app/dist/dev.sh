@@ -12,7 +12,7 @@
 # which compiles incrementally and doesn't touch the ReleaseLocal build the suite tests. It runs
 # as an isolated instance with its own state directory, $UMI_DEV_STATE_DIR (default
 # ~/Library/Application Support/Umi-dev), so it keeps its own windows between restarts and never
-# acts as the user's Umi: no copy of Tern's state, no agent plugins registered, no update checks.
+# acts as the user's Umi: no agent plugins registered, no update checks.
 #
 # libghostty (everything in app/ outside app/macos) is rebuilt only when it changed since the last
 # dev build; it is built ReleaseFast, as for a release, so panes don't show the debug-build banner.

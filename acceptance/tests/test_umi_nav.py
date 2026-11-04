@@ -2,8 +2,8 @@
 
 Shortcuts work whatever has focus; ⌘⇧[ goes back through the tabs visited; ⌘⇧] walks the
 sidebar order; ⌃⌘J / ⌃⌘K go to the sessions that need the user and back; ⌃⇧←/→ move tabs;
-⌘P, ⇧⌘P and ⌘O open the command, pane and file palettes; ⌘, opens Settings, where shortcuts
-are edited; a close returns focus to the pane used before; tabs stay where the user put them:
+⌘P, ⇧⌘P and ⌘O open the command, pane and file palettes; ⌘, opens the config file in the editor,
+and `umi shortcuts` changes shortcuts; a close returns focus to the pane used before; tabs stay where the user put them:
 selecting one or an agent finishing its turn moves nothing, as in Warp (S-7).
 
 Most checks go through the CLI. Behavior that only the UI shows is checked through the app's
@@ -117,9 +117,9 @@ def test_ghostty_no_longer_binds_the_tab_keys(inst, win):
 
 
 @pytest.mark.req("L-10")
-@pytest.mark.parametrize("focus", ["terminal", "editor", "palette", "settings"])
+@pytest.mark.parametrize("focus", ["terminal", "editor", "palette"])
 def test_tab_keys_work_whatever_has_focus(inst, win, tmp_path, focus):
-    """⇧⌘] and ⌃Tab change tabs with focus in a terminal, the editor, the palette or Settings
+    """⇧⌘] and ⌃Tab change tabs with focus in a terminal, the editor or the palette
     (a key press delivered inside the app; the AX test below presses real keys)."""
     second = new_tab(inst, win)
     inst.cli("tab", "focus", win["tab"])
@@ -425,12 +425,33 @@ def test_quick_open_searches_the_focused_panes_repository(inst, win, tmp_path):
         rpc(inst, "debug.palette.close", window=win["window"])
 
 
-# ---- L-17: Settings and the shortcuts editor -----------------------------------------------------
+# ---- L-17: Settings opens the config file; `umi shortcuts` -----------------------------------------
+
+def open_documents(inst):
+    """Every file open in an editor, over all tabs."""
+    paths = []
+    for window in inst.tree()["windows"]:
+        for tab in window["tabs"]:
+            docs = inst.json("editor", "ls", "--pane", tab["panes"][0]["id"])["documents"]
+            paths += [os.path.realpath(d["path"]) for d in docs]
+    return paths
+
 
 @pytest.mark.req("L-17")
-def test_settings_opens_from_the_menu(inst, win):
-    rpc(inst, "debug.menu.perform", title="Settings…")
-    wait_until(lambda: rpc(inst, "debug.navigation")["settings_visible"], 5, message="the Settings window")
+def test_settings_opens_the_config_file_in_the_editor(fresh, tmp_path):
+    """Settings… (⌘,) opens ~/.config/umi/config in the editor, as Ghostty opens its own config file.
+    A missing one is made, empty; an existing one opens as it is."""
+    for name, before in (("missing", None), ("existing", "# mine\nfont-size = 13\n")):
+        config = tmp_path / name / "umi" / "config"
+        if before is not None:
+            config.parent.mkdir(parents=True)
+            config.write_text(before)
+        other = fresh(prefix=f"acc-settings-{name}-", env={"XDG_CONFIG_HOME": str(tmp_path / name)})
+        other.json("window", "new")
+        rpc(other, "debug.menu.perform", title="Settings…")
+        wait_until(lambda: os.path.realpath(config) in open_documents(other), 10,
+                   message=f"the {name} config file open in the editor")
+        assert config.read_text() == (before or ""), "the config file is left as it was"
 
 
 @pytest.mark.req("L-17")
@@ -782,22 +803,17 @@ def test_cmd_o_opens_a_file_from_the_repository(inst, win, ui, tmp_path):
 
 
 @pytest.mark.req("L-17")
-def test_cmd_comma_opens_settings_where_a_shortcut_is_recorded(inst, win, ui):
-    ui.activate()
-    press(ui, ",", "cmd")
-    wait_until(lambda: rpc(inst, "debug.navigation")["settings_visible"], 5, message="Settings")
-    button = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Shortcut for Show Next Tab"), 10,
-                        message="the Show Next Tab row")
-    try:
-        ui.press(button)
-        time.sleep(0.3)
-        press(ui, "down", "ctrl", "cmd")
-        wait_until(lambda: {s["id"]: s for s in inst.json("shortcuts")["shortcuts"]}["tab.next"]["keys"] == ["ctrl+cmd+down"],
-                   5, message="the recorded shortcut")
-        item = menu_item(inst, "Show Next Tab")
-        assert item["modifiers"] == ["ctrl", "cmd"]
-    finally:
-        inst.cli("shortcuts", "reset")
+def test_cmd_comma_opens_the_config_file(ui, fresh, tmp_path):
+    """A real ⌘, press opens the config file in the editor."""
+    from harness import UI
+
+    other = fresh(prefix="acc-settings-key-", env={"XDG_CONFIG_HOME": str(tmp_path)})
+    other.json("window", "new")
+    view = UI(other.app_pid)
+    view.activate()
+    press(view, ",", "cmd")
+    config = os.path.realpath(tmp_path / "umi" / "config")
+    wait_until(lambda: config in open_documents(other), 10, message="the config file open in the editor")
 
 
 @pytest.mark.req("L-12", "L-13")

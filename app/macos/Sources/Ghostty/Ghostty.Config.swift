@@ -89,7 +89,7 @@ extension Ghostty {
 
             ghostty_config_load_recursive_files(cfg)
 
-            // Umi: shortcuts changed in Umi's shortcuts editor, after the user's own files.
+            // Umi: shortcuts changed with `umi shortcuts`, after the user's own files.
             if path == nil, let keybindings = UmiTheme.keybindingsConfigPath() {
                 ghostty_config_load_file(cfg, keybindings)
             }

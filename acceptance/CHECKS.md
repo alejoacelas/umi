@@ -100,10 +100,6 @@ recent and changed ones first).
 - Each palette is quiet (no heavy borders), legible, and shows what the requirement lists.
 - Choosing an entry does what it says, and a command that needs a value asks for it (by hand).
 
-**L-17: Settings (by hand).** ⌘, opens Settings with Umi's shortcuts and Ghostty's keybindings;
-record a new key for one, see it take effect at once, reset it; the window says the Ghostty config
-file isn't changed.
-
 **S-7: sidebar order (by hand).** Five tabs, one pinned, two with agent sessions. Click rows, press
 ⌘1–9, ⇧⌘] several times, ⇧⌘[, ⌃Tab and ⌃⌘J: the selection moves, the tabs never do. Let an agent in
 a tab you aren't looking at finish a turn: its row shows the quiet mark and stays where it is. Drag a

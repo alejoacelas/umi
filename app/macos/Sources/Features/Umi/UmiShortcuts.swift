@@ -11,7 +11,7 @@ import SwiftUI
 @MainActor
 enum UmiShortcuts {
     struct Item {
-        /// Stable id, used by the shortcuts editor and `umi shortcuts`.
+        /// Stable id, used by `umi shortcuts`.
         let id: String
         let title: String
         /// The default shortcut (empty key: none).
@@ -29,7 +29,7 @@ enum UmiShortcuts {
             key.isEmpty ? nil : UmiShortcut(key: key, modifiers: modifiers)
         }
 
-        /// The shortcut in effect: the user's choice from the shortcuts editor, else the default.
+        /// The shortcut in effect: the user's choice from `umi shortcuts`, else the default.
         @MainActor var shortcut: UmiShortcut? { UmiShortcutStore.shared.shortcut(for: self) }
     }
 
@@ -40,7 +40,7 @@ enum UmiShortcuts {
     static var items: [Item] {
         [
             Item(id: "app.settings", title: "Settings…", key: ",", modifiers: [.command], symbol: "gearshape", menu: "App",
-                 action: { UmiSettingsWindow.show() }),
+                 action: { UmiSettings.openConfigFile() }),
             Item(id: "file.open_quickly", title: "Open Quickly…", key: "o", modifiers: [.command], symbol: "doc.text.magnifyingglass",
                  menu: "File", action: { UmiPaletteModel.present(.files) }),
             Item(id: "file.open", title: "Open File…", key: "", modifiers: [], symbol: "doc", menu: "File",
@@ -267,9 +267,6 @@ enum UmiShortcuts {
 
     // MARK: Keys, whatever has focus
 
-    /// While the shortcuts editor records a shortcut, keys go to it.
-    static var suspended = false
-
     static var monitorInstalled: Bool { monitor != nil }
 
     private static func installMonitor() {
@@ -282,7 +279,6 @@ enum UmiShortcuts {
     /// Perform the Umi item whose shortcut this key is. True when the key was Umi's. Every
     /// key press goes through here before any view sees it.
     static func dispatch(_ event: NSEvent) -> Bool {
-        guard !suspended else { return false }
         // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing.
         let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false
         guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey else { return false }

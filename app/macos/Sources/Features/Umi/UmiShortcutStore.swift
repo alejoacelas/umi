@@ -184,7 +184,7 @@ struct UmiShortcut: Hashable {
 
 /// Ghostty's keybindings in effect, worked out the way Umi loads its configuration: Ghostty's
 /// built-in defaults, then Umi's defaults (`defaults.conf`), then the user's Ghostty config
-/// files, then the changes made in Umi's shortcuts editor (`keybindings.conf`).
+/// files, then the changes made with `umi shortcuts` (`keybindings.conf`).
 @MainActor
 enum UmiGhosttyBindings {
     struct Binding {
@@ -349,7 +349,7 @@ enum UmiGhosttyBindings {
 
 // MARK: - Store
 
-/// Shortcuts changed in Umi's shortcuts editor (L-17), kept in Umi's state directory:
+/// Shortcuts changed with `umi shortcuts` (L-17), kept in Umi's state directory:
 /// - `shortcuts.json`: the changes, for Umi's own items and for Ghostty actions;
 /// - `keybindings.conf`: the Ghostty part as Ghostty `keybind` lines, which Umi loads after
 ///   the user's own Ghostty config files. The user's Ghostty config files are never edited.
@@ -558,8 +558,8 @@ final class UmiShortcutStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try FileManager.default.createDirectory(atPath: UmiPaths.stateDirectory, withIntermediateDirectories: true)
         try encoder.encode(saved).write(to: URL(fileURLWithPath: Self.file), options: .atomic)
-        var lines = ["# Written by \(UmiPaths.productName)'s shortcuts editor (Settings, ⌘,). Loaded after your",
-                     "# Ghostty config files; your own files aren't changed. Edit shortcuts in the app.", ""]
+        var lines = ["# Written by `\(UmiPaths.cliName) shortcuts`. Loaded after your Ghostty config files;",
+                     "# your own files aren't changed. Change shortcuts with `\(UmiPaths.cliName) shortcuts`.", ""]
         // Every unbind first: a key freed from one action and given to another must end up bound.
         let actions = saved.ghostty.keys.sorted()
         for action in actions {
@@ -571,8 +571,5 @@ final class UmiShortcutStore {
         try (lines.joined(separator: "\n") + "\n").write(toFile: Self.ghosttyFile, atomically: true, encoding: .utf8)
         UmiShortcuts.applyShortcuts()
         (NSApp.delegate as? AppDelegate)?.ghostty.reloadConfig()
-        NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
-
-    static let didChange = Notification.Name("UmiShortcutsDidChange")
 }

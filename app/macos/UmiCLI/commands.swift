@@ -198,8 +198,8 @@ let commandTable: [CommandHelp] = [
                 actions: [PaletteAction(title: "Close File", argv: ["editor", "close"])]),
     CommandHelp(section: "Editor", usage: "editor mode [preview|source]",
                 actions: [PaletteAction(title: "Toggle Preview and Source", argv: ["editor", "mode"])]),
-    CommandHelp(section: "Editor", usage: "editor default [--dry-run]", summary: "make \(productName) the default app for Markdown",
-                actions: [PaletteAction(title: "Make \(productName) the Default for Markdown", argv: ["editor", "default"])]),
+    CommandHelp(section: "Editor", usage: "editor default [--dry-run]", summary: "make \(productName) the default app for Markdown, text, JSON, CSV, TSV and YAML",
+                actions: [PaletteAction(title: "Make \(productName) the Default for Text Files", argv: ["editor", "default"])]),
     CommandHelp(section: "Editor", usage: "comments [ls] FILE [--all]",
                 summary: "a Markdown file's comments: the text each is on, replies (works without \(productName) running)"),
     CommandHelp(section: "Editor", usage: "comments reply|edit FILE ID TEXT… [--by NAME]", summary: "answer a comment, or change one"),
@@ -238,7 +238,7 @@ let commandTable: [CommandHelp] = [
 
     // Other
     CommandHelp(section: "Other", usage: "shortcuts [ls | set ID KEYS | clear ID | reset [ID]]",
-                summary: "keyboard shortcuts (also in Settings, ⌘,)",
+                summary: "keyboard shortcuts",
                 actions: [PaletteAction(title: "List Keyboard Shortcuts", argv: ["shortcuts"])]),
     CommandHelp(section: "Other", usage: "update", summary: """
         check now and download the newest version (it installs at the next

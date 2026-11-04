@@ -420,7 +420,7 @@ def test_shift_cmd_t_is_reopen_in_the_file_menu(inst, win):
 
 @pytest.mark.req("L-17", "L-20")
 def test_shift_cmd_t_is_listed_where_shortcuts_are_edited(inst, win):
-    """⇧⌘T is one of the shortcuts ⌘, (and `umi shortcuts`) edits: it can be given another key, which the
+    """⇧⌘T is one of the shortcuts `umi shortcuts` edits: it can be given another key, which the
     menu item then shows, and reset."""
     listed = {s["id"]: s for s in inst.json("shortcuts")["shortcuts"]}
     reopen = listed.get("file.reopen")
@@ -915,55 +915,6 @@ def test_ties_go_to_the_current_tab_and_any_pane_of_a_tab_counts(inst, win, tmp_
     # A second pane of t1 in the deeper folder makes t1 the closest, though it isn't focused.
     split(inst, "right", tab_of(inst, t1)["panes"][0]["id"], "--cwd", str(root / "sub"), "--no-focus")
     assert rpc(inst, "debug.ui.open_file", path=str(root / "sub" / "b.md"))["tab"] == t1
-
-
-# ---- I-6: umi://open links ------------------------------------------------------------------------
-
-def _git(*args, cwd=None):
-    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, check=True,
-                   capture_output=True)
-
-
-@pytest.mark.req("I-6", "E-10")
-def test_open_links_pull_first_and_stay_inside_the_root(inst, win, tmp_path):
-    root = tmp_path / "best"
-    root.mkdir()
-    remote, work = tmp_path / "remote.git", tmp_path / "work"
-    _git("init", "-q", "--bare", "-b", "main", str(remote))
-    _git("clone", "-q", str(remote), str(work))
-    (work / "one.md").write_text("# one\n")
-    _git("add", ".", cwd=work)
-    _git("commit", "-qm", "one", cwd=work)
-    _git("push", "-q", "origin", "main", cwd=work)
-    _git("clone", "-q", str(remote), str(root / "desk"))
-    _git("clone", "-q", str(remote), str(root / "offline"))
-    _git("remote", "set-url", "origin", str(tmp_path / "missing.git"), cwd=root / "offline")
-    # The server pushes a file this Mac doesn't have yet.
-    (work / "generated").mkdir()
-    (work / "generated" / "new file.md").write_text("# pushed\n")
-    _git("add", ".", cwd=work)
-    _git("commit", "-qm", "two", cwd=work)
-    _git("push", "-q", "origin", "main", cwd=work)
-    (tmp_path / "secret.md").write_text("# outside\n")
-    os.symlink(tmp_path, root / "out")
-
-    def link(path):
-        return rpc(inst, "debug.ui.open_url", url="umi://open?path=" + path, root=str(root))
-
-    opened = link("desk%2Fgenerated%2Fnew%20file.md")
-    assert opened["kind"] == "file" and "notice" not in opened, "pulled, then opened"
-    assert (root / "desk" / "generated" / "new file.md").exists()
-    docs = inst.json("editor", "ls", "--tab", opened["tab"])["documents"]
-    assert any(d["path"].endswith("/desk/generated/new file.md") for d in docs)
-
-    offline = link("offline/one.md")
-    assert offline["kind"] == "file" and "couldn't fetch" in offline["notice"], "the local copy, with a notice"
-
-    for escaping in ("..%2Fsecret.md", "%2Fetc%2Fhosts", "desk%2F..%2F..%2Fsecret.md", "~%2Fsecret.md", "out%2Fsecret.md"):
-        with pytest.raises(AssertionError, match="outside"):
-            link(escaping)
-    with pytest.raises(AssertionError, match="No such file"):
-        link("desk/never-pushed.md")
 
 
 # ---- UI (real mouse; the lead runs these) ---------------------------------------------------------
