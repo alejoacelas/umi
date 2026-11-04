@@ -202,7 +202,7 @@ def test_cmd_click_on_a_link_opens_a_web_pane_ui(web):
     ui = UI(inst.app_pid)
     url = site + "/doc?" + "x" * 40
     # Every row shows the URL, so a click anywhere on the left of the pane lands on it.
-    inst.cli("send", "--pane", a, "-e", f"clear; for i in $(seq 1 $((LINES+2))); do echo {url}; done; sleep 60")
+    inst.cli("send", "--pane", a, "-e", f"clear; for i in $(seq 1 $((LINES+2))); do echo '{url}'; done; sleep 60")
     time.sleep(1.5)
     inst.cli("window", "focus", web["window"])
     ui.activate()
@@ -222,6 +222,11 @@ def test_cmd_click_on_a_link_opens_a_web_pane_ui(web):
     time.sleep(0.3)
     post(Quartz.kCGEventLeftMouseDown)
     post(Quartz.kCGEventLeftMouseUp)
-    page = wait_until(lambda: web_panes(inst), 10, message="a web pane from the ⌘-click")[0]
+    try:
+        page = wait_until(lambda: web_panes(inst), 10, message="a web pane from the ⌘-click")[0]
+    except AssertionError:
+        inst.cli("screenshot", "--window", web["window"], os.path.join(inst.dir, "cmd-click.png"), check=False)
+        raise AssertionError(f"no web pane after a ⌘-click at {point} in the pane at {(x, y, w, h)}; "
+                             f"screenshot in {inst.dir}; the pane shows:\n{inst.screen(a)[-600:]}")
     assert page["url"] == url
     assert not web["log"].exists() or url not in web["log"].read_text()

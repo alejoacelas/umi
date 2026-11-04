@@ -91,15 +91,20 @@ final class UmiWebPanes: ObservableObject {
 
     /// A link ⌘-clicked in a terminal pane: a page from a listed origin opens in a web pane beside
     /// that pane, and the pane takes focus. Returns false for every other link (the caller opens it
-    /// as before).
+    /// as before). The pane is made on the next turn of the main loop: the click arrives while the
+    /// terminal is still handling its mouse event, and making a pane inside that blocks the app.
+    /// If no pane can be made there, the link opens in the browser, as other links do.
     static func openFromTerminal(_ raw: String, pane: Ghostty.SurfaceView?) -> Bool {
         guard let pane, let url = URL(string: raw), handles(url) else { return false }
-        do {
-            try open(url, near: pane, focus: true)
-            return true
-        } catch {
-            return false
+        DispatchQueue.main.async { [weak pane] in
+            guard let pane else { return }
+            do {
+                try open(url, near: pane, focus: true)
+            } catch {
+                openInBrowser(url, from: pane)
+            }
         }
+        return true
     }
 
     /// Links that leave a web pane's origin open in the default browser. `UMI_TEST_BROWSER_LOG`
