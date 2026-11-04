@@ -887,6 +887,8 @@ final class UmiFileIndex {
     private static var recent: [String] = []
 
     static func noteOpened(_ path: String) {
+        // Resolved, so a folder reached through a symlink (/var and /private/var) matches.
+        let path = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         recent.removeAll { $0 == path }
         recent.insert(path, at: 0)
         if recent.count > 100 { recent.removeLast(recent.count - 100) }
@@ -909,8 +911,9 @@ final class UmiFileIndex {
                 var candidates: [Candidate] = []
                 candidates.reserveCapacity(listing.files.count)
                 let changed = Set(listing.changed)
+                let resolvedRoot = URL(fileURLWithPath: listing.root).resolvingSymlinksInPath().path
                 for path in listing.files {
-                    let absolute = listing.root + "/" + path
+                    let absolute = resolvedRoot + "/" + path
                     let recentIndex = recent.firstIndex(of: absolute)
                     let isChanged = changed.contains(path)
                     let nameStart = (path.lastIndex(of: "/").map { path.utf8.distance(from: path.startIndex, to: $0) + 1 }) ?? 0
