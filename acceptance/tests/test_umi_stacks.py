@@ -68,6 +68,9 @@ def test_a_pane_dropped_on_the_middle_of_another_shares_its_place(inst, win):
 def test_stacking_can_be_undone(inst, win):
     a = win["pane"]
     b = split(inst, "right", a)
+    # Its own step: the split's undo registration, made in the same pass of the run loop as the
+    # stacking's, would join it into one undo group (a person's clicks are separate events).
+    ready(inst, b)
     rpc(inst, "debug.ui.split.drop", pane=b, target=a, zone="center")
     assert shown(inst, win["tab"]) == [b]
     assert inst.rpc("debug.undo")["undo"] == "Stack Pane"
