@@ -655,6 +655,12 @@ every other test runs as before.
   accessibility tree gave for the single pane): the tree reports one "Terminal pane" element for two
   split panes. The drag is still the real mouse on the grab handle. Seen on mac-air-2: a lingering
   notification banner over the top right of the screen covers that handle and fails the test.
+- **Changed, `tests/test_umi_panes_ui.py` `test_dragging_a_tab_row_reorders_and_the_row_menu_opens_ui`**:
+  the row menu opens with a real right-click instead of `AXShowMenu`, and the test looks for it
+  anywhere in the windows' accessibility tree. `AXShowMenu` opened the menu but returned -25204
+  (the menu runs its own event loop, so the call times out), and the menu is a child of the
+  window, not of the app, so the test never saw it. It checks the same items, then that Escape
+  closes the menu: the menu it left open made the next test's drag fail.
 
 ## Added: web panes (E-12, 2026-11-04)
 

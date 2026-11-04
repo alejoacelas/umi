@@ -942,6 +942,17 @@ def _mouse_drag(start, end, steps=30, hold=0.25):
     time.sleep(0.5)
 
 
+def _right_click(rect):
+    """A real right-click in the middle of rect (top-left screen coordinates, as AX gives)."""
+    import Quartz
+    x, y, w, h = rect
+    point = (x + w / 2, y + h / 2)
+    for kind in (Quartz.kCGEventMouseMoved, Quartz.kCGEventRightMouseDown, Quartz.kCGEventRightMouseUp):
+        event = Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonRight)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+        time.sleep(0.1)
+
+
 def _frame(ui, element):
     pos = ui.attr(element, "AXPosition")
     size = ui.attr(element, "AXSize")
@@ -1000,13 +1011,13 @@ def test_dragging_a_tab_row_reorders_and_the_row_menu_opens_ui(inst, win, ui):
     x1, y1, w1, h1 = _frame(ui, first)
     _mouse_drag((x3 + w3 / 2, y3 + h3 / 2), (x1 + w1 / 2, y1 + 4))
     wait_until(lambda: tab_ids(inst, win["window"])[0] == t3, 5, message="dropped before the first row")
-    # Right-click menu: Warp's items.
-    err = ui.AX.AXUIElementPerformAction(_row_element(ui, "drag-second"), "AXShowMenu")
-    assert err == 0
-    time.sleep(0.5)
-    menus = [c for c in ui.attr(ui.app, "AXChildren") or [] if ui.role(c) == "AXMenu"]
+    # Right-click menu: Warp's items. The menu sits in the window's accessibility tree, not
+    # among the app's children.
+    _right_click(_frame(ui, _row_element(ui, "drag-second")))
+    menus = wait_until(lambda: ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the row menu")
     titles = set(t for m in menus for t in ui.texts(m))
     ui.key(ui.ESCAPE)
+    wait_until(lambda: not ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="Escape closed the menu")
     missing = [t for t in ("Copy Title", "Move Tab Up", "Close Tabs Below", "Close Other Tabs", "Tab Color")
                if t not in titles]
     assert not missing, f"the row menu lacks {missing} (it has {sorted(titles)})"
