@@ -512,10 +512,10 @@ def test_the_top_padding_extends_again_once_the_view_fills(fresh, tmp_path):
     pane = created["pane"]
     active(other, pane)
     other.cli("sidebar", "off")
-    # Red rows (an exact red, whatever the palette's red is) down to the last one, the cursor on it: nothing scrolls, nothing is moved down.
+    # Red rows down to the last one, the cursor on it: nothing scrolls, nothing is moved down.
     other.cli("send", "--pane", pane, "-e",
-              "clear; for i in $(seq 2 $LINES); do printf '\\033[48;2;200;0;0m\\033[K\\033[0m\\n'; done; "
-              "printf '\\033[48;2;200;0;0m\\033[K\\033[0m'; sleep 8")
+              "clear; for i in $(seq 2 $LINES); do printf '\\033[41m\\033[K\\033[0m\\n'; done; "
+              "printf '\\033[41m\\033[K\\033[0m'; sleep 8")
     wait_until(lambda: (lambda b: b["offset_rows"] == 0 and b["drawn_offset_rows"] == 0)(blocks(other, pane)), 10,
                message="the pane filled")
     time.sleep(1)

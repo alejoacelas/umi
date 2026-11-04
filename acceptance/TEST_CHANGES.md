@@ -615,8 +615,6 @@ REQUESTS.md (2026-11-04).
   tab, so the tab keeps the file's pane and the file.
 - **Changed, `tests/test_review_agents.py` `test_hiding_the_last_pane_of_a_tab_keeps_its_editors_edits`**:
   the edits also count as kept when the file's pane is still open with them (its tab no longer goes).
-- **Changed, `tests/test_umi_blocks.py` `test_the_top_padding_extends_again_once_the_view_fills`**: the
-  rows are an exact 24-bit red; Warp's palette red (#ff8272) is lighter than the test's idea of red.
 - **Fixed, `tests/test_umi_stacks.py`**: the undo test read the undo state (`debug.undo`) without
   undoing; it now checks the step is "Stack Pane" and performs Undo. `frames()` in
   `test_umi_panes_ui.py` skips stack members that aren't on show (they have no frame).
