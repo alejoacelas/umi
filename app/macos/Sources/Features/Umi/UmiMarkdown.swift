@@ -13,6 +13,13 @@ enum UmiMarkdown {
     /// copied from; when given, each run of text is wrapped in `<span data-s="offset">`, so a
     /// selection in the preview can be traced back to the file.
     static func html(from markdown: String, baseURL: URL?, positions: ((NSRange) -> Int?)? = nil) -> String {
+        if let front = frontMatter(markdown) {
+            let rest = (markdown as NSString).substring(from: front.end)
+            let shifted = positions.map { positions in
+                { (range: NSRange) in positions(NSRange(location: range.location + front.end, length: range.length)) }
+            }
+            return frontMatterHTML(markdown, yaml: front.yaml) + html(from: rest, baseURL: baseURL, positions: shifted)
+        }
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: false,
             interpretedSyntax: .full,
@@ -76,6 +83,102 @@ enum UmiMarkdown {
         }
         for block in open.reversed() { html += closeTag(block, parents: open) }
         return headingAnchors(taskLists(html))
+    }
+
+    // MARK: Front matter
+
+    /// YAML front matter: a `---` line at the very start of the file, closed by a `---` or `...`
+    /// line. `yaml` is the text between the fences; `end` is where the Markdown starts.
+    static func frontMatter(_ markdown: String) -> (yaml: NSRange, end: Int)? {
+        let ns = markdown as NSString
+        func lineEnd(_ start: Int) -> (content: Int, next: Int) {
+            let line = ns.lineRange(for: NSRange(location: start, length: 0))
+            var content = NSMaxRange(line)
+            while content > start, let scalar = UnicodeScalar(ns.character(at: content - 1)),
+                  CharacterSet.newlines.contains(scalar) {
+                content -= 1
+            }
+            return (content, NSMaxRange(line))
+        }
+        func line(_ start: Int, _ end: Int) -> String {
+            ns.substring(with: NSRange(location: start, length: end - start))
+                .trimmingCharacters(in: .whitespaces)
+        }
+        guard ns.hasPrefix("---") else { return nil }
+        let first = lineEnd(0)
+        guard line(0, first.content) == "---", first.next > first.content else { return nil }
+        var start = first.next
+        while start < ns.length {
+            let (content, next) = lineEnd(start)
+            let text = line(start, content)
+            if text == "---" || text == "..." {
+                return (NSRange(location: first.next, length: start - first.next), next)
+            }
+            start = next
+        }
+        return nil
+    }
+
+    /// Front matter as a table of its top-level keys. A value spread over several lines (a
+    /// list, a nested map, a block string) shows as written. YAML whose top level isn't a map
+    /// shows as a code block. Its text carries no file offsets, so comments can't anchor in it:
+    /// review markup there would break the YAML for other tools.
+    private static func frontMatterHTML(_ markdown: String, yaml: NSRange) -> String {
+        let ns = markdown as NSString
+        func marked(_ range: NSRange) -> String { escape(ns.substring(with: range)) }
+        func trimmed(_ range: NSRange) -> NSRange {
+            var start = range.location, end = NSMaxRange(range)
+            let space = CharacterSet.whitespacesAndNewlines
+            while start < end, let s = UnicodeScalar(ns.character(at: start)), space.contains(s) { start += 1 }
+            while end > start, let s = UnicodeScalar(ns.character(at: end - 1)), space.contains(s) { end -= 1 }
+            return NSRange(location: start, length: end - start)
+        }
+
+        // Each entry: its key, the value on the key's line, and the lines under it.
+        var entries: [(key: NSRange, inline: NSRange, block: NSRange?)] = []
+        var cursor = yaml.location
+        var isMap = true
+        while cursor < NSMaxRange(yaml) {
+            let line = ns.lineRange(for: NSRange(location: cursor, length: 0))
+            let lineText = ns.substring(with: line)
+            let content = lineText.trimmingCharacters(in: .whitespacesAndNewlines)
+            defer { cursor = NSMaxRange(line) }
+            if content.isEmpty || content.hasPrefix("#") && lineText.first == "#" { continue }
+            if let first = lineText.unicodeScalars.first, CharacterSet.whitespaces.contains(first) || lineText.hasPrefix("- ") || lineText == "-\n" {
+                guard let last = entries.popLast() else { isMap = false; break }
+                let blockStart = last.block?.location ?? line.location
+                entries.append((last.key, last.inline, NSRange(location: blockStart, length: NSMaxRange(line) - blockStart)))
+                continue
+            }
+            let colon = (lineText as NSString).range(of: ":(\\s|$)", options: .regularExpression)
+            guard colon.location != NSNotFound, colon.location > 0 else { isMap = false; break }
+            let key = NSRange(location: line.location, length: colon.location)
+            let valueStart = line.location + colon.location + 1
+            entries.append((key, trimmed(NSRange(location: valueStart, length: NSMaxRange(line) - valueStart)), nil))
+        }
+        guard isMap else {
+            return "<pre class=\"front-matter\"><code>\(marked(yaml))</code></pre>"
+        }
+        guard !entries.isEmpty else { return "" }
+        var rows = ""
+        for entry in entries {
+            var value = entry.inline.length > 0 ? marked(entry.inline) : ""
+            if let block = entry.block {
+                // A block string's `|` or `>` marker says how to read the lines under it.
+                if value.range(of: "^[|>][-+0-9]*$", options: .regularExpression) != nil { value = "" }
+                // Trailing blank lines belong to the gap before the next key.
+                var end = NSMaxRange(block)
+                while end > block.location, let s = UnicodeScalar(ns.character(at: end - 1)),
+                      CharacterSet.whitespacesAndNewlines.contains(s) { end -= 1 }
+                let lines = ns.substring(with: NSRange(location: block.location, length: end - block.location))
+                    .components(separatedBy: "\n").map { $0.hasSuffix("\r") ? String($0.dropLast()) : $0 }
+                let indent = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                    .map { $0.prefix { $0 == " " }.count }.min() ?? 0
+                value += "<pre>\(escape(lines.map { String($0.dropFirst(min(indent, $0.prefix { $0 == " " }.count))) }.joined(separator: "\n")))</pre>"
+            }
+            rows += "<tr><th>\(marked(trimmed(entry.key)))</th><td>\(value)</td></tr>"
+        }
+        return "<table class=\"front-matter\">\(rows)</table>"
     }
 
     /// Give headings GitHub-style ids (`-1`, `-2` for repeats) so
@@ -375,6 +478,12 @@ enum UmiMarkdown {
         table { border-collapse: collapse; } th, td { padding: 6px 12px; border-bottom: 1px solid rgba(\(tint),0.08); }
         th { text-align: left; color: \(heading); font-weight: 600; }
         img { max-width: 100%; }
+        .front-matter { font-size: 12.5px; color: \(muted); margin: 0 0 1.6em; }
+        table.front-matter { width: 100%; border-top: 1px solid rgba(\(tint),0.08); }
+        table.front-matter th, table.front-matter td { padding: 4px 12px 4px 0; vertical-align: top; font-weight: 400; }
+        table.front-matter th { color: \(muted); width: 1%; white-space: nowrap; font: 12px/1.6 "SF Mono", Menlo, monospace; }
+        table.front-matter td { color: \(fg); }
+        table.front-matter pre { margin: 0; padding: 0; background: none; font: 12px/1.6 "SF Mono", Menlo, monospace; white-space: pre-wrap; }
         </style>\(head)</head><body>\(body)</body></html>
         """
     }
