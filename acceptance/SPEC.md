@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-11.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-12.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -539,6 +539,17 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   - the review loop: `<cli> comments wait FILE` blocks until the user presses Done on that file in
     the editor, then prints its open comments; while an agent waits the margin says so. A comment
     being written isn't lost when an agent changes the file meanwhile.
+- **E-12 [A]** Web pages from the user's own servers open inside the app. The config key
+  `umi-web-origin` (repeatable, no default) lists origins, such as
+  `https://agent-server.tail622085.ts.net`. A link from a listed origin ⌘-clicked in a terminal pane,
+  or given to `<cli> edit URL`, opens in a web pane instead of the browser: a pane placed as a file
+  pane is (E-9) that splits, moves, stacks (M-7), closes and is restored like any other pane. It
+  shows the page with its title, Reload (⌘R), Open in Browser and a close button along its top;
+  there is no address bar. Pages run their scripts, and their cookies and local storage persist
+  across relaunches. A relaunch restores the page by its URL. Links and navigation to other origins
+  open in the default browser. `<cli> edit` refuses a URL from an origin that isn't listed. A web
+  pane counts as quiet for updates (I-4): the pages it is for keep unsaved drafts in their local
+  storage, which survives the relaunch.
 
 ## AG. Agent sessions
 

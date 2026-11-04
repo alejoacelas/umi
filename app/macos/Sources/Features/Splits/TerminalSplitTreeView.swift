@@ -123,6 +123,8 @@ private struct TerminalSplitLeaf: View {
             .overlay { UmiAgentPaneOverlay(surfaceView: surfaceView) }
             // Umi: so is a file's editor, in a file pane (E-1).
             .overlay { UmiFilePaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
+            // Umi: and a page, in a web pane (E-12).
+            .overlay { UmiWebPaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
             .background {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly

@@ -4020,6 +4020,14 @@ term: []const u8 = "xterm-ghostty",
 /// This only works on macOS since only macOS has an auto-update feature.
 @"auto-update-channel": ?build_config.ReleaseChannel = null,
 
+/// Umi: a web origin (scheme, host and port, such as
+/// `https://example.ts.net`) whose links open inside Umi, in a web pane,
+/// instead of in the default browser: links ⌘-clicked in a terminal and
+/// URLs given to `umi edit` (or `umi open`). Repeat the key for more
+/// origins; an empty value clears the list. Unset, every link opens in the
+/// browser.
+@"umi-web-origin": UmiWebOrigins = .{},
+
 /// This is set by the CLI parser for deinit.
 _arena: ?ArenaAllocator = null,
 
@@ -6217,6 +6225,66 @@ pub const Palette = struct {
 /// a list of strings. This isn't called "StringList" because I find that
 /// sometimes leads to confusion that it _accepts_ a list such as
 /// comma-separated values.
+/// Umi: the `umi-web-origin` list. Repeatable like RepeatableString; the C
+/// API gets the origins as one string, one per line.
+pub const UmiWebOrigins = struct {
+    const Self = @This();
+
+    list: std.ArrayList([:0]const u8) = .empty,
+    joined: [:0]const u8 = "",
+
+    pub fn cval(self: Self) [*:0]const u8 {
+        return self.joined.ptr;
+    }
+
+    pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
+        const value = std.mem.trim(u8, input orelse return error.ValueRequired, " \t");
+        if (value.len == 0) {
+            self.list.clearRetainingCapacity();
+            self.joined = "";
+            return;
+        }
+        try self.list.append(alloc, try alloc.dupeZ(u8, value));
+        self.joined = try std.mem.joinZ(alloc, "\n", self.list.items);
+    }
+
+    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
+        var list: std.ArrayList([:0]const u8) = .empty;
+        try list.ensureTotalCapacity(alloc, self.list.items.len);
+        for (self.list.items) |item| list.appendAssumeCapacity(try alloc.dupeZ(u8, item));
+        return .{ .list = list, .joined = try alloc.dupeZ(u8, self.joined) };
+    }
+
+    pub fn equal(self: Self, other: Self) bool {
+        return std.mem.eql(u8, self.joined, other.joined);
+    }
+
+    pub fn formatEntry(self: Self, formatter: formatterpkg.EntryFormatter) !void {
+        if (self.list.items.len == 0) {
+            try formatter.formatEntry(void, {});
+            return;
+        }
+        for (self.list.items) |value| try formatter.formatEntry([]const u8, value);
+    }
+
+    test "parseCLI" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var origins: Self = .{};
+        try origins.parseCLI(alloc, "https://a.example");
+        try origins.parseCLI(alloc, " http://127.0.0.1:8080 ");
+        try testing.expectEqualStrings("https://a.example\nhttp://127.0.0.1:8080", origins.joined);
+        const copy = try origins.clone(alloc);
+        try testing.expect(origins.equal(copy));
+        try origins.parseCLI(alloc, "");
+        try testing.expectEqual(@as(usize, 0), origins.list.items.len);
+        try testing.expectEqualStrings("", origins.joined);
+    }
+};
+
 pub const RepeatableString = struct {
     const Self = @This();
 

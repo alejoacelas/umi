@@ -427,17 +427,41 @@ enum UmiEditor {
     static func handleOpen(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
         guard let paths = params.strings("paths"), !paths.isEmpty else { throw UmiError.badRequest("edit: name a file") }
         let mode = params.string("mode").flatMap(UmiDocument.Mode.init(rawValue:))
-        // Check every file first: a refusal changes nothing.
-        for path in paths { try UmiTextFile.checkOpenable(URL(fileURLWithPath: path)) }
+        // Check every file and URL first: a refusal changes nothing. A URL opens in a web pane
+        // when its origin is in `umi-web-origin` (E-12).
+        for path in paths {
+            if let url = webURL(path) {
+                guard UmiWebPanes.handles(url) else {
+                    throw UmiError.badRequest("\(path): its origin isn't an umi-web-origin in \(UmiPaths.userConfigFile)")
+                }
+            } else {
+                try UmiTextFile.checkOpenable(URL(fileURLWithPath: path))
+            }
+        }
         var anchor = try anchorPane(params, caller: caller)
         var opened: [[String: Any]] = []
+        var pages: [[String: Any]] = []
         for path in paths {
+            if let url = webURL(path) {
+                let (pane, page) = try UmiWebPanes.open(url, near: anchor, focus: false)
+                pages.append(["url": page.url.absoluteString, "pane": pane.umiID])
+                anchor = pane
+                continue
+            }
             let (pane, doc) = try UmiFilePanes.open(URL(fileURLWithPath: path), mode: mode, near: anchor, focus: false)
             opened.append(json(doc, pane: pane))
             anchor = pane
         }
         let location = UmiTopology.locate(anchor)
-        return ["documents": opened, "tab": location?.tab.idString ?? "", "window": location?.window.umiIDString ?? ""]
+        return ["documents": opened, "pages": pages, "tab": location?.tab.idString ?? "",
+                "window": location?.window.umiIDString ?? ""]
+    }
+
+    /// An http(s) URL given to `edit` in place of a file.
+    private static func webURL(_ path: String) -> URL? {
+        let lower = path.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else { return nil }
+        return URL(string: path)
     }
 
     static func handleList(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {

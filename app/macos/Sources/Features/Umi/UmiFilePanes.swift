@@ -89,16 +89,29 @@ final class UmiFilePanes: ObservableObject {
         }
         let doc = try UmiDocument(url: url, mode: mode)
         doc.reviewWaiters = UmiEvents.shared.waiters(on: doc.url.path)
+        let placed = try newPane(near: anchor, cwd: url.deletingLastPathComponent().path, for: url.lastPathComponent)
+        shared.attach(doc, to: placed.pane)
+        if focus { UmiLayout.focusPane(placed.pane, activate: true) }
+        UmiEvents.shared.emit("editor.opened", ["path": doc.url.path, "pane": placed.pane.umiID,
+                                                "tab": placed.tab, "window": placed.window])
+        return (placed.pane, doc)
+    }
+
+    /// A new pane for something opened from `anchor` (E-9): to the right of `anchor`, unless
+    /// `anchor`'s tab already shows three panes: then in a new tab right after that tab. File
+    /// panes and web panes are placed this way.
+    static func newPane(near anchor: Ghostty.SurfaceView, cwd: String?,
+                        for what: String) throws -> (pane: Ghostty.SurfaceView, tab: String, window: String) {
         guard let location = UmiTopology.locate(anchor) else { throw UmiError.notFound("the pane isn't in a window") }
         let window = location.window
         let tab = location.tab
         let tree = window.tree(of: tab)
-        // A stack member that isn't on show: the file goes beside the member that is.
+        // A stack member that isn't on show: the new pane goes beside the member that is.
         let shownAnchor = tree.contains(anchor) ? anchor
             : (tab.stack(of: anchor).flatMap { window.shownMember(of: $0, in: tab) } ?? anchor)
 
         var options = UmiLayout.PaneOptions()
-        options.cwd = url.deletingLastPathComponent().path
+        options.cwd = cwd
         let created: [String: Any]
         if (tree.root?.leaves().count ?? 0) < maxPanesPerTab {
             created = try UmiLayout.split(shownAnchor, direction: .right, options: options, ratio: nil, focus: false)
@@ -109,13 +122,9 @@ final class UmiFilePanes: ObservableObject {
         }
         guard let id = created["pane"] as? String,
               let pane = UmiTopology.allSurfaces.first(where: { $0.umiID == id }) else {
-            throw UmiError.failed("couldn't make a pane for \(url.lastPathComponent)")
+            throw UmiError.failed("couldn't make a pane for \(what)")
         }
-        shared.attach(doc, to: pane)
-        if focus { UmiLayout.focusPane(pane, activate: true) }
-        UmiEvents.shared.emit("editor.opened", ["path": doc.url.path, "pane": pane.umiID,
-                                                "tab": (created["tab"] as? String) ?? "", "window": window.umiIDString])
-        return (pane, doc)
+        return (pane, (created["tab"] as? String) ?? "", window.umiIDString)
     }
 
     /// New files get a pane in the caller's tab while it shows fewer than this many panes.
@@ -247,7 +256,7 @@ struct UmiFilePaneOverlay: View {
     }
 }
 
-private struct UmiFilePaneHosted: NSViewRepresentable {
+struct UmiFilePaneHosted: NSViewRepresentable {
     let content: AnyView
 
     func makeNSView(context: Context) -> NSHostingView<AnyView> {

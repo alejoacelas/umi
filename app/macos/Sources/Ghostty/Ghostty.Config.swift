@@ -651,6 +651,15 @@ extension Ghostty {
             return AutoUpdate(rawValue: str)
         }
 
+        /// Umi: the `umi-web-origin` lines (E-12).
+        var umiWebOrigins: [String] {
+            guard let config = self.config else { return [] }
+            var v: UnsafePointer<Int8>?
+            let key = "umi-web-origin"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))), let ptr = v else { return [] }
+            return String(cString: ptr).split(separator: "\n").map(String.init)
+        }
+
         var autoUpdateChannel: AutoUpdateChannel {
             let defaultValue = AutoUpdateChannel.stable
             guard let config = self.config else { return defaultValue }

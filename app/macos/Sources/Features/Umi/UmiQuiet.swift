@@ -9,7 +9,9 @@ import GhosttyKit
 /// - every pane is at its own shell's prompt with nothing typed and nothing else running there,
 ///   or shows an idle agent: its own interface (Claude Code, Codex) idle with nothing typed in
 ///   it, or a session's read-only view;
-/// - no editor document has unsaved changes, and no dialog, sheet or text field is in use;
+/// - no editor document has unsaved changes, and no dialog, sheet or text field is in use (a web
+///   pane counts as quiet: its page keeps unsaved drafts in its local storage, which survives the
+///   relaunch, E-12);
 /// - nobody has typed or clicked in Umi for two minutes.
 ///
 /// `reasons(in:)` decides from a snapshot (the unit tests give it made-up ones); `snapshot()`

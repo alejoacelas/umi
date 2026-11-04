@@ -146,6 +146,7 @@ enum UmiStacks {
     /// The name a member goes by in its stack's strip.
     static func label(of pane: Ghostty.SurfaceView) -> String {
         if let doc = UmiFilePanes.shared.document(of: pane) { return doc.name }
+        if let page = UmiWebPanes.shared.page(of: pane) { return page.displayTitle }
         if let name = UmiState.shared.paneName(pane.id), !name.isEmpty { return name }
         if !pane.title.isEmpty, pane.title != "👻" { return pane.title }
         let folder = UmiTopology.cwd(of: pane)
@@ -178,11 +179,12 @@ private struct UmiStackChip: View {
     let shown: Bool
     @State private var hovering = false
     @ObservedObject private var files = UmiFilePanes.shared
+    @ObservedObject private var web = UmiWebPanes.shared
 
     var body: some View {
         let doc = files.document(of: member)
         HStack(spacing: 5) {
-            Image(systemName: doc.map { UmiEditor.icon(for: $0.url) } ?? "terminal")
+            Image(systemName: doc.map { UmiEditor.icon(for: $0.url) } ?? (web.isWebPane(member.id) ? "globe" : "terminal"))
                 .font(.system(size: 10))
             Text(UmiStacks.label(of: member))
                 .font(UmiTheme.uiFont)

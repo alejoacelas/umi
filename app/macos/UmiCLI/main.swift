@@ -1135,7 +1135,9 @@ func editCommand(_ argv: [String]) {
         }
         guard !files.isEmpty else { fail("edit: name a file") }
     }
-    var params: [String: Any] = ["paths": files.map { absolutePath($0) }]
+    // http(s) URLs pass as they are: the app opens them in web panes (E-12).
+    let isURL = { (arg: String) in ["http://", "https://"].contains { arg.lowercased().hasPrefix($0) } }
+    var params: [String: Any] = ["paths": files.map { isURL($0) ? $0 : absolutePath($0) }]
     if args.has("--source") { params["mode"] = "source" }
     if args.has("--preview") { params["mode"] = "preview" }
     if let tab = args.value("--tab") { params["tab"] = tab }

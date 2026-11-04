@@ -124,6 +124,7 @@ final class UmiPersistence {
                 pane["file"] = doc.url.path
                 pane["mode"] = doc.mode.rawValue
             }
+            if let page = UmiWebPanes.shared.page(of: view) { pane["web"] = page.url.absoluteString }
             return ["pane": pane]
         case .split(let split):
             return ["split": [
@@ -248,6 +249,10 @@ final class UmiPersistence {
                 if let doc = try? UmiDocument(url: URL(fileURLWithPath: path), mode: mode) {
                     UmiFilePanes.shared.attach(doc, to: view)
                 }
+            }
+            // A web pane loads its page again (E-12).
+            if let web = pane["web"] as? String, let url = URL(string: web) {
+                UmiWebPanes.shared.attach(UmiWebPage(url: url), to: view)
             }
             return .leaf(view: view)
         }

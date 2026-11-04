@@ -190,7 +190,8 @@ let commandTable: [CommandHelp] = [
                                         ask: [Ask(name: "OUT", prompt: "Save as (.png)", kind: "file")])]),
 
     // Editor
-    CommandHelp(section: "Editor", usage: "edit FILE… [--source|--preview] [--tab T | --pane P]",
+    CommandHelp(section: "Editor", usage: "edit FILE|URL… [--source|--preview] [--tab T | --pane P]",
+                summary: "a URL from an umi-web-origin opens in a web pane",
                 actions: [PaletteAction(title: "Edit File…", argv: ["edit"], ask: [Ask(name: "FILE", prompt: "File", kind: "file")])]),
     CommandHelp(section: "Editor", usage: "editor ls [--tab T | --pane P]",
                 actions: [PaletteAction(title: "List Open Files", argv: ["editor", "ls"])]),

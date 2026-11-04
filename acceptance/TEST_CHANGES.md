@@ -655,3 +655,18 @@ every other test runs as before.
   accessibility tree gave for the single pane): the tree reports one "Terminal pane" element for two
   split panes. The drag is still the real mouse on the grab handle. Seen on mac-air-2: a lingering
   notification banner over the top right of the screen covers that handle and fails the test.
+
+## Added: web panes (E-12, 2026-11-04)
+
+New requirement, new tests only; no existing test changed.
+
+- **Added, `tests/test_umi_web.py`**: a local HTTP server on `127.0.0.1` stands in for the agent
+  server, listed as `umi-web-origin` in a scratch `XDG_CONFIG_HOME`. The tests cover `edit URL`
+  (placement beside the caller, no second pane for the same URL, other origins refused), a link
+  opened from a terminal through the internal `debug.ui.open_url` (what the terminal's open-URL
+  action runs), navigation within the origin and to another one (`localhost` vs `127.0.0.1`),
+  moving and stacking without the page loading again, restoring by URL after a relaunch with the
+  page's local storage intact and the pane not holding up a quiet update, and a screenshot showing
+  the page. One `ui` test ⌘-clicks a URL printed in a terminal with the real mouse.
+- **Test hook, `UMI_TEST_BROWSER_LOG`**: links a web pane sends to the default browser are written
+  to that file instead of opening a browser on the test Mac.

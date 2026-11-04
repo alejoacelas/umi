@@ -759,7 +759,7 @@ extension Ghostty {
                 checkForUpdates(app)
 
             case GHOSTTY_ACTION_OPEN_URL:
-                return openURL(action.action.open_url)
+                return openURL(action.action.open_url, target: target)
 
             case GHOSTTY_ACTION_UNDO:
                 return undo(app, target: target)
@@ -821,9 +821,18 @@ extension Ghostty {
         }
 
         private static func openURL(
-            _ v: ghostty_action_open_url_s
+            _ v: ghostty_action_open_url_s,
+            target: ghostty_target_s? = nil
         ) -> Bool {
             let action = Ghostty.Action.OpenURL(c: v)
+
+            // Umi: a link from an origin in `umi-web-origin`, ⌘-clicked in a pane, opens in a
+            // web pane beside it instead of the browser (E-12).
+            if let target, target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface,
+               let surfaceView = self.surfaceView(from: surface),
+               MainActor.assumeIsolated({ UmiWebPanes.openFromTerminal(action.url, pane: surfaceView) }) {
+                return true
+            }
 
             // OSC 8 targets are producer-controlled terminal output. Keep them
             // out of the unrestricted generic opener so unsafe local files and

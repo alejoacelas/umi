@@ -285,6 +285,10 @@ enum UmiTopology {
         ]
         if let name = UmiState.shared.paneName(pane.id) { json["name"] = name }
         if let doc = UmiFilePanes.shared.document(of: pane) { json["file"] = doc.url.path }
+        if let page = UmiWebPanes.shared.page(of: pane) {
+            json["url"] = page.url.absoluteString
+            json["title"] = page.title
+        }
         if let location = locate(pane) {
             json["shown"] = location.window.tree(of: location.tab).contains(pane)
             if let stack = location.tab.stack(of: pane) { json["stack"] = stack.members.map(\.umiID) }

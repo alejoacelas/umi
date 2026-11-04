@@ -13,6 +13,12 @@ enum UmiUIDebug {
                     "frame": frameJSON(window.window?.frame ?? .zero),
                     "rows": window.tabs.map { UmiSidebarRowModel(tab: $0, in: window).json() }]
 
+        case "debug.ui.open_url":
+            // A link ⌘-clicked in a pane: what the terminal's open-URL action runs (E-12).
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            guard let url = params.string("url") else { throw UmiError.badRequest("url is required") }
+            return ["web_pane": UmiWebPanes.openFromTerminal(url, pane: pane)]
+
         case "debug.ui.attention.set":
             // Stands in for the agent engine (UmiAttention's writer).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)

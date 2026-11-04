@@ -851,6 +851,13 @@ extension Ghostty {
                     UmiFilePanes.shared.focusEditor(of: self)
                 }
             }
+            // Umi: a web pane's keyboard focus is its page.
+            if result, UmiWebPanes.shared.isWebPane(id) {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    UmiWebPanes.shared.focusPage(of: self)
+                }
+            }
             return result
         }
 

@@ -68,7 +68,8 @@ Objects in JSON:
 - **Pane**: `{"id", "cwd", "name"?, "focused": bool, "zoomed": bool, "agent"?: session id (a session
   shown in this pane, read-only or live), "file"?: path (a file pane), "shown": bool (false for a
   stack member that isn't on show), "stack"?: [id] (the panes sharing its place, in strip order),
-  "frame"?: {"x", "y", "width", "height"} (points, top-left origin, in the window's terminal area)}`.
+  "frame"?: {"x", "y", "width", "height"} (points, top-left origin, in the window's terminal area),
+  "url"?: the page's address and "title": its title (a web pane, SPEC E-12)}`.
   A tab's `panes` lists the panes on show, then stack members that aren't.
 
 Events: `pane.created` and `tab.created` carry `"reopened": true` when `reopen` brought them back;
@@ -89,7 +90,7 @@ pinned; nothing reorders them on its own (SPEC S-7).
 
 | Command | Notes |
 |---|---|
-| `edit FILE… [--source\|--preview] [--tab T \| --pane P]` | opens each file in a pane of its own: the first to the right of the pane (the calling pane, or the tab's focused pane), each next one to the right of the one before; a tab already showing three panes gets a new tab after it instead. A file already open shows where it is. Keyboard focus stays where it was |
+| `edit FILE\|URL… [--source\|--preview] [--tab T \| --pane P]` | opens each file in a pane of its own: the first to the right of the pane (the calling pane, or the tab's focused pane), each next one to the right of the one before; a tab already showing three panes gets a new tab after it instead. A file already open shows where it is. Keyboard focus stays where it was. An http(s) URL whose origin is an `umi-web-origin` opens the same way in a web pane (SPEC E-12); other URLs are refused. JSON: `{"documents": [{"path", "pane", …}], "pages": [{"url", "pane"}], "tab", "window"}`. `open` is the same command |
 | `editor ls [--tab T \| --pane P]` | JSON: `{"documents": [{"path", "pane", "mode": "preview"\|"source", "dirty": bool}], "active"}`: the files open in that tab's panes |
 | `editor close [FILE] [--force]` | refuses dirty documents without `--force` |
 | `editor mode [preview\|source] [FILE]` | toggles without a mode; FILE picks one of the tab's files (default: the focused one) |
