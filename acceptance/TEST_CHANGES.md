@@ -579,3 +579,11 @@ of leaving a comment on the doc … make sure comments are visible to you."
   unsaved edits unsaved.
 - **Changed, `tests/test_comments.py` helpers hide the sidebar in their window**: another test leaves
   new windows' sidebar 600 points wide, which made the editor too narrow for the margin.
+- **Changed, `tests/test_umi_blocks.py`** (found by this run's quick loop, after `d29e2c90b` gave Umi
+  Warp's default Dark palette): `test_the_top_padding_extends_again_once_the_view_fills` detected red
+  as green and blue below 90, which the palette's red `#ff8272` isn't; it now takes red well above
+  green and blue (60 or more). `test_the_command_of_a_block_that_ran_is_bold` measured the densest
+  band of text in the pane's left half, which with the brighter palette was the long working folder
+  above the prompt in both screenshots (1709 against 1709); it now runs in `/`, so the band is the
+  command again. The command is drawn bold (checked in the screenshot). **Requirements:** the
+  tests' own (padding colour, bold commands), unchanged.
