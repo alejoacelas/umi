@@ -783,8 +783,11 @@ class TerminalController: BaseTerminalController {
         _ node: SplitTree<Ghostty.SurfaceView>.Node,
         withConfirmation: Bool = true
     ) {
-        // If this isn't the root then we're dealing with a split closure.
-        if surfaceTree.root != node {
+        // If this isn't the root then we're dealing with a split closure. Umi: neither is the
+        // root when it's the shown member of a stack: the next member takes its place (M-7).
+        var stacked = false
+        if case .leaf(let view) = node { stacked = selectedTab.stack(of: view) != nil }
+        if surfaceTree.root != node || stacked {
             super.closeSurface(node, withConfirmation: withConfirmation)
             return
         }
