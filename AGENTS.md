@@ -58,7 +58,7 @@ cd app/macos && env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
 
 The Swift tests run inside the app (their host). The app detects that it hosts XCTest and then uses a
 temporary state directory of its own (`UmiPaths.isTestHost`), so it never acts as the user's Umi (no
-copy of Tern's state, no agent plugins registered); the `TEST_RUNNER_*` variables above (they reach the
+agent plugins registered); the `TEST_RUNNER_*` variables above (they reach the
 host) only choose that directory and are optional. Keep it that way: before this guard, `zig build test`
 made the user's `~/Library/Application Support/Umi`.
 
@@ -123,8 +123,7 @@ Product: **Umi** (`Umi.app`, bundle id `dev.umi.app`, CLI `umi`, state directory
 agent plugins `umi@umi`, releases on `alejoacelas/umi`).
 
 Before 0.6.0 it was **Tern** (`dev.tern.app`, `tern`, `TERN_*`, `~/Library/Application Support/Tern`,
-`alejoacelas/tern`). Umi copies Tern's state on its first launch (`UmiTernImport.swift`, SPEC R-11)
-and clears inherited `TERN_*` variables; nothing else refers to Tern on purpose. Historical records
+`alejoacelas/tern`). Umi shares nothing with Tern and runs next to it (SPEC P-1). Historical records
 (old briefs, decisions, reports, commit history) keep the old name.
 
 ## History

@@ -68,7 +68,7 @@ tab or window they choose; second, agents supervising and steering other agents.
 - **A CLI agents can use with no instructions.**
 - **Robustness:** crashes, restarts, upgrades, isolation, long runs, no orphans.
 
-Requirements: AG-1 to AG-23, R-3 to R-7, R-11.
+Requirements: AG-1 to AG-23, R-3 to R-7.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
@@ -680,12 +680,6 @@ runs, it is the same session: same id, conversation, folder and settings.
   other: CLI calls, agents and the panes of one never reach the other.
 - **R-6 [A]** The app and its CLI keep working, and tell the truth, while sessions are busy,
   approvals are pending, or event consumers are slow.
-- **R-11 [A]** Coming from Tern. The product was called Tern before 0.6.0. The first time it runs
-  without state of its own, it opens with Tern's windows, tabs, panes, sidebar and agent sessions:
-  a copy, and Tern's folder is never changed. Copied sessions don't resume by themselves (Tern may
-  be running them, now or later): the product never delivers a message again or starts a process
-  on a copied conversation until the user takes the session over, and Tern finishes what it was
-  doing. Later launches copy nothing.
 - **R-7 [A]** Stale environments. A CLI run with stale pane, socket or agent variables (for example
   from a terminal that outlived its app) either reaches the right instance or fails clearly. It
   never acts on the wrong one.

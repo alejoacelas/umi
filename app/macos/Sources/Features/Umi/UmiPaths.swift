@@ -17,7 +17,7 @@ enum UmiPaths {
 
     /// The app is hosting unit tests (Xcode, `xcodebuild test`, `zig build test`). Then it is
     /// never the user's own copy: it gets a state directory of its own, like an isolated instance,
-    /// so tests never copy Tern's state, register agent plugins or touch the user's windows.
+    /// so tests never register agent plugins or touch the user's windows.
     static let isTestHost: Bool = {
         let env = ProcessInfo.processInfo.environment
         if ["XCTestConfigurationFilePath", "XCTestSessionIdentifier", "XCTestBundlePath"].contains(where: { env[$0] != nil }) {
@@ -42,8 +42,6 @@ enum UmiPaths {
         } else {
             raw = NSHomeDirectory() + "/Library/Application Support/\(productName)"
         }
-        // The first run after Tern: bring its windows, tabs and sessions over (a copy).
-        UmiTernImport.importIfNeeded(into: raw, isolated: isIsolated)
         try? FileManager.default.createDirectory(atPath: raw, withIntermediateDirectories: true)
         return canonical(raw)
     }()
@@ -182,9 +180,7 @@ enum UmiEnvironment {
             "UMI_PANE_ID", "UMI_INSTANCE", "UMI_TAB_ID", "UMI_WINDOW_ID",
             "TERM_SESSION_ID", "ITERM_SESSION_ID", "WEZTERM_PANE", "KITTY_WINDOW_ID",
         ]
-        // TERN_: Tern's panes say who they are the same way (Umi was called Tern before 0.6.0;
-        // launched from one of Tern's terminals, Umi's must not claim to be Tern's).
-        let prefixes = ["CLAUDE_CODE_", "CODEX_", "TERN_"]
+        let prefixes = ["CLAUDE_CODE_", "CODEX_"]
         // Where the user keeps Codex's configuration isn't a session marker: panes, sessions and
         // `agent plugins` all need it.
         let kept: Set<String> = ["CODEX_HOME"]

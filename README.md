@@ -23,11 +23,6 @@ morning (*umi* is Japanese for "sea").
 
 Umi was called Tern until 0.5.0. Tern can stay installed next to it; they don't share anything.
 
-- The first time Umi opens, it copies Tern's windows, tabs, panes, sidebar, shortcuts and agent
-  sessions from `~/Library/Application Support/Tern` (a copy: Tern's folder is never changed).
-  Copied sessions show in their panes as before but don't resume by themselves, since Tern may
-  still be running them: Take Over continues one in Umi. To copy again, quit Umi, remove
-  `~/Library/Application Support/Umi` and open Umi.
 - The command is `umi` (was `tern`), the state folder `~/Library/Application Support/Umi`, the
   environment variables `UMI_*` (were `TERN_*`), the bundle id `dev.umi.app`, and the agent plugins
   `umi@umi` (were `tern@tern`). Updates come from this repository's releases.

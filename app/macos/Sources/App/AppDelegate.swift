@@ -248,7 +248,6 @@ class AppDelegate: NSObject,
         UmiPersistence.shared.restoreUI()
         undoManager.disableUndoRegistration()
         UmiPersistence.shared.restoreLayout()
-        UmiTernImport.reportFailures()
         undoManager.enableUndoRegistration()
         UmiQuiet.start()
         UmiUpdater.shared.startBackgroundChecks()

@@ -15,9 +15,6 @@
 #   UMI_INSTALL_NO_DEFAULT=1       don't make Umi the default app for Markdown
 #   UMI_INSTALL_NO_LAUNCH=1        don't open Umi afterwards
 #   UMI_INSTALL_FEED=URL           the release feed to install from (default: the latest release)
-#
-# Umi was called Tern before 0.6.0. Tern can stay installed: Umi copies its tabs and agent
-# sessions the first time it opens and leaves Tern's own files alone.
 set -euo pipefail
 
 repo="alejoacelas/umi"

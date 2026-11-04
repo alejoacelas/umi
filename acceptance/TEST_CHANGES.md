@@ -607,3 +607,7 @@ every other test runs as before.
   - **Unchanged**: every `umi shortcuts` test (`test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart`
     and the review-round tests in `test_review_agents.py` and `test_umi_panes_ui.py`) still covers L-17.
     The written check L-17 is gone: L-17 is now checked by script only.
+- **No copy from Tern (R-11 is gone)**. Both of Alejo's Macs already have Umi state, so the first
+  launch no longer copies Tern's, and inherited `TERN_*` variables are no longer cleared.
+  - **Removed, `tests/test_umi_import.py`** (all seven R-11 tests) and the `UMI_IMPORT_STATE_DIR`
+    hook it used. Coexisting with Tern stays covered by P-1 (`other_products` still lists Tern).
