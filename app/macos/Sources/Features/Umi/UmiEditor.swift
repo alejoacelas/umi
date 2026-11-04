@@ -172,6 +172,8 @@ final class UmiDocument: ObservableObject, Identifiable {
     let undoManager = UndoManager()
 
     var isMarkdown: Bool { UmiEditor.isMarkdown(url) }
+    /// Markdown, JSON and CSV/TSV have a rendered view besides the source.
+    var hasPreview: Bool { UmiEditor.hasPreview(url) }
     var name: String { url.lastPathComponent }
 
     init(url: URL, mode: Mode? = nil) throws {
@@ -181,7 +183,7 @@ final class UmiDocument: ObservableObject, Identifiable {
         self.savedText = loaded.text
         self.encoding = loaded.encoding
         self.bom = loaded.bom
-        self.mode = mode.flatMap { UmiEditor.isMarkdown(url) ? $0 : .source } ?? (UmiEditor.isMarkdown(url) ? .preview : .source)
+        self.mode = mode.flatMap { UmiEditor.hasPreview(url) ? $0 : .source } ?? (UmiEditor.hasPreview(url) ? .preview : .source)
         watch()
     }
 
@@ -196,7 +198,7 @@ final class UmiDocument: ObservableObject, Identifiable {
     }
 
     func toggleMode() {
-        guard isMarkdown else { return }
+        guard hasPreview else { return }
         mode = mode == .preview ? .source : .preview
     }
 
@@ -357,7 +359,7 @@ final class UmiEditorGroup: ObservableObject {
     func open(_ url: URL, mode: UmiDocument.Mode?) throws -> UmiDocument {
         let standardized = url.standardizedFileURL.resolvingSymlinksInPath()
         if let existing = document(for: standardized) {
-            if let mode, existing.isMarkdown { existing.mode = mode }
+            if let mode, existing.hasPreview { existing.mode = mode }
             active = existing
             return existing
         }
@@ -408,6 +410,16 @@ enum UmiEditor {
     static func isMarkdown(_ url: URL) -> Bool {
         markdownExtensions.contains(url.pathExtension.lowercased())
     }
+
+    static func icon(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "json": return "curlybraces"
+        case "csv", "tsv": return "tablecells"
+        default: return isMarkdown(url) ? "doc.richtext" : "doc.text"
+        }
+    }
+
+    static func hasPreview(_ url: URL) -> Bool { isMarkdown(url) || UmiDataPreview.handles(url) }
 
     /// Whether files opened from Finder (or `open`) go to the editor.
     static func handles(_ url: URL) -> Bool {
@@ -499,12 +511,12 @@ enum UmiEditor {
         }
         if let raw = params.string("mode") {
             guard let mode = UmiDocument.Mode(rawValue: raw) else { throw UmiError.badRequest("use preview or source") }
-            guard doc.isMarkdown || mode == .source else {
+            guard doc.hasPreview || mode == .source else {
                 throw UmiError.badRequest("\(doc.name) isn't Markdown; it only has a source view")
             }
             doc.mode = mode
         } else {
-            guard doc.isMarkdown else { throw UmiError.badRequest("\(doc.name) isn't Markdown; it only has a source view") }
+            guard doc.hasPreview else { throw UmiError.badRequest("\(doc.name) isn't Markdown; it only has a source view") }
             doc.toggleMode()
         }
         return json(doc)
@@ -746,7 +758,7 @@ struct UmiEditorPanel: View {
                 tabs(shrinking: true)
                     .padding(.horizontal, 10)
                     .frame(height: 34)
-                if group.active?.isMarkdown == true {
+                if group.active?.hasPreview == true {
                     HStack {
                         Spacer(minLength: 0)
                         modeToggle
@@ -760,7 +772,7 @@ struct UmiEditorPanel: View {
 
     @ViewBuilder
     private var modeToggle: some View {
-        if let doc = group.active, doc.isMarkdown {
+        if let doc = group.active, doc.hasPreview {
             UmiModeToggle(doc: doc)
                 .fixedSize()
         }
@@ -792,7 +804,7 @@ private struct UmiEditorTabChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: doc.isMarkdown ? "doc.richtext" : "doc.text")
+            Image(systemName: UmiEditor.icon(for: doc.url))
                 .font(.system(size: 10))
             Text(doc.name)
                 .font(UmiTheme.uiFont)
@@ -1071,7 +1083,9 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         context.coordinator.lastKey = key
         context.coordinator.documentURL = doc.url
         context.coordinator.group = group
-        let body = UmiMarkdown.html(from: doc.text, baseURL: doc.url.deletingLastPathComponent())
+        let body = doc.isMarkdown
+            ? UmiMarkdown.html(from: doc.text, baseURL: doc.url.deletingLastPathComponent())
+            : UmiDataPreview.html(for: doc.url, text: doc.text)
         web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight), baseURL: nil)
     }
 

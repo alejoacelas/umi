@@ -468,7 +468,9 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
 
 - **E-1 [A+W]** Opening a Markdown or text file shows it in an editor panel beside the tab's
   terminals. Markdown opens rendered (headings, lists, task lists, tables, code blocks, links,
-  images); other text opens as source. Several files can be open as editor tabs.
+  images); JSON opens as a tree whose objects and arrays fold, keys in file order; CSV and TSV open
+  as a table (row numbers, a header that stays in view, numbers right-aligned); other text opens as
+  source. Several files can be open as editor tabs.
 - **E-2 [A+W]** Preview and source can be toggled with ⇧⌘M, with a visible control, and from the CLI.
 - **E-3 [A+W]** Edits can be saved with ⌘S. Closing a file with unsaved changes asks first. Closing a
   tab or quitting never silently loses edits: they are saved, or a recovery copy is kept.

@@ -69,7 +69,7 @@ enum UmiShortcuts {
                  }),
             Item(id: "view.markdown", title: "Toggle Markdown Preview", key: "m", modifiers: [.command, .shift], symbol: "doc.richtext",
                  menu: "View", action: { UmiEditor.currentDocument?.toggleMode() },
-                 enabled: { UmiEditor.currentDocument?.isMarkdown ?? false }),
+                 enabled: { UmiEditor.currentDocument?.hasPreview ?? false }),
 
             // Moving between tabs and panes (L-11, L-15).
             Item(id: "pane.go_to", title: "Go to Pane…", key: "p", modifiers: [.command, .shift], symbol: "rectangle.on.rectangle",
