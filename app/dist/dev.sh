@@ -71,6 +71,10 @@ if [[ "$build" == 1 ]]; then
     fi
     echo "building Umi.app (Debug)…"
     start=$SECONDS
+    # A custom icon (`macos-icon`) the running copy gave itself is Finder metadata and an
+    # `Icon\r` file in the bundle, which codesign refuses (release.sh clears it the same way).
+    rm -f "$root/macos/build/Debug/Umi.app/Icon"$'\r'
+    xattr -cr "$root/macos/build/Debug/Umi.app" 2>/dev/null || true
     (cd "$root/macos" && xcodebuild -target Ghostty -configuration Debug -arch arm64 build > "$log" 2>&1) \
         || { grep -E "error:" "$log" | head -20 >&2; echo "dev.sh: the build failed ($log)" >&2; exit 1; }
     echo "built in $((SECONDS - start)) s"
