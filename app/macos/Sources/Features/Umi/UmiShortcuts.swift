@@ -238,10 +238,10 @@ enum UmiShortcuts {
         for existing in allItems(mainMenu) where existing.action == #selector(BaseTerminalController.toggleCommandPalette(_:)) {
             existing.isHidden = true
         }
-        // So are its font size items: Umi's set the size for every pane, with the zoom (L-33).
+        // Its font size items go: Umi's (same titles) set the size for every pane, with the zoom (L-33).
         let fontActions = ["increaseFontSize:", "decreaseFontSize:", "resetFontSize:"].map(NSSelectorFromString)
         for existing in allItems(mainMenu) where handlers[existing] == nil && existing.action.map(fontActions.contains) == true {
-            existing.isHidden = true
+            existing.menu?.removeItem(existing)
         }
         // Every session, shown in a pane or not, with its status (AP-3, AP-4).
         if let windowMenu = topMenu("Window", in: mainMenu) {

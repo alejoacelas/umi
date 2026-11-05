@@ -11,45 +11,48 @@ final class UmiInputSync {
 
     private enum State {
         case all
-        case tabs(Set<ObjectIdentifier>)
+        /// The synced tabs' ids.
+        case tabs(Set<String>)
     }
 
-    private var states: [ObjectIdentifier: State] = [:]
+    /// By window id. Ids, not object identities, so a new window or tab never inherits the
+    /// state of a closed one.
+    private var states: [String: State] = [:]
 
     // MARK: State
 
     func isSynced(_ tab: UmiTab, in window: TerminalController) -> Bool {
-        switch states[ObjectIdentifier(window)] {
+        switch states[window.umiIDString] {
         case .all: return true
-        case .tabs(let tabs): return tabs.contains(ObjectIdentifier(tab))
+        case .tabs(let tabs): return tabs.contains(tab.idString)
         case nil: return false
         }
     }
 
     func isSyncingAny(_ window: TerminalController) -> Bool {
-        switch states[ObjectIdentifier(window)] {
+        switch states[window.umiIDString] {
         case .all: return true
-        case .tabs(let tabs): return window.tabs.contains { tabs.contains(ObjectIdentifier($0)) }
+        case .tabs(let tabs): return window.tabs.contains { tabs.contains($0.idString) }
         case nil: return false
         }
     }
 
     func isSyncingAll(_ window: TerminalController) -> Bool {
-        if case .all = states[ObjectIdentifier(window)] { return true }
+        if case .all = states[window.umiIDString] { return true }
         return false
     }
 
     /// ⌥⌘I: sync the window's current tab, or stop syncing it.
     func toggleTab(_ tab: UmiTab, in window: TerminalController) {
-        let key = ObjectIdentifier(window)
-        let all = Set(window.tabs.map(ObjectIdentifier.init))
-        var synced: Set<ObjectIdentifier>
+        let key = window.umiIDString
+        let all = Set(window.tabs.map(\.idString))
+        var synced: Set<String>
         switch states[key] {
         case .all: synced = all
         case .tabs(let tabs): synced = tabs.intersection(all)
         case nil: synced = []
         }
-        if synced.contains(ObjectIdentifier(tab)) { synced.remove(ObjectIdentifier(tab)) } else { synced.insert(ObjectIdentifier(tab)) }
+        if synced.contains(tab.idString) { synced.remove(tab.idString) } else { synced.insert(tab.idString) }
         // As in Warp: every tab synced is "all tabs", which new tabs join; none is nothing.
         states[key] = synced.isEmpty ? nil : (synced == all ? .all : .tabs(synced))
         changed(window)
@@ -57,13 +60,13 @@ final class UmiInputSync {
 
     /// Sync every pane in every tab of the window (new tabs too), or stop.
     func toggleAll(in window: TerminalController) {
-        states[ObjectIdentifier(window)] = isSyncingAll(window) ? nil : .all
+        states[window.umiIDString] = isSyncingAll(window) ? nil : .all
         changed(window)
     }
 
     /// ⌥⇧⌘I: stop syncing anything in the window.
     func stop(in window: TerminalController) {
-        states[ObjectIdentifier(window)] = nil
+        states[window.umiIDString] = nil
         changed(window)
     }
 
@@ -79,7 +82,11 @@ final class UmiInputSync {
     /// every synced tab in its window, when its own tab is synced. Panes showing a file, a page
     /// or a session's read-only view aren't terminals there.
     func peers(of pane: Ghostty.SurfaceView) -> [Ghostty.SurfaceView] {
-        guard !states.isEmpty, let location = UmiTopology.locate(pane),
+        guard !states.isEmpty else { return [] }
+        // Forget closed windows.
+        let open = Set(UmiTopology.windows.map(\.umiIDString))
+        states = states.filter { open.contains($0.key) }
+        guard let location = UmiTopology.locate(pane),
               isSynced(location.tab, in: location.window) else { return [] }
         let window = location.window
         let agents = UmiAgentUI.shared

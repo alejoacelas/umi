@@ -297,6 +297,149 @@ def zoom(inst, pane):
     return rpc(inst, "debug.ui.zoom", pane=pane)
 
 
+# Keys delivered inside the app (Umi's internal `debug.key`: what the app's key monitor does with
+# a key press, then the focused view), so these run without the accessibility tree; the `ui`
+# tests below press the same keys through the system.
+
+def key(inst, win, keys):
+    return rpc(inst, "debug.key", window=win["window"], keys=keys, focus="terminal")
+
+
+def word(prefix):
+    """A marker of letters with no letter twice in a row (a key pressed again with no key-up in
+    between is dropped)."""
+    letters = [c for c in "abcdefghijklmnopqrstuvwxyz"]
+    import random
+    out = prefix
+    while len(out) < len(prefix) + 6:
+        c = random.choice(letters)
+        if c != out[-1]:
+            out += c
+    return out
+
+
+def type_keys(inst, win, text):
+    for ch in text:
+        key(inst, win, "space" if ch == " " else ch)
+    key(inst, win, "return")
+
+
+@pytest.mark.req("L-32", "L-9")
+def test_the_sync_keys_are_menu_items_and_the_inspector_moved(inst, win):
+    items = rpc(inst, "debug.menu")["items"]
+    for title, k, mods in (("Toggle Synchronizing All Panes in Current Tab", "i", ["option", "cmd"]),
+                           ("Stop Synchronizing Any Panes", "i", ["option", "shift", "cmd"])):
+        found = [i for i in items if i["title"] == title]
+        assert len(found) == 1 and found[0]["key"].lower() == k and sorted(found[0]["modifiers"]) == sorted(mods), found
+        same = [i["title"] for i in items if i["key"].lower() == k and sorted(i["modifiers"]) == sorted(mods)]
+        assert same == [title], f"{title}: the key is also on {same}"
+    assert [i for i in items if i["title"] == "Toggle Synchronizing All Panes in All Tabs"]
+    shortcuts = {s["id"]: s for s in inst.json("shortcuts")["shortcuts"]}
+    assert shortcuts["input.sync_tab"]["keys"] == ["option+cmd+i"]
+    assert shortcuts["input.sync_stop"]["keys"] == ["option+shift+cmd+i"]
+    inspector = shortcuts.get("ghostty:inspector:toggle")
+    assert inspector is not None and inspector["display"] == ["⌃⌥⌘I"], inspector
+
+
+@pytest.mark.req("L-32")
+def test_option_command_i_types_into_every_pane_of_the_tab(inst, win):
+    a = win["pane"]
+    b = split(inst, "right", a)
+    other = inst.json("tab", "new", "--window", win["window"], "--no-focus")
+    c = other["pane"]
+    wait_until(lambda: screen(inst, c).strip() != "" and screen(inst, b).strip() != "", 20, message="the prompts")
+    inst.cli("tab", "focus", win["tab"])
+    inst.cli("pane", "focus", a)
+    try:
+        assert key(inst, win, "option+cmd+i")["handled"]
+        wait_until(lambda: row(inst, win["window"], win["tab"]).get("input_synced"), 5, message="the tab synced")
+        assert not row(inst, win["window"], other["tab"]).get("input_synced")
+        marker = word("syn")
+        type_keys(inst, win, f"echo {marker}")
+        wait_until(lambda: screen(inst, a).count(marker) >= 2, 10, message=f"a ran it: {screen(inst, a)!r}")
+        wait_until(lambda: screen(inst, b).count(marker) >= 2, 10,
+                   message=f"b got the same keys and ran them: {screen(inst, b)!r}")
+        assert marker not in screen(inst, c), "a tab that isn't synced got the keys"
+        # ⌥⇧⌘I stops it.
+        assert key(inst, win, "option+shift+cmd+i")["handled"]
+        wait_until(lambda: not row(inst, win["window"], win["tab"]).get("input_synced"), 5, message="stopped")
+        alone = word("alo")
+        type_keys(inst, win, f"echo {alone}")
+        wait_until(lambda: screen(inst, a).count(alone) >= 2, 10, message="a ran it")
+        time.sleep(0.5)
+        assert alone not in screen(inst, b), "b still got a's keys after ⌥⇧⌘I"
+        # Every tab of the window.
+        rpc(inst, "debug.menu.perform", title="Toggle Synchronizing All Panes in All Tabs")
+        wait_until(lambda: row(inst, win["window"], other["tab"]).get("input_synced"), 5, message="all tabs synced")
+        everywhere = word("eve")
+        type_keys(inst, win, f"echo {everywhere}")
+        wait_until(lambda: screen(inst, c).count(everywhere) >= 2, 10, message="the other tab got the keys")
+        wait_until(lambda: screen(inst, b).count(everywhere) >= 2, 10, message="b got the keys")
+        # ⌥⌘I in a window syncing every tab: this tab stops, the others stay synced (Warp).
+        assert key(inst, win, "option+cmd+i")["handled"]
+        wait_until(lambda: not row(inst, win["window"], win["tab"]).get("input_synced"), 5, message="this tab out")
+        assert row(inst, win["window"], other["tab"]).get("input_synced")
+        # ⌘ shortcuts stay with the pane: ⌘K clears only a.
+        assert key(inst, win, "option+cmd+i")["handled"]
+        wait_until(lambda: row(inst, win["window"], win["tab"]).get("input_synced"), 5, message="synced again")
+        key(inst, win, "cmd+k")
+        wait_until(lambda: everywhere not in screen(inst, a), 5, message="⌘K cleared a")
+        time.sleep(0.5)
+        assert everywhere in screen(inst, b), "⌘K went to b too"
+    finally:
+        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+    assert not row(inst, win["window"], other["tab"]).get("input_synced")
+
+
+@pytest.mark.req("L-33", "L-9")
+def test_the_zoom_and_font_keys(inst, win):
+    a = win["pane"]
+    start = zoom(inst, a)
+    assert start["level"] == 100
+    shortcuts = {s["id"]: s for s in inst.json("shortcuts")["shortcuts"]}
+    assert shortcuts["view.zoom_in"]["keys"] == ["cmd+="]
+    assert shortcuts["view.zoom_out"]["keys"] == ["cmd+-"]
+    assert shortcuts["view.zoom_reset"]["keys"] == ["cmd+0"]
+    assert shortcuts["view.font_bigger"]["keys"] == ["option+shift+."]
+    assert shortcuts["view.font_smaller"]["keys"] == ["option+shift+,"]
+    for action in ("increase_font_size:1", "decrease_font_size:1", "reset_font_size"):
+        entry = shortcuts.get("ghostty:" + action)
+        assert entry is None or entry["keys"] == [], (action, entry)
+    try:
+        assert key(inst, win, "cmd+=")["handled"]
+        wait_until(lambda: zoom(inst, a)["level"] == 110, 5, message="⌘= to 110%")
+        wait_until(lambda: zoom(inst, a)["cell_width_px"] > start["cell_width_px"], 5, message="the terminal's text grew")
+        assert zoom(inst, a)["terminal_font_size"] == pytest.approx(start["font_size"] * 1.1, abs=0.05)
+        key(inst, win, "cmd+=")
+        key(inst, win, "cmd+=")
+        wait_until(lambda: zoom(inst, a)["level"] == 150, 5, message="Warp's levels: 110, 125, 150")
+        # A new pane gets the zoomed size.
+        b = split(inst, "right", a)
+        wait_until(lambda: zoom(inst, b)["cell_width_px"] == zoom(inst, a)["cell_width_px"], 5, message="the new pane's size")
+        for _ in range(4):
+            key(inst, win, "cmd+-")
+        wait_until(lambda: zoom(inst, a)["level"] == 90, 5, message="⌘- ×4 to 90%")
+        with open(os.path.join(inst.dir, "zoom.json")) as f:
+            assert json.load(f)["level"] == 90
+        assert key(inst, win, "cmd+0")["handled"]
+        wait_until(lambda: zoom(inst, a)["level"] == 100, 5, message="⌘0")
+        wait_until(lambda: zoom(inst, a)["cell_width_px"] == start["cell_width_px"], 5, message="the text back")
+        # ⌥⇧> / ⌥⇧<: the font size, a point at a time.
+        assert key(inst, win, "option+shift+.")["handled"]
+        wait_until(lambda: zoom(inst, a)["font_size"] == start["font_size"] + 1, 5, message="⌥⇧>")
+        wait_until(lambda: zoom(inst, a)["cell_width_px"] > start["cell_width_px"], 5, message="bigger text")
+        wait_until(lambda: zoom(inst, b)["cell_width_px"] == zoom(inst, a)["cell_width_px"], 5, message="in every pane")
+        key(inst, win, "option+shift+,")
+        key(inst, win, "option+shift+,")
+        wait_until(lambda: zoom(inst, a)["font_size"] == start["font_size"] - 1, 5, message="⌥⇧< twice")
+        assert "˘" not in screen(inst, a) and "¯" not in screen(inst, a), "the key reached the shell"
+    finally:
+        key(inst, win, "cmd+0")
+        rpc(inst, "debug.menu.perform", title="Reset Font Size")
+    wait_until(lambda: zoom(inst, a)["font_size"] == start["font_size"] and zoom(inst, a)["level"] == 100
+               and zoom(inst, a)["cell_width_px"] == start["cell_width_px"], 5, message="back to the start")
+
+
 @pytest.mark.ui
 @pytest.mark.req("L-33")
 def test_command_equals_minus_and_zero_zoom_the_interface_ui(inst, win, ui):
