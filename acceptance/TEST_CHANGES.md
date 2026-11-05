@@ -726,3 +726,6 @@ on the match's column, a bad regex's error), `test_global_search_outside_git_and
 (Enter sent with the command) asserted behavior that differed from Warp's.
 
 **Requirement.** S-2, L-9.
+- **Changed, `test_explorer_follows_the_file_system`**: a new `.rs` file's icon was the monogram
+  "RS"; it is now Material Icon Theme's Rust icon, so the test checks the asset name
+  (`fileicon-rust`) and that the app loads it (`icon_loaded`), which is stricter than before.

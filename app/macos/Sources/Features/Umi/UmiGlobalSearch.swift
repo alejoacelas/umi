@@ -554,7 +554,7 @@ private struct UmiSearchRow: View {
                         .foregroundColor(color)
                         .frame(width: 16, height: 16)
                         .padding(.trailing, 8)
-                    UmiFileIcon(url: URL(fileURLWithPath: path), size: 16, tint: color)
+                    UmiFileIcon(url: URL(fileURLWithPath: path), size: 16)
                         .padding(.trailing, 8)
                     Text((path as NSString).lastPathComponent)
                         .font(.system(size: 14))

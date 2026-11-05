@@ -168,7 +168,8 @@ def test_explorer_follows_the_file_system(inst, win, tmp_path):
     with open(made, "w") as f:
         f.write("x\n")
     wait_until(lambda: row(files(inst, win, update=False), made) is not None, 5, message="a new file shows")
-    assert row(files(inst, win, update=False), made)["icon"] == "RS"
+    made_row = row(files(inst, win, update=False), made)
+    assert made_row["icon"] == "fileicon-rust" and made_row["icon_loaded"], made_row
     os.remove(made)
     wait_until(lambda: row(files(inst, win, update=False), made) is None, 5, message="a deleted file goes")
     inst.cli("sidebar", "tabs")

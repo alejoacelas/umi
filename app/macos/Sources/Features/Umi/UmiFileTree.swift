@@ -773,7 +773,9 @@ final class UmiFileTreeModel: ObservableObject {
                  "expanded": row.expanded, "selected": row.kind == .item && row.url == selected,
                  "ignored": row.ignored, "editing": row.kind == .newFile || edit == .rename(row.url),
                  "new_file": row.kind == .newFile,
-                 "icon": UmiFileIcons.style(for: row.url, isDirectory: row.isDirectory).label ?? ""]
+                 // The asset shown, and whether the app has it.
+                 "icon": row.isDirectory ? "folder" : UmiFileIcons.assetName(for: row.url),
+                 "icon_loaded": row.isDirectory || NSImage(named: UmiFileIcons.assetName(for: row.url)) != nil]
             },
         ]
         switch edit {
@@ -880,8 +882,18 @@ private struct UmiFileRow: View {
             }
             .frame(width: UmiFileTreeStyle.iconSize, height: UmiFileTreeStyle.iconSize)
             .padding(.trailing, 4)
-            UmiFileIcon(url: row.url, isDirectory: row.isDirectory, size: UmiFileTreeStyle.iconSize, tint: color)
-                .padding(.trailing, 8)
+            Group {
+                if row.isDirectory {
+                    Image(systemName: "folder")
+                        .font(.system(size: UmiFileTreeStyle.iconSize * 0.78))
+                        .foregroundColor(color)
+                        .frame(width: UmiFileTreeStyle.iconSize, height: UmiFileTreeStyle.iconSize)
+                        .accessibilityHidden(true)
+                } else {
+                    UmiFileIcon(url: row.url, size: UmiFileTreeStyle.iconSize)
+                }
+            }
+            .padding(.trailing, 8)
             if editing {
                 UmiTextInput(text: $model.editText, placeholder: "", fontSize: UmiFileTreeStyle.fontSize,
                              focusOnAppear: true, accessibilityLabel: row.kind == .newFile ? "New File Name" : "Rename",
