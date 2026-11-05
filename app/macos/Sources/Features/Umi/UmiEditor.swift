@@ -1283,6 +1283,9 @@ final class UmiEditorTextView: NSTextView {
     override func menu(for event: NSEvent) -> NSMenu? {
         guard code != nil else { return super.menu(for: event) }
         let menu = NSMenu()
+        // No items added by the system (AutoFill, Services, Writing Tools).
+        menu.allowsContextMenuPlugIns = false
+        if #available(macOS 15.2, *) { menu.automaticallyInsertsWritingToolsItems = false }
         for (title, action) in [("Cut", #selector(cut(_:))), ("Copy", #selector(copy(_:))), ("Paste", #selector(paste(_:)))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
