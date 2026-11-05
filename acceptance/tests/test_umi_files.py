@@ -194,10 +194,30 @@ def test_explorer_menu_has_warps_items(inst, win, tmp_path):
     assert os.path.realpath(perform(inst, win, readme, "Copy Path")["copied"]) == os.path.realpath(readme)
     assert perform(inst, win, os.path.join(repo, "src"), "Copy Relative Path")["copied"] == "src"
 
-    # cd to Directory types `cd <folder>` into the terminal.
+    # cd to Directory replaces what is typed at the prompt with `cd <folder>` and doesn't run it
+    # (Warp replaces its input buffer); Enter runs it.
+    inst.cli("send", "--pane", term["pane"], "git sta")
+    wait_until(lambda: "git sta" in inst.cli("read", "--pane", term["pane"]).stdout, 5, message="the typed text")
     perform(inst, win, src, "cd to Directory")
+    def screen():   # long lines may wrap
+        return inst.cli("read", "--pane", term["pane"]).stdout.replace("\n", "").rstrip()
+    wait_until(lambda: screen().endswith("cd " + src), 5, message="`cd src` at the prompt")
+    assert not screen().endswith("git stacd " + src), "the typed text was replaced"
+    time.sleep(0.5)
+    assert os.path.realpath(inst.json("pane", "info", term["pane"])["cwd"] or "/") == os.path.realpath(repo), \
+        "not run yet"
+    inst.cli("send", "--pane", term["pane"], "--enter", "")
     wait_until(lambda: os.path.realpath(inst.json("pane", "info", term["pane"])["cwd"] or "/") == os.path.realpath(src),
-               10, message="the terminal is in src")
+               10, message="Enter runs it: the terminal is in src")
+    # While a program runs in the terminal, cd to Directory is off (it would type into the program).
+    inst.cli("send", "--pane", term["pane"], "--enter", "cat")
+    wait_until(lambda: dict((i["title"], i["enabled"]) for i in rpc(inst, "debug.ui.files.menu", window=win["window"],
+                                                                     path=src)["items"])["cd to Directory"] is False,
+               5, message="cd to Directory is off while cat runs")
+    inst.cli("keys", "--pane", term["pane"], "ctrl+c")
+    wait_until(lambda: dict((i["title"], i["enabled"]) for i in rpc(inst, "debug.ui.files.menu", window=win["window"],
+                                                                     path=src)["items"])["cd to Directory"] is True,
+               5, message="cd to Directory is back at the prompt")
 
     # Open in New Pane: the file in the editor, in a pane beside the terminal, in the same tab.
     notes = os.path.join(repo, "notes.txt")

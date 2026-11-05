@@ -587,11 +587,20 @@ final class UmiFileTreeModel: ObservableObject {
         return UmiFocusHistory.mostRecent(among: panes) ?? panes.first
     }
 
-    /// Warp's "cd to directory": types `cd <folder>` and Enter into the terminal.
+    /// The terminal `cd to Directory` types into: `terminalPane` while its shell is in front (no
+    /// program runs there).
+    var promptPane: Ghostty.SurfaceView? {
+        guard let pane = terminalPane, UmiPaneContext.shellInFront(pane) else { return nil }
+        return pane
+    }
+
+    /// Warp's "cd to directory": replaces what is typed at the prompt with `cd <folder>` and leaves
+    /// it there, not run (⌃E ⌃U clear the line in zsh, bash and fish); focus goes to that terminal.
     func cd(to url: URL) {
-        guard let pane = terminalPane else { NSSound.beep(); return }
+        guard let pane = promptPane else { NSSound.beep(); return }
+        try? UmiInput.send(keys: ["ctrl+e", "ctrl+u"], to: pane)
         Task { @MainActor in
-            try? await UmiInput.send(text: "cd " + Ghostty.Shell.quote(url.path), to: pane, enter: true)
+            try? await UmiInput.send(text: "cd " + Ghostty.Shell.quote(url.path), to: pane, enter: false)
         }
         UmiLayout.focusPane(pane, activate: true)
     }
@@ -709,7 +718,7 @@ final class UmiFileTreeModel: ObservableObject {
         if isDirectory {
             items.append(.init(title: "New File") { [weak self] in self?.startNewFile(in: url) })
             items.append(.divider)
-            items.append(.init(title: "cd to Directory", enabled: terminalPane != nil) { [weak self] in self?.cd(to: url) })
+            items.append(.init(title: "cd to Directory", enabled: promptPane != nil) { [weak self] in self?.cd(to: url) })
             items.append(.init(title: "Open in New Tab") { [weak self] in self?.openInNewTab(url, isDirectory: true) })
         } else {
             let editable = Self.isText(url)

@@ -409,8 +409,9 @@ A "live session" is a pane with a running program, its scrollback and its state.
     focus back in the pane). In the tree ↑↓ select, → expands a folder, ← collapses it or goes to
     the parent folder, Enter opens a file (non-binary files in the editor, others with their
     default app) or opens or closes a folder, Esc goes back to the pane.
-  - Explorer right-click menu, Warp's items with Umi's: on a folder New File, cd to Directory (types
-    `cd` and the folder into the tab's terminal), Open in New Tab (a terminal there); on a file Open
+  - Explorer right-click menu, Warp's items with Umi's: on a folder New File, cd to Directory
+    (replaces what is typed at the prompt of the tab's terminal with `cd` and the folder, not run;
+    off while a program runs there), Open in New Tab (a terminal there); on a file Open
     in New Pane (the editor in a pane beside the focused pane), Open in New Tab (a tab of its own),
     Open with Default App; on both Reveal in Finder,
     Rename and Delete (not on the root), Insert Path in Terminal, Copy Path, Copy Relative Path
