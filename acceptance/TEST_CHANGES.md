@@ -702,7 +702,8 @@ state) instead of every action. **Requirements:** L-14 to L-17.
   filter word; ⇧⌘P and ⌘O open it filtered; the unfiltered palette mixes actions, panes and files
   (at most 250); the empty palette's chips, Recent (after choosing a pane and an action) and
   Suggested; ⌘O's "Create a file named …" makes the file and opens it; Keyboard Shortcuts is the
-  ⌘/ menu item and in `umi shortcuts`. `ui` tests press the real keys: typing `files:` and
+  ⌘/ menu item and in `umi shortcuts`; ⌘P, ⇧⌘P, ⌘O and ⌘/ delivered through `debug.key` (Umi's own
+  key handling) choose the filter, toggle the page, and leave it closed in the editor's source. `ui` tests press the real keys: typing `files:` and
   Backspace, ⇧⌘P then ⌘O, ↓ in the empty palette, ⌘O then Return to create a file, the palette's
   size and place (640 wide, 117 px from the window's top, at most 464 tall), ⌘/ opening, searching
   (by name and by "cmd p"), Esc and ⌘/ closing the page, and ⌘/ leaving the page closed in the

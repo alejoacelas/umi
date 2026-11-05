@@ -33,6 +33,10 @@ def close(inst, win):
     rpc(inst, "debug.palette.close", window=win["window"])
 
 
+def page(inst, win):
+    return rpc(inst, "debug.shortcuts_page", window=win["window"])
+
+
 def make_repo(path):
     path.mkdir()
     (path / "src").mkdir()
@@ -172,6 +176,55 @@ def test_keyboard_shortcuts_is_a_menu_item_on_cmd_slash(inst, win):
     assert any(e["id"] == "help.shortcuts" and e["keys"] == ["cmd+/"] for e in entries), entries
 
 
+def key(inst, win, keys, focus="terminal"):
+    """A key press delivered inside the app (through Umi's key handling, not the system's)."""
+    return rpc(inst, "debug.key", window=win["window"], keys=keys, focus=focus)
+
+
+@pytest.mark.req("L-14", "L-15", "L-16")
+def test_cmd_p_shift_cmd_p_and_cmd_o_choose_the_filter(inst, win):
+    try:
+        key(inst, win, "cmd+p")
+        s = state(inst, win)
+        assert s["presented"] and s["mode"] == "commands" and s["zero_state"], s
+        key(inst, win, "cmd+shift+p", focus="palette")
+        assert (state(inst, win)["mode"], state(inst, win)["filter"]) == ("panes", "sessions:")
+        key(inst, win, "cmd+o", focus="palette")
+        assert (state(inst, win)["mode"], state(inst, win)["filter"]) == ("files", "files:")
+    finally:
+        close(inst, win)
+
+
+@pytest.mark.req("L-17")
+def test_cmd_slash_toggles_the_shortcuts_page_but_not_in_the_editor_source(inst, win, tmp_path):
+    try:
+        assert key(inst, win, "cmd+/")["handled"]
+        wait_until(lambda: page(inst, win)["shown"], 5, message="⌘/ opened the page")
+        rows = page(inst, win)["rows"]
+        assert {"view.palette", "help.shortcuts"} <= {r["id"] for r in rows}
+        assert any(r["id"].startswith("ghostty:") and r["section"] == "Terminal" for r in rows)
+        key(inst, win, "cmd+/")
+        wait_until(lambda: not page(inst, win)["shown"], 5, message="⌘/ closed it")
+        # From the palette: the page opens and the palette closes.
+        key(inst, win, "cmd+/", focus="palette")
+        wait_until(lambda: page(inst, win)["shown"], 5, message="⌘/ from the palette")
+        assert not state(inst, win)["presented"]
+        key(inst, win, "cmd+/")
+        wait_until(lambda: not page(inst, win)["shown"], 5, message="closed again")
+        # In the editor's source the key is the editor's.
+        doc = tmp_path / "slash.py"
+        doc.write_text("x = 1\n")
+        inst.cli("edit", str(doc), "--tab", win["tab"])
+        inst.cli("editor", "mode", "source", "--tab", win["tab"])
+        result = key(inst, win, "cmd+/", focus="editor")
+        assert not result["handled"], result
+        time.sleep(0.3)
+        assert not page(inst, win)["shown"], "the page stays closed in the editor's source"
+    finally:
+        if page(inst, win)["shown"]:
+            key(inst, win, "cmd+/")
+
+
 # ---- keys, pressed for real -----------------------------------------------------------------------
 
 KEYCODES = {"p": 35, "o": 31, "/": 44, "delete": 51, "down": 125, "up": 126, "return": 36, "esc": 53}
@@ -183,10 +236,6 @@ def press(ui, key, *mods):
         flags |= {"cmd": ui.CMD, "shift": ui.SHIFT, "ctrl": ui.CTRL, "option": ui.OPT}[mod]
     ui.key(KEYCODES[key], flags)
     time.sleep(0.4)
-
-
-def page(inst, win):
-    return rpc(inst, "debug.shortcuts_page", window=win["window"])
 
 
 @pytest.mark.req("L-14")
