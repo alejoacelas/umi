@@ -902,6 +902,8 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.insertionPointColor = UmiTheme.accentNSColor
             textView.textContainerInset = NSSize(width: 4, height: 10)
             textView.string = doc.text
+            // Opened with the caret at the top, as Warp opens files.
+            textView.setSelectedRange(NSRange(location: 0, length: 0))
             textView.setAccessibilityLabel(doc.name)
             container.attach(to: group, focusTarget: textView)
         }
