@@ -639,7 +639,29 @@ def test_save_new_launch_configuration_from_the_file_menu(clean, ui, tmp_path):
     # A second save under the same name says so and keeps the file.
     view.choose(view.menu_item("Save New Launch Configuration"))
     field = view.focused_input(5)
+    saved_text = open(path).read()
     view.enter_text("from_menu", field)
     view.key(36)
     wait_until(lambda: "already exists" in view.all_text(), 5, message="the dialog says the name is taken")
+    # The dialog came back with the name in its field, focused, to change it.
+    field = view.focused_input(5)
+    assert field is not None and view.value(field) == "from_menu", "the name is kept in the field"
     view.key(53)   # Esc: Cancel
+    time.sleep(0.5)
+    assert open(path).read() == saved_text, "the file is kept"
+    # Save under a new name, then "Open YAML File" opens the file in the editor.
+    view.choose(view.menu_item("Save New Launch Configuration"))
+    field = view.focused_input(5)
+    view.enter_text("second_save", field)
+    view.key(36)
+    second = os.path.join(inst.configs, "second_save.yaml")
+    wait_until(lambda: os.path.exists(second), 5, message="saved under the new name")
+    button = None
+
+    def find_button():
+        nonlocal button
+        button = view.find(lambda e: view.role(e) == "AXButton" and view.label(e) == "Open YAML File")
+        return button is not None
+    wait_until(find_button, 5, message="the Saved Successfully sheet")
+    view.press(button)
+    wait_until(lambda: real(second) in open_documents(inst), 10, message="the file open in the editor")
