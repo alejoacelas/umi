@@ -689,3 +689,22 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## Warp's look for the terminal itself (S-5, S-10 to S-12, 2026-11-05)
+
+Warp parity: Warp's built-in Dark colors, selection, contrast rule, font, padding, cursor,
+scrollbar, bell, block statuses and header, and the folder box. **Requirements:** S-5, S-10, S-11,
+S-12.
+
+- **New, `tests/test_umi_warp_terminal.py`**: the background `#050505` and the cursor `#19AAD8`
+  (screenshots; the cursor test is a `ui` test, as it needs the window focused), the selection's color
+  over the background with red text staying red, named colors raised to 4.5:1 while the same RGB gray
+  isn't, Hack 13 with 15.3–15.9-point rows and a configured `font-family` replacing it, padding 16 /
+  20 and none for a full-screen program (and back after it), the cursor 3 points wide, a row tall,
+  with round ends, the scrollbar's thumb, the silent bell (no Dock badge), exit codes 130 and 141 and
+  Ctrl-C as success, no running time in the first second, the header's `git:(branch)` (and the commit
+  when detached), `(conda) (venv) user@host:`, and the folder box ending after 40 characters.
+- **Test hook, `debug.terminal`**: `debug.blocks`' report plus the scrollbar (`scroller`) and the
+  bell's effects (`bell`). `debug.blocks` now also reports each block's `header_line` (the whole
+  header; `header` stays the folder alone), the padding's four sides, the font's name and size, the
+  cursor's size in points and the active screen.

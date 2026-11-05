@@ -237,7 +237,9 @@ that stretch equally.
 > also, make umi use the same blacks as the warp blacks I currenlty use (the defaults I think)
 
 His Warp follows the system theme, which in dark mode is Warp's default "Dark" theme (background
-`#000000`).
+`#000000`). Corrected 2026-11-05: the theme built into Warp (`themes/default_themes.rs`) is
+`#050505` with the cursor `#19AAD8`; `#000000` came from the themes repository's YAML. His screenshot
+`reference/warp-blocks.png` measures `#050505`.
 
 Then:
 > though let's use warp's terminal color config as well if it's straightforward to implement
@@ -258,3 +260,19 @@ Relayed by Alejo's agent, not his own words; Alejo approved: remove the Settings
 SPEC L-17), the copy of Tern's state on the first launch (both Macs already have Umi state), and
 `umi://open` links (documents from the server are read and edited on a web page the agent server
 serves).
+
+## 2026-11-05: the rest of Warp
+
+> Implement, test, and ship ... to match all the unchosen gaps against warp features except those
+> that would add actions on click ... I basically only use the warp features I can access from the
+> keyboard
+
+Then:
+> let's add the warp right click options as well
+
+- How the terminal looks: Warp's built-in Dark colors (`#050505`, cursor `#19AAD8`), its selection
+  and contrast rule, Hack 13 with rows 1.2× the font size and no ligatures, its padding (none for
+  full-screen programs), its rounded 3-point bar cursor blinking every 500 ms, its scrollbar and
+  silent bell; blocks that count Ctrl-C and SIGPIPE as success, show no running time in the first
+  second and carry Warp's header (environments, user@host over SSH, git branch); the folder box
+  with the folder alone, cut at 40 characters (SPEC S-5, S-10 to S-12).
