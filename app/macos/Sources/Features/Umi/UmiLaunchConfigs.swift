@@ -147,6 +147,7 @@ enum UmiLaunchConfigs {
         let place = document.map { "\(file), document \($0)" } ?? file
         func fail(_ message: String) -> UmiError { UmiError.badRequest("\(place): \(message)") }
         guard let root = parsed as? [String: Any] else { throw fail("expected `name:` and `windows:` at the top") }
+        // Warp requires `name`; Umi falls back to the file's name.
         let name = text(root["name"]) ?? humanName(file)
         guard let windowsJSON = root["windows"] as? [Any] else { throw fail("there's no `windows:` list") }
         var windows: [Window] = []
@@ -482,7 +483,8 @@ enum UmiLaunchConfigs {
 
     // MARK: Names
 
-    /// `my_layout.yaml` → "My Layout" (Warp's rule: words split at `_`, each capitalized).
+    /// `my_layout.yaml` → "My Layout": words split at `_`, each capitalized (the rule Warp's save
+    /// dialog uses to name a configuration after its file).
     static func humanName(_ file: String) -> String {
         stripSuffix(file).split(separator: "_", omittingEmptySubsequences: true)
             .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }

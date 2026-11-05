@@ -338,8 +338,9 @@ the menu.
   tab's own `commands` go to its focused pane, else its first. Colors are Umi's tab colors, or
   Warp's `magenta`, `cyan`, `black` and `white` (purple, teal, graphite, graphite). Saving writes
   Warp's names where Warp has the color (purple as `magenta`, teal as `cyan`, graphite as `white`),
-  so Warp can read the file; pink and orange keep Umi's names. A file without a
-  `name` is named after the file (`my_work.yaml` → "My Work"). A file can hold several
+  so Warp can read the file; pink and orange keep Umi's names. Warp requires `name`;
+  Umi also reads a file without one and names it after the file (`my_work.yaml` → "My Work", the
+  rule Warp uses for the names it saves under), and always writes `name`. A file can hold several
   configurations as YAML documents separated by `---`, as in Warp; each is listed and opened on its
   own.
   - File ▸ Launch Configurations lists them by name, as Warp's File menu does (choosing one opens
