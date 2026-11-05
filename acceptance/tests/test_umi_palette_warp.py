@@ -84,6 +84,21 @@ def test_a_typed_prefix_filters_the_palette_and_shows_as_its_filter_word(inst, w
         close(inst, win)
 
 
+@pytest.mark.req("L-14")
+def test_a_partial_filter_word_is_suggested(inst, win):
+    try:
+        for typed, rest in (("fi", "les: "), ("sess", "ions: "), ("a", "ctions: "), ("conv", "ersations: "),
+                            ("t", "abs: "), ("xyz", ""), ("Fi", "")):
+            rpc(inst, "debug.palette", window=win["window"], mode="commands", query=typed)
+            s = state(inst, win)
+            assert (s["mode"], s["query"], s["suggestion"]) == ("commands", typed, rest), (typed, s)
+        # Under a filter nothing more is suggested.
+        rpc(inst, "debug.palette", window=win["window"], mode="files", query="fi")
+        assert state(inst, win)["suggestion"] == ""
+    finally:
+        close(inst, win)
+
+
 @pytest.mark.req("L-15", "L-16")
 def test_shift_cmd_p_and_cmd_o_open_the_palette_filtered(inst, win):
     try:
@@ -350,7 +365,7 @@ def test_cmd_slash_toggles_the_shortcuts_page_but_not_in_the_editor_source(inst,
 
 # ---- keys, pressed for real -----------------------------------------------------------------------
 
-KEYCODES = {"p": 35, "o": 31, "/": 44, "delete": 51, "down": 125, "up": 126, "return": 36, "esc": 53}
+KEYCODES = {"p": 35, "o": 31, "/": 44, "delete": 51, "down": 125, "up": 126, "return": 36, "esc": 53, "tab": 48}
 
 
 def press(ui, key, *mods):
@@ -408,6 +423,30 @@ def test_the_empty_palette_selects_nothing_until_an_arrow_key_ui(inst, win, ui):
         assert state(inst, win)["selection"] == 0
         press(ui, "esc")
         assert not state(inst, win)["presented"]
+    finally:
+        close(inst, win)
+
+
+@pytest.mark.req("L-14")
+def test_tab_completes_a_partial_filter_word_ui(inst, win, ui):
+    ui.activate()
+    inst.cli("pane", "focus", win["pane"])
+    press(ui, "p", "cmd")
+    field = ui.focused_input(5)
+    assert field is not None
+    try:
+        ui.enter_text("fi", field)
+        wait_until(lambda: state(inst, win)["suggestion"] == "les: ", 5, message="files: suggested")
+        press(ui, "tab")
+        wait_until(lambda: state(inst, win)["mode"] == "files", 5, message="Tab applied files:")
+        s = state(inst, win)
+        assert (s["presented"], s["query"], s["filter"]) == (True, "", "files:"), s
+        assert ui.focused_input(5) is not None, "the field keeps focus"
+        press(ui, "delete")
+        wait_until(lambda: state(inst, win)["mode"] == "commands", 5, message="filter removed")
+        ui.enter_text("ses", ui.focused_input(5))
+        press(ui, "tab")
+        wait_until(lambda: state(inst, win)["mode"] == "panes", 5, message="Tab applied sessions:")
     finally:
         close(inst, win)
 

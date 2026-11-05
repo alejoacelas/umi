@@ -198,11 +198,36 @@ final class UmiPaletteModel: ObservableObject {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             MainActor.assumeIsolated {
-                guard let self, self.removesFilter(on: event) else { return event }
+                guard let self else { return event }
+                if self.completesFilter(on: event) { return nil }
+                guard self.removesFilter(on: event) else { return event }
                 self.setFilter(.commands)
                 return nil
             }
         }
+    }
+
+    /// The filter whose word the query begins, without the whole word typed (Warp's filter
+    /// autosuggestion: "fi" suggests `files:`).
+    private var suggestedFilter: Mode? {
+        guard step == .list, mode == .commands, !query.isEmpty else { return nil }
+        return Mode.allCases.first { $0.filterWord.map { $0.hasPrefix(query) && $0 != query } ?? false }
+    }
+
+    /// The rest of the suggested filter's word, shown dimmed after the query ("les: ").
+    var filterSuggestion: String? {
+        suggestedFilter?.filterWord.map { String($0.dropFirst(query.count)) + " " }
+    }
+
+    /// Tab with the palette's field focused applies the suggested filter (Warp).
+    private func completesFilter(on event: NSEvent) -> Bool {
+        guard isPresented, event.keyCode == 48,
+              event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift]),
+              let nsWindow = window?.window, event.window === nsWindow,
+              let editor = nsWindow.firstResponder as? NSTextView, editor.isFieldEditor,
+              let filter = suggestedFilter else { return false }
+        setFilter(filter)
+        return true
     }
 
     private func removeKeyMonitor() {
@@ -839,7 +864,8 @@ final class UmiPaletteModel: ObservableObject {
                                   "entries": entries.map(\.title), "output": output?.text ?? "",
                                   "query": query, "filter": mode.filterWord ?? "", "selection": selection,
                                   "zero_state": isZeroState, "placeholder": placeholder,
-                                  "rows": entries.map(\.json), "files_index": files != nil]
+                                  "rows": entries.map(\.json), "files_index": files != nil,
+                                  "suggestion": filterSuggestion ?? ""]
         if isZeroState { out["chips"] = Self.chips.compactMap(\.chipTitle) }
         return out
     }
@@ -1596,6 +1622,19 @@ private struct UmiPalettePanel: View {
                     .onChange(of: model.step) { _ in DispatchQueue.main.async { focused = true } }
                     .onChange(of: model.mode) { _ in DispatchQueue.main.async { focused = true } }
                     .accessibilityLabel("Palette query")
+                    .overlay(alignment: .leading) {
+                        // The rest of a filter word the query begins; Tab applies it.
+                        if let rest = model.filterSuggestion {
+                            HStack(spacing: 0) {
+                                Text(model.query).hidden()
+                                Text(rest).foregroundColor(colors.hint)
+                            }
+                            .font(.system(size: UmiPaletteStyle.fontSize))
+                            .lineLimit(1)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        }
+                    }
                 if model.busy != nil {
                     ProgressView().controlSize(.small).padding(.leading, 8)
                 }
