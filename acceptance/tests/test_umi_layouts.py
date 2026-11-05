@@ -106,6 +106,12 @@ def open_documents(inst):
     return paths
 
 
+def saved_cwds(text):
+    """The folders a saved file names, in order (as real paths: the shell may report /var for /private/var)."""
+    return [os.path.realpath(line.split("cwd:", 1)[1].strip()) for line in text.splitlines()
+            if line.strip().lstrip("- ").startswith("cwd:")]
+
+
 def real(path):
     return os.path.realpath(path) if path else path
 
@@ -132,8 +138,9 @@ def test_save_writes_warp_format_and_open_brings_the_layout_back(clean, tmp_path
     text = open(path).read()
     # Warp's format: name, windows, tabs, layout with split_direction and panes, cwd, title, color.
     for line in ("name: Work", "windows:", "tabs:", "title: api", "color: blue", "split_direction: horizontal",
-                 "panes:", f"cwd: {a}", f"cwd: {b}", f"cwd: {c}", "is_focused: true"):
+                 "panes:", "is_focused: true"):
         assert line in text, f"{line!r} missing from:\n{text}"
+    assert saved_cwds(text) == [a, b, c], text
 
     listed = inst.json("layout", "ls")["configs"]
     assert [(x["name"], x["windows"], x["tabs"]) for x in listed] == [("Work", 1, 2)], listed
@@ -295,8 +302,9 @@ def test_tab_menu_save_as_new_config_saves_the_tab_and_opens_the_file(clean, tmp
     path = os.path.join(inst.configs, "my_tab_config.yaml")
     wait_until(lambda: os.path.exists(path), 5, message="the file written")
     text = open(path).read()
-    for line in ("name: menu-tab", "title: menu-tab", "split_direction: vertical", f"cwd: {a}", f"cwd: {b}"):
+    for line in ("name: menu-tab", "title: menu-tab", "split_direction: vertical"):
         assert line in text, f"{line!r} missing from:\n{text}"
+    assert saved_cwds(text) == [a, b], text
     wait_until(lambda: real(path) in open_documents(inst), 10,
                message="the file open in the editor")
     rpc(inst, "debug.ui.menu.perform", tab=win["tab"], title="Save as New Config")
@@ -343,7 +351,7 @@ def test_save_new_launch_configuration_from_the_file_menu(clean, ui, tmp_path):
     path = os.path.join(inst.configs, "from_menu.yaml")
     wait_until(lambda: os.path.exists(path), 5, message="saved")
     assert "name: From Menu" in open(path).read()
-    assert f"cwd: {folder}" in open(path).read()
+    assert saved_cwds(open(path).read()) == [folder]
     time.sleep(0.5)
     view.key(36)   # Return: Done
     time.sleep(0.5)
