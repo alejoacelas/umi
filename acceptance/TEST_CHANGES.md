@@ -724,3 +724,6 @@ Warp parity for the file editor. **Requirements:** E-4 (amended: the banner's wo
   pane; ⌘C, ⌘X, ⌘V, ⌘Z and ⇧⌘Z in the text; right-click in the text (Cut, Copy, Paste); a
   configured font-family; line-number colors and the current line, and the marks' colors, measured
   in screenshots; the header's title centred.
+- **Fixed, `test_syntax_colors_come_from_the_terminal_palette`**: it read `highlighted` before the
+  code view existed and failed with a KeyError once on mac-air-2; it now waits for the key. Same
+  assertions.

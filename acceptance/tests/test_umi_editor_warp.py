@@ -134,7 +134,7 @@ def test_code_view_has_the_terminal_font_line_numbers_and_no_wrap(inst, win, cod
 @pytest.mark.req("E-21")
 def test_syntax_colors_come_from_the_terminal_palette(inst, win, code):
     pane = open_file(inst, win, code)
-    state = wait_until(lambda: (s := ed(inst, pane))["highlighted"] and s, 10, message="syntax colors")
+    state = wait_until(lambda: (s := ed(inst, pane)).get("highlighted") and s, 10, message="syntax colors")
     palette = state["palette"]
     assert state["language"] == "python"
     assert ed(inst, pane, line=1, column=1)["color_at"] == palette[5], "keywords are magenta"
