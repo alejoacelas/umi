@@ -908,9 +908,20 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
         if focusEditor, let textView { textView.window?.makeFirstResponder(textView) }
     }
 
-    /// ⌘G / ⇧⌘G and Enter / Shift-Enter: the next or previous match, selected in the text.
+    /// ⌘G / ⇧⌘G and Enter / Shift-Enter: the next or previous match, the caret at its start.
+    /// With the bar closed, the keys open it on the first match after the caret (⌘G) or the last
+    /// one before it (⇧⌘G).
     func findStep(_ offset: Int) {
-        if !find.isOpen { openFind() }
+        if !find.isOpen {
+            let caret = textView?.selectedRange().location ?? 0
+            openFind()
+            if offset < 0, !find.matches.isEmpty {
+                find.select(find.matches.lastIndex(where: { $0.location < caret }) ?? find.matches.count - 1)
+                showSelectedMatch()
+            }
+            if find.matches.isEmpty, !find.query.isEmpty { NSSound.beep() }
+            return
+        }
         guard !find.matches.isEmpty else {
             NSSound.beep()
             return
