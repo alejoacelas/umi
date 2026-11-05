@@ -720,4 +720,10 @@ state) instead of every action. **Requirements:** L-14 to L-17.
   also checks the chips' icons. Hooks: rows carry `id` and `row_id`; `debug.palette.state` adds
   `files_index`, `suggestion` and `chip_icons`; `debug.shortcuts_page` takes a `query` and its
   rows carry their `shortcuts`.
+- **Fixed, two `ui` tests that never passed on the test Mac**:
+  `test_typing_a_prefix_filters_and_backspace_removes_the_filter_ui` looks for "Filter files:" in
+  the element's value as well as its label (a static text's label reaches accessibility as its
+  value). `test_cmd_slash_in_the_editor_source_leaves_the_page_closed_ui` focuses the source text
+  through accessibility and asserts it has focus before pressing ⌘/: `debug.editor.focus` left
+  the terminal focused there, so ⌘/ rightly opened the page. Their assertions are unchanged.
 

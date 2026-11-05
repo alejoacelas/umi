@@ -389,7 +389,8 @@ def test_typing_a_prefix_filters_and_backspace_removes_the_filter_ui(inst, win, 
         ui.enter_text("files:", field)
         wait_until(lambda: state(inst, win)["mode"] == "files", 5, message="files: filters to files")
         assert state(inst, win)["query"] == ""
-        assert ui.find(lambda e: ui.label(e) == "Filter files:") is not None, "the filter word shows"
+        # A static text's label reaches accessibility as its value.
+        assert ui.find(lambda e: "Filter files:" in (ui.label(e), ui.value(e))) is not None, "the filter word shows"
         press(ui, "delete")
         wait_until(lambda: state(inst, win)["mode"] == "commands", 5, message="Backspace removes the filter")
         assert state(inst, win)["presented"]
@@ -561,8 +562,11 @@ def test_cmd_slash_in_the_editor_source_leaves_the_page_closed_ui(inst, win, ui,
     inst.cli("edit", str(doc), "--tab", win["tab"])
     inst.cli("editor", "mode", "source", "--tab", win["tab"])
     ui.activate()
-    rpc(inst, "debug.editor.focus", tab=win["tab"])
-    time.sleep(0.3)
+    # Focus the source text itself, as a click would (debug.editor.focus can leave the key
+    # window's terminal focused), and check it has focus before the key.
+    area = wait_until(lambda: ui.text_area("x = 1"), 10, message="the source text")
+    ui.focus(area)
+    wait_until(lambda: ui.value(ui.focused()).startswith("x = 1"), 5, message="focus in the editor's source")
     press(ui, "/", "cmd")
     time.sleep(0.5)
     assert not page(inst, win)["shown"], "⌘/ is the editor's in its source"
