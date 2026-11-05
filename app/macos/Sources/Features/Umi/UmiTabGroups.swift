@@ -248,6 +248,7 @@ enum UmiTabGroups {
 
     static func normalizeAll() {
         for window in UmiTopology.windows { normalize(window) }
+        UmiTabGroupMenu.shared.rebuild()
     }
 
     /// Move `tab` to right after `other` in the window's order.
@@ -323,9 +324,79 @@ enum UmiTabGroups {
         return (window, group)
     }
 
+    /// The groups the current tab can be moved to: the current window's, except its own.
+    static func moveTargets() -> (TerminalController, UmiTab, [UmiTabGroup])? {
+        guard let window = UmiTopology.currentWindow else { return nil }
+        let tab = window.selectedTab
+        return (window, tab, window.sidebarModel.groups.filter { $0.id != tab.groupID })
+    }
+
+    /// The palette's "Move Tab to Group: NAME", one per group the current tab can join.
+    static func paletteOptions() -> [CommandOption] {
+        guard let (window, tab, targets) = moveTargets() else { return [] }
+        return targets.map { group in
+            CommandOption(title: "Move Tab to Group: \(group.displayName)", leadingIcon: "rectangle.stack") {
+                MainActor.assumeIsolated { move(tab, to: group, in: window) }
+            }
+        }
+    }
+
     static func json(_ group: UmiTabGroup, in controller: TerminalController) -> [String: Any] {
         ["id": group.idString, "name": group.displayName, "named": group.name != nil, "collapsed": group.collapsed,
          "color": UmiTopology.colorName(group.color), "tabs": members(of: group, in: controller).map(\.idString)]
+    }
+}
+
+// MARK: - Window ▸ Move Tab to Group ▸
+
+/// The Window menu's "Move Tab to Group" submenu: the groups the current tab can join (Warp's
+/// row-menu "Move to group ▸", from the keyboard). Kept current as groups change, so the menu bar
+/// and the accessibility tree list them without opening the menu.
+@MainActor
+final class UmiTabGroupMenu: NSObject, NSMenuDelegate {
+    static let shared = UmiTabGroupMenu()
+    static let title = "Move Tab to Group"
+
+    private weak var menu: NSMenu?
+
+    /// Add the submenu after the Window menu's other tab group items.
+    func install(in windowMenu: NSMenu) {
+        guard menu == nil else { return }
+        let item = NSMenuItem(title: Self.title, action: nil, keyEquivalent: "")
+        if #available(macOS 26.0, *) {
+            item.image = NSImage(systemSymbolName: "rectangle.stack.badge.plus", accessibilityDescription: nil)
+        }
+        let submenu = NSMenu(title: Self.title)
+        submenu.delegate = self
+        item.submenu = submenu
+        if let index = windowMenu.items.firstIndex(where: { $0.title == "Remove Tab from Group" }) {
+            windowMenu.insertItem(item, at: index)
+        } else {
+            windowMenu.addItem(item)
+        }
+        menu = submenu
+        rebuild()
+    }
+
+    nonisolated func menuNeedsUpdate(_ menu: NSMenu) {
+        MainActor.assumeIsolated { rebuild() }
+    }
+
+    func rebuild() {
+        guard let menu else { return }
+        menu.removeAllItems()
+        guard let (window, tab, targets) = UmiTabGroups.moveTargets(), !targets.isEmpty else {
+            let empty = NSMenuItem(title: "No Other Groups", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return
+        }
+        for group in targets {
+            menu.addItem(UmiClosureMenuItem(title: group.displayName) { [weak window, weak tab] in
+                guard let window, let tab else { return }
+                UmiTabGroups.move(tab, to: group, in: window)
+            })
+        }
     }
 }
 

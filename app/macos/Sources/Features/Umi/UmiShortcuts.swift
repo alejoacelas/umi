@@ -157,6 +157,11 @@ enum UmiShortcuts {
                      guard let (window, _) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
                      UmiTabGroups.remove(window.selectedTab, in: window)
                  }, enabled: { UmiTabGroups.currentGroup() != nil }),
+            Item(id: "tab.group_new_tab", title: "New Tab in Group", key: "", modifiers: [], symbol: "plus.rectangle.on.rectangle",
+                 menu: "Window", action: {
+                     guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabGroups.newTab(in: group, in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
             Item(id: "tab.group_ungroup", title: "Ungroup Tabs", key: "", modifiers: [], symbol: "rectangle.stack",
                  menu: "Window", action: {
                      guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
@@ -234,6 +239,7 @@ enum UmiShortcuts {
         // Every session, shown in a pane or not, with its status (AP-3, AP-4).
         if let windowMenu = topMenu("Window", in: mainMenu) {
             UmiAgentMenu.shared.install(in: windowMenu)
+            UmiTabGroupMenu.shared.install(in: windowMenu)
         }
         installMonitor()
         UmiTabHints.shared.install()
@@ -361,7 +367,7 @@ enum UmiShortcuts {
                 _ = try? UmiAgentUI.open(session.id, placement: .init(kind: .tab, focus: true), caller: UmiCaller([:]))
             }
         }
-        return fixed + agents
+        return fixed + UmiTabGroups.paletteOptions() + agents
     }
 
     // MARK: Actions

@@ -769,3 +769,28 @@ def test_tab_groups_from_the_keyboard_ui(inst, win, ui):
     wait_until(lambda: not groups(inst, win["window"])["groups"][0]["collapsed"], 5, message="expanded")
     ui.choose(ui.menu_item("Ungroup Tabs"))
     wait_until(lambda: groups(inst, win["window"])["groups"] == [], 5, message="ungrouped")
+
+
+@pytest.mark.req("S-14")
+def test_move_tab_to_group_and_new_tab_in_group_from_the_menu_bar_ui(inst, win, ui):
+    """Window ▸ Move Tab to Group ▸ lists the window's other groups and moves the current tab into
+    one; Window ▸ New Tab in Group opens a tab at the end of the current tab's group. Both are in
+    the palette too."""
+    _, t2 = new_tab(inst, win)
+    _, t3 = new_tab(inst, win)
+    perform(inst, t2, "New group with tab")
+    sidebar(inst, win["window"], rename_text="Kbd target")
+    gid = groups(inst, win["window"])["groups"][0]["id"]
+    inst.cli("tab", "focus", t3)
+    front(inst, win, ui)
+    item = wait_until(lambda: ui.menu_item("Kbd target"), 5, message="the group in Move Tab to Group")
+    parent = ui.attr(ui.attr(item, "AXParent"), "AXParent")
+    assert ui.label(parent) == "Move Tab to Group", ui.label(parent)
+    ui.choose(item)
+    wait_until(lambda: groups(inst, win["window"])["groups"][0]["tabs"] == [t2, t3], 5, message="moved into the group")
+    assert selected(inst, win["window"]) == t3
+    ui.choose(ui.menu_item("New Tab in Group"))
+    wait_until(lambda: len(groups(inst, win["window"])["groups"][0]["tabs"]) == 3, 5, message="a new tab in the group")
+    members = groups(inst, win["window"])["groups"][0]["tabs"]
+    assert members[:2] == [t2, t3] and selected(inst, win["window"]) == members[2]
+    assert groups(inst, win["window"])["groups"][0]["id"] == gid
