@@ -108,6 +108,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
                         terminals
                             .padding(.top, topInset)
+                        if let controller {
+                            // Umi: the shortcuts page (⌘/), at the right as Warp's keybindings panel.
+                            UmiShortcutsPageSlot(model: controller.palette.shortcutsPage,
+                                                 background: ghostty.config.backgroundColor)
+                                .padding(.top, topInset)
+                        }
                     }
                     .ignoresSafeArea(.container, edges: .top)
                 }

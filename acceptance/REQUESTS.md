@@ -282,3 +282,6 @@ gestures are out.
   server and are not in (COMPROMISES).
 - Project explorer and global search: the explorer's keys, look, file watching, hidden and ignored
   files, active-file reveal and Warp's right-click menu; global search on ⇧⌘F and ⌃3 (SPEC S-2).
+- Palettes and the shortcuts page: one palette with Warp's filters (`files:`, `sessions:` …) and its
+  empty state, Warp's look for the palette and its rows, "Create a file named …" in ⌘O, and ⌘/ for
+  a shortcuts page (SPEC L-14 to L-17). Warp's palette has no right-click menu.

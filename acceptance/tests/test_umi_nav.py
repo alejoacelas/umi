@@ -309,7 +309,9 @@ def test_help_json_describes_the_cli(inst):
 
 @pytest.mark.req("L-14")
 def test_command_palette_offers_cli_commands_menu_actions_and_ghostty_actions(inst, win):
-    entries = rpc(inst, "debug.palette", window=win["window"], mode="commands")["entries"]
+    # Every action, as the palette lists them under its actions filter (the empty unfiltered
+    # palette shows chips, Recent and Suggested instead, as Warp's).
+    entries = rpc(inst, "debug.palette", window=win["window"], mode="actions")["entries"]
     titles = [e["title"] for e in entries]
     try:
         cli = [e for e in entries if e["kind"] == "cli"]

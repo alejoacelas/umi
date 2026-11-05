@@ -819,3 +819,40 @@ on the match's column, a bad regex's error), `test_global_search_outside_git_and
 - **Changed, `test_explorer_follows_the_file_system`**: a new `.rs` file's icon was the monogram
   "RS"; it is now Material Icon Theme's Rust icon, so the test checks the asset name
   (`fileicon-rust`) and that the app loads it (`icon_loaded`), which is stricter than before.
+## One palette with Warp's filters and empty state; the shortcuts page (L-14 to L-17, 2026-11-05)
+
+L-14 changed: the empty unfiltered ⌘P shows filter chips, Recent and Suggested (Warp's empty
+state) instead of every action. **Requirements:** L-14 to L-17.
+
+- **Changed, `tests/test_umi_nav.py`**: `test_command_palette_offers_cli_commands_menu_actions_and_ghostty_actions`
+  lists the actions with `mode="actions"` (the palette's `actions:` filter) instead of the empty
+  unfiltered palette. Its assertions are unchanged.
+- **New, `tests/test_umi_palette_warp.py`**: typed prefixes filter the palette and show as its
+  filter word; ⇧⌘P and ⌘O open it filtered; the unfiltered palette mixes actions, panes and files
+  (at most 250); the empty palette's chips, Recent (after choosing a pane and an action) and
+  Suggested; ⌘O's "Create a file named …" makes the file and opens it; Keyboard Shortcuts is the
+  ⌘/ menu item and in `umi shortcuts`; ⌘P, ⇧⌘P, ⌘O and ⌘/ delivered through `debug.key` (Umi's own
+  key handling) choose the filter, toggle the page, and leave it closed in the editor's source. `ui` tests press the real keys: typing `files:` and
+  Backspace, ⇧⌘P then ⌘O, ↓ in the empty palette, ⌘O then Return to create a file, the palette's
+  size and place (640 wide, 117 px from the window's top, at most 464 tall), ⌘/ opening, searching
+  (by name and by "cmd p"), Esc and ⌘/ closing the page, and ⌘/ leaving the page closed in the
+  editor's source.
+- **Test hook, `debug.palette.state`** now also returns the query, filter word, selection, whether
+  the empty state shows, its chips and the rows; **`debug.shortcuts_page`** returns the page's state.
+- **After review, `tests/test_umi_palette_warp.py`**: new tests that an entry under Recent and
+  Suggested is two rows with distinct ids; that ⌘O creates `~/…` and absolute names there; that
+  the shortcuts page finds keys in any order, as words or symbols, Ghostty's bindings included,
+  and never ⌘. for "cmd p"; that a file opened from the palette shows under Recent (with its
+  line) and opens from there; that the empty palette indexes no files until a query; that a
+  partial filter word is suggested; and `ui` tests for Tab applying it and for the arrows
+  stopping at the empty palette's ends. `test_the_empty_palette_shows_filter_chips_recent_and_suggested`
+  also checks the chips' icons. Hooks: rows carry `id` and `row_id`; `debug.palette.state` adds
+  `files_index`, `suggestion` and `chip_icons`; `debug.shortcuts_page` takes a `query` and its
+  rows carry their `shortcuts`.
+- **Fixed, two `ui` tests that never passed on the test Mac**:
+  `test_typing_a_prefix_filters_and_backspace_removes_the_filter_ui` looks for "Filter files:" in
+  the element's value as well as its label (a static text's label reaches accessibility as its
+  value). `test_cmd_slash_in_the_editor_source_leaves_the_page_closed_ui` focuses the source text
+  through accessibility and asserts it has focus before pressing ⌘/: `debug.editor.focus` left
+  the terminal focused there, so ⌘/ rightly opened the page. Their assertions are unchanged.
+

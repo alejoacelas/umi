@@ -9,7 +9,7 @@ enum UmiNavigationRPC {
         "tab.back", "tab.next", "tab.prev", "jump.next", "jump.back",
         "shortcuts.list", "shortcuts.set", "shortcuts.reset",
         "debug.attention.set", "debug.attention.background", "debug.navigation",
-        "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.key",
+        "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.shortcuts_page", "debug.key",
     ]
 
     static func handle(_ method: String, _ params: UmiParams, caller: UmiCaller) async throws -> [String: Any] {
@@ -128,8 +128,9 @@ enum UmiNavigationRPC {
 
         case "debug.palette":
             let window = try UmiTopology.window(params.string("window"), caller: caller)
-            guard let mode = UmiPaletteModel.Mode(rawValue: params.string("mode") ?? "commands") else {
-                throw UmiError.badRequest("mode is commands, panes or files")
+            let name = params.string("mode") ?? "commands"
+            guard let mode = UmiPaletteModel.Mode(rawValue: name == "sessions" ? "panes" : name) else {
+                throw UmiError.badRequest("mode is commands, actions, panes (sessions), files, tabs or conversations")
             }
             let entries = await window.palette.preview(mode, query: params.string("query") ?? "", in: window)
             return ["entries": entries.map(\.json), "presented": window.palette.isPresented,
@@ -144,9 +145,14 @@ enum UmiNavigationRPC {
         case "debug.palette.state":
             // What the palette shows now, without opening or changing it.
             let window = try UmiTopology.window(params.string("window"), caller: caller)
-            let palette = window.palette
-            return ["presented": palette.isPresented, "mode": palette.mode.rawValue, "step": "\(palette.step)",
-                    "entries": palette.entries.map(\.title), "output": palette.output?.text ?? ""]
+            return window.palette.stateJSON
+
+        case "debug.shortcuts_page":
+            // The shortcuts page (⌘/) of a window: shown or not, its query and rows.
+            // With `query`, search it first.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            if let query = params.string("query") { window.palette.shortcutsPage.search(query) }
+            return window.palette.shortcutsPage.stateJSON
 
         case "debug.palette.close":
             let window = try UmiTopology.window(params.string("window"), caller: caller)
