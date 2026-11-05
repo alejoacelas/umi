@@ -514,17 +514,38 @@ final class UmiFileTreeModel: ObservableObject {
         if Self.isText(url) {
             openInEditor(url)
         } else {
-            NSWorkspace.shared.open(url)
+            openWithDefaultApp(url)
         }
     }
 
+    /// Open a file in the editor, in a pane beside the focused pane (E-9; where it's already open,
+    /// it shows there): Enter, New File and Warp's "Open in new pane".
     func openInEditor(_ url: URL) {
         guard let controller else { return }
         do {
-            try controller.selectedTab.editor.open(url, mode: nil)
+            if let anchor = focusedPane {
+                try UmiFilePanes.open(url, mode: nil, near: anchor, focus: true)
+            } else {
+                try controller.selectedTab.editor.open(url, mode: nil)
+            }
         } catch let error as UmiError {
             alert("Can't open \(url.lastPathComponent)", error.message)
         } catch {}
+    }
+
+    /// Open with the file's default app. `UMI_TEST_OPEN_LOG` (tests only) appends the path to that
+    /// file instead, so no app opens on the test Mac.
+    func openWithDefaultApp(_ url: URL) {
+        if let log = ProcessInfo.processInfo.environment["UMI_TEST_OPEN_LOG"], !log.isEmpty {
+            if !FileManager.default.fileExists(atPath: log) { FileManager.default.createFile(atPath: log, contents: nil) }
+            if let handle = FileHandle(forWritingAtPath: log) {
+                handle.seekToEndOfFile()
+                handle.write(Data((url.path + "\n").utf8))
+                try? handle.close()
+            }
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 
     /// Open in a new tab: a folder as a terminal there, a file as a tab of its own.
@@ -680,8 +701,8 @@ final class UmiFileTreeModel: ObservableObject {
 
     // MARK: The right-click menu
 
-    /// Warp's items (New File, cd to Directory, Open in New Tab, Reveal in Finder, Rename, Delete,
-    /// Copy Path, Copy Relative Path) with Umi's (Open in Editor, Open with Default App, Insert
+    /// Warp's items (New File, cd to Directory, Open in New Pane, Open in New Tab, Reveal in Finder,
+    /// Rename, Delete, Copy Path, Copy Relative Path) with Umi's (Open with Default App, Insert
     /// Path in Terminal).
     func menuItems(for url: URL, isDirectory: Bool) -> [UmiTabMenuItem] {
         var items: [UmiTabMenuItem] = []
@@ -692,9 +713,9 @@ final class UmiFileTreeModel: ObservableObject {
             items.append(.init(title: "Open in New Tab") { [weak self] in self?.openInNewTab(url, isDirectory: true) })
         } else {
             let editable = Self.isText(url)
-            items.append(.init(title: "Open in Editor", enabled: editable) { [weak self] in self?.openInEditor(url) })
+            items.append(.init(title: "Open in New Pane", enabled: editable) { [weak self] in self?.openInEditor(url) })
             items.append(.init(title: "Open in New Tab", enabled: editable) { [weak self] in self?.openInNewTab(url, isDirectory: false) })
-            items.append(.init(title: "Open with Default App") { NSWorkspace.shared.open(url) })
+            items.append(.init(title: "Open with Default App") { [weak self] in self?.openWithDefaultApp(url) })
         }
         items.append(.init(title: "Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) })
         if url.path != root?.url.path {

@@ -110,3 +110,4 @@ it is guidance"). What this design gives up:
 | **Delete moves to the Trash and doesn't ask.** Warp deletes permanently, also without asking. | A delete from a menu should be recoverable; the Trash makes a confirmation unnecessary. | No silent loss of files. |
 | **A rename doesn't follow into an open editor.** Renaming a file that is open in a pane leaves that pane on the old path, so a save there writes the old name. Warp tells its editors. | The editor has no notion of a moved file yet. | E-3 (edits aren't lost; they save under the old name). |
 | **"Open Terminal Here" is "Open in New Tab"** on folders: the two were the same action, so the menu keeps Warp's name. | One item per action. | S-2. |
+| **"Open in Editor" is "Open in New Pane"** on files: Umi's editor opens a file in a pane beside the focused one, which is what Warp's "Open in new pane" does, so the menu keeps Warp's name. | One item per action. | S-2. |

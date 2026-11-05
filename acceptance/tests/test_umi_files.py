@@ -186,7 +186,7 @@ def test_explorer_menu_has_warps_items(inst, win, tmp_path):
         "New File", "cd to Directory", "Open in New Tab", "Reveal in Finder", "Rename", "Delete",
         "Insert Path in Terminal", "Copy Path", "Copy Relative Path"]
     assert menu(inst, win, readme) == [
-        "Open in Editor", "Open in New Tab", "Open with Default App", "Reveal in Finder", "Rename", "Delete",
+        "Open in New Pane", "Open in New Tab", "Open with Default App", "Reveal in Finder", "Rename", "Delete",
         "Insert Path in Terminal", "Copy Path", "Copy Relative Path"]
     root_items = menu(inst, win, repo)
     assert "Rename" not in root_items and "Delete" not in root_items
@@ -198,6 +198,16 @@ def test_explorer_menu_has_warps_items(inst, win, tmp_path):
     perform(inst, win, src, "cd to Directory")
     wait_until(lambda: os.path.realpath(inst.json("pane", "info", term["pane"])["cwd"] or "/") == os.path.realpath(src),
                10, message="the terminal is in src")
+
+    # Open in New Pane: the file in the editor, in a pane beside the terminal, in the same tab.
+    notes = os.path.join(repo, "notes.txt")
+    tabs_before = tab_ids(inst, win["window"])
+    perform(inst, win, notes, "Open in New Pane")
+    wait_until(lambda: os.path.realpath(notes) in editor_paths(inst, term["tab"]), 10,
+               message="the file opens in a pane of the terminal's tab")
+    assert tab_ids(inst, win["window"]) == tabs_before, "no new tab"
+    assert len(inst.find_pane(term["pane"])[1]["panes"]) == 2, "a split beside the terminal"
+    inst.cli("pane", "focus", term["pane"])
 
     # Open in New Tab: a folder as a terminal there; a file as a tab of its own.
     before = tab_ids(inst, win["window"])

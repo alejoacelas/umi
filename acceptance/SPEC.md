@@ -411,7 +411,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
     default app) or opens or closes a folder, Esc goes back to the pane.
   - Explorer right-click menu, Warp's items with Umi's: on a folder New File, cd to Directory (types
     `cd` and the folder into the tab's terminal), Open in New Tab (a terminal there); on a file Open
-    in Editor, Open in New Tab (a tab of its own), Open with Default App; on both Reveal in Finder,
+    in New Pane (the editor in a pane beside the focused pane), Open in New Tab (a tab of its own),
+    Open with Default App; on both Reveal in Finder,
     Rename and Delete (not on the root), Insert Path in Terminal, Copy Path, Copy Relative Path
     (from the root). New File and Rename edit the name in the row: Enter commits, Esc or an empty
     name cancels; a new file opens in the editor. Delete moves the item to the Trash without asking.
