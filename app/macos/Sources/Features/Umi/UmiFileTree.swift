@@ -619,14 +619,22 @@ final class UmiFileTreeModel: ObservableObject {
         return url.path.hasPrefix(rootPath + "/") ? String(url.path.dropFirst(rootPath.count + 1)) : url.path
     }
 
-    /// Delete moves to the Trash (never permanently); Warp asks nothing either.
+    /// Delete moves to the Trash (never permanently); Warp asks nothing either. Panes showing the
+    /// item, or a file under it, close, as Warp closes the tabs showing a deleted file; unsaved
+    /// edits there are kept as a recovery copy (E-3).
     func delete(_ url: URL) {
+        let gone = Self.realURL(url).path
+        let showing = UmiFilePanes.shared.open.filter { _, doc in
+            let path = Self.realURL(doc.url).path
+            return path == gone || path.hasPrefix(gone + "/")
+        }
         do {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         } catch {
             alert("Can't move \(url.lastPathComponent) to the Trash", error.localizedDescription)
             return
         }
+        for (pane, _) in showing { UmiFilePanes.closePane(pane) }
         if selected?.path == url.path { selected = nil }
         node(at: url.deletingLastPathComponent())?.loadChildren(force: true)
         rebuild()

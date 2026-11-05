@@ -416,7 +416,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
     Open with Default App; on both Reveal in Finder,
     Rename and Delete (not on the root), Insert Path in Terminal, Copy Path, Copy Relative Path
     (from the root). New File and Rename edit the name in the row: Enter commits, Esc or an empty
-    name cancels; a new file opens in the editor. Delete moves the item to the Trash without asking.
+    name cancels; a new file opens in the editor. Delete moves the item to the Trash without asking
+    and closes the panes showing it (or a file in it).
   - Search is global search (Warp parity, 2026-11-05). ⇧⌘F shows it with focus in the query, its
     text selected; ⌃3 shows or hides it. It searches the files of the focused pane's repository
     (the explorer's root), leaving out what git ignores, 300 ms after typing stops: literal and

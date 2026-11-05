@@ -249,8 +249,14 @@ def test_explorer_menu_has_warps_items(inst, win, tmp_path):
     with open(doomed, "w") as f:
         f.write("bye\n")
     wait_until(lambda: row(files(inst, win, update=False), doomed) is not None, 5, message="the file shows")
+    shown = inst.json("edit", doomed, "--pane", term["pane"])["documents"][0]["pane"]
+    assert os.path.realpath(doomed) in editor_paths(inst, term["tab"])
     perform(inst, win, doomed, "Delete")
     assert not os.path.exists(doomed)
+    # The pane showing it closes, as Warp closes the tabs showing a deleted file.
+    wait_until(lambda: inst.find_pane(shown) is None, 5, message="the deleted file's pane closes")
+    assert os.path.realpath(doomed) not in editor_paths(inst, term["tab"])
+    assert not os.path.exists(doomed), "closing the pane didn't write the file back"
     trashed = os.path.expanduser("~/.Trash/" + doomed_name)
     assert os.path.exists(trashed), "it went to the Trash"
     os.remove(trashed)   # the test's own file
