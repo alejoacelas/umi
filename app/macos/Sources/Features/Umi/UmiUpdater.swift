@@ -136,8 +136,8 @@ final class UmiUpdater: ObservableObject {
         readLastAttempt()
         // Warp parity (2026-11-05): after an update installed, a one-time note says so with
         // what changed (Warp's "Warp updated!" toast). The attempt file is read once, so the
-        // note shows once.
-        if let attempt = lastAttempt, attempt.ok, attempt.from != attempt.version {
+        // note shows once. A rollback (an older version) shows nothing.
+        if let attempt = lastAttempt, attempt.ok, Self.compare(attempt.version, attempt.from) == .orderedDescending {
             let notes = lastAttemptNotes
             DispatchQueue.main.async { UmiInbox.shared.showUpdateNote(version: attempt.version, notes: notes) }
         }
