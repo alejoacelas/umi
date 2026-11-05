@@ -100,6 +100,7 @@ enum UmiMarkdownStyle {
         .umi-mermaid.umi-showing-diagram pre { display: none; }
         .umi-mermaid:not(.umi-showing-diagram) .umi-mermaid-view { display: none; }
         .umi-mermaid-error { color: var(--red); font: 12px var(--ui); padding: 8px 16px 0; white-space: pre-wrap; }
+        .umi-mermaid-error::before { content: attr(data-error); }
 
         .hljs-keyword, .hljs-literal, .hljs-selector-tag, .hljs-doctag { color: \(p.magenta); }
         .hljs-title, .hljs-title.function_, .hljs-built_in, .hljs-section { color: \(p.blue); }

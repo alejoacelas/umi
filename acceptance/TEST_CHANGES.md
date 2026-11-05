@@ -705,3 +705,9 @@ New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing tes
   buttons, types into find, performs menu actions through the responder chain, and lists or chooses
   the right-click menu's items. Once a test has used it, Copy and Copy file path write to a private
   pasteboard (`action=pasteboard` reads it), never the test Mac's clipboard.
+
+### Review fixes (2026-11-05)
+
+- `test_a_broken_diagram_shows_its_source_and_error` also checks that the error is drawn (its box
+  is taller than its padding); before, it read only the message the script stored, which the page
+  never showed.

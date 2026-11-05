@@ -198,6 +198,8 @@ def test_a_broken_diagram_shows_its_source_and_error(inst, win, tmp_path):
     wait_until(lambda: md(inst, str(path))["mermaid"]["errors"], 20, message="the parse error shown")
     assert md(inst, str(path))["mermaid"]["diagrams"] == 0
     assert style(inst, str(path), ".umi-mermaid pre", "display")["display"] != "none", "the source stays on show"
+    error = style(inst, str(path), ".umi-mermaid-error", "padding-top")
+    assert error["padding-top"] == "8px" and error["rect"]["height"] > 8 + 12, ("the error's text is drawn", error)
 
 
 @pytest.mark.req("MD-4")
