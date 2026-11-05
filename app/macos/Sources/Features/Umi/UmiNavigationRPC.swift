@@ -162,7 +162,11 @@ enum UmiNavigationRPC {
                 throw UmiError.badRequest("keys like cmd+shift+] (US layout letters, digits, [ ] , tab and arrows)")
             }
             let target: NSWindow? = window.window
-            switch params.string("focus") ?? "terminal" {
+            let focus = params.string("focus") ?? "terminal"
+            switch focus {
+            case "none":
+                // Keep focus where it is (the project explorer, global search, an inline field).
+                break
             case "editor", "preview":
                 UmiDebug.focusEditor(in: window)
             case "palette":
@@ -183,7 +187,11 @@ enum UmiNavigationRPC {
                 throw UmiError.failed("couldn't make the key event")
             }
             let handled = UmiShortcuts.dispatch(event)
-            if !handled { NSApp.sendEvent(event) }
+            if !handled {
+                // With focus kept, straight to the window: its first responder gets the key even
+                // while the app isn't active (a locked screen).
+                if focus == "none" { target.sendEvent(event) } else { NSApp.sendEvent(event) }
+            }
             try? await Task.sleep(nanoseconds: 300_000_000)
             return ["focus": responder, "handled": handled]
 

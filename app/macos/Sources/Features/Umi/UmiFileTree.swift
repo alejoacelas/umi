@@ -1103,6 +1103,16 @@ enum UmiFileTreeDebug {
         case "debug.ui.search":
             return UmiGlobalSearchModel.model(for: window).json()
 
+        case "debug.ui.search.toggle":
+            // What a click on the case or regex button does.
+            let model = UmiGlobalSearchModel.model(for: window)
+            switch params.string("name") {
+            case "case": model.caseSensitive.toggle()
+            case "regex": model.regex.toggle()
+            default: throw UmiError.badRequest("name is case or regex")
+            }
+            return model.json()
+
         default:
             throw UmiError.badRequest("unknown method \(method)")
         }

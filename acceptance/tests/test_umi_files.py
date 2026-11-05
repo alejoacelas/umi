@@ -8,8 +8,9 @@ and regex toggles.
 
 What the tree and search show is read through Umi's internal `debug.ui.files` and
 `debug.ui.search` methods; the right-click menu (a mouse gesture) is driven through
-`debug.ui.files.menu.perform`, which runs the menu item's own action. Everything typed or pressed
-is a real key event (`ui` tests).
+`debug.ui.files.menu.perform`, which runs the menu item's own action. Keys are pressed with
+`debug.key`, a key event delivered inside the app (Umi's key monitor, then the focused view), so
+these tests also run while the test Mac's screen is locked.
 """
 
 import json
@@ -25,8 +26,6 @@ from harness import wait_until
 
 pytestmark = pytest.mark.layout
 
-KEY = {"1": 18, "3": 20, "e": 14, "f": 3, ".": 47, "return": 36, "esc": 53,
-       "left": 123, "right": 124, "down": 125, "up": 126}
 
 
 # ---- helpers ------------------------------------------------------------------------------------
@@ -102,12 +101,15 @@ def names(state):
     return [(r["depth"], r["name"]) for r in state["rows"]]
 
 
-def press(ui, key, *mods):
-    flags = 0
-    for mod in mods:
-        flags |= {"cmd": ui.CMD, "shift": ui.SHIFT, "ctrl": ui.CTRL, "option": ui.OPT}[mod]
-    ui.key(KEY[key], flags)
-    time.sleep(0.35)
+def press(inst, win, spec, focus="none"):
+    """A key press delivered inside the app (`debug.key`), with keyboard focus left where it is
+    (or first put in the terminal): Umi's key monitor first, then the focused view."""
+    rpc(inst, "debug.key", window=win["window"], keys=spec, focus=focus)
+
+
+def type_keys(inst, win, text):
+    for ch in text:
+        press(inst, win, ch)
 
 
 def menu(inst, win, path):
@@ -243,107 +245,111 @@ def test_explorer_reveals_the_active_file(inst, win, tmp_path):
     inst.cli("sidebar", "tabs")
 
 
-# ---- keys (real key presses) ---------------------------------------------------------------------
+# ---- keys (key presses delivered inside the app) ----------------------------------------------
 
 @pytest.mark.req("S-2", "L-9", "L-10")
-def test_explorer_keys(inst, win, ui, tmp_path):
+def test_explorer_keys(inst, win, tmp_path):
     """⌃1 shows the explorer with focus in it; ↓ selects, → expands, ← collapses then goes to the
     parent, Enter opens a file; Esc goes back to the pane; ⇧⌘E hides it again; ⇧⌘> hides dotfiles."""
     repo = make_repo(tmp_path)
     term = open_repo(inst, win, repo)
     inst.cli("sidebar", "tabs")
     inst.cli("pane", "focus", term["pane"])
-    ui.activate()
-    press(ui, "1", "ctrl")
+    press(inst, win, "ctrl+1", focus="terminal")
     wait_until(lambda: inst.json("sidebar", "status")["mode"] == "files", 5, message="⌃1 shows the explorer")
     wait_until(lambda: files(inst, win)["focused"], 5, message="the tree has keyboard focus")
     wait_until(lambda: os.path.realpath(files(inst, win)["root"] or "/") == repo, 10, message="the repository")
 
-    press(ui, "down")
+    press(inst, win, "down")
     assert os.path.realpath(files(inst, win)["selected"]) == repo, "↓ selects the first row"
-    press(ui, "down")
-    press(ui, "down")
+    press(inst, win, "down")
+    press(inst, win, "down")
     src = os.path.join(repo, "src")
     assert os.path.realpath(files(inst, win)["selected"]) == src
-    press(ui, "right")
+    press(inst, win, "right")
     assert row(files(inst, win), src)["expanded"], "→ expands"
     assert row(files(inst, win), os.path.join(src, "main.rs")) is not None
-    press(ui, "down")
-    press(ui, "down")
+    press(inst, win, "down")
+    press(inst, win, "down")
     main = os.path.join(src, "main.rs")
     assert os.path.realpath(files(inst, win)["selected"]) == main
-    press(ui, "left")
+    press(inst, win, "up")
+    assert os.path.realpath(files(inst, win)["selected"]) == os.path.join(src, "lib"), "↑ goes up a row"
+    press(inst, win, "down")
+    press(inst, win, "left")
     assert os.path.realpath(files(inst, win)["selected"]) == src, "← on a file goes to its folder"
-    press(ui, "left")
+    press(inst, win, "left")
     assert not row(files(inst, win), src)["expanded"], "← collapses"
-    press(ui, "right")
-    press(ui, "down")
-    press(ui, "down")
-    press(ui, "return")
+    press(inst, win, "right")
+    press(inst, win, "down")
+    press(inst, win, "down")
+    press(inst, win, "return")
     wait_until(lambda: os.path.realpath(main) in editor_paths(inst, term["tab"]), 10, message="Enter opens the file")
 
     # Dotfiles: ⇧⌘> hides and shows them.
     assert row(files(inst, win), os.path.join(repo, ".gitignore")) is not None
-    press(ui, ".", "cmd", "shift")
+    press(inst, win, "cmd+shift+.")
     wait_until(lambda: row(files(inst, win), os.path.join(repo, ".gitignore")) is None, 5, message="⇧⌘> hides dotfiles")
-    press(ui, ".", "cmd", "shift")
+    press(inst, win, "cmd+shift+.")
     wait_until(lambda: row(files(inst, win), os.path.join(repo, ".gitignore")) is not None, 5, message="⇧⌘> shows them")
 
-    # ⇧⌘E from the tree: back to Tabs, and the keys go to the pane again.
-    inst.cli("sidebar", "files")
-    rpc(inst, "debug.ui.files", window=win["window"])
-    press(ui, "e", "cmd", "shift")
+    # ⇧⌘E: hides the explorer when it's shown, shows it with focus in the tree when it isn't.
+    press(inst, win, "cmd+shift+e")
     wait_until(lambda: inst.json("sidebar", "status")["mode"] == "tabs", 5, message="⇧⌘E hides it")
-    press(ui, "e", "cmd", "shift")
+    press(inst, win, "cmd+shift+e", focus="terminal")
+    wait_until(lambda: inst.json("sidebar", "status")["mode"] == "files", 5, message="⇧⌘E shows it")
     wait_until(lambda: files(inst, win)["focused"], 5, message="⇧⌘E puts focus in the tree")
-    press(ui, "esc")
+    press(inst, win, "esc")
     wait_until(lambda: not files(inst, win)["focused"], 5, message="Esc leaves the tree")
     inst.cli("sidebar", "tabs")
 
 
 @pytest.mark.req("S-2")
-def test_explorer_new_file_and_rename_inline(inst, win, ui, tmp_path):
-    """New File and Rename edit the name in the row; Enter commits, an empty name cancels."""
+def test_explorer_new_file_and_rename_inline(inst, win, tmp_path):
+    """New File and Rename edit the name in the row; Enter commits, Esc cancels."""
     repo = make_repo(tmp_path)
     term = open_repo(inst, win, repo)
     show_files(inst, win, repo)
-    ui.activate()
     src = os.path.join(repo, "src")
     perform(inst, win, src, "New File")
     wait_until(lambda: (files(inst, win).get("edit") or {}).get("kind") == "new_file", 5, message="a name field")
     assert any(r["new_file"] for r in files(inst, win)["rows"])
-    time.sleep(0.4)
-    ui.type_text("added.rs")
-    press(ui, "return")
+    type_keys(inst, win, "added.rs")
+    press(inst, win, "return")
     made = os.path.join(src, "added.rs")
     wait_until(lambda: os.path.exists(made), 5, message="New File made the file")
     wait_until(lambda: os.path.realpath(made) in editor_paths(inst, term["tab"]), 10, message="and opened it")
 
-    readme = os.path.join(repo, "notes.txt")
-    perform(inst, win, readme, "Rename")
+    notes = os.path.join(repo, "notes.txt")
+    perform(inst, win, notes, "Rename")
     wait_until(lambda: (files(inst, win).get("edit") or {}).get("kind") == "rename", 5, message="a rename field")
-    time.sleep(0.4)
-    ui.type_text("renamed.txt")   # the whole name is selected, so this replaces it
-    press(ui, "return")
-    wait_until(lambda: os.path.exists(os.path.join(repo, "renamed.txt")), 5, message="renamed on disk")
-    assert not os.path.exists(readme)
-    wait_until(lambda: row(files(inst, win, update=False), os.path.join(repo, "renamed.txt")) is not None, 5,
-               message="the row has the new name")
+    assert files(inst, win)["edit"]["text"] == "notes.txt", "the field starts with the name"
+    type_keys(inst, win, "renamed.txt")   # the whole name is selected, so this replaces it
+    press(inst, win, "return")
+    renamed = os.path.join(repo, "renamed.txt")
+    wait_until(lambda: os.path.exists(renamed), 5, message="renamed on disk")
+    assert not os.path.exists(notes)
+    wait_until(lambda: row(files(inst, win, update=False), renamed) is not None, 5, message="the row has the new name")
 
     # Esc cancels.
-    perform(inst, win, os.path.join(repo, "renamed.txt"), "Rename")
-    time.sleep(0.4)
-    ui.type_text("nope.txt")
-    press(ui, "esc")
+    perform(inst, win, renamed, "Rename")
+    wait_until(lambda: (files(inst, win).get("edit") or {}).get("kind") == "rename", 5, message="a rename field")
+    type_keys(inst, win, "nope.txt")
+    press(inst, win, "esc")
     wait_until(lambda: files(inst, win).get("edit") is None, 5, message="Esc ends the edit")
-    assert os.path.exists(os.path.join(repo, "renamed.txt")) and not os.path.exists(os.path.join(repo, "nope.txt"))
+    assert os.path.exists(renamed) and not os.path.exists(os.path.join(repo, "nope.txt"))
     inst.cli("sidebar", "tabs")
 
 
 # ---- global search ------------------------------------------------------------------------------
 
+def settled(inst, win, query):
+    state = search(inst, win)
+    return state if state["query"] == query and not state["searching"] and state["message"] else None
+
+
 @pytest.mark.req("S-2", "L-9", "L-10")
-def test_global_search(inst, win, ui, tmp_path):
+def test_global_search(inst, win, tmp_path):
     """⇧⌘F opens global search with the query focused; typing searches the repository (not what
     git ignores), results are grouped by file; ↓ goes into the results, ←/→ fold a file, Enter opens
     the file at the line; the case and regex toggles; ⌃3 hides it."""
@@ -351,71 +357,70 @@ def test_global_search(inst, win, ui, tmp_path):
     term = open_repo(inst, win, repo)
     inst.cli("sidebar", "tabs")
     inst.cli("pane", "focus", term["pane"])
-    ui.activate()
-    press(ui, "f", "cmd", "shift")
+    press(inst, win, "cmd+shift+f", focus="terminal")
     wait_until(lambda: inst.json("sidebar", "status")["mode"] == "search", 5, message="⇧⌘F shows search")
     wait_until(lambda: search(inst, win)["focus"] == "query", 5, message="the query has focus")
-    ui.type_text("needle")
-    wait_until(lambda: search(inst, win)["query"] == "needle" and not search(inst, win)["searching"]
-               and search(inst, win)["files"], 10, message="results")
+    type_keys(inst, win, "needle")
+    wait_until(lambda: settled(inst, win, "needle") and search(inst, win)["files"], 10, message="results")
     state = search(inst, win)
     assert os.path.realpath(state["root"]) == repo
     paths = sorted(f["path"] for f in state["files"])
     assert paths == ["README.md", "notes.txt", "src/lib/util.py", "src/main.rs"], paths
     total = sum(len(f["matches"]) for f in state["files"])
+    notes = next(f for f in state["files"] if f["path"] == "notes.txt")
+    assert len(notes["matches"]) == 2, "case-insensitive by default"
     assert state["message"] == f"{total} results in 4 files", state["message"]
-    assert [r["kind"] for r in state["rows"]][:1] == ["file"]
+    assert state["rows"][0]["kind"] == "file"
 
-    # ↓ into the results; ← folds the file, → unfolds it.
-    press(ui, "down")
+    # ↓ into the results; ← folds the file, → unfolds it; ↑ on the first row goes back to the query.
+    press(inst, win, "down")
     state = search(inst, win)
     assert state["focus"] == "results" and state["selected"]["kind"] == "file"
     first = state["selected"]["path"]
     count = state["selected"]["count"]
-    press(ui, "left")
+    press(inst, win, "left")
     state = search(inst, win)
     assert state["selected"]["collapsed"] and not any(r["kind"] == "match" and r["path"] == first for r in state["rows"])
-    press(ui, "right")
+    press(inst, win, "right")
     assert sum(1 for r in search(inst, win)["rows"] if r["kind"] == "match" and r["path"] == first) == count
-    press(ui, "down")
+    press(inst, win, "up")
+    assert search(inst, win)["focus"] == "query", "↑ on the first row goes back to the query"
+    press(inst, win, "down")
+    press(inst, win, "down")
     state = search(inst, win)
     assert state["selected"]["kind"] == "match"
-    line = state["selected"]["line"]
-    press(ui, "return")
+    press(inst, win, "return")
     target = os.path.realpath(os.path.join(repo, first))
     wait_until(lambda: target in editor_paths(inst, term["tab"]), 10, message="Enter opens the file")
-    assert line >= 1
 
-    # The case toggle: "Needle" only matches the capitalized line.
-    press(ui, "f", "cmd", "shift")
+    # The case toggle: only the lowercase "needle" in notes.txt.
+    rpc(inst, "debug.ui.search.toggle", window=win["window"], name="case")
+    wait_until(lambda: search(inst, win)["case_sensitive"] and settled(inst, win, "needle"), 10,
+               message="case-sensitive search")
+    notes = next(f for f in search(inst, win)["files"] if f["path"] == "notes.txt")
+    assert [m["line"] for m in notes["matches"]] == [2], notes
+    rpc(inst, "debug.ui.search.toggle", window=win["window"], name="case")
+
+    # ⇧⌘F again: the query is focused and selected; a regex.
+    press(inst, win, "cmd+shift+f")
     wait_until(lambda: search(inst, win)["focus"] == "query", 5, message="⇧⌘F focuses the query again")
-    ui.type_text("Needle")   # the query is selected, so this replaces it
-    toggle = ui.find(lambda e: ui.label(e) == "Toggle Case Sensitivity")
-    assert toggle is not None, "the case toggle"
-    ui.press(toggle)
-    wait_until(lambda: search(inst, win)["case_sensitive"] and not search(inst, win)["searching"]
-               and search(inst, win)["query"] == "Needle", 10, message="case-sensitive search")
-    wait_until(lambda: [f["path"] for f in search(inst, win)["files"]] == ["notes.txt"], 10,
-               message="only the capitalized match")
-    ui.press(toggle)
+    type_keys(inst, win, "ne.edle")   # replaces the selected query
+    wait_until(lambda: settled(inst, win, "ne.edle"), 10, message="the literal search")
+    assert search(inst, win)["files"] == [], "literal by default"
+    rpc(inst, "debug.ui.search.toggle", window=win["window"], name="regex")
+    wait_until(lambda: search(inst, win)["regex"] and settled(inst, win, "ne.edle")
+               and search(inst, win)["files"], 10, message="regex search")
+    assert [f["path"] for f in search(inst, win)["files"]] == ["src/lib/util.py"]
+    rpc(inst, "debug.ui.search.toggle", window=win["window"], name="regex")
 
-    # The regex toggle: ne+dle also matches "neeedle".
-    regex = ui.find(lambda e: ui.label(e) == "Toggle Regex")
-    assert regex is not None
-    press(ui, "f", "cmd", "shift")
-    ui.type_text("ne+dle\\(")
-    ui.press(regex)
-    wait_until(lambda: search(inst, win)["regex"] and not search(inst, win)["searching"], 10, message="regex search")
-    wait_until(lambda: [f["path"] for f in search(inst, win)["files"]] == ["src/lib/util.py"], 10,
-               message="the regex matches neeedle(")
-    ui.press(regex)
-
-    # ⌃3 hides it (focus was in it) and shows it again.
-    press(ui, "3", "ctrl")
+    # ⌃3 hides it (focus was in it) and shows it again; Esc goes back to the pane.
+    press(inst, win, "ctrl+3")
     wait_until(lambda: inst.json("sidebar", "status")["mode"] == "tabs", 5, message="⌃3 hides search")
-    press(ui, "3", "ctrl")
+    press(inst, win, "ctrl+3")
     wait_until(lambda: inst.json("sidebar", "status")["mode"] == "search", 5, message="⌃3 shows search")
-    press(ui, "esc")
+    wait_until(lambda: search(inst, win)["focus"] == "query", 5, message="with the query focused")
+    press(inst, win, "esc")
+    wait_until(lambda: search(inst, win)["focus"] == "none", 5, message="Esc leaves search")
     inst.cli("sidebar", "tabs")
 
 
