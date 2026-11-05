@@ -189,15 +189,16 @@ def test_right_clicking_a_pane_opens_warps_menu_ui(inst, win, ui):
     inst.cli("window", "focus", win["window"])
     ui.activate()
     time.sleep(0.5)
-    panes = wait_until(lambda: [e for e in ui.find_all(lambda e: ui.label(e) == "Terminal pane")
-                                if ui.attr(e, "AXSize") is not None] or None, 5, message="the panes")
-    # The left pane of this window: the leftmost of the two in the frontmost window.
     window = ui.attr(ui.app, "AXFocusedWindow")
-    mine = [e for e in panes if _window_of(ui, e) == window] or panes
-    left = min(mine, key=lambda e: _frame(ui, e)[0])
+
+    def left_pane():
+        # In a split, the left pane's element is "Left pane" (Ghostty's split view); maximized,
+        # it's the window's only "Terminal pane".
+        return (ui.find(lambda e: ui.label(e) == "Left pane", root=window)
+                or ui.find(lambda e: ui.label(e) == "Terminal pane", root=window))
 
     def open_menu():
-        _right_click(_frame(ui, left))
+        _right_click(_frame(ui, wait_until(left_pane, 5, message="the left pane")))
         return wait_until(lambda: ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the pane's menu")
 
     def choose(title):
@@ -450,10 +451,10 @@ def test_command_equals_minus_and_zero_zoom_the_interface_ui(inst, win, ui):
     time.sleep(0.5)
     start = zoom(inst, a)
     assert start["level"] == 100
+    from test_umi_panes_ui import _row_element
     title = row(inst, win["window"], win["tab"])["line1"]
-    element = wait_until(lambda: ui.find(lambda e: ui.role(e) == "AXStaticText" and ui.value(e) == title), 5,
-                         message="the row's title")
-    text_height = _frame(ui, element)[3]
+    element = wait_until(lambda: _row_element(ui, title), 5, message=f"the row {title!r}")
+    row_height = _frame(ui, element)[3]
     try:
         ui.key(KEY_EQUAL, ui.CMD)
         wait_until(lambda: zoom(inst, a)["level"] == 110, 5, message="⌘= to 110%")
@@ -461,8 +462,8 @@ def test_command_equals_minus_and_zero_zoom_the_interface_ui(inst, win, ui):
                        message="the terminal's text grew")
         assert z["terminal_font_size"] == pytest.approx(start["font_size"] * 1.1, abs=0.05)
         # The sidebar grew too.
-        element = ui.find(lambda e: ui.role(e) == "AXStaticText" and ui.value(e) == title)
-        assert _frame(ui, element)[3] == pytest.approx(text_height * 1.1, rel=0.08)
+        element = wait_until(lambda: _row_element(ui, title), 5, message="the row")
+        assert _frame(ui, element)[3] == pytest.approx(row_height * 1.1, rel=0.05)
         # Warp's levels: 110 → 125 → 150.
         ui.key(KEY_EQUAL, ui.CMD)
         ui.key(KEY_EQUAL, ui.CMD)

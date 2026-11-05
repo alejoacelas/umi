@@ -74,7 +74,7 @@ enum UmiPaneMenu {
                 menu.addItem(.separator())
                 continue
             }
-            let item = NSMenuItem(title: entry.title, action: #selector(UmiPaneMenuTarget.perform(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: entry.title, action: #selector(UmiPaneMenuTarget.performPaneItem(_:)), keyEquivalent: "")
             item.target = UmiPaneMenuTarget.shared
             item.representedObject = UmiPaneMenuTarget.Box(entry.action)
             item.isEnabled = entry.enabled
@@ -115,7 +115,8 @@ final class UmiPaneMenuTarget: NSObject {
         init(_ action: @escaping @MainActor () -> Void) { self.action = action }
     }
 
-    @MainActor @objc func perform(_ sender: NSMenuItem) {
+    /// Not `perform(_:)`: that is NSObject's `performSelector:`.
+    @MainActor @objc func performPaneItem(_ sender: NSMenuItem) {
         (sender.representedObject as? Box)?.action()
     }
 }
