@@ -12,6 +12,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ -n "$out" ]] || { echo "usage: build.sh --out PATH" >&2; exit 2; }
+# The identity the app signs with (Xcode's, else ../../dist/signing.sh's default).
+source "$here/../../dist/signing.sh"
+if [[ -n "${CODE_SIGN_IDENTITY:-}" && -z "${UMI_SIGN_IDENTITY:-}" ]]; then umi_sign_identity="$CODE_SIGN_IDENTITY"; fi
+umi_require_sign_identity || { echo "build.sh: can't sign the umi CLI" >&2; exit 1; }
 out_dir="$(dirname "$out")"
 mkdir -p "$out_dir"
 # Private scratch space next to the output: doesn't depend on $TMPDIR existing, and works
@@ -22,3 +26,4 @@ trap 'rm -rf "$scratch"' EXIT
 TMPDIR="$scratch/tmp/" xcrun --sdk macosx swiftc -O -target arm64-apple-macos13.0 \
     -module-cache-path "$scratch/module-cache" \
     -o "$out" "$here"/*.swift
+codesign --force --sign "$umi_sign_identity" "$out"

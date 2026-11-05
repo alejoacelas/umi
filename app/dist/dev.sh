@@ -75,7 +75,10 @@ if [[ "$build" == 1 ]]; then
     # `Icon\r` file in the bundle, which codesign refuses (release.sh clears it the same way).
     rm -f "$root/macos/build/Debug/Umi.app/Icon"$'\r'
     xattr -cr "$root/macos/build/Debug/Umi.app" 2>/dev/null || true
-    (cd "$root/macos" && xcodebuild -target Ghostty -configuration Debug -arch arm64 build > "$log" 2>&1) \
+    source "$here/signing.sh"
+    umi_require_sign_identity || { echo "dev.sh: can't sign the app" >&2; exit 1; }
+    (cd "$root/macos" && xcodebuild -target Ghostty -configuration Debug -arch arm64 build \
+        CODE_SIGN_IDENTITY="$umi_sign_identity" UMI_SIGN_IDENTITY="$umi_sign_identity" > "$log" 2>&1) \
         || { grep -E "error:" "$log" | head -20 >&2; echo "dev.sh: the build failed ($log)" >&2; exit 1; }
     echo "built in $((SECONDS - start)) s"
 fi

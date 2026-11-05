@@ -1,13 +1,15 @@
 #!/bin/bash
 # Make (and publish) an Umi release.
 #
-#   dist/release.sh --version X.Y.Z [--build] [--out DIR] [--base-url URL] [--no-publish] [--notes TEXT]
+#   dist/release.sh --version X.Y.Z [--build] [--out DIR] [--base-url URL] [--no-publish [--as-release]] [--notes TEXT]
 #
 # Publishing an update from this Mac:  app/dist/release.sh --version X.Y.Z --build
 #
-# Stamps a copy of the built app with the version, signs it (ad hoc), zips it, signs the zip
-# with the update-signing key and writes the feed (appcast.json). Unless --no-publish, it then
-# publishes a GitHub release with the zip, the feed and the installer.
+# Stamps a copy of the built app with the version, signs it with the stable identity
+# (dist/signing.sh; never ad hoc), zips it, signs the zip with the update-signing key and writes
+# the feed (appcast.json). Unless --no-publish, it then publishes a GitHub release with the zip,
+# the feed and the installer. --as-release stamps an unpublished copy as the released app
+# (dev.umi.app), to install it in place of a release with `install.sh --from`.
 #
 # The update-signing key (Ed25519, the one Tern's releases used) is taken from, in order:
 #   $UMI_UPDATE_SIGNING_KEY (for example from `op run`);
@@ -20,7 +22,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 repo="alejoacelas/umi"
-version=""; out=""; base_url=""; publish=1; build=0; notes=""
+version=""; out=""; base_url=""; publish=1; build=0; notes=""; as_release=0
 app="$root/macos/build/ReleaseLocal/Umi.app"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -28,6 +30,7 @@ while [[ $# -gt 0 ]]; do
         --out) out="$2"; shift 2 ;;
         --base-url) base_url="$2"; shift 2 ;;
         --no-publish) publish=0; shift ;;
+        --as-release) as_release=1; shift ;;
         --build) build=1; shift ;;
         --app) app="$2"; shift 2 ;;
         --notes) notes="$2"; shift 2 ;;
@@ -35,6 +38,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ "$version" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]] || { echo "release.sh: --version X.Y.Z is required" >&2; exit 2; }
+source "$here/signing.sh"
+umi_require_sign_identity || { echo "release.sh: can't sign the app" >&2; exit 1; }
 out="${out:-$root/dist/out/$version}"
 zip_name="Umi-$version.zip"
 if [[ -z "$base_url" ]]; then
@@ -50,7 +55,8 @@ if [[ "$build" == 1 ]]; then
     (cd "$root" && "$zig" build -Doptimize=ReleaseFast -Dxcframework-target=native -Demit-macos-app=false)
     echo "building Umi.app…"
     (cd "$root/macos" && { xattr -cr build/ReleaseLocal/Umi.app 2>/dev/null || true; } \
-        && xcodebuild -target Ghostty -configuration ReleaseLocal -arch arm64 build > "$root/dist/build.log" 2>&1) \
+        && xcodebuild -target Ghostty -configuration ReleaseLocal -arch arm64 build \
+               CODE_SIGN_IDENTITY="$umi_sign_identity" UMI_SIGN_IDENTITY="$umi_sign_identity" > "$root/dist/build.log" 2>&1) \
         || { grep -E "error:" "$root/dist/build.log" | head -20 >&2; echo "release.sh: the build failed (dist/build.log)" >&2; exit 1; }
 fi
 if [[ "$publish" == 1 && -n "$(git -C "$root" status --porcelain --untracked-files=no)" ]]; then
@@ -98,11 +104,11 @@ plutil -replace UmiReleaseFeedURL -string "${base_url}appcast.json" "$plist"
 # Local builds are `dev.umi.app.local`, so macOS never sends files opened from Finder to a
 # build folder instead of the installed app. A published release is the real `dev.umi.app`;
 # an unpublished copy keeps the build's identity, so it can update the build it came from.
-if [[ "$publish" == 1 ]]; then
+if [[ "$publish" == 1 || "$as_release" == 1 ]]; then
     plutil -replace CFBundleIdentifier -string dev.umi.app "$plist"
 fi
 xattr -cr "$out/Umi.app"
-codesign --force --deep --sign - "$out/Umi.app" >/dev/null 2>&1
+codesign --force --deep --sign "$umi_sign_identity" "$out/Umi.app" >/dev/null 2>&1
 codesign --verify --deep --strict "$out/Umi.app"
 
 # The update archive and its signature.
