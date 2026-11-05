@@ -736,3 +736,7 @@ New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24
   or its interface no longer runs in the terminal, OSC 9 is let through. `debug.ui.inbox` reports
   `passed_notifications`, so the test now checks each let-through notification arrived, where it
   only checked that nothing was dropped (stronger).
+- **Changed, `test_unread_events_toast_in_the_active_window`**: the "no toasts while the app isn't
+  active" check ran only when the test app happened to be in the background. A new hook,
+  `debug.ui.inbox.assume_inactive`, makes the app count as inactive, so the check always runs
+  (stronger).

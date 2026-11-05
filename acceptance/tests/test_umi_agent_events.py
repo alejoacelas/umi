@@ -257,11 +257,16 @@ def test_unread_events_toast_in_the_active_window(fresh):
     a, _ = new_tab(inst, win)
     b, _ = new_tab(inst, win)
     c, _ = new_tab(inst, win)
-    if not rpc(inst, "debug.ui.attention")["active"]:
-        # Not in front: no toasts (the Dock badge covers it).
+    # Not in front: no toasts (the Dock badge covers it). Forced, wherever the test app is.
+    rpc(inst, "debug.ui.inbox.assume_inactive", on=True)
+    try:
         finish(inst, a, title="Unseen")
-        assert inbox(inst, window=win["window"])["window_toasts"] == []
-        set_agent(inst, a, "claude", status="working")
+        got = inbox(inst, window=win["window"])
+        assert got["window_toasts"] == [] and got["toasts"] == [], got
+        assert not next(i for i in got["items"] if i["pane"] == a)["read"]
+    finally:
+        rpc(inst, "debug.ui.inbox.assume_inactive", on=False)
+    set_agent(inst, a, "claude", status="working")
     rpc(inst, "debug.ui.assume_active", on=True)
     try:
         inst.cli("pane", "focus", win["pane"])

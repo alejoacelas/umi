@@ -428,7 +428,7 @@ extension UmiAgentUI {
 
     /// The user is looking at this pane: focused in the key window of the active app.
     static func isLookedAt(_ surface: Ghostty.SurfaceView) -> Bool {
-        if UmiLooking.assumeActive { return UmiLooking.lookedAt === surface }
+        if UmiLooking.assumeActive || UmiLooking.assumeInactive { return UmiLooking.lookedAt === surface }
         guard NSApp.isActive, let location = UmiTopology.locate(surface),
               location.window.window?.isKeyWindow == true, location.tab === location.window.selectedTab else { return false }
         return location.window.focusedSurface === surface

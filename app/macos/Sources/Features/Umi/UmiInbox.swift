@@ -431,6 +431,8 @@ enum UmiInboxDebug {
                 throw UmiError.badRequest("key is up, down, return, escape or tab")
             }
             inbox.handleKey(code: code)
+        case "debug.ui.inbox.assume_inactive":
+            UmiLooking.assumeInactive = params.bool("on") ?? true
         case "debug.ui.inbox.dismiss":
             inbox.dismissToasts()
         case "debug.ui.inbox.fill":

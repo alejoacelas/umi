@@ -14,8 +14,10 @@ enum UmiLooking {
     /// Scripted checks without the screen (`debug.ui.assume_active`): the app counts as active
     /// and the current window as key.
     static var assumeActive = false
+    /// Scripted checks: the app counts as inactive, wherever it is (`debug.ui.inbox.assume_inactive`).
+    static var assumeInactive = false
 
-    private static var appIsActive: Bool { assumeActive || NSApp.isActive }
+    private static var appIsActive: Bool { !assumeInactive && (assumeActive || NSApp.isActive) }
 
     private static var keyController: TerminalController? {
         assumeActive ? UmiTopology.currentWindow : NSApp.keyWindow?.windowController as? TerminalController
