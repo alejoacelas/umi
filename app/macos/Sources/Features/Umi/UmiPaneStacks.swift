@@ -265,8 +265,25 @@ private struct UmiStackChip: View {
         .onTapGesture { try? UmiStacks.show(member) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(UmiStacks.label(of: member))
+        .modifier(UmiChipDirtyValue(doc: doc))
         .accessibilityAddTraits(shown ? .isSelected : [])
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// A file chip says "Unsaved changes" while its dot shows (the chip reads as one element).
+private struct UmiChipDirtyValue: ViewModifier {
+    let doc: UmiDocument?
+
+    func body(content: Content) -> some View {
+        if let doc { content.modifier(Observed(doc: doc)) } else { content }
+    }
+
+    private struct Observed: ViewModifier {
+        @ObservedObject var doc: UmiDocument
+        func body(content: Content) -> some View {
+            content.accessibilityValue(doc.isDirty ? "Unsaved changes" : "")
+        }
     }
 }
 
