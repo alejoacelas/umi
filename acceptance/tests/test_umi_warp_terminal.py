@@ -78,11 +78,14 @@ def test_selection_is_warps_blue_over_the_text_which_keeps_its_colors(inst, win,
     wait_until(lambda: "R" * 30 in (inst.rpc("debug.selection", pane=pane).get("text") or ""), 5, message="a selection")
     time.sleep(0.5)
     shot = Shot(inst, win, tmp_path / "selected.png")
-    # Empty selected cells, right of any text, in the middle of the pane.
+    b = blocks(inst, pane)
+    # Selected empty cells right of the text (the rows from the first printed one down; the blank
+    # rows above the pane's first output aren't part of the screen's text).
     x = shot.left + int((shot.w - shot.left) * 0.85)
-    samples = [shot.px(x, y) for y in range(int(shot.h * 0.3), int(shot.h * 0.7), 7)]
-    blue = [c for c in samples if near(c, (50, 70, 103), 8)]
-    assert len(blue) > len(samples) * 0.6, f"the selection is #324667 over the background: {samples[:8]}"
+    samples = [shot.px(x, y) for y in range(0, shot.h, 3)]
+    blue = [c for c in samples if near(c, (50, 70, 103), 6)]
+    assert len(blue) * 3 > 4 * b["cell_pt"][1] * shot.scale, f"rows selected in #324667: {len(blue)} samples"
+    assert not any(near(c, (0x24, 0x43, 0x5c), 6) for c in samples), "not the old solid #24435c"
     # The red text keeps its color under the selection.
     b = blocks(inst, pane)
     y = row_y(shot, inst, win, b, output_row(b, "cat red"))
