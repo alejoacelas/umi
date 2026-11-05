@@ -98,3 +98,15 @@ it is guidance"). What this design gives up:
 | **`clear` clears**, and ⌘K clears scrollback; Warp's `clear` instead pushes the blocks up out of view, keeping them in scrollback. | `clear` is zsh's (and the program's) command; Tern doesn't replace it. The prompt stays at the bottom either way. | zsh unchanged. |
 | **Other shells keep the usual look**, and so does a zsh started inside a Tern pane unless it loads the integration. | The look needs Tern's prompt marks; only Tern's zsh integration prints them. | "The user's shell is zsh; other shells may keep the usual look." |
 | **On Linux (OpenGL) only the bottom alignment, colors, durations and bold apply**; the lines, tint, bar and box are a Metal pipeline. | Tern ships for macOS; the shared renderer must still build elsewhere. | Correct highlights where shapes aren't drawn (review round 2). |
+
+===================================================================================================
+
+# Compromises (Warp's launch configurations, 2026-11-05)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **Split sizes aren't saved**: a launch configuration's panes open in equal shares of their row or column. | Warp's format has no sizes, and Warp opens equal shares too; files written by either app stay readable by the other. | L-21 (Warp's format). |
+| **Only terminal panes are saved.** File and web panes, stacks' hidden members, pane names, pins and agent sessions shown in panes aren't in the file (an agent pane is saved as a terminal in its folder). | Warp saves only terminals; the format has no fields for the rest. | L-21 (Warp's format). |
+| **Warp's tab configs (⌃⌘T, TOML, parameters, worktree panes) aren't added.** "Save as New Config" in a row's menu writes a one-tab launch configuration instead of a tab config. | ⌃⌘T is Umi's Move Pane to New Tab, by the user's choice; one format for saved layouts is simpler. | L-21, the existing ⌃⌘T. |
+| **⌘Return in the launch configuration palette** (Warp: open into the current window) isn't there; Return always opens new windows. | Warp's Return opens new windows too, and ⌘Return is Ghostty's full-screen key. | ⌘Return as it is. |
+| **The YAML reader handles the block style Warp and people write**, plus one-line `[…]`/`{…}`; anchors, aliases, tags and multi-line flow collections fail with the line they're on. | No YAML library is bundled; a small reader (`UmiYAML`) covers the format without a new dependency. | Licensing and build simplicity. |

@@ -258,3 +258,16 @@ Relayed by Alejo's agent, not his own words; Alejo approved: remove the Settings
 SPEC L-17), the copy of Tern's state on the first launch (both Macs already have Umi state), and
 `umi://open` links (documents from the server are read and edited on a web page the agent server
 serves).
+
+## 2026-11-05: the rest of Warp
+
+> Implement, test, and ship ... to match all the unchosen gaps against warp features except those
+> that would add actions on click ... I basically only use the warp features I can access from the
+> keyboard
+
+> go. let's add the warp right click options as well if that's not already included
+
+- Saved layouts (Warp's launch configurations; SPEC L-21): YAML files in
+  `~/.config/umi/launch_configurations`, ⌃⌘L to open one, File ▸ Save New Launch Configuration…,
+  "Save as New Config" in a sidebar row's right-click menu, `umi layout ls|save|open`. ⌃⌘T stays
+  Umi's Move Pane to New Tab, so Warp's tab-configs menu key isn't added.
