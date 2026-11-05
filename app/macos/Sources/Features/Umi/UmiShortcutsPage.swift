@@ -43,7 +43,8 @@ final class UmiShortcutsPageModel: ObservableObject {
     /// In the editor's source, ⌘/ belongs to the editor (Warp's page key works outside text
     /// editors only).
     static var editorSourceHasFocus: Bool {
-        guard let view = NSApp.keyWindow?.firstResponder as? UmiEditorTextView else { return false }
+        let window = NSApp.keyWindow ?? UmiTopology.currentWindow?.window
+        guard let view = window?.firstResponder as? UmiEditorTextView else { return false }
         return view.isEditable
     }
 
