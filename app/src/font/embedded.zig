@@ -9,6 +9,13 @@
 pub const variable = @embedFile("jetbrains_mono_variable");
 pub const variable_italic = @embedFile("jetbrains_mono_variable_italic");
 
+/// Umi: Hack, Warp's default terminal font and Umi's (MIT and the
+/// Bitstream Vera License; res/HACK-LICENSE.md).
+pub const hack_regular = @embedFile("res/Hack-Regular.ttf");
+pub const hack_bold = @embedFile("res/Hack-Bold.ttf");
+pub const hack_italic = @embedFile("res/Hack-Italic.ttf");
+pub const hack_bold_italic = @embedFile("res/Hack-BoldItalic.ttf");
+
 /// Symbols-only nerd font.
 pub const symbols_nerd_font = @embedFile("nerd_fonts_symbols_only");
 
