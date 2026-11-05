@@ -271,6 +271,28 @@ def test_copy_pull_request_link_asks_gh_for_the_branch(fresh, tmp_path):
 
 
 @pytest.mark.req("S-4")
+def test_the_pull_request_link_is_there_at_the_first_right_click(fresh, tmp_path):
+    """The sidebar asks gh about a row's branch once it knows the branch, so the first menu
+    opened on the row has the item (nothing opened a menu or read the rows before)."""
+    asked = tmp_path / "gh-asked"
+    gh = tmp_path / "fake-gh"
+    gh.write_text("#!/bin/sh\n"
+                  f"echo \"$3\" >> '{asked}'\n"
+                  "if [ \"$1 $2 $3\" = \"pr view first-branch\" ]; then echo https://github.com/o/r/pull/9; exit 0; fi\n"
+                  "exit 1\n")
+    gh.chmod(0o755)
+    other = fresh(prefix="acc-gh1-", env={"UMI_GH_BIN": str(gh)})
+    created = other.json("window", "new")
+    repo = git_repo(tmp_path / "firstpr", "first-branch")
+    pane = other.cli("tab", "new", "--window", created["window"], "--cwd", str(repo)).stdout.strip()
+    tab = other.json("pane", "info", pane)["tab"]
+    wait_until(lambda: asked.exists() and "first-branch" in asked.read_text(), 15,
+               message="the sidebar asked gh about the branch")
+    time.sleep(1)
+    assert "Copy pull request link" in titles(other, tab), "the first menu has the pull request item"
+
+
+@pytest.mark.req("S-4")
 def test_renames_from_the_menu_happen_in_the_row(inst, win):
     pane, tab = new_tab(inst, win)
     perform(inst, tab, "Rename tab")

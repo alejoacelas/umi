@@ -293,6 +293,9 @@ struct UmiSidebarRowModel {
         let cwd = focusedPane.map(UmiTopology.cwd(of:)).flatMap { $0.isEmpty ? nil : $0 }
         self.cwd = cwd
         git = cwd.flatMap { UmiPaneContext.git(for: $0) }
+        // Ask for the branch's pull request as soon as the branch is known, so the row menu has
+        // "Copy pull request link" at its first right-click.
+        if let cwd, let branch = git?.branch, !branch.isEmpty { UmiPullRequests.shared.prefetch(cwd: cwd, branch: branch) }
         title = tab.name.flatMap { $0.isEmpty ? nil : $0 } ?? cwd.map(UmiPaneContext.folderName) ?? tab.title
         let agent = UmiAttention.shared.agent(for: tab, in: controller)
         self.agent = agent

@@ -254,6 +254,11 @@ final class UmiPullRequests {
         return entry?.url
     }
 
+    /// Start a lookup unless a fresh answer is known (the sidebar's rows call this).
+    func prefetch(cwd: String, branch: String) {
+        _ = url(cwd: cwd, branch: branch)
+    }
+
     private func lookUp(cwd: String, branch: String) {
         let key = Self.key(cwd, branch)
         guard !inFlight.contains(key) else { return }
