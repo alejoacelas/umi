@@ -375,7 +375,7 @@ def test_the_group_header_menu(inst, win):
     items = [i["title"] for i in inst.rpc("debug.ui.group.menu", window=win["window"], group=gid)["items"]
              if " > " not in i["path"]]
     assert items == ["Ungroup tabs", "New tab in group", "Rename", "Close all tabs in group", "Close other tabs",
-                     "Tab Color"]
+                     "Close tabs above", "Close tabs below", "Tab Color"]
     group_perform(inst, win["window"], gid, "Tab Color > Green")
     assert groups(inst, win["window"])["groups"][0]["color"] == "green"
     group_perform(inst, win["window"], gid, "New tab in group")
@@ -500,6 +500,26 @@ def test_a_group_is_one_box_in_its_color(inst, win, tmp_path):
     assert rows_in_indent, "the group's color fills the box beside its indented tabs"
     span = (max(rows_in_indent) - min(rows_in_indent)) / scale
     assert span > 100, f"the box spans the header and both tabs ({span:.0f} pt)"
+
+
+@pytest.mark.req("S-14")
+def test_the_group_header_closes_the_tabs_above_or_below_it(inst, win):
+    p2, t2 = new_tab(inst, win)
+    p3, t3 = new_tab(inst, win)
+    p4, t4 = new_tab(inst, win)
+    p5, t5 = new_tab(inst, win)
+    ready(inst, p2, p3, p4, p5)
+    perform(inst, t3, "New group with tab")
+    sidebar(inst, win["window"], rename_text="Middle")
+    perform(inst, t4, "Move to group > Middle")
+    gid = groups(inst, win["window"])["groups"][0]["id"]
+    assert tab_ids(inst, win["window"]) == [win["tab"], t2, t3, t4, t5]
+    group_perform(inst, win["window"], gid, "Close tabs below")
+    wait_until(lambda: tab_ids(inst, win["window"]) == [win["tab"], t2, t3, t4], 5, message="the tab below closed")
+    group_perform(inst, win["window"], gid, "Close tabs above")
+    wait_until(lambda: tab_ids(inst, win["window"]) == [t3, t4], 5, message="the tabs above closed")
+    items = [i["title"] for i in inst.rpc("debug.ui.group.menu", window=win["window"], group=gid)["items"]]
+    assert "Close tabs above" not in items and "Close tabs below" not in items and "Close other tabs" not in items
 
 
 @pytest.mark.req("S-14", "R-3")

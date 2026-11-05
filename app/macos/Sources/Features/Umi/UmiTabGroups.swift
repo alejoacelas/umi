@@ -287,12 +287,25 @@ enum UmiTabGroups {
     }
 
     /// A group header's menu (Warp's): Ungroup tabs, New tab in group | Rename | Close all tabs in
-    /// group, Close other tabs | the color dots.
+    /// group, Close other tabs, Close tabs above, Close tabs below | the color dots.
     static func headerMenuItems(for group: UmiTabGroup, in controller: TerminalController) -> [UmiTabMenuItem] {
         let inside = members(of: group, in: controller)
+        let indices = inside.compactMap { controller.index(of: $0) }
         var close: [UmiTabMenuItem] = [.init(title: "Close all tabs in group") { self.close(group, others: false, in: controller) }]
         if inside.count < controller.tabs.count {
             close.append(.init(title: "Close other tabs") { self.close(group, others: true, in: controller) })
+        }
+        if let first = indices.min(), first > 0 {
+            close.append(.init(title: "Close tabs above") {
+                guard let first = members(of: group, in: controller).first.flatMap({ controller.index(of: $0) }) else { return }
+                controller.closeTabs(Array(controller.tabs[..<first]), actionName: "Close Tabs Above", question: "Close Tabs Above?")
+            })
+        }
+        if let last = indices.max(), last < controller.tabs.count - 1 {
+            close.append(.init(title: "Close tabs below") {
+                guard let last = members(of: group, in: controller).last.flatMap({ controller.index(of: $0) }) else { return }
+                controller.closeTabs(Array(controller.tabs[(last + 1)...]), actionName: "Close Tabs Below", question: "Close Tabs Below?")
+            })
         }
         return UmiTabMenu.joined([
             [.init(title: "Ungroup tabs") { ungroup(group, in: controller) },
