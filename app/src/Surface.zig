@@ -2655,9 +2655,11 @@ fn umiScreenChanged(self: *Surface) !void {
 /// Recalculate the balanced padding if needed.
 fn balancePaddingIfNeeded(self: *Surface) void {
     if (self.config.window_padding_balance == .false) return;
-    // Umi: a full-screen program's pane has no padding of its own.
+    // Umi: a full-screen program's pane has no padding of its own: the grid
+    // starts at the top left corner and what doesn't divide into rows and
+    // columns stays below and right of it, as in Warp.
     if (self.umi_unpadded) {
-        self.size.balancePadding(.{}, self.config.window_padding_balance);
+        self.size.padding = .{};
         return;
     }
     const content_scale = try self.rt_surface.getContentScale();
