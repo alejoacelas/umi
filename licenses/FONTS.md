@@ -30,6 +30,9 @@ This project uses several fonts which fall under the SIL Open Font License (OFL-
   - [Copyright (c) 2011-2023 Tilman Blumenbach with Reserved Font Name "Terminus (TTF)"](https://files.ax86.net/terminus-ttf/)
 - Spleen (BSD 2-Clause)
   - [Copyright (c) 2018-2024, Frederic Cambus](https://github.com/fcambus/spleen)
+- Roboto (OFL-1.1), Umi's Markdown preview: the variable font's Latin and Latin Extended subsets
+  from [Fontsource](https://fontsource.org/fonts/roboto) 5.2.5
+  - [Google Inc.](https://github.com/fontsource/font-files/blob/main/fonts/variable/roboto/LICENSE)
 
 A full copy of the OFL license can be found at [OFL.txt](./OFL.txt).
 An accompanying FAQ is also available at <https://openfontlicense.org/>.
