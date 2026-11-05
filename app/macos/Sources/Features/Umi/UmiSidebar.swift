@@ -14,7 +14,6 @@ struct UmiSidebar: View {
     @ObservedObject private var state = UmiState.shared
     @ObservedObject private var attention = UmiAttention.shared
     @ObservedObject private var updater = UmiUpdater.shared
-    @StateObject private var files = UmiFileTreeModel()
     /// Periodic refresh for things nothing publishes (running command, branch).
     @State private var tick = 0
     @State private var listDropTargeted = false
@@ -32,7 +31,8 @@ struct UmiSidebar: View {
                 VStack(alignment: .leading, spacing: 1) {
                     switch state.sidebarMode {
                     case .tabs: tabsList
-                    case .files: UmiFileTreeView(model: files, hostWindow: controller.window)
+                    case .files: UmiFileTreeView(model: UmiFileTreeModel.model(for: controller))
+                    case .search: UmiGlobalSearchView(model: UmiGlobalSearchModel.model(for: controller))
                     }
                 }
                 .padding(.horizontal, 6)
@@ -53,9 +53,6 @@ struct UmiSidebar: View {
         .background(UmiTheme.sidebarFill)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Sidebar")
-        .onChange(of: state.sidebarMode) { _ in syncFileTree() }
-        .onAppear { syncFileTree() }
-        .onDisappear { files.stop() }
         .onReceive(refresh) { _ in
             if state.sidebarMode == .tabs { tick &+= 1 }
         }
@@ -67,6 +64,7 @@ struct UmiSidebar: View {
         HStack(spacing: 2) {
             modeButton(.tabs, symbol: "rectangle.stack", help: "Tabs")
             modeButton(.files, symbol: "folder", help: "Project Explorer (⇧⌘E)")
+            modeButton(.search, symbol: "magnifyingglass", help: "Global Search (⇧⌘F)")
             Spacer()
             Button {
                 _ = try? UmiLayout.newTab(in: controller, options: .init(), tabName: nil, color: .none,
@@ -92,15 +90,7 @@ struct UmiSidebar: View {
         }
         .buttonStyle(UmiIconButtonStyle(active: state.sidebarMode == mode, size: 22))
         .help(help)
-        .accessibilityLabel(mode == .tabs ? "Tabs" : "Files")
-    }
-
-    private func syncFileTree() {
-        if state.sidebarMode == .files {
-            files.start { [weak controller] in controller?.window }
-        } else {
-            files.stop()
-        }
+        .accessibilityLabel(mode == .tabs ? "Tabs" : (mode == .files ? "Files" : "Search"))
     }
 
     // MARK: Tabs

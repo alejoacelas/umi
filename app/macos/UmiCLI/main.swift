@@ -689,14 +689,14 @@ func layoutCommand(_ argv: [String]) {
         case "off", "hide": params["visible"] = false
         case "toggle": params["toggle"] = true
         case "status": break
-        case "tabs", "files": params["mode"] = sub
+        case "tabs", "files", "search": params["mode"] = sub
         case "width":
             // `sidebar width` says the window's width; `sidebar width N` sets it.
             if args.positional.count > 1 {
                 guard let width = Double(args.positional[1]), width > 0 else { fail("sidebar width: give a width in points") }
                 params["width"] = width
             }
-        default: fail("sidebar: use on, off, toggle, status, tabs, files or width [N]")
+        default: fail("sidebar: use on, off, toggle, status, tabs, files, search or width [N]")
         }
         let result = callDict("sidebar", params)
         if sub == "width" && !jsonOutput {

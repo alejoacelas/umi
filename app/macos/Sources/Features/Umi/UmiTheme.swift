@@ -134,6 +134,8 @@ enum UmiTheme {
         keybind = ctrl+shift+tab=unbind
         keybind = super+shift+p=unbind
         keybind = super+,=unbind
+        # ⇧⌘F opens global search in the sidebar (as in Warp); Esc still ends a terminal search.
+        keybind = super+shift+f=unbind
         \(digitUnbinds)
         """
     }

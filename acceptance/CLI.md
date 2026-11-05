@@ -56,7 +56,7 @@ present. Extra fields are fine.
 | `wait [--pane P] (--pattern RE \| --idle SECS) [--timeout T]` | prints the matched text; 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
 | `events [--filter PREFIX]… [--pane P]` | a filter keeps events whose name starts with PREFIX; JSON lines `{"event": name, "data": {…}}`, names like `pane.created`, `pane.closed`, `pane.moved`, `pane.focused`, `tab.created`, `tab.renamed`, `tab.selected`, `window.created` |
 | `notify [--pane P] TITLE [BODY]` | |
-| `sidebar [on\|off\|toggle\|status\|tabs\|files] [--window W]` | JSON: `{"visible": bool, "mode": "tabs"\|"files", "width": points, "window": id}` |
+| `sidebar [on\|off\|toggle\|status\|tabs\|files\|search] [--window W]` | JSON: `{"visible": bool, "mode": "tabs"\|"files"\|"search", "width": points, "window": id}` |
 | `sidebar width [N] [--window W]` | prints the window's sidebar width in points; with N sets it (clamped to 180–600) |
 | `reopen [--list]` | reopens the last closed pane, tab or window (closed in the last 60 s); prints the pane's id (the window's for a window); JSON `{"kind": "pane"\|"tab"\|"window", "pane"?, "tab", "window"}`; exit 1 when there's nothing to reopen. `--list`: JSON `{"items": [{"kind", "closed_at", "expires_in", "panes": [id], "tab"?, "title"?, "tabs"?}]}`, most recent first |
 | `screenshot [--window W] OUT.png` | an image of the window, terminal contents included |

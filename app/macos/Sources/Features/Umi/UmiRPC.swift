@@ -300,7 +300,7 @@ enum UmiRPC {
             if let visible = params.bool("visible") { state.sidebarVisible = visible }
             if let mode = params.string("mode") {
                 guard let parsed = UmiState.SidebarMode(rawValue: mode) else {
-                    throw UmiError.badRequest("unknown sidebar mode \"\(mode)\" (use tabs or files)")
+                    throw UmiError.badRequest("unknown sidebar mode \"\(mode)\" (use tabs, files or search)")
                 }
                 state.sidebarMode = parsed
                 state.sidebarVisible = true
