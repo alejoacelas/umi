@@ -689,3 +689,21 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## Agent status, inbox, toasts and the update note (S-3, AG-24, I-4, L-9; Warp parity, 2026-11-05)
+
+New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24 (new), I-4 and L-9
+(amended).
+
+- **New, `tests/test_umi_agent_events.py`**: Warp's status badges on the sidebar row
+  (`debug.ui.rows` reports `badge`); a finish seen from another pane of its tab leaves no mark; a
+  new turn clears the mark (`harness`, a fake Claude); OSC 9 and 777 from a pane running an agent
+  are dropped; the inbox's items, filters and keys; toasts (8 s, two at most, read by a look,
+  dismissed by ⌃⌘U and by opening the inbox); the note after an update, once; no note after a
+  failed update; one `ui` test presses ⇧⌘U, ↓, Return, Shift-Tab, Escape and ⌃⌘U for real.
+- **Test hooks**: `debug.ui.inbox` (what the inbox and toasts show), `debug.ui.inbox.toggle`,
+  `debug.ui.inbox.key` (the inbox's own key handler), `debug.ui.inbox.dismiss` (⌃⌘U's action) and
+  `debug.ui.inbox.fill` (finishes from panes that don't exist, to check the 100 limit). The
+  update-note tests write `updates/attempt.json` in the instance's state directory, as the run
+  before an update does.
+

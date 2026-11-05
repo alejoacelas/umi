@@ -390,6 +390,17 @@ enum UmiInboxDebug {
             inbox.handleKey(code: code)
         case "debug.ui.inbox.dismiss":
             inbox.dismissToasts()
+        case "debug.ui.inbox.fill":
+            // Finishes from panes that don't exist, through the same path (checks the limit).
+            let working = UmiAttention.Agent(session: nil, kind: .claude, title: "", status: "working", live: true,
+                                             mark: .none, lastStop: nil)
+            for n in 0..<(params.int("count") ?? 1) {
+                var done = working
+                done.status = "idle"
+                done.mark = .finished
+                done.title = "filler \(n)"
+                inbox.observe(old: working, new: done, pane: UUID())
+            }
         default:
             throw UmiError.badRequest("unknown method \(method)")
         }
