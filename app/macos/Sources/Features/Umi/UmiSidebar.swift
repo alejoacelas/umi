@@ -233,6 +233,8 @@ struct UmiSidebarRowModel {
             "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName,
             "color": UmiTopology.colorName(tab.color),
         ]
+        // Umi: synchronized input (L-22).
+        if let window = UmiTopology.locate(tab: tab) { json["input_synced"] = UmiInputSync.shared.isSynced(tab, in: window) }
         if let git {
             json["branch"] = git.branch
             if let worktree = git.worktree { json["worktree"] = worktree }
@@ -316,6 +318,16 @@ struct UmiSidebarTabRow: View {
                             .help("\(row.paneCount) panes")
                     }
                     Spacer(minLength: 4)
+
+                    // Umi: Warp's link mark on a tab whose input is synchronized (L-22).
+                    if UmiInputSync.shared.isSynced(tab, in: controller) {
+                        Image(systemName: "link")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .frame(width: 12, height: 12)
+                            .foregroundColor(UmiTheme.syncedInput)
+                            .help("Input is synchronized across this tab's panes")
+                            .accessibilityLabel("Synchronized input")
+                    }
 
                     if hovering && !editing {
                         Button { pinToggle() } label: {

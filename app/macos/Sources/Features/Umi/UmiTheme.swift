@@ -6,6 +6,8 @@ import SwiftUI
 enum UmiTheme {
     static let accent = Color(red: 0x19 / 255, green: 0xAA / 255, blue: 0xD8 / 255)
     static let accentNSColor = NSColor(red: 0x19 / 255, green: 0xAA / 255, blue: 0xD8 / 255, alpha: 1)
+    /// Warp's mark for synchronized input (`TAB_INDICATOR_SYNCED_COLOR`, #4A93FF).
+    static let syncedInput = Color(red: 0x4A / 255, green: 0x93 / 255, blue: 0xFF / 255)
 
     /// The chrome sits on the terminal's configured background, so its ink is white on dark
     /// backgrounds and black on light ones (S-5).
@@ -134,6 +136,10 @@ enum UmiTheme {
         keybind = ctrl+shift+tab=unbind
         keybind = super+shift+p=unbind
         keybind = super+,=unbind
+        # ⌥⌘I and ⌥⇧⌘I synchronize input (Window ▸ Synchronize Input), as in Warp; the
+        # terminal inspector moves to ⌃⌥⌘I.
+        keybind = super+alt+i=unbind
+        keybind = super+alt+ctrl+i=inspector:toggle
         \(digitUnbinds)
         """
     }

@@ -149,6 +149,31 @@ enum UmiShortcuts {
                      UmiAgentUI.shared.toggleTerminal(pane)
                  },
                  enabled: { UmiTopology.currentPane.map { UmiAgentUI.shared.session(forPane: $0.id) != nil } ?? false }),
+        ] + inputSyncItems
+    }
+
+    /// Synchronized input, as Warp's (L-22).
+    private static var inputSyncItems: [Item] {
+        [
+            Item(id: "input.sync_tab", title: "Toggle Synchronizing All Panes in Current Tab", key: "i", modifiers: [.command, .option],
+                 symbol: "link", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.toggleTab(window.selectedTab, in: window)
+                 }),
+            Item(id: "input.sync_all", title: "Toggle Synchronizing All Panes in All Tabs", key: "", modifiers: [],
+                 symbol: "link.circle", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.toggleAll(in: window)
+                 }),
+            Item(id: "input.sync_stop", title: "Stop Synchronizing Any Panes", key: "i", modifiers: [.command, .option, .shift],
+                 symbol: "personalhotspot.slash", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.stop(in: window)
+                 },
+                 enabled: { UmiTopology.currentWindow.map { UmiInputSync.shared.isSyncingAny($0) } ?? false }),
         ]
     }
 
