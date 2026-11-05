@@ -715,3 +715,24 @@ and a keyboard resize or `pane resize` that would is refused. **Requirement:** L
   inspector's new key (L-32), and ⌘= ⌘- ⌘0 and ⌥⇧> ⌥⇧< with the terminal's and the sidebar's sizes
   and the saved level (L-33). The divider grab area, the real right-click, and the key tests are
   `ui` tests.
+
+### Review follow-ups (L-19, L-31–L-33, 2026-11-05)
+
+New tests in `tests/test_umi_warp_panes.py`; no existing test changed. **Requirements:** L-19, L-31,
+L-32, L-33.
+
+- L-32: ⌥⌘I in a one-tab window leaves a tab opened later out; a paste into a synced pane reaches
+  every pane, and a paste that needs confirming asks once, in the pane pasted into (cancelled, it
+  goes nowhere); file and web panes in synced tabs get no keys; the sidebar row's link mark comes
+  and goes (`ui`).
+- L-31: Paste disabled with an empty clipboard; with text selected the menu starts with Copy and
+  has no Paste or Clear, and Copy copies; in less's full-screen view there's no Paste, Clear or
+  Copy; Close Pane asks first when a program runs, and Cancel keeps the pane.
+- L-19: the minimum for a divider between rows; a drag stops when a pane beyond the divider's
+  neighbours reaches it; a pane already below it may grow but not shrink.
+- L-33: the zoom level and font size survive a restart; the editor's text and the Markdown
+  preview scale with the zoom; sidebar rows drag and take clicks at 125% (`ui`).
+- New internal methods for them: `debug.ui.clipboard.confirmation` (a pane's pending paste
+  confirmation, answered as its buttons do), `debug.ui.sheet` (a window's dialog, cancelled as its
+  Cancel button does), and `debug.ui.zoom` with `window` (the editor's text sizes and the preview's
+  page zoom there).

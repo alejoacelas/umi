@@ -510,3 +510,355 @@ def test_option_shift_angle_brackets_change_the_font_size_ui(inst, win, ui):
         ui.choose(ui.menu_item("Reset Font Size"))
         wait_until(lambda: zoom(inst, a)["font_size"] == start["font_size"] and zoom(inst, a)["level"] == 100, 5,
                    message="back to the start")
+
+
+# ---- Review follow-ups (2026-11-05) -------------------------------------------------------------
+
+from test_umi_web import site, web  # noqa: E402,F401  (fixtures: an instance with a web origin)
+
+
+@pytest.fixture
+def clipboard():
+    """Put text on the clipboard; the clipboard's text is put back afterwards."""
+    import subprocess
+    saved = subprocess.run(["pbpaste"], capture_output=True).stdout
+
+    def put(text):
+        subprocess.run(["pbcopy"], input=text.encode(), check=True)
+
+    yield put
+    subprocess.run(["pbcopy"], input=saved, check=True)
+
+
+def menu_item(inst, pane, title):
+    return next((i for i in rpc(inst, "debug.ui.pane.menu", pane=pane)["items"] if i.get("title") == title), None)
+
+
+def confirmation(inst, pane, action=None):
+    params = {"pane": pane}
+    if action:
+        params["action"] = action
+    return rpc(inst, "debug.ui.clipboard.confirmation", **params)["pending"]
+
+
+@pytest.mark.req("L-32")
+def test_option_command_i_in_a_one_tab_window_leaves_tabs_opened_later_out(inst, win):
+    """Warp: from no sync, ⌥⌘I syncs just this tab, even when it's the window's only one."""
+    a = win["pane"]
+    try:
+        assert key(inst, win, "option+cmd+i")["handled"]
+        wait_until(lambda: row(inst, win["window"], win["tab"]).get("input_synced"), 5, message="the tab synced")
+        other = inst.json("tab", "new", "--window", win["window"], "--no-focus")
+        c = other["pane"]
+        wait_until(lambda: screen(inst, c).strip() != "", 20, message="the new tab's prompt")
+        assert not row(inst, win["window"], other["tab"]).get("input_synced"), "a tab opened later was synced"
+        assert row(inst, win["window"], win["tab"]).get("input_synced")
+        inst.cli("tab", "focus", win["tab"])
+        inst.cli("pane", "focus", a)
+        marker = word("one")
+        type_keys(inst, win, f"echo {marker}")
+        wait_until(lambda: screen(inst, a).count(marker) >= 2, 10, message="a ran it")
+        time.sleep(0.5)
+        assert marker not in screen(inst, c), "the tab opened later got the keys"
+        # ⌥⌘I again: nothing is synced.
+        assert key(inst, win, "option+cmd+i")["handled"]
+        wait_until(lambda: not row(inst, win["window"], win["tab"]).get("input_synced"), 5, message="stopped")
+    finally:
+        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+
+
+@pytest.mark.req("L-32")
+def test_a_paste_into_a_synced_pane_is_confirmed_once_and_reaches_every_pane(inst, win, clipboard):
+    a = win["pane"]
+    b = split(inst, "right", a)
+    wait_until(lambda: screen(inst, b).strip() != "", 20, message="b's prompt")
+    inst.cli("pane", "focus", a)
+    try:
+        assert key(inst, win, "option+cmd+i")["handled"]
+        wait_until(lambda: row(inst, win["window"], win["tab"]).get("input_synced"), 5, message="the tab synced")
+        # A paste the shell takes as it is (one line): typed into both, no dialog.
+        marker = word("pas")
+        clipboard(f"echo {marker}")
+        key(inst, win, "cmd+v")
+        wait_until(lambda: marker in screen(inst, a), 5, message="pasted into a")
+        wait_until(lambda: marker in screen(inst, b), 5, message="pasted into b too")
+        assert not confirmation(inst, a) and not confirmation(inst, b)
+        key(inst, win, "return")
+        wait_until(lambda: screen(inst, b).count(marker) >= 2, 10, message="b ran it")
+        # Both run cat, which doesn't ask for bracketed paste: a paste of several lines is unsafe
+        # there, and Ghostty asks first. Once, in a; b asks nothing.
+        type_keys(inst, win, "cat")
+        time.sleep(1)
+        first, second = word("lio"), word("lit")
+        clipboard(f"{first}\n{second}\n")
+        key(inst, win, "cmd+v")
+        wait_until(lambda: confirmation(inst, a), 5, message="a asks before pasting")
+        assert not confirmation(inst, b), "b asks too"
+        assert first not in screen(inst, b) and first not in screen(inst, a), "pasted before it was confirmed"
+        confirmation(inst, a, "confirm")
+        wait_until(lambda: second in screen(inst, a), 5, message="pasted into a once confirmed")
+        wait_until(lambda: second in screen(inst, b), 5, message="and into b, with no dialog of its own")
+        assert not confirmation(inst, b)
+        # Cancelled, it goes nowhere.
+        third = word("can")
+        clipboard(f"{third}\n{third}\n")
+        key(inst, win, "cmd+v")
+        wait_until(lambda: confirmation(inst, a), 5, message="a asks again")
+        confirmation(inst, a, "cancel")
+        time.sleep(0.5)
+        assert third not in screen(inst, a) and third not in screen(inst, b)
+        key(inst, win, "ctrl+c")
+    finally:
+        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+
+
+@pytest.mark.req("L-32")
+def test_file_and_web_panes_in_a_synced_tab_get_no_keys(web, tmp_path):
+    from test_umi_web import web_panes
+    inst, a = web["inst"], web["pane"]
+    w = {"window": web["window"], "tab": web["tab"]}
+    b = split(inst, "right", a)
+    doc = tmp_path / "sync.md"
+    doc.write_text("# Sync\n")
+    before = {p["id"] for p in tab_of(inst, web["tab"])["panes"]}
+    inst.cli("edit", str(doc), "--source", "--pane", a)
+    file_pane = wait_until(lambda: next((p["id"] for p in tab_of(inst, web["tab"])["panes"] if p["id"] not in before), None),
+                           5, message="the file pane")
+    page = inst.json("edit", web["site"] + "/doc", "--pane", a)["pages"][0]["pane"]
+    wait_until(lambda: web_panes(inst), 10, message="the web pane")
+    for p in (b, file_pane, page):
+        wait_until(lambda: screen(inst, p).strip() != "", 20, message=f"the shell under {p}")
+    time.sleep(0.5)
+    hidden = {p: screen(inst, p) for p in (file_pane, page)}
+    try:
+        rpc(inst, "debug.menu.perform", title="Toggle Synchronizing All Panes in All Tabs")
+        wait_until(lambda: all(r.get("input_synced") for r in rpc(inst, "debug.ui.rows", window=web["window"])["rows"]),
+                   5, message="every tab synced")
+        inst.cli("tab", "focus", web["tab"])
+        inst.cli("pane", "focus", a)
+        marker = word("fil")
+        type_keys(inst, w, f"echo {marker}")
+        wait_until(lambda: screen(inst, b).count(marker) >= 2, 10, message="b, a terminal, got the keys")
+        time.sleep(0.5)
+        for p in (file_pane, page):
+            assert marker not in screen(inst, p), f"the terminal under {p} got the keys"
+            assert screen(inst, p) == hidden[p]
+        assert marker not in doc.read_text()
+    finally:
+        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+
+
+@pytest.mark.ui
+@pytest.mark.req("L-32")
+def test_a_synced_tabs_row_shows_the_link_mark_ui(inst, win, ui):
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+    time.sleep(0.5)
+    window = ui.attr(ui.app, "AXFocusedWindow")
+
+    def mark():
+        return ui.find(lambda e: ui.label(e) == "Synchronized input", root=window)
+
+    assert mark() is None
+    try:
+        ui.key(KEY_I, ui.CMD | ui.OPT)
+        wait_until(mark, 5, message="the row's link mark")
+        ui.key(KEY_I, ui.CMD | ui.OPT | ui.SHIFT)
+        wait_until(lambda: mark() is None, 5, message="the mark gone after ⌥⇧⌘I")
+    finally:
+        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+
+
+@pytest.mark.req("L-31")
+def test_the_pane_menu_with_a_selection_or_a_full_screen_program_has_no_paste_or_clear(inst, win, clipboard):
+    import subprocess
+    a = win["pane"]
+    b = split(inst, "right", a)
+    wait_until(lambda: screen(inst, b).strip() != "", 20, message="b's prompt")
+    # Paste is disabled with nothing to paste.
+    clipboard("")
+    assert menu_item(inst, a, "Paste")["enabled"] is False
+    clipboard("something")
+    assert menu_item(inst, a, "Paste")["enabled"] is True
+    # With text selected: Copy, then the pane's items.
+    inst.cli("pane", "focus", a)
+    key(inst, win, "cmd+a")
+    wait_until(lambda: rpc(inst, "debug.selection", pane=a)["text"], 5, message="a's text selected")
+    titles = menu_titles(inst, a)
+    assert titles[0] == "Copy", titles
+    assert "Paste" not in titles and "Clear" not in titles, titles
+    for title in ("Split Pane Right", "Maximize Pane", "Close Pane"):
+        assert title in titles, titles
+    rpc(inst, "debug.ui.pane.menu", pane=a, title="Copy")
+    assert subprocess.run(["pbpaste"], capture_output=True, text=True).stdout.strip() not in ("", "something")
+    # A program's full-screen view (less): the pane's items only.
+    inst.cli("send", "--pane", b, "-e", "less /etc/hosts")
+    wait_until(lambda: "Paste" not in menu_titles(inst, b), 10, message="less's full-screen view")
+    titles = menu_titles(inst, b)
+    assert "Clear" not in titles and "Copy" not in titles, titles
+    for title in ("Split Pane Right", "Split Pane Up", "Maximize Pane", "Close Pane"):
+        assert title in titles, titles
+    inst.cli("send", "--pane", b, "q")
+    wait_until(lambda: "Paste" in menu_titles(inst, b) and "Clear" in menu_titles(inst, b), 10,
+               message="Paste and Clear back at the prompt")
+
+
+@pytest.mark.req("L-31")
+def test_close_pane_from_the_menu_asks_first_when_a_program_runs(inst, win):
+    a = win["pane"]
+    b = split(inst, "right", a)
+    wait_until(lambda: screen(inst, b).strip() != "", 20, message="b's prompt")
+    inst.cli("send", "--pane", b, "-e", "sleep 100")
+    time.sleep(1.5)
+    rpc(inst, "debug.ui.pane.menu", pane=b, title="Close Pane")
+    sheet = wait_until(lambda: (lambda s: s if s["sheet"] else None)(rpc(inst, "debug.ui.sheet", window=win["window"])), 5,
+                       message="a confirmation")
+    assert any("Close" in t for t in sheet["texts"]), sheet
+    assert b in [p["id"] for p in tab_of(inst, win["tab"])["panes"]], "b closed without asking"
+    rpc(inst, "debug.ui.sheet", window=win["window"], action="cancel")
+    wait_until(lambda: not rpc(inst, "debug.ui.sheet", window=win["window"])["sheet"], 5, message="the dialog dismissed")
+    time.sleep(0.5)
+    assert b in [p["id"] for p in tab_of(inst, win["tab"])["panes"]], "Cancel closed b"
+
+
+# L-19: the minimum in a column, beyond the dragged divider's neighbours, and for small panes.
+
+@pytest.mark.req("L-19")
+def test_a_dragged_divider_between_rows_stops_at_190_points(inst, win):
+    a = win["pane"]
+    b = split(inst, "down", a)
+    total = sum(f["height"] for f in frames(inst, win["tab"]).values())
+    if total < 2 * MINIMUM + 20:
+        pytest.skip(f"the window is too short ({total} points) for two panes of {MINIMUM}")
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.02)
+    f = frames(inst, win["tab"])
+    assert MINIMUM - 1 <= f[a]["height"] <= MINIMUM + 6, f
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.98)
+    f = frames(inst, win["tab"])
+    assert MINIMUM - 1 <= f[b]["height"] <= MINIMUM + 6, f
+
+
+@pytest.mark.req("L-19")
+def test_a_drag_stops_where_a_pane_beyond_the_divider_would_get_too_small(inst, win):
+    """In a row of three, dragging the first divider shares the rest between the other two (L-19):
+    the drag stops when they reach 190 points, the far one included."""
+    a = win["pane"]
+    b = split(inst, "right", a)
+    c = split(inst, "right", b)
+    total = sum(f["width"] for f in frames(inst, win["tab"]).values())
+    if total < 3 * MINIMUM + 40:
+        pytest.skip(f"the window is too narrow ({total} points) for three panes of {MINIMUM}")
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.98)
+    f = frames(inst, win["tab"])
+    for p in (b, c):
+        assert MINIMUM - 1 <= f[p]["width"] <= MINIMUM + 6, f
+    assert f[a]["width"] > MINIMUM
+
+
+@pytest.mark.req("L-19")
+def test_a_pane_already_smaller_than_190_points_may_grow_but_not_shrink(inst, win):
+    a = win["pane"]
+    total = frames(inst, win["tab"])[a]["width"]
+    if total < 2 * MINIMUM + 60:
+        pytest.skip(f"the window is too narrow ({total} points)")
+    b = split(inst, "right", a, "--ratio", f"{150 / total:.4f}")
+    before = frames(inst, win["tab"])
+    assert before[b]["width"] < MINIMUM, before
+    # Smaller still: refused, nothing moves.
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=(total - 100) / total)
+    assert frames(inst, win["tab"]) == before
+    # Bigger: it grows (a stays above the minimum).
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=(total - 210) / total)
+    f = frames(inst, win["tab"])
+    assert f[b]["width"] == pytest.approx(210, abs=6), f
+    assert f[a]["width"] >= MINIMUM
+
+
+# L-33: kept across restarts; the editor and the preview; the sidebar zoomed.
+
+@pytest.mark.req("L-33")
+def test_the_zoom_and_font_size_are_kept_across_restarts(fresh):
+    from test_umi_panes_ui import ready
+    other = fresh(prefix="acc-zoom-")
+    created = other.json("window", "new", "--name", "zoom")
+    ready(other, created["pane"])
+    w = {"window": created["window"]}
+    start = zoom(other, created["pane"])
+    key(other, w, "cmd+=")
+    key(other, w, "cmd+=")
+    key(other, w, "option+shift+.")
+    z = wait_until(lambda: (lambda z: z if z["level"] == 125 and z["font_size"] == start["font_size"] + 1
+                            and z["cell_width_px"] > start["cell_width_px"] else None)(zoom(other, created["pane"])),
+                   5, message="125% and a point bigger")
+    other.quit_gracefully()
+    other.start_app()
+    again = other.json("window", "new", "--name", "zoom-again")
+    ready(other, again["pane"])
+    wait_until(lambda: (lambda y: y["level"] == 125 and y["font_size"] == z["font_size"]
+                        and y["cell_width_px"] == z["cell_width_px"])(zoom(other, again["pane"])),
+               10, message=f"125%, the font size and the text size kept (was {z})")
+
+
+@pytest.mark.req("L-33")
+def test_the_zoom_scales_the_editor_and_the_markdown_preview(inst, win, tmp_path):
+    a = win["pane"]
+    txt = tmp_path / "zoom.txt"
+    txt.write_text("plain text\n")
+    md = tmp_path / "zoom.md"
+    md.write_text("# Zoom\n\nSome text.\n")
+
+    def sizes(field):
+        return rpc(inst, "debug.ui.zoom", pane=a, window=win["window"])[field]
+
+    inst.cli("edit", str(txt), "--pane", a)
+    wait_until(lambda: sizes("editor_font_sizes"), 10, message="the source editor")
+    assert set(sizes("editor_font_sizes")) == {12.5}
+    try:
+        key(inst, win, "cmd+=")
+        wait_until(lambda: all(abs(s - 13.75) < 0.01 for s in sizes("editor_font_sizes")), 5,
+                   message="the editor's text at 110%")
+        inst.cli("edit", str(md), "--pane", a)
+        wait_until(lambda: sizes("preview_page_zooms"), 10, message="the Markdown preview")
+        assert all(abs(z - 1.1) < 0.001 for z in sizes("preview_page_zooms")), sizes("preview_page_zooms")
+        key(inst, win, "cmd+0")
+        wait_until(lambda: all(abs(z - 1.0) < 0.001 for z in sizes("preview_page_zooms")), 5, message="the preview at 100%")
+    finally:
+        key(inst, win, "cmd+0")
+
+
+def _click(rect):
+    import Quartz
+    x, y, w, h = rect
+    point = (x + w / 2, y + h / 2)
+    for kind in (Quartz.kCGEventMouseMoved, Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft))
+        time.sleep(0.1)
+
+
+@pytest.mark.ui
+@pytest.mark.req("L-33", "M-4")
+def test_sidebar_rows_drag_and_click_when_zoomed_ui(inst, win, ui):
+    from test_umi_panes_ui import _frame, _mouse_drag, _row_element, new_tab, tab_ids
+    a = win["pane"]
+    _, t2 = new_tab(inst, win, "--name", "zoom-second")
+    _, t3 = new_tab(inst, win, "--name", "zoom-third")
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+    time.sleep(0.5)
+    first_title = tab_of(inst, win["tab"])["title"]
+    try:
+        ui.key(KEY_EQUAL, ui.CMD)
+        ui.key(KEY_EQUAL, ui.CMD)
+        wait_until(lambda: zoom(inst, a)["level"] == 125, 5, message="125%")
+        time.sleep(0.5)
+        third = wait_until(lambda: _row_element(ui, "zoom-third"), 5, message="the row")
+        first = _row_element(ui, first_title)
+        x3, y3, w3, h3 = _frame(ui, third)
+        x1, y1, w1, h1 = _frame(ui, first)
+        _mouse_drag((x3 + w3 / 2, y3 + h3 / 2), (x1 + w1 / 2, y1 + 4))
+        wait_until(lambda: tab_ids(inst, win["window"])[0] == t3, 5, message="dropped before the first row")
+        # A click lands on the row under the mouse.
+        _click(_frame(ui, wait_until(lambda: _row_element(ui, "zoom-second"), 5, message="the second row")))
+        wait_until(lambda: inst.tree().get("current_tab") == t2, 5, message="the clicked row's tab shown")
+    finally:
+        ui.key(KEY_ZERO, ui.CMD)
