@@ -540,6 +540,7 @@ def test_cmd_f_in_a_preview_finds_in_the_source(inst, win, tmp_path, ui):
     wait_until(lambda: ed(inst, pane)["mode"] == "preview", 5, message="Markdown opens in preview")
     inst.cli("pane", "focus", pane)
     ui.activate()
+    wait_until(lambda: inst.find_pane(pane)[2]["focused"], 5, message="the preview's pane focused")
     time.sleep(0.5)
     ui.key(K_F, CMD)
     wait_until(lambda: (s := ed(inst, pane))["mode"] == "source" and s.get("find", {}).get("focused"), 5,
