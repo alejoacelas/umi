@@ -243,7 +243,8 @@ final class UmiFindModel: ObservableObject {
         if regex {
             let options: NSRegularExpression.Options = caseSensitive ? [.anchorsMatchLines] : [.anchorsMatchLines, .caseInsensitive]
             if let expression = try? NSRegularExpression(pattern: query, options: options),
-               let match = expression.firstMatch(in: text, range: range) {
+               // Transparent, unanchored bounds: lookarounds and anchors see the text around the match.
+               let match = expression.firstMatch(in: text, options: [.withTransparentBounds, .withoutAnchoringBounds], range: range) {
                 result = expression.replacementString(for: match, in: text, offset: 0, template: replacement)
             }
         }
