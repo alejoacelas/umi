@@ -281,6 +281,36 @@ def test_explorer_reveals_the_active_file(inst, win, tmp_path):
     inst.cli("sidebar", "tabs")
 
 
+@pytest.mark.req("S-2")
+def test_explorer_reveal_keeps_folders_the_user_closed(inst, win, tmp_path):
+    """As in Warp, revealing the active file stops at a folder the user collapsed."""
+    repo = make_repo(tmp_path)
+    term = open_repo(inst, win, repo)
+    show_files(inst, win, repo)
+    src = os.path.join(repo, "src")
+    main = os.path.join(src, "main.rs")
+    shown = inst.json("edit", main, "--pane", term["pane"])["documents"][0]["pane"]
+    inst.cli("pane", "focus", shown)
+    wait_until(lambda: os.path.realpath(files(inst, win)["selected"] or "/") == main, 10, message="main.rs revealed")
+    # Collapse src from the keyboard: ← goes to the folder, ← again closes it.
+    inst.cli("sidebar", "tabs")
+    press(inst, win, "ctrl+1", focus="terminal")
+    wait_until(lambda: files(inst, win)["focused"], 5, message="the tree has keyboard focus")
+    press(inst, win, "left")
+    press(inst, win, "left")
+    assert not row(files(inst, win), src)["expanded"], "src collapsed"
+    # Another pane, then main.rs's pane again: src stays closed and main.rs isn't selected.
+    inst.cli("pane", "focus", term["pane"])
+    files(inst, win)   # the explorer sees the terminal focused (no active file)
+    inst.cli("pane", "focus", shown)
+    time.sleep(1.2)   # two of the explorer's ticks
+    state = files(inst, win)
+    assert not row(state, src)["expanded"], "the folder the user closed stays closed"
+    assert os.path.realpath(state["selected"] or "/") != main
+    assert row(state, main) is None
+    inst.cli("sidebar", "tabs")
+
+
 # ---- keys (key presses delivered inside the app) ----------------------------------------------
 
 @pytest.mark.req("S-2", "L-9", "L-10")

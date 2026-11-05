@@ -148,6 +148,8 @@ final class UmiFileTreeModel: ObservableObject {
     private var ignoredWork: Process?
     private var ignoredPending = false
     private var lastActiveFile: URL?
+    /// Folders the user closed (by path); revealing the active file doesn't reopen them.
+    private var collapsedByUser: Set<String> = []
     private var hiddenObserver: AnyCancellable?
 
     // MARK: One model per window
@@ -221,6 +223,7 @@ final class UmiFileTreeModel: ObservableObject {
         selected = nil
         edit = nil
         ignored = []
+        collapsedByUser = []
         watcher?.stop()
         watcher = UmiFSWatcher(path: url.path) { [weak self] paths, rescan in
             MainActor.assumeIsolated { self?.filesChanged(paths, rescan: rescan) }
@@ -400,8 +403,14 @@ final class UmiFileTreeModel: ObservableObject {
         select(items[max(0, min(items.count - 1, index + delta))].url)
     }
 
-    func setExpanded(_ url: URL, _ expanded: Bool) {
-        guard let node = node(at: url), node.isDirectory, node.expanded != expanded else { return }
+    /// Open or close a folder. `byUser`: a key or click did it, which revealing the active file
+    /// respects (it doesn't reopen a folder the user closed).
+    func setExpanded(_ url: URL, _ expanded: Bool, byUser: Bool = false) {
+        guard let node = node(at: url), node.isDirectory else { return }
+        if byUser {
+            if expanded { collapsedByUser.remove(node.path) } else { collapsedByUser.insert(node.path) }
+        }
+        guard node.expanded != expanded else { return }
         node.expanded = expanded
         if expanded { node.loadChildren() }
         rebuild()
@@ -410,14 +419,14 @@ final class UmiFileTreeModel: ObservableObject {
     /// → expands a collapsed folder.
     func expandSelected() {
         guard let row = selectedRow, row.isDirectory, !row.expanded else { return }
-        setExpanded(row.url, true)
+        setExpanded(row.url, true, byUser: true)
     }
 
     /// ← collapses an expanded folder, else goes to the item's folder.
     func collapseSelected() {
         guard let row = selectedRow else { return }
         if row.isDirectory && row.expanded {
-            setExpanded(row.url, false)
+            setExpanded(row.url, false, byUser: true)
         } else if let root, row.url.path != root.url.path {
             select(row.url.deletingLastPathComponent())
         }
@@ -428,7 +437,7 @@ final class UmiFileTreeModel: ObservableObject {
         select(url, scroll: false)
         guard let node = node(at: url) else { return }
         if node.isDirectory {
-            setExpanded(url, !node.expanded)
+            setExpanded(url, !node.expanded, byUser: true)
         } else {
             open(url)
         }
@@ -452,26 +461,29 @@ final class UmiFileTreeModel: ObservableObject {
         return true
     }
 
-    /// Show `url` in the tree: open its folders, select it and scroll to it.
+    /// Show `url` in the tree: open its folders, select it and scroll to it. As in Warp, it stops
+    /// at a folder the user collapsed (the root included), and selects only the file itself.
     func reveal(_ url: URL) {
         guard let root else { return }
         let target = Self.realURL(url)
         let rootURL = Self.realURL(root.url)
-        guard target.path.hasPrefix(rootURL.path + "/") else { return }
+        guard target.path.hasPrefix(rootURL.path + "/"), !collapsedByUser.contains(root.path) else { return }
         let relative = target.path.dropFirst(rootURL.path.count + 1).split(separator: "/")
         var node = root
         node.expanded = true
         node.loadChildren()
+        var found = true
         for (index, part) in relative.enumerated() {
-            guard let next = node.children?.first(where: { $0.name == part }) else { break }
+            guard let next = node.children?.first(where: { $0.name == part }) else { found = false; break }
             node = next
             if index < relative.count - 1 {
+                if collapsedByUser.contains(node.path) { found = false; break }
                 node.expanded = true
                 node.loadChildren()
             }
         }
         rebuild()
-        select(node.url)
+        if found { select(node.url) }
     }
 
     // MARK: Focus

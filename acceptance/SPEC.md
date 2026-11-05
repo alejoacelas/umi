@@ -403,7 +403,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
     first within each group. The selected row is the foreground at 20% behind full-color text;
     hover is 10%. Dotfiles are shown and ⇧⌘> hides or shows them; entries git ignores are italic and
     lighter; `.git` and `.DS_Store` are never shown. When the focused pane shows a file, the tree
-    opens its folders, selects it and scrolls to it. With no pane folder it says "Project explorer
+    opens its folders, selects it and scrolls to it, stopping (with nothing selected) at a folder
+    the user closed. With no pane folder it says "Project explorer
     unavailable" with Warp's explanation.
   - Explorer keys: ⇧⌘E and ⌃1 show Files with keyboard focus in the tree (pressed again: Tabs, and
     focus back in the pane). In the tree ↑↓ select, → expands a folder, ← collapses it or goes to
