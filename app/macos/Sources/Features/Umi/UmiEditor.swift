@@ -166,6 +166,8 @@ final class UmiDocument: ObservableObject, Identifiable {
     @Published var reviewWaiters = 0
     /// The shown view, which starts a comment on its selection (E-11).
     weak var commentTarget: UmiCommentTarget?
+    /// The source view's find, go to line and comments (E-13 to E-16), while it's shown.
+    weak var code: UmiCodeEditor?
 
     private(set) var encoding: String.Encoding
     private var bom: Data
@@ -227,6 +229,11 @@ final class UmiDocument: ObservableObject, Identifiable {
         }
     }
 
+    /// Write the text to another file, in this document's encoding (Save As, E-15).
+    func write(to other: URL) throws {
+        try UmiTextFile.write(text, to: other, encoding: encoding, bom: bom)
+    }
+
     func reload() {
         do {
             let loaded = try UmiTextFile.read(url)
@@ -257,13 +264,6 @@ final class UmiDocument: ObservableObject, Identifiable {
         isDirty = text != savedText
         error = nil
         watch()
-    }
-
-    /// Keep the edits as they are and stop warning about the disk.
-    func keepMine() {
-        changedOnDisk = false
-        if let current = try? UmiTextFile.read(url).text { savedText = current }
-        isDirty = text != savedText
     }
 
     // MARK: Watching the file
@@ -611,6 +611,12 @@ enum UmiEditor {
         UmiTopology.currentPane.flatMap { UmiFilePanes.shared.document(of: $0) }
     }
 
+    /// The focused pane's source view (find, go to line, comments), when it shows one.
+    static var currentCode: UmiCodeEditor? {
+        guard let doc = currentDocument, doc.mode == .source else { return nil }
+        return doc.code
+    }
+
     /// True when keyboard focus is in an editor view.
     static var editorHasFocus: Bool {
         guard let responder = NSApp.keyWindow?.firstResponder as? NSView else { return false }
@@ -620,6 +626,48 @@ enum UmiEditor {
             view = current.superview
         }
         return false
+    }
+
+    /// ⌘S (and Overwrite): save and say so, as Warp's "File saved." toast does (E-15).
+    @discardableResult
+    static func saveFromUser(_ doc: UmiDocument) -> Bool {
+        guard doc.save() else { return false }
+        doc.code?.reloadDiffBase()
+        UmiToast.show("File saved.", near: UmiFilePanes.shared.open.first { $0.doc === doc }?.pane)
+        return true
+    }
+
+    /// ⇧⌘S: write the document to a file the user names; the pane then shows that file (E-15).
+    static func saveAs(_ doc: UmiDocument) {
+        guard let pane = UmiFilePanes.shared.open.first(where: { $0.doc === doc })?.pane else { return }
+        let panel = NSSavePanel()
+        panel.directoryURL = doc.url.deletingLastPathComponent()
+        panel.nameFieldStringValue = doc.name
+        panel.canCreateDirectories = true
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            do { try saveAs(doc, to: url, pane: pane) } catch {
+                doc.error = (error as? UmiError)?.message ?? error.localizedDescription
+                NSSound.beep()
+            }
+        }
+        if let window = pane.window { panel.beginSheetModal(for: window, completionHandler: finish) } else { finish(panel.runModal()) }
+    }
+
+    /// Save As to `url`: the file gets the text, and the pane shows it from then on. The old file
+    /// keeps what it had.
+    static func saveAs(_ doc: UmiDocument, to url: URL, pane: Ghostty.SurfaceView) throws {
+        let target = url.standardizedFileURL
+        if target.resolvingSymlinksInPath() == doc.url.resolvingSymlinksInPath() {
+            saveFromUser(doc)
+            return
+        }
+        try doc.write(to: target)
+        let saved = try UmiDocument(url: target, mode: doc.hasPreview ? doc.mode : nil)
+        UmiFilePanes.shared.replaceDocument(of: pane, with: saved)
+        UmiEvents.shared.emit("editor.saved", ["path": saved.url.path, "from": doc.url.path])
+        UmiToast.show("File saved.", near: pane)
+        DispatchQueue.main.async { UmiFilePanes.shared.focusEditor(of: pane) }
     }
 
     static func saveDirtyDocuments(of tab: UmiTab) {
@@ -710,7 +758,9 @@ struct UmiDocumentView: View {
     var body: some View {
         VStack(spacing: 0) {
             if doc.changedOnDisk {
-                banner("This file changed on disk.", actions: [("Reload", { doc.reload() }), ("Keep Mine", { doc.keepMine() })])
+                // Warp's wording (E-4): drop the edits and take the disk's version, or save over it.
+                banner("This file has saved changes that are not reflected here.",
+                       actions: [("Discard this version", { doc.reload() }), ("Overwrite", { UmiEditor.saveFromUser(doc) })])
             }
             if let error = doc.error {
                 banner(error, actions: [("Dismiss", { doc.error = nil })])
@@ -775,8 +825,25 @@ final class UmiEditorContainerView: NSView {
         }
     }
 
-    @objc func saveDocument(_ sender: Any?) { document?.save() }
+    @objc func saveDocument(_ sender: Any?) { document.map { UmiEditor.saveFromUser($0) } }
     @objc func toggleMarkdownPreview(_ sender: Any?) { document?.toggleMode() }
+
+    // The Find menu's items (⌘F, ⌘G, ⇧⌘G, ⌘E) reach the editor's own find instead of the
+    // terminal underneath the file pane (whose window controller handles them otherwise).
+    @objc func find(_ sender: Any?) { if let code = document?.code { code.openFind() } else { NSSound.beep() } }
+    @objc func findNext(_ sender: Any?) { if let code = document?.code { code.findStep(1) } else { NSSound.beep() } }
+    @objc func findPrevious(_ sender: Any?) { if let code = document?.code { code.findStep(-1) } else { NSSound.beep() } }
+    @objc func findHide(_ sender: Any?) { document?.code?.closeFind() }
+    @objc func selectionForFind(_ sender: Any?) {
+        guard let code = document?.code, let textView = code.textView else { return NSSound.beep() }
+        let range = textView.selectedRange()
+        guard range.length > 0 else { return NSSound.beep() }
+        code.find.query = (textView.string as NSString).substring(with: range)
+    }
+    @objc func scrollToSelection(_ sender: Any?) {
+        guard let textView = document?.code?.textView else { return }
+        textView.scrollRangeToVisible(textView.selectedRange())
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let window, let responder = window.firstResponder as? NSView, responder.isDescendant(of: self) else {
@@ -789,7 +856,7 @@ final class UmiEditorContainerView: NSView {
             closeDocument?()
             return true
         case ([.command], "s"):
-            document?.save()
+            if let document { UmiEditor.saveFromUser(document) }
             return true
         case ([.command, .shift], "m"):
             document?.toggleMode()
@@ -815,10 +882,8 @@ struct UmiSourceEditor: NSViewRepresentable {
             UmiEditor.confirmClose(doc, in: group, window: container?.window)
         }
         doc.commentTarget = context.coordinator
-        let scroll = UmiEditorTextView.scrollable()
+        let (scroll, codeView) = UmiCodeEditor.makeScrollView()
         scroll.drawsBackground = false
-        scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         if let textView = scroll.documentView as? NSTextView {
             context.coordinator.textView = textView
@@ -827,21 +892,23 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.isRichText = false
             textView.importsGraphics = false
             textView.allowsUndo = true
-            textView.usesFindBar = true
+            // Find is the code view's own bar (E-14), not AppKit's.
+            textView.usesFindBar = false
             textView.isAutomaticQuoteSubstitutionEnabled = false
             textView.isAutomaticDashSubstitutionEnabled = false
             textView.isAutomaticTextReplacementEnabled = false
             textView.isAutomaticSpellingCorrectionEnabled = false
             textView.isContinuousSpellCheckingEnabled = false
-            textView.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
-            textView.textColor = UmiTheme.textNSColor
             textView.insertionPointColor = UmiTheme.accentNSColor
-            textView.textContainerInset = NSSize(width: 12, height: 10)
+            textView.textContainerInset = NSSize(width: 4, height: 10)
             textView.string = doc.text
             textView.setAccessibilityLabel(doc.name)
             container.attach(to: group, focusTarget: textView)
         }
         container.addSubview(scroll)
+        let code = UmiCodeEditor(doc: doc, textView: codeView, scroll: scroll, container: container, pane: group.pane)
+        context.coordinator.code = code
+        doc.code = code
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -867,7 +934,10 @@ struct UmiSourceEditor: NSViewRepresentable {
             }
             textView.selectedRanges = clamped.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : clamped
         }
-        if textView.textColor != UmiTheme.textNSColor { textView.textColor = UmiTheme.textNSColor }
+        // The theme went light or dark: the code view recolors (setting `textColor` would wipe the
+        // syntax colors).
+        if let code = context.coordinator.code, code.baseColor != UmiTheme.textNSColor { code.lookChanged() }
+        if doc.code !== context.coordinator.code { doc.code = context.coordinator.code }
         if let line = doc.revealLine {
             DispatchQueue.main.async { doc.revealLine = nil }
             Self.reveal(line: line, in: textView)
@@ -894,6 +964,8 @@ struct UmiSourceEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate, UmiCommentTarget {
         let doc: UmiDocument
         weak var textView: NSTextView?
+        /// Owned here: lives as long as the source view.
+        var code: UmiCodeEditor?
         init(doc: UmiDocument) { self.doc = doc }
 
         /// Comment on the selection (E-11): the margin is the preview's, so here the text is
@@ -1137,27 +1209,27 @@ struct UmiMarkdownPreview: NSViewRepresentable {
 
 /// The source editor's text view: tells its pane when it takes keyboard focus.
 final class UmiEditorTextView: NSTextView {
+    /// The code view's extras (current line, Esc), when it's the source editor.
+    weak var code: UmiCodeEditor?
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { UmiEditorContainerView.focused(self) }
+        if result {
+            UmiEditorContainerView.focused(self)
+            MainActor.assumeIsolated { code?.reloadDiffBase() }
+        }
         return result
     }
 
-    /// A scroll view holding one, set up as `NSTextView.scrollableTextView()` sets up its own.
-    static func scrollable() -> NSScrollView {
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        let size = scroll.contentSize
-        let textView = UmiEditorTextView(frame: NSRect(origin: .zero, size: size))
-        textView.minSize = NSSize(width: 0, height: size.height)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-        scroll.documentView = textView
-        return scroll
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        MainActor.assumeIsolated { code?.drawCurrentLine(in: rect) }
+    }
+
+    /// Esc closes the find bar or the go-to box; otherwise it does nothing (no completion list).
+    override func cancelOperation(_ sender: Any?) {
+        let handled = MainActor.assumeIsolated { code?.escape() ?? false }
+        if !handled && code == nil { super.cancelOperation(sender) }
     }
 }
 

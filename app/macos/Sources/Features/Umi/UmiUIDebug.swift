@@ -13,6 +13,9 @@ enum UmiUIDebug {
                     "frame": frameJSON(window.window?.frame ?? .zero),
                     "rows": window.tabs.map { UmiSidebarRowModel(tab: $0, in: window).json() }]
 
+        case "debug.ui.editor":
+            return try UmiEditorDebug.handle(params, caller: caller)
+
         case "debug.ui.open_url":
             // A link ⌘-clicked in a pane: what the terminal's open-URL action runs (E-12).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
