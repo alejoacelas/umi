@@ -649,11 +649,27 @@ enum UmiEditor {
     }
 
     /// Save As to `url`: the file gets the text, and the pane shows it from then on. The old file
-    /// keeps what it had.
+    /// keeps what it had. When another pane already shows that file, it stays the file's one pane
+    /// (E-9): it takes the saved text and focus, and this pane closes, its text now saved there.
+    /// That pane's unsaved edits are never overwritten: Save As refuses instead.
     static func saveAs(_ doc: UmiDocument, to url: URL, pane: Ghostty.SurfaceView) throws {
         let target = url.standardizedFileURL
         if target.resolvingSymlinksInPath() == doc.url.resolvingSymlinksInPath() {
             saveFromUser(doc)
+            return
+        }
+        if let other = UmiFilePanes.shared.pane(showing: target), other !== pane,
+           let shown = UmiFilePanes.shared.document(of: other) {
+            guard !shown.isDirty else {
+                throw UmiError.badRequest("“\(shown.name)” is open in another pane with unsaved changes. Save or close it first.")
+            }
+            try doc.write(to: target)
+            shown.reload()
+            shown.code?.reloadDiffBase()
+            UmiEvents.shared.emit("editor.saved", ["path": shown.url.path, "from": doc.url.path])
+            UmiFilePanes.closePane(pane, discarding: true)
+            try UmiFilePanes.open(shown.url, mode: nil, near: other, focus: true)
+            UmiToast.show("File saved.", near: other)
             return
         }
         try doc.write(to: target)
