@@ -241,6 +241,8 @@ final class UmiDocument: ObservableObject, Identifiable {
             bom = loaded.bom
             savedText = loaded.text
             text = loaded.text
+            // The history's steps point into the old text: ⌘Z after a reload must not replay them.
+            undoManager.removeAllActions()
             isDirty = false
             changedOnDisk = false
             error = nil
@@ -912,6 +914,8 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.insertionPointColor = UmiTheme.accentNSColor
             textView.textContainerInset = NSSize(width: 4, height: 10)
             textView.string = doc.text
+            // A new text view starts its own history: steps from an earlier one point into it.
+            doc.undoManager.removeAllActions()
             // Opened with the caret at the top, as Warp opens files.
             textView.setSelectedRange(NSRange(location: 0, length: 0))
             textView.setAccessibilityLabel(doc.name)
@@ -936,6 +940,9 @@ struct UmiSourceEditor: NSViewRepresentable {
         if textView.string != doc.text {
             let selection = textView.selectedRanges
             textView.string = doc.text
+            // The text was replaced from outside the editor (reload, comments, the CLI): the
+            // history's steps point into the old text, so ⌘Z must not replay them.
+            doc.undoManager.removeAllActions()
             let length = (doc.text as NSString).length
             // Keep the selection where it was, clamped to the new text. AppKit throws (and the
             // app crashes) if given no ranges, as when a reload is shorter than the old cursor.
