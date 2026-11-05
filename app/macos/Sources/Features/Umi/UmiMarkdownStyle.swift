@@ -1,9 +1,10 @@
 import Foundation
+import GhosttyKit
 import OSLog
 
 /// How the Markdown preview looks: as Warp draws a Markdown file (Warp parity, 2026-11-05).
-/// Warp's numbers, from its notebook editor's styles: Roboto (bundled, OFL) at 13 px with a line
-/// height of 1.5, the full width of the pane, headings at 2.25/1.8/1.5/1/0.83/0.67 em (h1–h4
+/// Warp's numbers, from its notebook editor's styles: Roboto (bundled, OFL) at the terminal's font
+/// size (13 px by default) with a line height of 1.5, the full width of the pane, headings at 2.25/1.8/1.5/1/0.83/0.67 em (h1–h4
 /// semibold, h5–h6 regular), inline code in the terminal's red on `surface_3`, code blocks with a
 /// 1 px `surface_3` border on the background and a footer naming the language, tables with 12 px
 /// cell padding in the secondary text color with row lines only, a 3 px rule and checkboxes
@@ -65,8 +66,17 @@ enum UmiMarkdownStyle {
                                    magenta: "#523c79", cyan: "#20a5ba", accent: "#00c2ff", check: "#111111", scheme: "light")
     }
 
-    static func css(light: Bool, background: String) -> String {
+    /// The body's size: as Warp's default (its notebook font size follows the terminal's), the
+    /// terminal's configured `font-size`.
+    @MainActor
+    static var fontSize: Double {
+        guard let size = UmiLayout.ghostty?.config.umiFontSize, size > 0 else { return 13 }
+        return size
+    }
+
+    static func css(light: Bool, background: String, fontSize: Double = 13) -> String {
         let p = light ? Palette.light : Palette.dark
+        let size = String(format: "%g", fontSize)
         return """
         :root { color-scheme: \(p.scheme);
           --fg: rgba(\(p.ink),0.9); --fg-sub: rgba(\(p.ink),0.6); --fg-hint: rgba(\(p.ink),0.4);
@@ -74,14 +84,14 @@ enum UmiMarkdownStyle {
           --surface-2: \(p.surface2); --bg: \(p.solidBackground); --accent: \(p.accent); --red: \(p.red); --check: \(p.check);
           --mono: "SF Mono", Menlo, monospace; --ui: 'Umi Roboto', Roboto, -apple-system, BlinkMacSystemFont, sans-serif; }
         html, body { margin: 0; background: \(background); }
-        body { color: var(--fg); font: 13px/1.5 var(--ui); padding: 16px 20px 60px; -webkit-font-smoothing: antialiased; }
+        body { color: var(--fg); font: \(size)px/1.5 var(--ui); padding: 16px 20px 60px; -webkit-font-smoothing: antialiased; }
         h1, h2, h3, h4, h5, h6 { color: var(--fg); font-weight: 600; line-height: 1.5; margin: 0.9em 0 0.3em; }
         h1 { font-size: 2.25em; } h2 { font-size: 1.8em; } h3 { font-size: 1.5em; } h4 { font-size: 1em; }
         h5 { font-size: 0.83em; font-weight: 400; } h6 { font-size: 0.67em; font-weight: 400; }
         body > :first-child, body > .front-matter + * { margin-top: 0; }
         p, ul, ol, blockquote, .umi-table { margin: 0 0 1em; }
         a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
-        code { font: 13px/1.5 var(--mono); }
+        code { font: \(size)px/1.5 var(--mono); }
         :not(pre) > code, p code, li code, td code, th code { color: var(--red); background: var(--surface-3); padding: 0.05em 0.3em; border-radius: 3px; }
         blockquote { margin-left: 0; padding: 0 0 0 14px; border-left: 3px solid var(--surface-3); color: var(--fg-sub); }
         hr { border: none; height: 3px; background: var(--surface-3); margin: 1em 0; }
@@ -161,5 +171,16 @@ enum UmiMarkdownStyle {
         table.front-matter pre { margin: 0; padding: 0; background: none; font: 12px/1.6 var(--mono); white-space: pre-wrap; }
         pre.front-matter { font: 12px/1.6 var(--mono); }
         """
+    }
+}
+
+extension Ghostty.Config {
+    /// The configured `font-size` (points), or nil without a config.
+    var umiFontSize: Double? {
+        guard let config else { return nil }
+        var v: Float = 0
+        let key = "font-size"
+        guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return nil }
+        return Double(v)
     }
 }

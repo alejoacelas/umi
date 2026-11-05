@@ -725,3 +725,5 @@ New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing tes
 - `test_the_preview_looks_like_warps_markdown_view` checks that the page has Roboto's four bundled
   faces and loaded one. Before, it used `document.fonts.check`, which is true when no face matches,
   so a build without the fonts passed.
+- New, `test_the_text_follows_the_terminals_font_size`: with `font-size = 15` the preview's text,
+  headings and code scale to 15 px, as Warp's Markdown follows its terminal font size.

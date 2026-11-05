@@ -529,13 +529,14 @@ enum UmiMarkdown {
 
     /// `markdown`: a Markdown document, drawn as Warp draws Markdown files (Warp parity,
     /// 2026-11-05); otherwise a data preview (JSON, CSV) in the editor's earlier style.
-    static func page(body: String, background: String, light: Bool = false, head: String = "", markdown: Bool = false) -> String {
+    static func page(body: String, background: String, light: Bool = false, head: String = "", markdown: Bool = false,
+                     fontSize: Double = 13) -> String {
         if markdown {
             return """
             <!doctype html><html><head><meta charset="utf-8">
             <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; img-src data: https: http:; style-src 'unsafe-inline'; font-src data:;">
             <meta name="umi-markdown" content="1">
-            <style>\(UmiMarkdownStyle.fonts)\n\(UmiMarkdownStyle.css(light: light, background: background))</style>\(head)</head><body class="umi-md">\(body)</body></html>
+            <style>\(UmiMarkdownStyle.fonts)\n\(UmiMarkdownStyle.css(light: light, background: background, fontSize: fontSize))</style>\(head)</head><body class="umi-md">\(body)</body></html>
             """
         }
         // Light and dark palettes: text, headings, muted text, code/rule tints.

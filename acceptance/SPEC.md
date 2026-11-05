@@ -570,8 +570,9 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
 Compared with Warp on macOS, default settings, default Dark theme. Front matter, comments (E-11)
 and links (E-7) work as before.
 
-- **MD-1 [A+W]** The preview looks like Warp's Markdown view: Roboto (bundled) at 13 px with a line
-  height of 1.5, across the full width of the pane; headings at 2.25, 1.8, 1.5, 1, 0.83 and 0.67
+- **MD-1 [A+W]** The preview looks like Warp's Markdown view: Roboto (bundled) at the terminal's
+  font size (13 px by default; Warp's Markdown follows its terminal font size) with a line height of
+  1.5, across the full width of the pane; headings at 2.25, 1.8, 1.5, 1, 0.83 and 0.67
   times the body size, h1–h4 semibold and h5–h6 regular; inline code in the terminal's red on
   `surface_3` (the foreground at 15% over the background); tables with 12 px cell padding, text in
   the secondary color (60%), lines between rows only, scrolling sideways when wider than the pane;

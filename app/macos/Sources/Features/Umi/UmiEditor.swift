@@ -1007,7 +1007,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
 
         func render(force: Bool = false) {
             guard let web else { return }
-            let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight)"
+            let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight):\(UmiMarkdownStyle.fontSize)"
             guard force || lastKey != key else { return }
             if composing && !force {
                 renderPending = true
@@ -1034,7 +1034,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
             let head = UmiCommentsScript.head(data: data, light: UmiTheme.isLight)
             hasDiagrams = body.contains("umi-code umi-mermaid")
             web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight, head: head,
-                                                markdown: true),
+                                                markdown: true, fontSize: UmiMarkdownStyle.fontSize),
                                baseURL: nil)
         }
 

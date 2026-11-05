@@ -172,6 +172,17 @@ def test_on_a_light_background_the_preview_uses_warps_light_theme(fresh, doc):
     assert style(other, doc, "a", "color")["color"] == "rgb(0, 194, 255)", "links in Warp Light's accent"
 
 
+@pytest.mark.req("MD-1")
+def test_the_text_follows_the_terminals_font_size(fresh, doc):
+    """Warp's Markdown text is its terminal's font size by default."""
+    other = fresh(prefix="acc-md1-size-", args=["--font-size=15"])
+    shown(other, window_of(other), doc)
+    body = style(other, doc, "body", "font-size", "line-height")
+    assert (body["font-size"], body["line-height"]) == ("15px", "22.5px"), body
+    assert style(other, doc, "h1", "font-size")["font-size"] == "33.75px", "2.25 times the body"
+    assert style(other, doc, ".umi-code pre code", "font-size")["font-size"] == "15px", "code too"
+
+
 @pytest.mark.req("MD-2")
 def test_code_blocks_are_highlighted_and_copy_or_run(inst, win, doc):
     pane = shown(inst, win, doc)
