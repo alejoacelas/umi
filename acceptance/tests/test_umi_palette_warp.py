@@ -186,6 +186,25 @@ def test_quick_open_offers_to_create_a_file_nothing_matches(inst, win, tmp_path)
         close(inst, win)
 
 
+@pytest.mark.req("L-16")
+def test_quick_open_creates_a_file_at_a_home_or_absolute_path(inst, win, tmp_path):
+    import shutil
+    import uuid
+    repo, pane = repo_pane(inst, win, tmp_path)
+    home_dir = os.path.expanduser(f"~/umi-palette-test-{uuid.uuid4().hex[:8]}")
+    try:
+        for typed, made in ((f"~/{os.path.basename(home_dir)}/from_home.md", os.path.join(home_dir, "from_home.md")),
+                            (str(tmp_path / "elsewhere" / "absolute.md"), str(tmp_path / "elsewhere" / "absolute.md"))):
+            rows = rpc(inst, "debug.palette", window=win["window"], mode="files", query=typed)["entries"]
+            assert rows[0]["kind"] == "create" and rows[0]["value"] == made, (typed, rows)
+            rpc(inst, "debug.palette.perform", window=win["window"], title=rows[0]["title"])
+            wait_until(lambda: os.path.exists(made), 5, message=f"{typed} made at {made}")
+        assert not (repo / "~").exists() and not (repo / str(tmp_path).lstrip("/")).exists()
+    finally:
+        close(inst, win)
+        shutil.rmtree(home_dir, ignore_errors=True)
+
+
 # ---- the shortcuts page -----------------------------------------------------------------------------
 
 @pytest.mark.req("L-17")

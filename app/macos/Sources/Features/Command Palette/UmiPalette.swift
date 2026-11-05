@@ -643,10 +643,12 @@ final class UmiPaletteModel: ObservableObject {
             }
         }
         guard extras else { return found }
-        // Nothing matches a name: offer to make it, in the pane's folder (Warp).
+        // Nothing matches a name: offer to make it, in the pane's folder (Warp); `~/…` and an
+        // absolute path name the place themselves.
         let name = UmiFileIndex.fileName(in: query)
         if found.isEmpty, !name.isEmpty {
-            let path = (index.folder as NSString).appendingPathComponent(name)
+            let expanded = (name as NSString).expandingTildeInPath
+            let path = expanded.hasPrefix("/") ? expanded : (index.folder as NSString).appendingPathComponent(name)
             let create = UmiPaletteEntry(id: "create:" + path, title: "Create a file named \(name)…", icon: "plus.circle",
                                          value: path, kind: .create) { [weak self] in
                 self?.createFile(path)
