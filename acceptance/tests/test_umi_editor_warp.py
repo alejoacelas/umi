@@ -65,7 +65,7 @@ def code(tmp_path):
 @pytest.mark.req("E-21")
 def test_code_view_has_the_terminal_font_line_numbers_and_no_wrap(inst, win, code):
     pane = open_file(inst, win, code)
-    state = wait_until(lambda: ed(inst, pane), 10, message="the code view")
+    state = wait_until(lambda: (s := ed(inst, pane)) and "wraps" in s and s, 10, message="the code view")
     assert state["wraps"] is False, "long lines scroll sideways"
     assert state["line_numbers"] is True and state["gutter_width"] == 94
     assert state["font_size"] == 13, f"the terminal's size (Umi's default 13): {state['font_size']}"
@@ -91,18 +91,17 @@ def test_marks_show_changes_against_the_last_commit(inst, win, tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     path = repo / "list.txt"
-    path.write_text("one\ntwo\nthree\nfour\n")
+    path.write_text("a\nb\nc\nd\ne\n")
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
     for args in (["init", "-q"], ["add", "."], ["commit", "-qm", "base"]):
         subprocess.run(["git", "-C", str(repo), *args], check=True, env=env)
     pane = open_file(inst, win, path)
     time.sleep(1)
     assert ed(inst, pane)["diff_marks"] == {}, "an unchanged file has no marks"
-    # "two" changed, "three" removed, "five" added.
-    set_text(inst, pane, "one\nTWO\nfour\nfive\n")
+    # "a" changed, "c" removed (marked on the line after), "f" added.
+    set_text(inst, pane, "A\nb\nd\ne\nf\n")
     marks = wait_until(lambda: (m := ed(inst, pane)["diff_marks"]) and m, 10, message="marks")
-    assert marks.get("2") == "changed" and marks.get("4") == "added", marks
-    assert "removed" in marks.values(), marks
+    assert marks == {"1": "changed", "3": "removed", "5": "added"}, marks
 
 
 @pytest.mark.req("E-23")
@@ -253,9 +252,8 @@ def test_save_shows_a_toast_and_save_as_moves_the_pane_to_the_new_file(inst, win
     ui.key(K_S, CMD | SHIFT)
     name_field = wait_until(lambda: ui.find(lambda e: ui.role(e) == "AXTextField" and ui.value(e) == "draft.txt"),
                             10, message="the save panel")
-    ui.focus(name_field)
-    type_into_focused(ui, "final.txt")
-    ui.key(K_RETURN)
+    ui.enter_text("final.txt", element=name_field, replace=True)
+    ui.press(wait_until(lambda: ui.button("Save"), 5, message="the panel's Save button"))
     final = tmp_path / "final.txt"
     wait_until(lambda: final.exists() and final.read_text() == "third\n", 10, message="saved under the new name")
     assert path.read_text() == "second\n", "the old file keeps what it had"
