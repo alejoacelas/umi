@@ -2075,6 +2075,16 @@ pub const CAPI = struct {
         return true;
     }
 
+    /// Umi: whether a program's full-screen view (the alternate screen) is
+    /// showing, as in vim or less. The right-click menu leaves out Paste and
+    /// Clear there, as Warp's does.
+    export fn ghostty_surface_umi_alternate_screen(surface: *Surface) bool {
+        const core = &surface.core_surface;
+        core.renderer_state.mutex.lockUncancelable(global.io());
+        defer core.renderer_state.mutex.unlock(global.io());
+        return core.renderer_state.terminal.screens.active_key == .alternate;
+    }
+
     /// Umi: whether the shell waits at its prompt with nothing typed, as
     /// the shell's own marks say (OSC 133). Umi installs updates only when
     /// a relaunch would lose nothing, so anything it can't be sure of

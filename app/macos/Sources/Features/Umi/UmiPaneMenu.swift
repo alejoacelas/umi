@@ -3,8 +3,9 @@ import GhosttyKit
 
 /// The terminal's right-click menu (L-31): Warp's items, in Warp's order, then Ghostty's
 /// terminal items Umi keeps. Warp (`terminal/view.rs`, the block list's context menu) shows
-/// Copy when text is selected, Paste, Clear, the four splits, and in a split Maximize (or
-/// Minimize) and Close. Its block, prompt and AI items have nothing to act on in Umi.
+/// Copy when text is selected, otherwise Paste and Clear (neither in a program's full-screen
+/// view), then the four splits, and in a split Maximize (or Minimize) and Close. Its block,
+/// prompt and AI items have nothing to act on in Umi.
 @MainActor
 enum UmiPaneMenu {
     struct Entry {
@@ -20,14 +21,21 @@ enum UmiPaneMenu {
     /// The menu's items, nil for a separator.
     static func entries(for pane: Ghostty.SurfaceView) -> [Entry?] {
         var entries: [Entry?] = []
-        if let text = pane.accessibilitySelectedText(), !text.isEmpty {
+        let selected = !(pane.accessibilitySelectedText() ?? "").isEmpty
+        if selected {
             entries.append(Entry(title: "Copy", shortcutAction: "copy_to_clipboard") { pane.copy(nil) })
+            entries.append(nil)
         }
-        let clipboardEmpty = (NSPasteboard.general.string(forType: .string) ?? "").isEmpty
-        entries.append(Entry(title: "Paste", shortcutAction: "paste_from_clipboard", enabled: !clipboardEmpty) { pane.paste(nil) })
-        entries.append(nil)
-        entries.append(Entry(title: "Clear", shortcutAction: "clear_screen", symbol: "eraser") { binding("clear_screen", on: pane) })
-        entries.append(nil)
+        // As Warp: Paste and Clear only with nothing selected and no program's full-screen view
+        // (vim, less) showing; those menus have only Copy and the pane's items.
+        let fullScreen = pane.surface.map { ghostty_surface_umi_alternate_screen($0) } ?? false
+        if !selected && !fullScreen {
+            let clipboardEmpty = (NSPasteboard.general.string(forType: .string) ?? "").isEmpty
+            entries.append(Entry(title: "Paste", shortcutAction: "paste_from_clipboard", enabled: !clipboardEmpty) { pane.paste(nil) })
+            entries.append(nil)
+            entries.append(Entry(title: "Clear", shortcutAction: "clear_screen", symbol: "eraser") { binding("clear_screen", on: pane) })
+            entries.append(nil)
+        }
         entries.append(Entry(title: "Split Pane Right", shortcutAction: "new_split:right",
                              symbol: "rectangle.righthalf.inset.filled") { pane.splitRight(pane) })
         entries.append(Entry(title: "Split Pane Left", shortcutAction: "new_split:left",

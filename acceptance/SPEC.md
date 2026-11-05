@@ -340,7 +340,8 @@ the menu.
 
 - **L-31 [A]** (Warp parity, 2026-11-05) The terminal's right-click menu has Warp's items, in Warp's
   order, each showing its key: Copy (when text is selected), Paste (disabled with nothing to
-  paste), Clear (⌘K), Split Pane Right, Left, Down and Up, and, in a split, Maximize Pane (Minimize
+  paste) and Clear (⌘K) (neither when text is selected or a program's full-screen view, as vim's
+  or less's, shows), Split Pane Right, Left, Down and Up, and, in a split, Maximize Pane (Minimize
   Pane when it is maximized; ⇧⌘↩) and Close Pane (⌘W). They act on the pane right-clicked, focused
   or not. Ghostty's Reset Terminal, Toggle Terminal Inspector, Terminal Read-only, Change Tab
   Title… and Change Terminal Title… follow.
