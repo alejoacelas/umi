@@ -342,12 +342,14 @@ the menu.
   `name` is named after the file (`my_work.yaml` → "My Work"). A file can hold several
   configurations as YAML documents separated by `---`, as in Warp; each is listed and opened on its
   own.
-  - ⌃⌘L (File ▸ Open Launch Configuration…) lists them by name in the palette, with how many
+  - File ▸ Launch Configurations lists them by name, as Warp's File menu does (choosing one opens
+    it), then Open Launch Configuration… and Save New Launch Configuration….
+  - ⌃⌘L (File ▸ Launch Configurations ▸ Open Launch Configuration…) lists them by name in the palette, with how many
     windows and tabs each opens; Return opens the chosen one: each window as a new window, the
     active one in front, with its tabs' titles, colors and selected tab, its panes in their folders
     and the focused pane focused. Each pane's commands are typed into its shell as it starts.
   - The command palette (⌘P) lists them by name too, as Warp's does; Return opens the chosen one.
-  - File ▸ Save New Launch Configuration… asks for a file name (`work` saves `work.yaml`) and saves
+  - File ▸ Launch Configurations ▸ Save New Launch Configuration… asks for a file name (`work` saves `work.yaml`) and saves
     every window: tabs with their names and colors, terminal panes with their folders, the focused
     pane and selected tab. File and web panes are left out, as Warp leaves out panes that aren't
     terminals. A name already used fails and says so, keeping the file.

@@ -712,3 +712,6 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
   (⌘P's list finds a configuration by name and opens it; unreadable files stay out of it).
 - **Changed, `tests/test_umi_layouts.py`**: `test_palette_lists_configurations_and_opens_the_chosen_one`
   now asserts what the filtered query returns (it sent the query without checking the result).
+- **New, `tests/test_umi_layouts.py`**: `test_file_menu_lists_each_launch_configuration_by_name`
+  (File ▸ Launch Configurations lists each readable configuration by name before the two items,
+  choosing one opens it, and the list follows the folder).

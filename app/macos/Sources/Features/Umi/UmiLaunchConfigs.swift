@@ -500,6 +500,45 @@ enum UmiLaunchConfigs {
         return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
 
+    // MARK: File ▸ Launch Configurations
+
+    static let menuTitle = "Launch Configurations"
+
+    /// Fill the File ▸ Launch Configurations submenu with each configuration by name each time it
+    /// opens, then a separator, before Umi's own items (as Warp's File menu lists them).
+    static func installMenu(in mainMenu: NSMenu) {
+        for item in UmiShortcuts.allItems(mainMenu) where item.title == menuTitle && item.submenu != nil {
+            item.submenu?.delegate = UmiLaunchConfigMenu.shared
+        }
+    }
+
+    static let menuItemMarker = "umi-launch-config"
+
+    static func rebuildMenu(_ menu: NSMenu) {
+        for item in menu.items where (item.representedObject as? String)?.hasPrefix(menuItemMarker) == true {
+            menu.removeItem(item)
+        }
+        let configs = list().filter { $0.config != nil }
+        guard !configs.isEmpty else { return }
+        for (index, listed) in configs.enumerated() {
+            let item = NSMenuItem(title: listed.config!.name, action: #selector(UmiLaunchConfigMenu.openConfig(_:)),
+                                  keyEquivalent: "")
+            item.target = UmiLaunchConfigMenu.shared
+            item.representedObject = menuItemMarker + ":" + listed.id
+            menu.insertItem(item, at: index)
+        }
+        let separator = NSMenuItem.separator()
+        separator.representedObject = menuItemMarker
+        menu.insertItem(separator, at: configs.count)
+    }
+
+    static func openMenuItem(_ item: NSMenuItem) {
+        guard let marked = item.representedObject as? String, marked.hasPrefix(menuItemMarker + ":") else { return }
+        let id = String(marked.dropFirst(menuItemMarker.count + 1))
+        guard let config = list().first(where: { $0.id == id })?.config else { NSSound.beep(); return }
+        do { try open(config) } catch { NSSound.beep() }
+    }
+
     // MARK: Control methods
 
     static let methods: Set<String> = ["layout.ls", "layout.save", "layout.open"]
@@ -580,5 +619,18 @@ enum UmiLaunchConfigs {
         } else {
             handle(alert.runModal())
         }
+    }
+}
+
+/// The File ▸ Launch Configurations submenu's delegate: lists the configurations as it opens.
+final class UmiLaunchConfigMenu: NSObject, NSMenuDelegate {
+    static let shared = UmiLaunchConfigMenu()
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        MainActor.assumeIsolated { UmiLaunchConfigs.rebuildMenu(menu) }
+    }
+
+    @MainActor @objc func openConfig(_ sender: NSMenuItem) {
+        UmiLaunchConfigs.openMenuItem(sender)
     }
 }

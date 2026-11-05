@@ -53,11 +53,13 @@ enum UmiShortcuts {
                  symbol: "arrow.uturn.backward", menu: "File",
                  action: { if (try? UmiReopen.shared.reopen()) == nil { NSSound.beep() } },
                  enabled: { UmiReopen.shared.next != nil }),
-            // Launch configurations (L-21, Warp parity): ⌃⌘L lists them, as in Warp.
+            // Launch configurations (L-21, Warp parity): ⌃⌘L lists them, as in Warp. The submenu
+            // also lists each configuration by name (UmiLaunchConfigs.installMenu).
             Item(id: "file.launch_configs", title: "Open Launch Configuration…", key: "l", modifiers: [.command, .control],
-                 symbol: "rectangle.3.group", menu: "File", action: { UmiPaletteModel.present(.launchConfigs) }),
+                 symbol: "rectangle.3.group", menu: "File", submenu: UmiLaunchConfigs.menuTitle,
+                 action: { UmiPaletteModel.present(.launchConfigs) }),
             Item(id: "file.save_launch_config", title: "Save New Launch Configuration…", key: "", modifiers: [],
-                 symbol: "square.and.arrow.down.on.square", menu: "File",
+                 symbol: "square.and.arrow.down.on.square", menu: "File", submenu: UmiLaunchConfigs.menuTitle,
                  action: { UmiLaunchConfigs.presentSaveDialog() }),
             Item(id: "view.palette", title: "Command Palette…", key: "p", modifiers: [.command], symbol: "command", menu: "View",
                  action: { UmiPaletteModel.present(.commands) }),
@@ -195,6 +197,7 @@ enum UmiShortcuts {
             menuItems[item.id] = menuItem
         }
         applyShortcuts()
+        UmiLaunchConfigs.installMenu(in: mainMenu)
         // Ghostty's own palette item is Umi's Command Palette… now.
         for existing in allItems(mainMenu) where existing.action == #selector(BaseTerminalController.toggleCommandPalette(_:)) {
             existing.isHidden = true

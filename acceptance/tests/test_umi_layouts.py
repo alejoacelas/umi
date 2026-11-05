@@ -323,6 +323,30 @@ def test_launch_configuration_items_are_in_the_file_menu(clean):
 
 
 @pytest.mark.req("L-21")
+def test_file_menu_lists_each_launch_configuration_by_name(clean, tmp_path):
+    """As Warp's File ▸ Launch Configurations: each configuration by name, a separator, then the
+    items to open the list and save a new one. Choosing a name opens it."""
+    inst = clean
+    (folder,) = folders(tmp_path, "menu-open")
+    items = rpc(inst, "debug.menu")["items"]
+    submenu = [i["title"] for i in items if i["menu"] == "File > Launch Configurations"]
+    assert submenu == ["Open Launch Configuration…", "Save New Launch Configuration…"], submenu
+    write_config(inst, "zeta.yaml", f"name: Zeta\nwindows:\n  - tabs:\n      - title: from-zeta\n        layout:\n          cwd: {folder}\n")
+    write_config(inst, "eta.yaml", f"name: Eta\nwindows:\n  - tabs:\n      - layout:\n          cwd: {folder}\n")
+    write_config(inst, "broken_menu.yaml", "name: Broken Menu\nwindows: 3\n")
+    items = rpc(inst, "debug.menu")["items"]
+    submenu = [i["title"] for i in items if i["menu"] == "File > Launch Configurations"]
+    assert submenu == ["Eta", "Zeta", "Open Launch Configuration…", "Save New Launch Configuration…"], submenu
+    rpc(inst, "debug.menu.perform", title="Zeta")
+    wait_until(lambda: any(t.get("name") == "from-zeta" for w in inst.tree()["windows"] for t in w["tabs"]), 10,
+               message="the configuration opened from the File menu")
+    # The list follows the folder: a removed file leaves the menu.
+    os.remove(os.path.join(inst.configs, "eta.yaml"))
+    items = rpc(inst, "debug.menu")["items"]
+    assert [i["title"] for i in items if i["menu"] == "File > Launch Configurations"][0] == "Zeta"
+
+
+@pytest.mark.req("L-21")
 def test_palette_lists_configurations_and_opens_the_chosen_one(clean, tmp_path):
     inst = clean
     (folder,) = folders(tmp_path, "pal")

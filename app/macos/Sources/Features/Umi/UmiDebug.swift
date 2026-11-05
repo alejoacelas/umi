@@ -8,6 +8,7 @@ enum UmiDebug {
         guard let menu = NSApp.mainMenu else { return [] }
         var out: [[String: Any]] = []
         func walk(_ menu: NSMenu, path: [String]) {
+            menu.delegate?.menuNeedsUpdate?(menu)
             menu.update()
             for item in menu.items where !item.isSeparatorItem {
                 var mods: [String] = []
@@ -31,6 +32,7 @@ enum UmiDebug {
     static func performMenuItem(_ title: String) throws {
         guard let menu = NSApp.mainMenu else { throw UmiError.failed("no main menu") }
         func find(_ menu: NSMenu) -> (NSMenu, Int)? {
+            menu.delegate?.menuNeedsUpdate?(menu)
             menu.update()
             for (index, item) in menu.items.enumerated() {
                 if item.title == title || item.title.hasPrefix(title + " ") { return (menu, index) }
