@@ -39,8 +39,9 @@ Plain paragraph with `inline code` and a bare link https://example.com/path.
 ---
 
 ```python
+# greet someone
 def greet(name):
-    return "hi " + name
+    return "hi " + name * 2
 ```
 
 ```bash
@@ -157,11 +158,17 @@ def test_code_blocks_are_highlighted_and_copy_or_run(inst, win, doc):
     state = md(inst, doc)
     assert state["labels"] == ["Python", "Shell", "Mermaid"], state
     assert state["highlighted"] == 2, "Python and shell are highlighted"
-    assert style(inst, doc, ".umi-code .hljs-keyword", "color")["color"] == "rgb(255, 143, 253)", "keywords in magenta"
+    color = lambda selector: style(inst, doc, ".umi-code " + selector, "color")["color"]
+    assert color(".hljs-keyword") == "rgb(255, 143, 253)", "keywords in magenta"
+    assert color(".hljs-title.function_") == "rgb(165, 213, 254)", "function names in blue"
+    assert color(".hljs-string") == "rgb(180, 250, 114)", "strings in green"
+    text = "rgba(255, 255, 255, 0.9)"
+    assert (color(".hljs-comment"), color(".hljs-number"), color(".hljs-params")) == (text,) * 3, \
+        "comments, numbers and parameters in the text color, as Warp's base16 highlighting leaves them"
     assert state["copy_buttons"] == 3 and state["run_buttons"] == 1, "Copy on each block, Run in terminal on shell"
 
     assert md(inst, doc, "click", selector=".umi-code .umi-copy", nth=0)["result"]
-    wait_until(lambda: copied(inst, doc) == 'def greet(name):\n    return "hi " + name', 5, message="the block copied")
+    wait_until(lambda: copied(inst, doc) == '# greet someone\ndef greet(name):\n    return "hi " + name * 2', 5, message="the block copied")
 
     assert md(inst, doc, "click", selector=".umi-code .umi-run", nth=0)["result"]
     wait_until(lambda: "echo umi-run-marker" in inst.screen(win["pane"]), 5,

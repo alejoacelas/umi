@@ -30,8 +30,11 @@ enum UmiMarkdownStyle {
     private static let latinExt = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
 
     /// Warp's default themes: foreground, background, accent and the terminal's normal colors
-    /// that its code highlighting uses (keywords magenta, functions blue, strings and numbers
-    /// green, types and tags red, comments yellow, properties cyan).
+    /// that its code highlighting uses. Warp highlights with its base16 theme and keeps only the
+    /// tokens that map to the eight normal colors: keywords and storage magenta, functions and
+    /// methods blue, strings green, tags and deletions red, classes and types yellow, built-ins,
+    /// regular expressions and escapes cyan. Comments, numbers, constants, attributes, variables
+    /// and parameters stay in the text color.
     struct Palette {
         let ink: String, solidBackground: String, surface2: String
         let red: String, green: String, yellow: String, blue: String, magenta: String, cyan: String
@@ -102,12 +105,12 @@ enum UmiMarkdownStyle {
         .umi-mermaid-error { color: var(--red); font: 12px var(--ui); padding: 8px 16px 0; white-space: pre-wrap; }
         .umi-mermaid-error::before { content: attr(data-error); }
 
-        .hljs-keyword, .hljs-literal, .hljs-selector-tag, .hljs-doctag { color: \(p.magenta); }
-        .hljs-title, .hljs-title.function_, .hljs-built_in, .hljs-section { color: \(p.blue); }
-        .hljs-string, .hljs-regexp, .hljs-char, .hljs-number, .hljs-symbol, .hljs-addition { color: \(p.green); }
-        .hljs-type, .hljs-title.class_, .hljs-tag, .hljs-name, .hljs-deletion { color: \(p.red); }
-        .hljs-comment, .hljs-quote { color: \(p.yellow); }
-        .hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-template-variable, .hljs-params { color: \(p.cyan); }
+        .hljs-keyword, .hljs-selector-tag, .hljs-emphasis { color: \(p.magenta); }
+        .hljs-title, .hljs-title.function_, .hljs-section, .hljs-selector-id { color: \(p.blue); }
+        .hljs-string, .hljs-char, .hljs-symbol, .hljs-addition, .hljs-title.class_.inherited__ { color: \(p.green); }
+        .hljs-name, .hljs-deletion { color: \(p.red); }
+        .hljs-title.class_, .hljs-type, .hljs-strong { color: \(p.yellow); }
+        .hljs-built_in, .hljs-regexp, .hljs-char.escape_ { color: \(p.cyan); }
         .hljs-emphasis { font-style: italic; } .hljs-strong { font-weight: 600; }
 
         ::highlight(umi-find) { background-color: rgba(255,254,61,0.7); color: #000; }

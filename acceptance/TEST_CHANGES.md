@@ -711,3 +711,6 @@ New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing tes
 - `test_a_broken_diagram_shows_its_source_and_error` also checks that the error is drawn (its box
   is taller than its padding); before, it read only the message the script stored, which the page
   never showed.
+- `test_code_blocks_are_highlighted_and_copy_or_run` checks Warp's highlight colors from its base16
+  theme (functions blue, strings green; comments, numbers and parameters in the text color), so the
+  Python block gained a comment and a number and the expected copied text changed with it.

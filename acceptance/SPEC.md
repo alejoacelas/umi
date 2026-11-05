@@ -579,7 +579,8 @@ and links (E-7) work as before.
   in text are links.
 - **MD-2 [A]** Code blocks have a 1 px `surface_3` border and a footer naming the language as Warp
   does (Python, Shell, Code…). Known languages are highlighted in Warp's colors (keywords magenta,
-  functions blue, strings and numbers green, types red, comments yellow, properties cyan). Copy
+  functions blue, strings green, tags red, classes and types yellow, built-ins and regular
+  expressions cyan; comments, numbers, constants and variables in the text color). Copy
   puts the block's text, trimmed, on the clipboard. Shell blocks (`sh`, `shell`, `bash`, `zsh`,
   `fish`) also have Run in terminal: the command goes to the input of the tab's terminal used most
   recently, which takes focus; it isn't run until the user presses Return, as Warp puts it in its
