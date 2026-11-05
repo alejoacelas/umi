@@ -39,6 +39,8 @@ class SurfaceScrollView: NSView {
         scrollView.scrollerStyle = .overlay
         // Umi: Warp's thumb, with no track (UmiScroller).
         scrollView.verticalScroller = UmiScroller()
+        // (A new scroller takes the system's style, so set ours again.)
+        scrollView.scrollerStyle = .overlay
         // hide default background to show blur effect properly
         scrollView.drawsBackground = false
         // don't let the content view clip its subviews, to enable the

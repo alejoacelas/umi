@@ -404,6 +404,11 @@ enum UmiRPC {
             // with the scrollbar and the bell's effects.
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
             return UmiInput.blocks(pane).merging(UmiScroller.debugInfo(pane)) { _, new in new }
+        case "debug.terminal.scroller":
+            // An image of a pane's scrollbar as drawn, over the pane's background.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            guard let path = params.string("path"), !path.isEmpty else { throw UmiError.badRequest("give a path") }
+            return try UmiScroller.capture(pane, to: path)
         case "debug.terminal.action":
             // Run a Ghostty binding action (such as `select_all`) on a pane, wherever focus is.
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
