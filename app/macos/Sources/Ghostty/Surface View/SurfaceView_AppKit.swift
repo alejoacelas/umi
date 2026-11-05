@@ -109,9 +109,13 @@ extension Ghostty {
         /// True when the bell is active. This is set inactive on focus or event.
         @Published private(set) var bell: Bool = false
 
-        /// Umi: true while Edit ▸ Paste reads the clipboard, so what this pane pastes, once
+        /// Umi: true while Edit ▸ Paste or a key reads the clipboard, so what this pane pastes, once
         /// accepted, is also typed into the panes synced with it (L-32).
         var umiSyncPaste = false
+
+        /// Umi: whether text was selected before the last right-click, which selects the word
+        /// under the mouse; the right-click menu reads it once (L-31).
+        var umiSelectedBeforeRightClick: Bool?
 
         /// A clipboard confirmation waiting to be handled by its controller.
         @Published var pendingClipboardConfirmation: ClipboardConfirmationRequest? {
@@ -977,6 +981,9 @@ extension Ghostty {
         override func rightMouseDown(with event: NSEvent) {
             guard let surface = self.surface else { return super.rightMouseDown(with: event) }
 
+            // Umi: whether text was selected before the click selects the word under it (L-31).
+            umiSelectedBeforeRightClick = ghostty_surface_has_selection(surface)
+
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
             if ghostty_surface_mouse_button(
                 surface,
@@ -1525,6 +1532,11 @@ extension Ghostty {
             var key_ev = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
             key_ev.composing = composing
 
+            // Umi: a key bound to a paste that libghostty runs itself (not through Edit ▸
+            // Paste) is pasted into the synced panes too (L-32).
+            umiSyncPaste = true
+            defer { umiSyncPaste = false }
+
             // Umi: typed into the panes synced with this one too (L-32).
             if let text = text?.keyEventText {
                 return text.withCString { ptr in
@@ -1633,6 +1645,7 @@ extension Ghostty {
                 //
                 // Note this never sounds a right mouse up event but that's the
                 // same as normal right-click with capturing disabled from AppKit.
+                if let surface { umiSelectedBeforeRightClick = ghostty_surface_has_selection(surface) }
                 surfaceModel.sendMouseButton(.init(
                     action: .press,
                     button: .right,

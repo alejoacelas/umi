@@ -19,7 +19,10 @@ enum UmiPaneMenu {
     }
 
     /// The menu's items, nil for a separator.
-    static func entries(for pane: Ghostty.SurfaceView) -> [Entry?] {
+    /// `selectedBefore`: whether text was selected before the right-click that opens the menu
+    /// (Ghostty's right-click selects the word under the mouse, so Copy shows for that word,
+    /// but Warp's selection menu is for text the user had selected); nil: what's selected now.
+    static func entries(for pane: Ghostty.SurfaceView, selectedBefore: Bool? = nil) -> [Entry?] {
         var entries: [Entry?] = []
         let selected = !(pane.accessibilitySelectedText() ?? "").isEmpty
         if selected {
@@ -29,7 +32,7 @@ enum UmiPaneMenu {
         // As Warp: Paste and Clear only with nothing selected and no program's full-screen view
         // (vim, less) showing; those menus have only Copy and the pane's items.
         let fullScreen = pane.surface.map { ghostty_surface_umi_alternate_screen($0) } ?? false
-        if !selected && !fullScreen {
+        if !(selectedBefore ?? selected) && !fullScreen {
             let clipboardEmpty = (NSPasteboard.general.string(forType: .string) ?? "").isEmpty
             entries.append(Entry(title: "Paste", shortcutAction: "paste_from_clipboard", enabled: !clipboardEmpty) { pane.paste(nil) })
             entries.append(nil)
@@ -77,7 +80,9 @@ enum UmiPaneMenu {
         menu.autoenablesItems = false
         let config = UmiTopology.locate(pane)?.window.ghostty.config
         let shortcuts = Ghostty.MenuShortcutManager()
-        for entry in entries(for: pane) {
+        let selectedBefore = pane.umiSelectedBeforeRightClick
+        pane.umiSelectedBeforeRightClick = nil
+        for entry in entries(for: pane, selectedBefore: selectedBefore) {
             guard let entry else {
                 menu.addItem(.separator())
                 continue
