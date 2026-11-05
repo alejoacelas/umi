@@ -866,7 +866,10 @@ final class UmiPaletteModel: ObservableObject {
                                   "zero_state": isZeroState, "placeholder": placeholder,
                                   "rows": entries.map(\.json), "files_index": files != nil,
                                   "suggestion": filterSuggestion ?? ""]
-        if isZeroState { out["chips"] = Self.chips.compactMap(\.chipTitle) }
+        if isZeroState {
+            out["chips"] = Self.chips.compactMap(\.chipTitle)
+            out["chip_icons"] = Self.chips.map { $0.chipSymbol ?? "" }
+        }
         return out
     }
 }
@@ -893,6 +896,17 @@ extension UmiPaletteModel.Mode {
         case .panes: return "sessions"
         case .files: return "files"
         case .conversations: return "conversations"
+        }
+    }
+
+    /// The filter chip's icon (SF Symbols like Warp's file, terminal and conversation icons;
+    /// Warp's actions chip has none).
+    var chipSymbol: String? {
+        switch self {
+        case .commands, .actions: return nil
+        case .tabs, .panes: return "terminal"
+        case .files: return "doc"
+        case .conversations: return "bubble.left"
         }
     }
 
@@ -1524,6 +1538,11 @@ struct UmiPaletteColors {
         let mixed = base.blended(withFraction: 0.10, of: light ? .black : .white) ?? base
         return Color(nsColor: mixed)
     }
+    /// `surface_2` with black at 25% over it (a hovered filter chip).
+    var surfaceDarkened: Color {
+        let base = NSColor(surface).usingColorSpace(.sRGB) ?? .black
+        return Color(nsColor: base.blended(withFraction: 0.25, of: .black) ?? base)
+    }
     /// `outline`: the foreground at 10%.
     var outline: Color { ink.opacity(0.10) }
     var main: Color { ink.opacity(0.9) }
@@ -1543,6 +1562,7 @@ private struct UmiPalettePanel: View {
     let maxHeight: CGFloat
     @FocusState private var focused: Bool
     @State private var hovered: String?
+    @State private var hoveredChip: UmiPaletteModel.Mode?
 
     private var colors: UmiPaletteColors { UmiPaletteColors(background: background) }
 
@@ -1690,14 +1710,26 @@ private struct UmiPalettePanel: View {
             HStack(spacing: 8) {
                 ForEach(UmiPaletteModel.chips, id: \.self) { mode in
                     if let title = mode.chipTitle {
-                        Text(title)
+                        // Warp's chip: title, its filter's icon 8 px after, 8 × 16 padding inside a
+                        // 1 px border (the border is drawn over the padding here, so 9 × 17);
+                        // hovered, a 2 px accent border on the fill darkened by 25%.
+                        let hover = hoveredChip == mode
+                        HStack(spacing: 8) {
+                            Text(title)
+                            if let symbol = mode.chipSymbol {
+                                Image(systemName: symbol)
+                                    .font(.system(size: UmiPaletteStyle.fontSize - 3))
+                                    .frame(width: UmiPaletteStyle.fontSize - 2, height: UmiPaletteStyle.fontSize - 2)
+                            }
+                        }
                             .font(.system(size: UmiPaletteStyle.fontSize - 2))
                             .foregroundColor(colors.main)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 16)
-                            .background(Capsule().fill(colors.surface))
-                            .overlay(Capsule().strokeBorder(colors.sub, lineWidth: 1))
+                            .padding(.vertical, 9)
+                            .padding(.horizontal, 17)
+                            .background(Capsule().fill(hover ? colors.surfaceDarkened : colors.surface))
+                            .overlay(Capsule().strokeBorder(hover ? UmiTheme.accent : colors.sub, lineWidth: hover ? 2 : 1))
                             .contentShape(Capsule())
+                            .onHover { hoveredChip = $0 ? mode : (hoveredChip == mode ? nil : hoveredChip) }
                             .onTapGesture { model.setFilter(mode) }
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel("Filter \(title)")

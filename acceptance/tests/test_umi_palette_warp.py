@@ -163,6 +163,8 @@ def test_the_empty_palette_shows_filter_chips_recent_and_suggested(inst, win):
         s = state(inst, win)
         assert s["zero_state"] and s["selection"] == -1, "nothing is selected until an arrow key"
         assert s["chips"] == ["files", "actions", "sessions", "conversations"], s["chips"]
+        # Each chip but actions shows its filter's icon, as Warp's.
+        assert s["chip_icons"] == ["doc", "", "terminal", "bubble.left"], s["chip_icons"]
         recent = [r["title"] for r in rows if r.get("section") == "Recent"]
         suggested = [r["title"] for r in rows if r.get("section") == "Suggested"]
         assert recent[:2] == ["Toggle Sidebar", "recent-pane"] and len(recent) <= 3, recent
