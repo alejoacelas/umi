@@ -278,7 +278,7 @@ struct UmiSidebarTabRow: View {
             icon(row)
                 .frame(width: 14, height: 17)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 // Line 1: the folder (or the tab's name), branch, pane count, affordances.
                 HStack(spacing: 6) {
                     if editing {
@@ -339,7 +339,7 @@ struct UmiSidebarTabRow: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(background(row))
