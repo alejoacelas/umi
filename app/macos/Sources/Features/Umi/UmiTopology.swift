@@ -273,6 +273,7 @@ enum UmiTopology {
         if let zoomedPane { json["zoomed_pane"] = zoomedPane.umiID }
         if let name = tab.name, !name.isEmpty { json["name"] = name }
         if tab.color != .none { json["color"] = UmiTopology.colorName(tab.color) }
+        if let group = UmiTabGroups.group(of: tab, in: window) { json["group"] = group.displayName }
         return json
     }
 
@@ -355,6 +356,8 @@ enum UmiTopology {
         case .green: return "green"
         case .teal: return "teal"
         case .graphite: return "graphite"
+        case .magenta: return "magenta"
+        case .cyan: return "cyan"
         }
     }
 

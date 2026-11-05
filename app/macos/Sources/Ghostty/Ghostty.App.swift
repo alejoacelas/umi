@@ -1670,8 +1670,8 @@ extension Ghostty {
 
                 // Umi: a command in this pane ended (shell integration). Notes the exit
                 // of an agent launched as typed, and finishes the sidebar's command line.
-                UmiCommandLog.shared.commandFinished(surfaceView.id)
                 let exitCode = Int(v.exit_code)
+                UmiCommandLog.shared.commandFinished(surfaceView.id, exitCode: exitCode)
                 DispatchQueue.main.async {
                     // A session's own interface (`umi agent attach`) ended in this pane.
                     UmiAgentUI.shared.commandFinished(in: surfaceView)

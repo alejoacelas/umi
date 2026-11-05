@@ -689,3 +689,57 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## The sidebar as Warp's vertical tabs (S-2, S-3, S-4, S-8, S-13; Warp parity, 2026-11-05)
+
+S-4 changed: the row menu takes Warp's labels ("Pin tab", "Copy tab title", "Rename active pane",
+"Close other tabs" …) and order, leaves out items that can't apply instead of greying them, and
+shows its colors as a row of dots (Default plus Warp's six). Renames happen in the row. S-2 changed:
+each window shows or hides its own sidebar. **Requirements:** S-2, S-3, S-4, S-8, S-13.
+
+- **Changed, `tests/test_umi_panes_ui.py` `test_the_row_menu_has_warps_items`**: the titles it
+  looks for are Warp's; it no longer expects Move Tab Down and Close Tabs Below on the window's last
+  tab (Warp leaves them out there; the new tests check them on a middle tab); it counts 7 color
+  dots instead of 10 colors. Every action it performed is still performed and checked.
+- **Changed, `tests/test_umi_panes_ui.py` `test_move_tab_up_and_down_stay_in_their_pin_group`**: a
+  move that can't apply is checked to be absent from the menu instead of disabled. The moves and the
+  pin-group boundaries it checks are the same.
+- **Changed, `tests/test_umi_panes_ui.py` `test_close_other_tabs_and_tabs_below`**: performs "Close
+  other tabs" (Warp's label) instead of "Close Other Tabs"; nothing else changed.
+- **Changed, `tests/test_umi_panes_ui.py` `test_dragging_a_tab_row_reorders_and_the_row_menu_opens_ui`**:
+  the right-click goes to the middle row (where every move and close item applies; on the last row
+  Warp leaves out Close Tabs Below) and looks for Warp's titles and the "Default (no color)" dot.
+- **New, `tests/test_umi_sidebar_warp.py`**: per-window sidebars from the CLI and with real ⌘B and
+  ⌘\ presses; the 248 pt default width; the failed-command triangle (and 130, 141 not counting);
+  Maximized; ⌘1–⌘9 hints (through `debug.ui.sidebar` and with a real held ⌘); search matching each
+  field, the empty state, and ⌥⌘F, ⌃Tab, ⇧⌘], ⇧⌘[ and Esc pressed for real; the menu's exact order,
+  hidden items, copies, color dots and toggling; Copy pull request link with a stand-in `gh`;
+  renames in the row from the menu and with real ⌃⌘R and ⌃⇧⌘R presses; the menu opened with a real
+  right-click.
+- **New, `tests/test_umi_sidebar_warp.py`, tab groups (S-14)**: New group with tab and its name
+  typed in place, Move to group, a member moved away coming back, Remove from group, pinning
+  leaving a group; collapsing (hidden rows, search inside, rename opening it); the header's menu
+  (order, color, New tab in group, Rename, Ungroup tabs); groups restored with the layout; and
+  the Window menu's group items chosen for real with the name typed.
+- **Test hooks**: `debug.ui.sidebar` (set the query, hold ⌘, type into or cancel an in-row rename;
+  read the sidebar's state), `debug.ui.groups` (list a window's groups and sidebar lines, click a
+  header), `debug.ui.group.menu` / `debug.ui.group.perform` (a header's right-click menu) and
+  `UMI_GH_BIN` (the `gh` the pull request lookup runs).
+
+## Sidebar review fixes (S-3, S-4, S-13, S-14; Warp parity, 2026-11-05)
+
+- **Changed, `tests/test_umi_sidebar_warp.py` `test_the_group_header_menu`**: the exact list of
+  header items now includes "Close tabs above" and "Close tabs below" (Warp's, added). Nothing it
+  checked before was dropped.
+- **New, `tests/test_umi_sidebar_warp.py`**: Move Tab Up/Down at group edges (left out, the CLI
+  refusing, hopping over a whole group as one undo step) from the menu and with real ⌃⇧←/⌃⇧→;
+  undo of a move to a new window and of a close, and reopen, bringing the group back; the group
+  box's color in a screenshot; Close tabs above/below; Window ▸ Move Tab to Group ▸ and New Tab in
+  Group chosen for real; ⌘ hints kept while ⇧ and ⌥ join ⌘; the pull request item at the first
+  menu read; ⌥⌘F from a hidden sidebar in Files mode, Esc giving the keyboard back to the same
+  pane, and ⌃Tab not filtered in Files mode; real clicks on a group header (click folds, a
+  double-click only renames), on a color dot in the open row menu, and outside an in-row rename.
+- **Test hooks**: `debug.ui.sidebar` also reports `key_pane`, the pane that has the keyboard.
+- **New, `tests/test_umi_sidebar_warp.py` `test_an_item_clicked_in_the_row_menu_runs_ui`**: a real
+  click on "Pin tab" in a real right-click menu. It failed before the fix: the menus' AppKit items
+  never ran their closures, which every earlier test called directly through `debug.ui.menu.perform`.

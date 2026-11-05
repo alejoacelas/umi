@@ -40,8 +40,34 @@ enum UmiTheme {
         UmiState.shared.layoutDidChange()
     }
 
-    /// The sidebar's default width; each window's can be dragged between the limits (S-8).
-    static let sidebarWidth: CGFloat = 252
+    // MARK: Warp's vertical tabs (S-3, S-4)
+
+    /// Warp's `fg_overlay_*` steps: ink at 5%, 10% and 15% over the background.
+    static var overlay1: Color { ink.opacity(0.05) }
+    static var overlay2: Color { ink.opacity(0.10) }
+    static var overlay3: Color { ink.opacity(0.15) }
+    /// A row's title (Warp's main text) and second line (its sub text).
+    static var rowTitle: Color { ink.opacity(0.90) }
+    static var rowSubtitle: Color { ink.opacity(0.60) }
+    /// The 1 px line between the sidebar and the panes (foreground 10%).
+    static var sidebarDivider: Color { ink.opacity(0.10) }
+    /// Warp's error red (`ui_error_color`, #BC362A): the failed-command triangle.
+    static let errorRed = Color(red: 188 / 255, green: 54 / 255, blue: 42 / 255)
+
+    /// The terminal's 16 ANSI colors as configured (Warp's tab colors come from them).
+    nonisolated(unsafe) private(set) static var ansiPalette: [NSColor]?
+
+    /// Follow the configured palette (called when a terminal view renders).
+    @MainActor
+    static func adopt(palette: [NSColor]?) {
+        guard let palette, palette != ansiPalette else { return }
+        ansiPalette = palette
+        UmiState.shared.layoutDidChange()
+    }
+
+    /// The sidebar's default width (Warp's 248); each window's can be dragged between the
+    /// limits (S-8).
+    static let sidebarWidth: CGFloat = 248
     static let sidebarMinWidth: CGFloat = 180
     static let sidebarMaxWidth: CGFloat = 600
 
@@ -176,9 +202,10 @@ enum UmiTheme {
 struct UmiIconButtonStyle: ButtonStyle {
     var active: Bool = false
     var size: CGFloat = 24
+    var radius: CGFloat = 6
 
     func makeBody(configuration: Configuration) -> some View {
-        UmiIconButtonBody(configuration: configuration, active: active, size: size)
+        UmiIconButtonBody(configuration: configuration, active: active, size: size, radius: radius)
     }
 }
 
@@ -186,13 +213,14 @@ private struct UmiIconButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let active: Bool
     let size: CGFloat
+    var radius: CGFloat = 6
     @State private var hovering = false
 
     var body: some View {
         configuration.label
             .foregroundColor(active ? UmiTheme.textPrimary : (hovering ? UmiTheme.textSecondary : UmiTheme.textTertiary))
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .fill(active ? UmiTheme.selectedFill : (configuration.isPressed || hovering ? UmiTheme.hoverFill : .clear))
             )
             .onHover { hovering = $0 }

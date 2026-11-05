@@ -154,7 +154,7 @@ def agents_and_ui_evidence():
         inst.cli("sidebar", "width", "340", "--window", w["window"])
         time.sleep(1)
         shot(inst, w["window"], "S-8-wider-sidebar")
-        inst.cli("sidebar", "width", "252", "--window", w["window"])
+        inst.cli("sidebar", "width", "248", "--window", w["window"])
         inst.cli("window", "focus", w["window"])
         for title, name, mode in (("Command Palette…", "L-14-command-palette", "commands"),
                                   ("Go to Pane…", "L-15-pane-palette", "panes"),

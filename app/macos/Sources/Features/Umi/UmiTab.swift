@@ -18,6 +18,8 @@ final class UmiTab: ObservableObject, Identifiable {
     @Published var pinned: Bool = false
     /// The tab Markdown files opened from outside Umi share (`UmiDocsTab`).
     @Published var isDocs: Bool = false
+    /// The tab group it belongs to in its window (`UmiTabGroups`), if any.
+    @Published var groupID: UUID?
 
     /// The split tree. For the window's selected tab, the controller's `surfaceTree` is
     /// the live copy and this is kept in sync with it.
