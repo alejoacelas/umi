@@ -377,7 +377,9 @@ struct UmiSidebarTabRow: View {
         .help(row.cwd.map(UmiSidebarRowModel.abbreviate) ?? row.title)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.title)
-        .accessibilityValue(row.accessibilityValue)
+        // Umi: the link mark, which the combined row element would otherwise hide (L-32).
+        .accessibilityValue(UmiInputSync.shared.isSynced(tab, in: controller)
+                            ? "Synchronized input · " + row.accessibilityValue : row.accessibilityValue)
         .accessibilityAddTraits(row.selected ? [.isSelected, .isButton] : .isButton)
     }
 
