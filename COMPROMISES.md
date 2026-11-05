@@ -18,7 +18,7 @@ behind passing tests, and the things Ghostty did that Tern no longer does.
 | **No language servers in the editor.** Warp's right-click menu in a file's text has Go to definition and Find references, and shows nothing without a language server; Umi's offers Cut, Copy and Paste only. | Both need a language server per language, which Umi doesn't run. | E-21 (an editor that stays a light viewer and fixer of files). |
 | **Some of Warp's languages aren't colored**: jq, Nix, Objective-C, PowerShell and Vue (no usable Swift package of their grammar), HCL (its package ships no highlights query) and SQL (its package's manifest doesn't load). ⌘/ still comments HCL and SQL. Files over 2 MB aren't colored. | The grammars come as Swift packages, pinned to versions whose manifests build. | E-21 for every other language. |
 | **Find in a JSON or CSV preview shows the source.** ⌘F, ⌘G and ⇧⌘G in a rendered JSON or CSV file switch the pane to its source and find there (a rendered Markdown file has its own find bar, MD-4); ⌥⌘F (replace) switches any preview to its source. | Umi's find bar works on the text view; Warp has no JSON or CSV rendering to match. | E-22 (find always works in a file pane). |
-| **⌥⌘F opens find with the replace row.** Warp has no key for it (only the bar's toggle). | The user works from the keyboard; ⌥⌘F is the macOS key for Find and Replace. | E-22. |
+| **⌥⌘F opens find with the replace row.** Warp has no key for it (only the bar's toggle). In a file pane this takes ⌥⌘F from Search Tabs (S-13), which keeps it everywhere else. | The user works from the keyboard; ⌥⌘F is the macOS key for Find and Replace. | E-22. |
 
 ## Not done in this run (environment, not a trade-off)
 

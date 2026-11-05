@@ -291,3 +291,30 @@ struct UmiColorDotsRow: View {
         .frame(minWidth: 220)
     }
 }
+
+/// The items as a SwiftUI context menu (the project explorer's rows). A color row shows as a
+/// submenu of its colors.
+struct UmiTabMenuView: View {
+    let items: [UmiTabMenuItem]
+
+    var body: some View {
+        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+            if item.isDivider {
+                Divider()
+            } else if !item.children.isEmpty {
+                Menu(item.title) { UmiTabMenuView(items: item.children) }
+            } else {
+                Button {
+                    item.action?()
+                } label: {
+                    if item.checked {
+                        Label(item.title, systemImage: "checkmark")
+                    } else {
+                        Text(item.title)
+                    }
+                }
+                .disabled(!item.enabled)
+            }
+        }
+    }
+}

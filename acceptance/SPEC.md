@@ -651,7 +651,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
   and ⇧⌘] (previous and next) and ⌃Tab and ⌃⇧Tab go through the matching tabs only, wrapping
   around (also while the sidebar is hidden, as Warp's closed panel; not while it shows Files, which
   has no field to see or clear the query in). ⌥⌘F shows the sidebar in Tabs mode and puts the
-  cursor in the field; Esc there clears the query and gives the keyboard back to the pane.
+  cursor in the field (except in a file pane, where ⌥⌘F is Find and Replace, E-22); Esc there
+  clears the query and gives the keyboard back to the pane.
 - **S-14 [A+W]** Tab groups (Warp parity, 2026-11-05), as Warp's: a row's menu has "New group with
   tab" (left out when the tab is its group's only tab), "Move to group ▸" (when another group
   exists) and "Remove from group" (when in one), after Pin tab. A new group holds just that tab,

@@ -368,6 +368,11 @@ enum UmiShortcuts {
                 existing.keyEquivalent = ""
             }
         }
+        // Items sharing a key are tried in the order `items` lists them (the first enabled one
+        // runs): ⌥⌘F is Find and Replace in a file pane and Search Tabs elsewhere.
+        let order = Dictionary(items.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func rank(_ menuItem: NSMenuItem) -> Int { handlers[menuItem].flatMap { order[$0.id] } ?? Int.max }
+        for shortcut in byShortcut.keys { byShortcut[shortcut]?.sort { rank($0) < rank($1) } }
     }
 
     private static func topMenu(_ name: String, in mainMenu: NSMenu) -> NSMenu? {
