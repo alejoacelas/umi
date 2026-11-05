@@ -31,6 +31,12 @@ final class UmiFilePanes: ObservableObject {
         UmiState.shared.layoutDidChange()
     }
 
+    /// The pane shows another file from now on (Save As): same pane, new document.
+    func replaceDocument(of pane: Ghostty.SurfaceView, with doc: UmiDocument) {
+        guard entries[pane.id] != nil else { return }
+        attach(doc, to: pane)
+    }
+
     /// Every file pane in a window, with its document.
     var open: [(pane: Ghostty.SurfaceView, doc: UmiDocument)] {
         let live = Set(UmiTopology.allSurfaces.map(ObjectIdentifier.init))
@@ -292,6 +298,76 @@ private struct UmiFilePaneContent: View {
     }
 }
 
+/// What the header's ⋯ button and its right-click menu offer, as Warp's ⋯ menus do. The source
+/// view's is the code view's (W: `code/view.rs` `overflow_menu_items`): Maximize pane (Minimize
+/// pane when it is), Copy file path, Reveal in Finder, and View Markdown preview for Markdown. A
+/// preview's is the rendered Markdown pane's (W: `notebooks/file/mod.rs`): Maximize pane, Refresh
+/// file, Open in editor (the source view), Copy file path. The header's right-click menu is an Umi
+/// addition: Warp's header has none.
+@MainActor
+enum UmiFilePaneMenu {
+    struct Item {
+        let title: String
+        let enabled: Bool
+        let action: () -> Void
+        /// A separator goes before this item.
+        var separated = false
+    }
+
+    static func items(for pane: Ghostty.SurfaceView, doc: UmiDocument) -> [Item] {
+        let location = UmiTopology.locate(pane)
+        let tree = location.map { $0.window.tree(of: $0.tab) }
+        let node = tree?.root?.node(view: pane)
+        let maximized = node != nil && tree?.zoomed == node
+        // Warp never disables it; outside a split there is nothing to maximize, so it does nothing.
+        let toggle = Item(title: maximized ? "Minimize pane" : "Maximize pane", enabled: true) {
+            guard maximized || (tree?.isSplit ?? false) else { return }
+            if (try? UmiLayout.toggleZoom(pane)) == nil { NSSound.beep() }
+        }
+        let copyPath = Item(title: "Copy file path", enabled: true, action: {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(doc.url.path, forType: .string)
+        }, separated: true)
+        if doc.mode == .preview {
+            return [
+                toggle,
+                Item(title: "Refresh file", enabled: true, action: { reload(doc, window: pane.window) }, separated: true),
+                Item(title: "Open in editor", enabled: true) { doc.mode = .source },
+                copyPath,
+            ]
+        }
+        var items = [
+            toggle,
+            copyPath,
+            Item(title: "Reveal in Finder", enabled: true) {
+                NSWorkspace.shared.activateFileViewerSelecting([doc.url])
+            },
+        ]
+        if doc.isMarkdown {
+            items.append(Item(title: "View Markdown preview", enabled: true) { doc.mode = .preview })
+        }
+        return items
+    }
+
+    /// Read the file again; unsaved edits are dropped only after asking (E-3).
+    static func reload(_ doc: UmiDocument, window: NSWindow?) {
+        guard doc.isDirty else {
+            doc.reload()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Reload “\(doc.name)” from disk?"
+        alert.informativeText = "Your unsaved changes will be lost."
+        alert.addButton(withTitle: "Reload")
+        alert.addButton(withTitle: "Cancel")
+        let handle: (NSApplication.ModalResponse) -> Void = { if $0 == .alertFirstButtonReturn { doc.reload() } }
+        if let window { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
+    }
+}
+
+/// The file pane's header, as Warp's: the name centred (a dot 8 points before it while there are
+/// unsaved changes), the drag grip on the left, and on the right the preview/source control, ⋯
+/// (the pane menu, also on right-click) and close.
 private struct UmiFilePaneHeader: View {
     let surfaceView: Ghostty.SurfaceView
     @ObservedObject var doc: UmiDocument
@@ -299,7 +375,8 @@ private struct UmiFilePaneHeader: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        let edge: CGFloat = doc.hasPreview ? 190 : 64
+        HStack(spacing: 0) {
             ZStack {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 10, weight: .semibold))
@@ -308,29 +385,55 @@ private struct UmiFilePaneHeader: View {
             }
             .frame(width: 22, height: 18)
             .help("Drag to move this pane")
-            Image(systemName: UmiEditor.icon(for: doc.url)).font(.system(size: 10))
-                .foregroundColor(UmiTheme.textSecondary)
-            Text(doc.name)
-                .font(UmiTheme.uiFont)
-                .foregroundColor(UmiTheme.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(doc.url.path)
-            if doc.isDirty {
-                Circle().fill(UmiTheme.textSecondary).frame(width: 6, height: 6)
-                    .accessibilityLabel("Unsaved changes")
+            .frame(width: edge, alignment: .leading)
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+                if doc.isDirty {
+                    Circle().fill(UmiTheme.textSecondary).frame(width: 8, height: 8)
+                        .accessibilityLabel("Unsaved changes")
+                }
+                Text(doc.name)
+                    .font(UmiTheme.uiFont)
+                    .foregroundColor(UmiTheme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .help(doc.url.path)
             }
-            Spacer(minLength: 8)
-            if doc.hasPreview { UmiModeToggle(doc: doc).fixedSize() }
-            Button { UmiFilePanes.confirmClose(surfaceView) } label: {
-                Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
+            .layoutPriority(1)
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+                if doc.hasPreview { UmiModeToggle(doc: doc).fixedSize() }
+                Menu {
+                    menuItems
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .foregroundColor(UmiTheme.textTertiary)
+                .help("More")
+                .accessibilityLabel("More actions")
+                Button { UmiFilePanes.confirmClose(surfaceView) } label: {
+                    Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(UmiTheme.textTertiary)
+                .help("Close (⌘W)")
+                .accessibilityLabel("Close \(doc.name)")
             }
-            .buttonStyle(.plain)
-            .foregroundColor(UmiTheme.textTertiary)
-            .help("Close (⌘W)")
-            .accessibilityLabel("Close \(doc.name)")
+            .frame(width: edge, alignment: .trailing)
         }
         .padding(.horizontal, 8)
         .frame(height: 30)
+        .contentShape(Rectangle())
+        .contextMenu { menuItems }
+    }
+
+    @ViewBuilder private var menuItems: some View {
+        ForEach(Array(UmiFilePaneMenu.items(for: surfaceView, doc: doc).enumerated()), id: \.offset) { _, item in
+            if item.separated { Divider() }
+            Button(item.title, action: item.action).disabled(!item.enabled)
+        }
     }
 }

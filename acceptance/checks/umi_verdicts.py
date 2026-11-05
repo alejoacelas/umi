@@ -40,8 +40,11 @@ VERDICTS = {
     "E-3": "PASS through scripted checks (closing a dirty file from the CLI is refused; ⌘S through the menu saves; "
            "--force discards), plus closing a tab or quitting saves or keeps a recovery copy (code: "
            "UmiDocument.preserveEdits). The 'Save changes?' dialog when closing with ⌘W: NOT JUDGED (locked screen).",
-    "E-4": "PASS: with unsaved edits, a disk change shows 'This file changed on disk.' with Reload and Keep Mine "
-           "(extra-E-4-disk-changed.png). An unmodified document reloading and a deleted-then-recreated file being "
+    "E-4": "Warp parity (2026-11-05) changed the banner to Warp's: with unsaved edits, a disk change shows 'This "
+           "file has saved changes that are not reflected here.' with Discard this version and Overwrite, checked by "
+           "script (test_umi_editor_warp.py test_disk_change_banner_uses_warps_words). The screenshot "
+           "extra-E-4-disk-changed.png shows the older wording and isn't evidence for it; by hand: NOT JUDGED. An "
+           "unmodified document reloading and a deleted-then-recreated file being "
            "picked up were checked by script (verify_ui_paths.py).",
     "E-5": "PASS through scripted checks: a Latin-1 file edited and saved stays Latin-1; text Latin-1 can't hold is "
            "refused with a message and the file is left intact (verify_ui_paths.py).",
