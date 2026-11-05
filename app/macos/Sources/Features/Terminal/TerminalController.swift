@@ -937,6 +937,8 @@ class TerminalController: BaseTerminalController {
         let tabsBefore = tabs
         let selectedBefore = selectedTab
         let focusedBefore = focusedSurface
+        // Umi: the tab's group, put back with it by undo if the close emptied it (S-14).
+        let groupBefore = UmiTabGroups.group(of: tab, in: self)
 
         UmiEditor.saveDirtyDocuments(of: tab)
 
@@ -955,6 +957,7 @@ class TerminalController: BaseTerminalController {
                 guard target.window?.isVisible ?? false else { return }
                 if !target.tabs.contains(where: { $0 === tab }) {
                     target.insertTab(tab, at: index)
+                    if let groupBefore { UmiTabGroups.restore([groupBefore], in: target) }
                 }
                 if selectedBefore === tab {
                     target.selectTab(tab)

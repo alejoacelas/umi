@@ -606,6 +606,8 @@ struct UmiSnapshot {
         let focused: Weak<Ghostty.SurfaceView>?
         /// The tab's stacks (M-7), members in strip order.
         let stacks: [[Weak<Ghostty.SurfaceView>]]
+        /// The tab group it was in (S-14).
+        let groupID: UUID?
     }
 
     struct WindowState {
@@ -614,6 +616,8 @@ struct UmiSnapshot {
         let selected: UUID
         let frame: NSRect?
         let focusedPane: Weak<Ghostty.SurfaceView>?
+        /// The window's tab groups, so tabs brought back find their group even after it went.
+        let groups: [UmiTabGroup]
     }
 
     let windows: [WindowState]
@@ -630,11 +634,12 @@ struct UmiSnapshot {
                 let focused = (tab === controller.selectedTab ? controller.focusedSurface : nil) ?? tab.focusedSurface
                 return TabState(tab: Weak(tab), id: tab.id, name: tab.name, color: tab.color, pinned: tab.pinned,
                                 isDocs: tab.isDocs, tree: tree.root.map(WeakNode.init), zoomed: zoomed, focused: focused.map { Weak($0) },
-                                stacks: tab.stacks.map { $0.members.map { Weak($0) } })
+                                stacks: tab.stacks.map { $0.members.map { Weak($0) } }, groupID: tab.groupID)
             }
             states.append(WindowState(box: UmiSnapshot.box(for: controller), tabs: tabs, selected: controller.selectedTab.id,
                                       frame: controller.window?.frame,
-                                      focusedPane: controller.focusedSurface.map { Weak($0) }))
+                                      focusedPane: controller.focusedSurface.map { Weak($0) },
+                                      groups: controller.sidebarModel.groups))
         }
         windows = states
     }
@@ -722,6 +727,7 @@ struct UmiSnapshot {
                 tab.color = tabState.color
                 tab.pinned = tabState.pinned
                 tab.isDocs = tabState.isDocs
+                tab.groupID = tabState.groupID
                 var zoomedNode: SplitTree<Ghostty.SurfaceView>.Node?
                 if let z = tabState.zoomed?.value, let node = tabPlan.root.node(view: z) { zoomedNode = node }
                 tab.tree = SplitTree(root: tabPlan.root, zoomed: zoomedNode)
@@ -764,11 +770,13 @@ struct UmiSnapshot {
             let selected = tabs.first { $0.id == state.selected } ?? tabs[0]
             if let live {
                 live.restoreTabs(tabs, selected: selected, focusedPane: state.focusedPane?.value)
+                UmiTabGroups.restore(state.groups, in: live)
             } else {
                 let controller = TerminalController.newWindow(
                     ghostty, tabs: tabs, selected: selected, frame: state.frame, focus: false, registerUndo: false)
                 state.box.controller = controller
                 UmiSnapshot.boxes[ObjectIdentifier(controller)] = state.box
+                UmiTabGroups.restore(state.groups, in: controller)
             }
         }
 

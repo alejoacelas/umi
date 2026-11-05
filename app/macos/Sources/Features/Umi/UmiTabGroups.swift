@@ -200,6 +200,18 @@ enum UmiTabGroups {
         }
     }
 
+    /// Put back the groups of `groups` that tabs of the window belong to but the window no longer
+    /// has (an undo or a reopen bringing tabs back after their group went with them). A group that
+    /// still lives in another window stays there, and its tabs here leave it.
+    static func restore(_ groups: [UmiTabGroup], in controller: TerminalController) {
+        let model = controller.sidebarModel
+        let used = Set(controller.tabs.compactMap(\.groupID))
+        for group in groups where used.contains(group.id) && !model.groups.contains(where: { $0.id == group.id }) {
+            let elsewhere = UmiTopology.windows.contains { $0 !== controller && $0.sidebarModel.groups.contains { $0.id == group.id } }
+            if !elsewhere { model.groups.append(group) }
+        }
+    }
+
     static func normalizeAll() {
         for window in UmiTopology.windows { normalize(window) }
     }

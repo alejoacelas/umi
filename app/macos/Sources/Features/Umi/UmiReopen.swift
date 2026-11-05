@@ -41,6 +41,8 @@ final class UmiReopen {
         var frame: NSRect?
         var focusedPane: UUID?
         var sidebarWidth: CGFloat?
+        /// The tab groups of the closed tab or window (S-14), put back with them.
+        var groups: [UmiTabGroup] = []
 
         init(_ kind: Kind) { self.kind = kind }
 
@@ -82,6 +84,7 @@ final class UmiReopen {
         entry.tab = tab
         entry.tabIndex = index
         entry.window = window
+        entry.groups = UmiTabGroups.group(of: tab, in: window).map { [$0] } ?? []
         push(entry)
     }
 
@@ -95,6 +98,7 @@ final class UmiReopen {
         entry.frame = window.window?.frame
         entry.focusedPane = window.focusedSurface?.id
         entry.sidebarWidth = window.sidebarWidth
+        entry.groups = window.sidebarModel.groups
         push(entry)
     }
 
@@ -234,9 +238,11 @@ final class UmiReopen {
         guard let tab = entry.tab, Self.dropExitedPanes(tab) else { return nil }
         let (window, index) = try placeTab(near: entry.window, index: entry.tabIndex)
         guard let window else {
-            return try reopenInNewWindow([tab], selected: tab, frame: nil, focused: tab.focusedSurface?.id, kind: .tab)
+            return try reopenInNewWindow([tab], selected: tab, frame: nil, focused: tab.focusedSurface?.id, kind: .tab,
+                                         groups: entry.groups)
         }
         insert(tab, into: window, at: index, undoAction: "Reopen Closed Tab")
+        UmiTabGroups.restore(entry.groups, in: window)
         return ["kind": "tab", "tab": tab.idString, "window": window.umiIDString,
                 "pane": tab.effectiveFocusedSurface?.umiID ?? ""]
     }
@@ -246,7 +252,7 @@ final class UmiReopen {
         guard !tabs.isEmpty else { return nil }
         let selected = entry.selected.flatMap { s in tabs.contains { $0 === s } ? s : nil } ?? tabs[0]
         return try reopenInNewWindow(tabs, selected: selected, frame: entry.frame, focused: entry.focusedPane,
-                                     kind: .window, sidebarWidth: entry.sidebarWidth)
+                                     kind: .window, sidebarWidth: entry.sidebarWidth, groups: entry.groups)
     }
 
     /// The window a reopened tab goes to: its own if still open (at its old index), else the
@@ -270,12 +276,14 @@ final class UmiReopen {
     }
 
     private func reopenInNewWindow(_ tabs: [UmiTab], selected: UmiTab, frame: NSRect?, focused: UUID?,
-                                   kind: Kind, sidebarWidth: CGFloat? = nil) throws -> [String: Any] {
+                                   kind: Kind, sidebarWidth: CGFloat? = nil,
+                                   groups: [UmiTabGroup] = []) throws -> [String: Any] {
         let ghostty = try UmiLayout.requireGhostty()
         if let focused, let pane = selected.panes.first(where: { $0.id == focused }) { selected.focusedSurface = pane }
         let controller = TerminalController.newWindow(ghostty, tabs: tabs, selected: selected, frame: frame,
                                                       focus: true, registerUndo: true)
         if let sidebarWidth { controller.sidebarWidth = sidebarWidth }
+        UmiTabGroups.restore(groups, in: controller)
         UmiTopology.windowBecameCurrent(controller)
         var json: [String: Any] = ["kind": kind.rawValue, "window": controller.umiIDString, "tab": selected.idString]
         if let pane = selected.effectiveFocusedSurface { json["pane"] = pane.umiID }

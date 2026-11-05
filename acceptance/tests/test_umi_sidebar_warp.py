@@ -430,6 +430,40 @@ def test_moving_a_tab_up_or_down_keeps_groups_whole(inst, win):
     assert groups(inst, win["window"])["groups"][0]["tabs"] == [t3, t2]
 
 
+@pytest.mark.req("S-14", "M-3", "L-20")
+def test_undo_and_reopen_bring_a_tab_back_into_its_group(inst, win):
+    """A grouped tab taken out of its window (moved to a new window, closed) leaves its group, and
+    the group goes when it was the last tab. Undo and reopen bring the tab back into that group."""
+    p2, t2 = new_tab(inst, win)
+    ready(inst, p2)
+    perform(inst, t2, "New group with tab")
+    sidebar(inst, win["window"], rename_text="Kept group")
+    gid = groups(inst, win["window"])["groups"][0]["id"]
+    expected = [(gid, "Kept group", [t2])]
+
+    def state():
+        return [(g["id"], g["name"], g["tabs"]) for g in groups(inst, win["window"])["groups"]]
+
+    perform(inst, t2, "Move Tab to New Window")
+    wait_until(lambda: state() == [], 5, message="the group went with its only tab")
+    assert inst.rpc("debug.undo")["undo"] == "Move Tab"
+    inst.rpc("debug.menu.perform", title="Undo")
+    wait_until(lambda: t2 in tab_ids(inst, win["window"]), 5, message="undo brought the tab back")
+    wait_until(lambda: state() == expected, 5, message="undo of the move brought the group back")
+    assert tab_of(inst, t2)["group"] == "Kept group"
+
+    inst.cli("tab", "close", t2)
+    wait_until(lambda: state() == [], 5, message="the group went with its closed tab")
+    inst.rpc("debug.menu.perform", title="Undo")
+    wait_until(lambda: t2 in tab_ids(inst, win["window"]), 5, message="undo reopened the tab")
+    wait_until(lambda: state() == expected, 5, message="undo of the close brought the group back")
+
+    group_perform(inst, win["window"], gid, "Close all tabs in group")
+    wait_until(lambda: t2 not in tab_ids(inst, win["window"]) and state() == [], 5, message="closed with its group")
+    assert inst.json("reopen")["tab"] == t2
+    wait_until(lambda: state() == expected, 5, message="reopen brought the group back")
+
+
 @pytest.mark.req("S-14", "R-3")
 def test_groups_are_restored_with_the_layout(target, fresh):
     if not target.restoration_safe:
