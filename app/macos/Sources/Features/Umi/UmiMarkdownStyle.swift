@@ -38,15 +38,15 @@ enum UmiMarkdownStyle {
     struct Palette {
         let ink: String, solidBackground: String, surface2: String
         let red: String, green: String, yellow: String, blue: String, magenta: String, cyan: String
-        let check: String
+        let accent: String, check: String
         let scheme: String
 
         static let dark = Palette(ink: "255,255,255", solidBackground: "#000000", surface2: "#1a1a1a",
                                   red: "#ff8272", green: "#b4fa72", yellow: "#fefdc2", blue: "#a5d5fe",
-                                  magenta: "#ff8ffd", cyan: "#d0d1fe", check: "#ffffff", scheme: "dark")
+                                  magenta: "#ff8ffd", cyan: "#d0d1fe", accent: "#19aad8", check: "#ffffff", scheme: "dark")
         static let light = Palette(ink: "17,17,17", solidBackground: "#ffffff", surface2: "#e7e7e7",
                                    red: "#c30771", green: "#10a778", yellow: "#a89c14", blue: "#008ec4",
-                                   magenta: "#523c79", cyan: "#20a5ba", check: "#111111", scheme: "light")
+                                   magenta: "#523c79", cyan: "#20a5ba", accent: "#00c2ff", check: "#111111", scheme: "light")
     }
 
     static func css(light: Bool, background: String) -> String {
@@ -55,7 +55,7 @@ enum UmiMarkdownStyle {
         :root { color-scheme: \(p.scheme);
           --fg: rgba(\(p.ink),0.9); --fg-sub: rgba(\(p.ink),0.6); --fg-hint: rgba(\(p.ink),0.4);
           --surface-3: rgba(\(p.ink),0.15); --neutral-4: rgba(\(p.ink),0.2); --outline: rgba(\(p.ink),0.1);
-          --surface-2: \(p.surface2); --bg: \(p.solidBackground); --accent: #19aad8; --red: \(p.red); --check: \(p.check);
+          --surface-2: \(p.surface2); --bg: \(p.solidBackground); --accent: \(p.accent); --red: \(p.red); --check: \(p.check);
           --mono: "SF Mono", Menlo, monospace; --ui: 'Umi Roboto', Roboto, -apple-system, BlinkMacSystemFont, sans-serif; }
         html, body { margin: 0; background: \(background); }
         body { color: var(--fg); font: 13px/1.5 var(--ui); padding: 16px 20px 60px; -webkit-font-smoothing: antialiased; }

@@ -714,3 +714,5 @@ New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing tes
 - `test_code_blocks_are_highlighted_and_copy_or_run` checks Warp's highlight colors from its base16
   theme (functions blue, strings green; comments, numbers and parameters in the text color), so the
   Python block gained a comment and a number and the expected copied text changed with it.
+- New, `test_on_a_light_background_the_preview_uses_warps_light_theme`: with a light background the
+  preview's text, links and done checkboxes use Warp's Light theme (accent `#00c2ff`).

@@ -152,6 +152,25 @@ def test_the_preview_looks_like_warps_markdown_view(inst, win, doc):
     assert {"text": "https://example.com/path", "href": "https://example.com/path"} in links, links
 
 
+def window_of(inst):
+    """A new window in another instance, as the win fixture gives one."""
+    pane = inst.json("window", "new", "--name", "t-markdown")["pane"]
+    wait_until(lambda: inst.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20,
+               message="the shell prompt")
+    found = inst.find_pane(pane)
+    return {"pane": found[2]["id"], "tab": found[1]["id"], "window": found[0]["id"]}
+
+
+@pytest.mark.req("MD-1")
+def test_on_a_light_background_the_preview_uses_warps_light_theme(fresh, doc):
+    other = fresh(prefix="acc-md1-light-", args=["--background=#fafafa", "--foreground=#202020"])
+    shown(other, window_of(other), doc)
+    assert style(other, doc, "body", "color")["color"] == "rgba(17, 17, 17, 0.9)", "Warp Light's text"
+    checked = style(other, doc, "li.task input:checked", "background-color")
+    assert checked["background-color"] == "rgb(0, 194, 255)", "a done task's box is filled with Warp Light's accent"
+    assert style(other, doc, "a", "color")["color"] == "rgb(0, 194, 255)", "links in Warp Light's accent"
+
+
 @pytest.mark.req("MD-2")
 def test_code_blocks_are_highlighted_and_copy_or_run(inst, win, doc):
     pane = shown(inst, win, doc)
