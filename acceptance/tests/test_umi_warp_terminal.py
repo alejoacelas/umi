@@ -205,9 +205,10 @@ def test_a_reset_on_the_alternate_screen_brings_the_padding_back(inst, win, how)
         inst.cli("send", "--pane", pane, "-e", "printf '\\033[?1049h'; sleep 60")
         wait_until(lambda: _unpadded(inst, pane), 10, message="the full-screen program without padding")
         assert inst.rpc("debug.terminal.action", pane=pane, action="reset")["ok"]
-    back = wait_until(lambda: _padded(inst, pane), 10, message="the padding back after the reset")
+    # (The padding is set at once; the terminal takes its new size on its own thread.)
+    back = wait_until(lambda: (lambda t: t if t and (t["cols"], t["rows"]) == (before["cols"], before["rows"]) else None)(
+        _padded(inst, pane)), 10, message="the padding and the shell's size back after the reset")
     assert abs(back["padding_pt"]["bottom"] - 20) < 0.6, back["padding_pt"]
-    assert back["cols"] == before["cols"] and back["rows"] == before["rows"], (before["cols"], back["cols"])
     if how == "reset_action":
         inst.cli("keys", "--pane", pane, "ctrl+c")
 
