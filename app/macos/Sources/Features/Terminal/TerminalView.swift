@@ -112,6 +112,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 if let controller = viewModel as? TerminalController {
                     // Umi's palette: commands, panes and files, whatever has focus (L-14–L-16).
                     UmiPaletteView(model: controller.palette, background: ghostty.config.backgroundColor)
+                    // Umi: agent toasts, the update note and the inbox (⇧⌘U), at the top right.
+                    UmiInboxOverlay(controller: controller, background: ghostty.config.backgroundColor)
                 } else if let surfaceView = lastFocusedSurface?.value {
                     TerminalCommandPaletteView(
                         surfaceView: surfaceView,

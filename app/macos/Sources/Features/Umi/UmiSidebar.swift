@@ -196,6 +196,9 @@ struct UmiSidebarRowModel {
         }
     }
 
+    /// The status badge on the agent's mark (Warp's states).
+    var badge: UmiAttention.Badge { agent?.badge ?? .none }
+
     /// The mark's name for the CLI and accessibility.
     var markName: String {
         switch agent?.mark ?? .none {
@@ -213,6 +216,7 @@ struct UmiSidebarRowModel {
         case .needsYou: parts.append("needs you")
         case .none: break
         }
+        if agent.badge == .error { parts.append("error") }
         return (parts + [detail.text]).joined(separator: " · ")
     }
 
@@ -230,7 +234,7 @@ struct UmiSidebarRowModel {
     func json() -> [String: Any] {
         var json: [String: Any] = [
             "tab": tab.idString, "selected": selected, "pinned": tab.pinned, "panes": paneCount,
-            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName,
+            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName, "badge": badge.rawValue,
             "color": UmiTopology.colorName(tab.color),
         ]
         if let git {
@@ -388,6 +392,9 @@ struct UmiSidebarTabRow: View {
             UmiAgentMark(kind: row.agent?.kind ?? .claude)
                 .foregroundColor(Self.markColor(row.agent?.mark ?? .none))
                 .frame(width: 11, height: 11)
+                .frame(width: 14, height: 14, alignment: .topLeading)
+                // Warp's status badge (the mark stays monochrome; the badge carries the color).
+                .umiStatusBadge(row.badge, total: 14)
                 .help(row.accessibilityValue)
         case .pin:
             Image(systemName: "pin.fill").font(.system(size: 8.5))
@@ -398,14 +405,10 @@ struct UmiSidebarTabRow: View {
         }
     }
 
-    /// The agent's icon takes a quiet color when its session finished unseen or needs the
-    /// user; otherwise it is as quiet as the rest of the chrome.
+    /// The agent's mark is monochrome: a little brighter when its session finished unseen or
+    /// needs the user. Its status badge carries the color (Warp parity, 2026-11-05).
     static func markColor(_ mark: UmiAttention.Mark) -> Color {
-        switch mark {
-        case .none: return UmiTheme.textTertiary
-        case .finished: return UmiTheme.accent.opacity(0.85)
-        case .needsYou: return Color(red: 0.93, green: 0.66, blue: 0.30).opacity(0.9)
-        }
+        mark == .none ? UmiTheme.textTertiary : UmiTheme.textSecondary
     }
 
     @ViewBuilder

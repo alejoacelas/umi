@@ -34,6 +34,33 @@ final class UmiAttention: ObservableObject {
         var mark: Mark
         /// When its turn last ended or it last asked for input.
         var lastStop: Date?
+
+        /// The status badge on its mark, as Warp badges its agent icons.
+        var badge: Badge {
+            if mark == .needsYou { return .needsYou }
+            switch status {
+            case "error": return .error
+            case "working", "starting": return .working
+            case "stopped": return .cancelled
+            default: return mark == .finished ? .done : .none
+            }
+        }
+    }
+
+    /// The badge on an agent's mark (Warp parity, 2026-11-05): Warp's states and colors on its
+    /// default Dark theme. The mark stays monochrome; the badge carries the color.
+    enum Badge: String {
+        /// Working: Warp's magenta clock.
+        case working
+        /// Its turn ended and the user hasn't looked yet: Warp's green check.
+        case done
+        /// It waits on the user: Warp's yellow "blocked" stop.
+        case needsYou = "needs_you"
+        /// Its turn failed: Warp's red triangle.
+        case error
+        /// The session was stopped: Warp's grey "cancelled" stop.
+        case cancelled
+        case none
     }
 
     /// A place the "next session that needs you" shortcut can go.
@@ -98,8 +125,10 @@ final class UmiAttention: ObservableObject {
 
     func set(_ agent: Agent?, forPane id: UUID) {
         if panes[id] == agent { return }
+        let old = panes[id]
         if let agent { panes[id] = agent } else { panes.removeValue(forKey: id) }
         changed()
+        UmiInbox.shared.observe(old: old, new: agent, pane: id)
     }
 
     func setBackground(_ items: [(session: String, title: String, since: Date)]) {
@@ -113,6 +142,7 @@ final class UmiAttention: ObservableObject {
 
     /// The user looked at a pane (it has focus in the key window of the active app).
     func looked(atPane id: UUID) {
+        UmiInbox.shared.markRead(pane: id)
         guard var agent = panes[id], agent.mark != .none else { return }
         agent.mark = .none
         panes[id] = agent
