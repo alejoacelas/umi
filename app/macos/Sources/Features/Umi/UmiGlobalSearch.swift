@@ -22,11 +22,15 @@ final class UmiGlobalSearchModel: ObservableObject {
         var matches: [Match]
     }
 
+    /// A file's header or one of its matches. Rows carry what they show, so a view drawn from a
+    /// row that just went away never looks into `files`.
     struct Row: Identifiable, Equatable {
         let id: String
-        let file: Int
+        let path: String
         /// nil for the file's header row.
-        let match: Int?
+        let match: Match?
+        /// The file's match count.
+        let count: Int
     }
 
     enum Focus: String { case none, query, results }
@@ -114,7 +118,7 @@ final class UmiGlobalSearchModel: ObservableObject {
     /// Run the search now (the toggles, and the debounced query).
     func search() {
         debounceWork?.cancel()
-        process?.terminate()
+        if let running = process, running.isRunning { running.terminate() }
         process = nil
         generation &+= 1
         let generation = generation
@@ -236,11 +240,11 @@ final class UmiGlobalSearchModel: ObservableObject {
 
     private func rebuild() {
         var out: [Row] = []
-        for (index, file) in files.enumerated() {
-            out.append(Row(id: file.path, file: index, match: nil))
+        for file in files {
+            out.append(Row(id: file.path, path: file.path, match: nil, count: file.matches.count))
             guard !collapsed.contains(file.path) else { continue }
-            for m in file.matches.indices {
-                out.append(Row(id: "\(file.path)\u{0}\(m)", file: index, match: m))
+            for (m, match) in file.matches.enumerated() {
+                out.append(Row(id: "\(file.path)\u{0}\(m)", path: file.path, match: match, count: file.matches.count))
             }
         }
         rows = out
@@ -319,7 +323,7 @@ final class UmiGlobalSearchModel: ObservableObject {
 
     private func setCollapsed(_ collapse: Bool) {
         guard let row = selectedRow, row.match == nil else { return }
-        let path = files[row.file].path
+        let path = row.path
         if collapse { collapsed.insert(path) } else { collapsed.remove(path) }
         rebuild()
     }
@@ -331,11 +335,11 @@ final class UmiGlobalSearchModel: ObservableObject {
 
     func activate(_ row: Row) {
         select(row.id)
-        guard let m = row.match else {
-            setCollapsed(!collapsed.contains(files[row.file].path))
+        guard let match = row.match else {
+            setCollapsed(!collapsed.contains(row.path))
             return
         }
-        open(files[row.file].path, line: files[row.file].matches[m].line)
+        open(row.path, line: match.line)
     }
 
     /// Open the file at the line, beside the focused pane (E-9), in source view.
@@ -370,8 +374,10 @@ final class UmiGlobalSearchModel: ObservableObject {
             shown = "…" + shown[start...]
             ranges = matchRanges(in: shown, query: query, caseSensitive: caseSensitive, regex: regex)
         }
-        if shown.count > 200 { shown = String(shown.prefix(200)) + "…" }
-        ranges = ranges.filter { $0.upperBound <= shown.endIndex }
+        if shown.count > 200 {
+            shown = String(shown.prefix(200)) + "…"
+            ranges = matchRanges(in: shown, query: query, caseSensitive: caseSensitive, regex: regex)
+        }
         return (shown, ranges)
     }
 
@@ -406,14 +412,13 @@ final class UmiGlobalSearchModel: ObservableObject {
     }
 
     private func rowJSON(_ row: Row) -> [String: Any] {
-        let file = files[row.file]
-        var json: [String: Any] = ["path": file.path, "kind": row.match == nil ? "file" : "match",
-                                   "selected": row.id == selected, "collapsed": collapsed.contains(file.path)]
-        if let m = row.match {
-            json["line"] = file.matches[m].line
-            json["text"] = file.matches[m].text
+        var json: [String: Any] = ["path": row.path, "kind": row.match == nil ? "file" : "match",
+                                   "selected": row.id == selected, "collapsed": collapsed.contains(row.path)]
+        if let match = row.match {
+            json["line"] = match.line
+            json["text"] = match.text
         } else {
-            json["count"] = file.matches.count
+            json["count"] = row.count
         }
         return json
     }
@@ -516,28 +521,28 @@ private struct UmiSearchRow: View {
     var body: some View {
         let selected = model.selected == row.id
         let color = UmiFileTreeStyle.text(selected: selected, hovering: hovering)
-        let file = model.files[row.file]
+        let path = row.path
         Group {
-            if let m = row.match {
-                matchText(file.matches[m].text, color: color)
+            if let match = row.match {
+                matchText(match.text, color: color)
                     .padding(.leading, 32)
                     .padding(.trailing, 12)
                     .padding(.vertical, 4)
             } else {
                 HStack(spacing: 0) {
-                    Image(systemName: model.collapsed.contains(file.path) ? "chevron.right" : "chevron.down")
+                    Image(systemName: model.collapsed.contains(path) ? "chevron.right" : "chevron.down")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(color)
                         .frame(width: 16, height: 16)
                         .padding(.trailing, 8)
-                    UmiFileIcon(url: URL(fileURLWithPath: file.path), size: 16, tint: color)
+                    UmiFileIcon(url: URL(fileURLWithPath: path), size: 16, tint: color)
                         .padding(.trailing, 8)
-                    Text((file.path as NSString).lastPathComponent)
+                    Text((path as NSString).lastPathComponent)
                         .font(.system(size: 14))
                         .foregroundColor(color)
                         .lineLimit(1)
                         .layoutPriority(1)
-                    let folder = (file.path as NSString).deletingLastPathComponent
+                    let folder = (path as NSString).deletingLastPathComponent
                     if !folder.isEmpty {
                         Text(folder)
                             .font(.system(size: 12))
@@ -547,7 +552,7 @@ private struct UmiSearchRow: View {
                             .padding(.leading, 6)
                     }
                     Spacer(minLength: 6)
-                    Text("\(file.matches.count)")
+                    Text("\(row.count)")
                         .font(.system(size: 12))
                         .foregroundColor(.black)
                         .padding(.horizontal, 4)
@@ -567,7 +572,7 @@ private struct UmiSearchRow: View {
             model.focusResults()
             model.activate(row)
         }
-        .help(row.match.map { "\(file.path):\(file.matches[$0].line)" } ?? file.path)
+        .help(row.match.map { "\(path):\($0.line)" } ?? path)
         .accessibilityElement(children: .combine)
     }
 
