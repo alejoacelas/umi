@@ -416,7 +416,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
     that finishes while the user looks at it leaves no mark. Colors and hints stay subtle. No desktop
     notifications. The Dock badge counts the sessions that need the user.
   - *Warp parity, 2026-11-05.* The mark wears Warp's status badge, 57% of the icon's size, its
-    bottom-right corner on the icon's, in Warp's default Dark colors: working (magenta clock),
+    bottom-right corner 5% of the icon's size inside the icon's, in a ring of the terminal's
+    background, in Warp's default Dark colors: working (magenta clock),
     finished and not seen yet (green check), needs the user (yellow stop), error (red triangle),
     stopped (grey stop). The mark itself stays monochrome; the badge carries the color. A finish
     counts as seen when the user looks at any pane of its tab as it finishes (Warp's rule), and the

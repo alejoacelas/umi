@@ -5,7 +5,8 @@ import SwiftUI
 
 /// The status badge on an agent's mark (Warp parity, 2026-11-05): Warp's states and colors on
 /// its default Dark theme (its terminal magenta, green, yellow and red; grey for cancelled),
-/// 57% of the icon's size, its bottom-right corner on the icon's. The mark stays monochrome.
+/// 57% of the icon's size, its bottom-right corner 5% of the icon's size inside the icon's (Warp's
+/// `corner_overlay_offset` with no extra overhang). The mark stays monochrome.
 struct UmiAgentStatusBadge: View {
     let badge: UmiAttention.Badge
     /// The icon's size; the badge is 57% of it and its glyph 34%, as Warp's.
@@ -34,8 +35,9 @@ struct UmiAgentStatusBadge: View {
     var body: some View {
         if let symbol = Self.symbol(badge) {
             ZStack {
-                // The cutout ring: the background around the glyph.
-                Circle().fill(UmiTheme.isLight ? Color.white : Color.black)
+                // The cutout ring: the terminal's background, as Warp fills it with
+                // `theme.background()`.
+                Circle().fill(UmiTheme.terminalBackground)
                     .frame(width: total * 0.57, height: total * 0.57)
                 Image(systemName: symbol)
                     .resizable()
@@ -50,11 +52,14 @@ struct UmiAgentStatusBadge: View {
 }
 
 extension View {
-    /// Put an agent's status badge on this icon, its bottom-right corner on the icon's (the view
-    /// is `total` points square).
+    /// Put an agent's status badge on this icon, its bottom-right corner 5% of `total` inside the
+    /// icon's (the view is `total` points square), as Warp places it.
     func umiStatusBadge(_ badge: UmiAttention.Badge, total: CGFloat) -> some View {
         frame(width: total, height: total)
-            .overlay(alignment: .bottomTrailing) { UmiAgentStatusBadge(badge: badge, total: total) }
+            .overlay(alignment: .bottomTrailing) {
+                UmiAgentStatusBadge(badge: badge, total: total)
+                    .offset(x: -0.05 * total, y: -0.05 * total)
+            }
     }
 }
 
