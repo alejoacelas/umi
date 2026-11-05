@@ -1070,8 +1070,8 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         }
 
         private func copy(_ text: String) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            UmiMarkdownScript.pasteboard.clearContents()
+            UmiMarkdownScript.pasteboard.setString(text, forType: .string)
         }
 
         func showWaiters() {
@@ -1283,8 +1283,8 @@ final class UmiPreviewWebView: WKWebView {
         let doc = coordinator.doc
         if !menu.items.isEmpty { menu.addItem(.separator()) }
         menu.addItem(UmiPreviewMenuItem("Copy file path") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(doc.url.path, forType: .string)
+            UmiMarkdownScript.pasteboard.clearContents()
+            UmiMarkdownScript.pasteboard.setString(doc.url.path, forType: .string)
         })
         menu.addItem(.separator())
         let splits: [(String, SplitTree<Ghostty.SurfaceView>.NewDirection)] = [

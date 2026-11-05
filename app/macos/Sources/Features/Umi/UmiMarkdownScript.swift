@@ -282,6 +282,7 @@ enum UmiMarkdownScript {
         const r = e.getBoundingClientRect();
         out.rect = { x: r.x, y: r.y, width: r.width, height: r.height };
         out.window_width = window.innerWidth;
+        out.page_width = document.documentElement.clientWidth;
         if (document.fonts) out.roboto_loaded = document.fonts.check("13px 'Umi Roboto'");
         return out;
       }
@@ -292,8 +293,19 @@ enum UmiMarkdownScript {
         e.click();
         return true;
       }
+      function typeInFind(text) {
+        if (!find.open) return false;
+        input.value += text;
+        input.dispatchEvent(new Event('input'));
+        return true;
+      }
+      function key(name, shift) {
+        const target = document.activeElement || document.body;
+        target.dispatchEvent(new KeyboardEvent('keydown', { key: name, shiftKey: !!shift, bubbles: true, cancelable: true }));
+        return true;
+      }
       window.umiMarkdown = { renderMermaid, openFind, findNext: () => move(1), findPrevious: () => move(-1), closeFind,
-                             lightbox, state, style, click,
+                             lightbox, state, style, click, typeInFind, key,
                              findOpen: () => find.open };
     })();
     """#
@@ -302,15 +314,30 @@ enum UmiMarkdownScript {
 
     /// Read the preview's state or drive it as the user would (its buttons, find), through its
     /// own script.
+    /// Where Copy and Copy file path put text: the clipboard, or a private pasteboard once a
+    /// test has driven the preview (`debug.ui.markdown`), so tests never touch the user's.
+    static var pasteboard = NSPasteboard.general
+    private static func useTestPasteboard() -> NSPasteboard {
+        if pasteboard == .general {
+            pasteboard = NSPasteboard(name: NSPasteboard.Name("dev.umi.debug.markdown.\(UmiPaths.instanceID)"))
+            pasteboard.clearContents()
+        }
+        return pasteboard
+    }
+
     static func debug(_ params: UmiParams) async throws -> [String: Any] {
         guard let path = params.string("path") else { throw UmiError.badRequest("give a path") }
         guard let doc = UmiCommentsUI.documents(at: path).first else { throw UmiError.notFound("\(path) isn't open") }
-        if params.string("action") == "menu" {
-            // The preview's context menu (Warp's right-click items), without a click.
-            guard let preview = doc.commentTarget as? UmiMarkdownPreview.Coordinator,
-                  let web = preview.web as? UmiPreviewWebView else {
-                throw UmiError.badRequest("the document isn't shown in preview")
-            }
+        let action = params.string("action") ?? "state"
+        let board = useTestPasteboard()
+        if action == "pasteboard" { return ["text": board.string(forType: .string) ?? ""] }
+        guard let preview = doc.commentTarget as? UmiMarkdownPreview.Coordinator,
+              let web = preview.web as? UmiPreviewWebView else {
+            throw UmiError.badRequest("the document isn't shown in preview")
+        }
+        switch action {
+        case "menu":
+            // The preview's right-click menu (Warp's items), built and chosen without a click.
             let menu = web.warpMenu(selection: params.bool("selection") ?? false)
             if let choose = params.string("choose") {
                 guard let index = menu.items.firstIndex(where: { $0.title == choose }) else {
@@ -320,13 +347,29 @@ enum UmiMarkdownScript {
                 return ["chose": choose]
             }
             return ["items": menu.items.map { $0.isSeparatorItem ? "-" : $0.title }]
-        }
-        guard let preview = doc.commentTarget as? UmiMarkdownPreview.Coordinator, let web = preview.web else {
-            throw UmiError.badRequest("the document isn't shown in preview")
+        case "perform":
+            // What a menu item with no target does (Edit ▸ Find's items, ⌘E's): its action goes up
+            // the responder chain from the focused view, here the preview or the given pane's.
+            guard let name = params.string("selector"),
+                  ["find", "findNext", "findPrevious", "findHide", "selectionForFind"].contains(name) else {
+                throw UmiError.badRequest("selector is find, findNext, findPrevious, findHide or selectionForFind")
+            }
+            var responder: NSView = web
+            if let pane = params.string("pane") {
+                guard let surface = UmiTopology.allSurfaces.first(where: { $0.umiID == pane }) else { throw UmiError.notFound("no pane \(pane)") }
+                responder = surface
+            }
+            guard let window = responder.window else { throw UmiError.failed("the view isn't in a window") }
+            window.makeFirstResponder(responder)
+            let performed = (window.firstResponder ?? responder).tryToPerform(NSSelectorFromString(name + ":"), with: nil)
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            return ["performed": performed]
+        default:
+            break
         }
         let call: String
         var arguments: [String: Any] = [:]
-        switch params.string("action") ?? "state" {
+        switch action {
         case "state": call = "return umiMarkdown.state()"
         case "style":
             call = "return umiMarkdown.style(selector, props)"
@@ -335,7 +378,15 @@ enum UmiMarkdownScript {
         case "click":
             call = "return umiMarkdown.click(selector, nth)"
             arguments = ["selector": params.string("selector") ?? "", "nth": params.int("nth") ?? 0]
-        default: throw UmiError.badRequest("action is state, style, click or menu")
+        case "find_type":
+            // Text typed into the find field.
+            call = "return umiMarkdown.typeInFind(text)"
+            arguments = ["text": params.string("text") ?? ""]
+        case "key":
+            // A key pressed in the page (Escape, Enter, shift+Enter), as the page receives it.
+            call = "return umiMarkdown.key(name, shift)"
+            arguments = ["name": params.string("name") ?? "", "shift": params.bool("shift") ?? false]
+        default: throw UmiError.badRequest("action is state, style, click, find_type, key, menu, perform or pasteboard")
         }
         let result = try await web.callAsyncJavaScript(call, arguments: arguments, in: nil, contentWorld: UmiCommentsUI.world)
         if let object = result as? [String: Any] { return object }
