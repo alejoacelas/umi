@@ -540,6 +540,13 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
     private var version = 0
     private var highlightWork: DispatchWorkItem?
     private(set) var spans: [UmiSyntax.Span] = []
+    /// The spans the text is colored with and its length then (-1: color it all again), and the
+    /// edits since, measured from the start and from the end so later edits don't move them:
+    /// recoloring touches only what changed, so typing in a large file stays fast.
+    private var appliedSpans: [UmiSyntax.Span] = []
+    private var appliedLength = -1
+    private var editedFromStart = Int.max
+    private var editedFromEnd = Int.max
     private var diffBase: String??
     private var diffWork: DispatchWorkItem?
     private(set) var diffMarks: [Int: UmiDiffMark] = [:]
@@ -627,6 +634,7 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
         textView.font = font
         textView.typingAttributes = [.font: font, .foregroundColor: baseColor]
         textView.textStorage?.addAttribute(.font, value: font, range: NSRange(location: 0, length: textView.textStorage?.length ?? 0))
+        appliedLength = -1
         gutter.needsDisplay = true
     }
 
@@ -644,7 +652,11 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
     nonisolated func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
                                  range editedRange: NSRange, changeInLength delta: Int) {
         guard editedMask.contains(.editedCharacters) else { return }
+        let fromStart = editedRange.location
+        let fromEnd = textStorage.length - NSMaxRange(editedRange)
         MainActor.assumeIsolated {
+            editedFromStart = min(editedFromStart, fromStart)
+            editedFromEnd = min(editedFromEnd, fromEnd)
             // After the edit is processed (attributes can't change while it is).
             DispatchQueue.main.async { [weak self] in self?.textChanged() }
         }
@@ -725,12 +737,51 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
     private func applyHighlights() {
         guard let storage = textView?.textStorage else { return }
         let length = storage.length
+        let region = appliedLength < 0 ? NSRange(location: 0, length: length) : changedRegion(length: length)
+        appliedSpans = spans
+        appliedLength = length
+        editedFromStart = .max
+        editedFromEnd = .max
+        guard region.length > 0 else { return }
         storage.beginEditing()
-        storage.addAttribute(.foregroundColor, value: baseColor, range: NSRange(location: 0, length: length))
+        storage.addAttribute(.foregroundColor, value: baseColor, range: region)
         for span in spans where NSMaxRange(span.range) <= length {
-            storage.addAttribute(.foregroundColor, value: UmiCodeLook.color(for: span.role, in: palette), range: span.range)
+            let part = NSIntersectionRange(span.range, region)
+            guard part.length > 0 else { continue }
+            storage.addAttribute(.foregroundColor, value: UmiCodeLook.color(for: span.role, in: palette), range: part)
         }
         storage.endEditing()
+    }
+
+    /// What needs coloring again: the edits since the last coloring, and the spans that differ
+    /// (the ones before the first difference and after the last are already right).
+    private func changedRegion(length: Int) -> NSRange {
+        let old = appliedSpans
+        let new = spans
+        let shared = min(old.count, new.count)
+        var head = 0
+        while head < shared, old[head] == new[head] { head += 1 }
+        var tail = 0
+        while tail < shared - head {
+            let a = old[old.count - 1 - tail], b = new[new.count - 1 - tail]
+            guard a.role == b.role, a.range.length == b.range.length,
+                  appliedLength - NSMaxRange(a.range) == length - NSMaxRange(b.range) else { break }
+            tail += 1
+        }
+        var start = editedFromStart == .max ? length : editedFromStart
+        var end = editedFromEnd == .max ? 0 : length - editedFromEnd
+        // Old spans before the edits keep their place; those after keep their distance from the end.
+        if head < old.count - tail {
+            start = min(start, old[head].range.location)
+            end = max(end, length - (appliedLength - NSMaxRange(old[old.count - 1 - tail].range)))
+        }
+        if head < new.count - tail {
+            start = min(start, new[head].range.location)
+            end = max(end, NSMaxRange(new[new.count - 1 - tail].range))
+        }
+        start = max(0, min(start, length))
+        end = max(start, min(end, length))
+        return NSRange(location: start, length: end - start)
     }
 
     /// The color shown at a UTF-16 offset (for checks).
@@ -789,15 +840,17 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
     /// Fill the caret's line with the surface color (Warp's current-line highlight), only while
     /// nothing is selected.
     func drawCurrentLine(in rect: NSRect) {
-        guard let textView, let layout = textView.layoutManager, let container = textView.textContainer,
+        guard let textView, let layout = textView.layoutManager,
               textView.selectedRanges.count == 1, textView.selectedRange().length == 0 else { return }
         let caret = textView.selectedRange().location
         var lineRect: NSRect
         if caret >= (textView.string as NSString).length, !layout.extraLineFragmentRect.isEmpty {
             lineRect = layout.extraLineFragmentRect
         } else {
-            layout.ensureLayout(for: container)
-            let glyph = layout.glyphIndexForCharacter(at: min(caret, max((textView.string as NSString).length - 1, 0)))
+            // Lay out only up to the caret's line, not the whole file on every redraw.
+            let character = min(caret, max((textView.string as NSString).length - 1, 0))
+            layout.ensureLayout(forCharacterRange: NSRange(location: character, length: 1))
+            let glyph = layout.glyphIndexForCharacter(at: character)
             lineRect = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
         }
         lineRect.origin.x = 0
