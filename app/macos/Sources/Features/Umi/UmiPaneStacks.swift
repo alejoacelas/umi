@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import GhosttyKit
 
 /// Panes that share one place in a tab's split tree, like tabs inside a pane (M-7). The tree
 /// holds the member on show; the others keep running, occluded, until the user switches to them
@@ -107,6 +108,35 @@ enum UmiStacks {
         return UmiTopology.Location(window: window, tab: tab, pane: pane)
     }
 
+    /// A new pane in `target`'s place, at `index` of its stack's order (a stack is made if `target`
+    /// had none). It isn't on show: `show` or `UmiLayout.focusPane` brings it up.
+    static func addMember(onto target: Ghostty.SurfaceView, cwd: String?, at index: Int) throws -> Ghostty.SurfaceView {
+        let ghostty = try UmiLayout.requireGhostty()
+        guard let app = ghostty.app else { throw UmiError.failed("the terminal engine isn't ready") }
+        guard let location = UmiTopology.locate(target) else { throw UmiError.notFound("the pane isn't in a window") }
+        var options = UmiLayout.PaneOptions()
+        options.cwd = cwd
+        let config = try UmiLayout.surfaceConfig(options, inheritingFrom: target, context: GHOSTTY_SURFACE_CONTEXT_SPLIT)
+        let view = Ghostty.SurfaceView(app, baseConfig: config)
+        UmiLayout.registerNewPane(view, options: options, config: config)
+        // Start at the place's size, so its program sees the right columns and rows.
+        let size = target.frame.size
+        if size.width > 0, size.height > 0 {
+            view.frame = CGRect(origin: .zero, size: size)
+            view.sizeDidChange(size)
+        }
+        let tab = location.tab
+        if let stack = tab.stack(of: target) {
+            stack.members.insert(view, at: min(max(index, 0), stack.members.count))
+        } else {
+            tab.stacks.append(UmiPaneStack(members: index <= 0 ? [view, target] : [target, view]))
+        }
+        location.window.setOccluded([view], occluded: true)
+        UmiEvents.shared.emit("pane.created", ["pane": view.umiID, "tab": tab.idString, "window": location.window.umiIDString])
+        UmiState.shared.layoutDidChange()
+        return view
+    }
+
     /// Show a stack member in its stack's place (it takes keyboard focus).
     static func show(_ pane: Ghostty.SurfaceView, focus: Bool = true) throws {
         guard let location = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
@@ -160,9 +190,19 @@ struct UmiStackStrip: View {
     @ObservedObject var stack: UmiPaneStack
 
     var body: some View {
+        let named = namedMembers
+        let unnamed = stack.members.count - named.count
         HStack(spacing: 2) {
-            ForEach(stack.members, id: \.id) { member in
+            ForEach(named, id: \.id) { member in
                 UmiStackChip(member: member, shown: member === surfaceView)
+            }
+            if unnamed > 0 {
+                Text("+\(unnamed) · ⌘[ ⌘]")
+                    .font(UmiTheme.uiFont)
+                    .foregroundColor(UmiTheme.textTertiary)
+                    .padding(.horizontal, 6)
+                    .help("\(unnamed) older \(unnamed == 1 ? "document" : "documents"): ⌘[ and ⌘] go through all of them")
+                    .accessibilityLabel("\(unnamed) more")
             }
             Spacer(minLength: 0)
         }
@@ -171,6 +211,15 @@ struct UmiStackStrip: View {
         .background(UmiTheme.chromeFill)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Stacked panes")
+    }
+
+    /// The members the strip names: all of them, except in the docs tab, where only the most recent
+    /// few are (and the one on show, if it's older).
+    private var namedMembers: [Ghostty.SurfaceView] {
+        guard UmiTopology.locate(surfaceView)?.tab.isDocs == true else { return stack.members }
+        var named = Array(stack.members.prefix(UmiDocsTab.named))
+        if !named.contains(where: { $0 === surfaceView }) { named.append(surfaceView) }
+        return named
     }
 }
 

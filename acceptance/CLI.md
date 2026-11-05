@@ -64,7 +64,7 @@ present. Extra fields are fine.
 
 Objects in JSON:
 - **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab]}`
-- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "color"?, "focused_pane": id, "panes": [Pane]}`
+- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "docs": bool, "color"?, "focused_pane": id, "panes": [Pane]}`
 - **Pane**: `{"id", "cwd", "name"?, "focused": bool, "zoomed": bool, "agent"?: session id (a session
   shown in this pane, read-only or live), "file"?: path (a file pane), "shown": bool (false for a
   stack member that isn't on show), "stack"?: [id] (the panes sharing its place, in strip order),

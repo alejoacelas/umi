@@ -16,6 +16,8 @@ final class UmiTab: ObservableObject, Identifiable {
     @Published var name: String?
     @Published var color: TerminalTabColor = .none
     @Published var pinned: Bool = false
+    /// The tab Markdown files opened from outside Umi share (`UmiDocsTab`).
+    @Published var isDocs: Bool = false
 
     /// The split tree. For the window's selected tab, the controller's `surfaceTree` is
     /// the live copy and this is kept in sync with it.

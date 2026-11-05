@@ -676,3 +676,16 @@ New requirement, new tests only; no existing test changed.
   the page. One `ui` test ⌘-clicks a URL printed in a terminal with the real mouse.
 - **Test hook, `UMI_TEST_BROWSER_LOG`**: links a web pane sends to the default browser are written
   to that file instead of opening a browser on the test Mac.
+
+## Markdown opens in one docs tab (E-10, 2026-11-05)
+
+E-10 changed: Markdown opened from outside Umi goes to one shared docs tab instead of the closest
+tab; other text files still go to the closest tab. **Requirement:** E-10.
+
+- **Changed, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_the_tab_whose_folder_is_closest`
+  became `test_text_files_open_in_the_tab_whose_folder_is_closest`, and it and
+  `test_ties_go_to_the_current_tab_and_any_pane_of_a_tab_counts` open `.txt` files instead of `.md`:
+  the closest-tab rule now covers only non-Markdown files. Their assertions are unchanged.
+- **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
+  (five files from two folders share one tab, one stack, newest first and on show; opening one again
+  makes it the most recent; a text file still goes by folder).

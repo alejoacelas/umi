@@ -98,6 +98,7 @@ final class UmiPersistence {
             "color": UmiTopology.colorName(tab.color),
         ]
         if let name = tab.name { json["name"] = name }
+        if tab.isDocs { json["docs"] = true }
         if let root = tree.root { json["tree"] = encode(node: root) }
         if let focused = (tab === window.selectedTab ? window.focusedSurface : nil) ?? tab.focusedSurface {
             json["focused_pane"] = focused.umiID
@@ -183,6 +184,7 @@ final class UmiPersistence {
                 let tab = UmiTab(id: id, tree: SplitTree(root: root, zoomed: zoomed))
                 tab.name = tabJSON["name"] as? String
                 tab.pinned = tabJSON["pinned"] as? Bool ?? false
+                tab.isDocs = tabJSON["docs"] as? Bool ?? false
                 tab.color = (tabJSON["color"] as? String).flatMap(UmiTopology.color(named:)) ?? .none
                 if let focusedID = tabJSON["focused_pane"] as? String {
                     tab.focusedSurface = root.leaves().first { $0.umiID == focusedID }

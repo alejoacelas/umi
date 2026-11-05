@@ -93,7 +93,7 @@ enum UmiLayout {
     }
 
     /// Remember things about a new pane that the CLI reports before its shell does.
-    private static func registerNewPane(_ view: Ghostty.SurfaceView, options: PaneOptions, config: Ghostty.SurfaceConfiguration) {
+    static func registerNewPane(_ view: Ghostty.SurfaceView, options: PaneOptions, config: Ghostty.SurfaceConfiguration) {
         UmiState.shared.setStartFolder(view.id, config.workingDirectory)
         if let name = options.name { UmiState.shared.setPaneName(view.id, name) }
     }
@@ -600,6 +600,7 @@ struct UmiSnapshot {
         let name: String?
         let color: TerminalTabColor
         let pinned: Bool
+        let isDocs: Bool
         let tree: WeakNode?
         let zoomed: Weak<Ghostty.SurfaceView>?
         let focused: Weak<Ghostty.SurfaceView>?
@@ -628,7 +629,7 @@ struct UmiSnapshot {
                 if let node = tree.zoomed, case .leaf(let view) = node { zoomed = Weak(view) }
                 let focused = (tab === controller.selectedTab ? controller.focusedSurface : nil) ?? tab.focusedSurface
                 return TabState(tab: Weak(tab), id: tab.id, name: tab.name, color: tab.color, pinned: tab.pinned,
-                                tree: tree.root.map(WeakNode.init), zoomed: zoomed, focused: focused.map { Weak($0) },
+                                isDocs: tab.isDocs, tree: tree.root.map(WeakNode.init), zoomed: zoomed, focused: focused.map { Weak($0) },
                                 stacks: tab.stacks.map { $0.members.map { Weak($0) } })
             }
             states.append(WindowState(box: UmiSnapshot.box(for: controller), tabs: tabs, selected: controller.selectedTab.id,
@@ -720,6 +721,7 @@ struct UmiSnapshot {
                 tab.name = tabState.name
                 tab.color = tabState.color
                 tab.pinned = tabState.pinned
+                tab.isDocs = tabState.isDocs
                 var zoomedNode: SplitTree<Ghostty.SurfaceView>.Node?
                 if let z = tabState.zoomed?.value, let node = tabPlan.root.node(view: z) { zoomedNode = node }
                 tab.tree = SplitTree(root: tabPlan.root, zoomed: zoomedNode)

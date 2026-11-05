@@ -510,13 +510,20 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   another. When the tab already shows three panes (a stack counts once), the file gets a new tab
   right after it. A file already open shows where it is, without a second pane. An explicitly named
   pane or tab that doesn't exist is an error, never a fallback to another tab.
-- **E-10 [A]** A Markdown, text, JSON, CSV, TSV or YAML file opened from outside the app (Finder,
-  `open FILE`, the app being the default for these types) opens in the tab whose folder is closest to the file: the tab with
-  a pane whose working directory is the deepest folder containing the file. Any pane of a tab counts;
-  `/` doesn't. A file already open somewhere shows there. Ties go to the current tab, then the
-  current window's tabs in sidebar order, then other windows'. With no such tab it opens in a new
-  tab in the file's folder, in the current window (a new window if there is none). The ⌘O Open
-  panel still opens in the current tab.
+- **E-10 [A]** A file opened from outside the app (Finder, `open FILE`, the app being the default
+  for these types):
+  - Markdown (asked 2026-11-05) opens in one shared tab, the docs tab (`docs: true` in `ls`, named
+    Docs). Its documents share one place as a stack (M-7), the most recently opened first. The
+    strip names the three most recent (and the one on show, if older), then "+N · ⌘[ ⌘]" for the
+    rest, which ⌘[ and ⌘] reach. A new document goes first and on show; one already open anywhere shows where it
+    is (in the docs tab it becomes the most recent). Without a docs tab, one is made in the current
+    window (a new window if there is none). Closing the last document closes the tab.
+  - Text, JSON, CSV, TSV and YAML files open in the tab whose folder is closest to the file: the
+    tab with a pane whose working directory is the deepest folder containing the file. Any pane of
+    a tab counts; `/` doesn't. A file already open somewhere shows there. Ties go to the current
+    tab, then the current window's tabs in sidebar order, then other windows'. With no such tab it
+    opens in a new tab in the file's folder, in the current window (a new window if there is none).
+  - The ⌘O Open panel still opens in the current tab.
 - **E-11 [A]** Comments on Markdown documents, as in Google Docs, so the user can react to what
   agents show them and agents can act on it:
   - selecting text in the preview offers Comment (a button by the selection, Edit ▸ Add Comment,

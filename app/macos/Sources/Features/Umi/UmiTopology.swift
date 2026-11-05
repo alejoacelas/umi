@@ -256,6 +256,7 @@ enum UmiTopology {
             "title": tab.title,
             "selected": tab === window.selectedTab,
             "pinned": tab.pinned,
+            "docs": tab.isDocs,
             "focused_pane": focused?.umiID ?? "",
             "window": window.umiIDString,
         ]

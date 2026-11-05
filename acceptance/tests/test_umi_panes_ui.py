@@ -1,7 +1,8 @@
 """Equal panes, reopening closed things, and the sidebar after the user's decisions (BRIEF-agents §2):
 L-19 (panes share rows and columns equally), L-20 (⇧⌘T / `reopen`), S-3 (rows: folder, then the
 session's title, quiet agent marks), S-4 (the row menu), S-8 (sidebar width per window), M-4 (panes
-and tabs dropped on the sidebar, tabs dragged out), E-10 (Markdown opens in the closest tab).
+and tabs dropped on the sidebar, tabs dragged out), E-10 (Markdown opens in the docs tab, other
+text files in the closest tab).
 
 What only a mouse can do (drops, drags, the row menu, dividers) is driven through Umi's internal
 `debug.ui.*` control methods, which run the same code the UI runs; the `ui` tests do it with the
@@ -870,16 +871,16 @@ def test_a_tab_dragged_out_of_its_window_makes_a_window_at_the_drop_point(inst, 
     assert marker in inst.cli("read", "--pane", p2, "--scrollback").stdout
 
 
-# ---- E-10: Markdown opens in the closest tab ------------------------------------------------------
+# ---- E-10: text files open in the closest tab, Markdown in the docs tab---------------------------------------------------
 
 @pytest.mark.req("E-10", "I-3")
-def test_markdown_opens_in_the_tab_whose_folder_is_closest(inst, win, tmp_path):
+def test_text_files_open_in_the_tab_whose_folder_is_closest(inst, win, tmp_path):
     root = tmp_path / "proj"
     deep = root / "pkg" / "docs"
     deep.mkdir(parents=True)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    for path in (deep / "guide.md", root / "README.md", elsewhere / "notes.md", elsewhere / "more.md"):
+    for path in (deep / "guide.txt", root / "README.txt", elsewhere / "notes.txt", elsewhere / "more.txt"):
         path.write_text(f"# {path.name}\n")
     p_root, t_root = new_tab(inst, win, "--cwd", str(root))
     p_pkg, t_pkg = new_tab(inst, win, "--cwd", str(root / "pkg"))
@@ -887,38 +888,68 @@ def test_markdown_opens_in_the_tab_whose_folder_is_closest(inst, win, tmp_path):
     def opened(path):
         return rpc(inst, "debug.ui.open_file", path=str(path))
 
-    assert opened(deep / "guide.md")["tab"] == t_pkg, "the deepest folder containing the file"
-    assert opened(root / "README.md")["tab"] == t_root
+    assert opened(deep / "guide.txt")["tab"] == t_pkg, "the deepest folder containing the file"
+    assert opened(root / "README.txt")["tab"] == t_root
     # Already open: it shows where it is.
     inst.cli("tab", "focus", t_root)
-    assert opened(deep / "guide.md")["tab"] == t_pkg
+    assert opened(deep / "guide.txt")["tab"] == t_pkg
     # No tab above it: a new tab in its folder, in the current window, right after the current tab
     # (S-7); the next file there joins it.
     inst.cli("tab", "focus", win["tab"])
     before = tab_ids(inst, win["window"])
-    first = opened(elsewhere / "notes.md")
+    first = opened(elsewhere / "notes.txt")
     assert first["window"] == win["window"] and first["tab"] not in before
     assert tab_ids(inst, win["window"]) == before[:1] + [first["tab"]] + before[1:], "right after the current tab"
     new_pane = tab_of(inst, first["tab"])["panes"][0]
     assert os.path.realpath(new_pane["cwd"]) == os.path.realpath(elsewhere)
-    assert opened(elsewhere / "more.md")["tab"] == first["tab"]
+    assert opened(elsewhere / "more.txt")["tab"] == first["tab"]
     docs = inst.json("editor", "ls", "--tab", first["tab"])["documents"]
-    assert {os.path.basename(d["path"]) for d in docs} == {"notes.md", "more.md"}
+    assert {os.path.basename(d["path"]) for d in docs} == {"notes.txt", "more.txt"}
 
 
 @pytest.mark.req("E-10")
 def test_ties_go_to_the_current_tab_and_any_pane_of_a_tab_counts(inst, win, tmp_path):
     root = tmp_path / "tie"
     (root / "sub").mkdir(parents=True)
-    (root / "a.md").write_text("# a\n")
-    (root / "sub" / "b.md").write_text("# b\n")
+    (root / "a.txt").write_text("# a\n")
+    (root / "sub" / "b.txt").write_text("# b\n")
     _, t1 = new_tab(inst, win, "--cwd", str(root))
     p2, t2 = new_tab(inst, win, "--cwd", str(root))
     inst.cli("tab", "focus", t2)
-    assert rpc(inst, "debug.ui.open_file", path=str(root / "a.md"))["tab"] == t2
+    assert rpc(inst, "debug.ui.open_file", path=str(root / "a.txt"))["tab"] == t2
     # A second pane of t1 in the deeper folder makes t1 the closest, though it isn't focused.
     split(inst, "right", tab_of(inst, t1)["panes"][0]["id"], "--cwd", str(root / "sub"), "--no-focus")
-    assert rpc(inst, "debug.ui.open_file", path=str(root / "sub" / "b.md"))["tab"] == t1
+    assert rpc(inst, "debug.ui.open_file", path=str(root / "sub" / "b.txt"))["tab"] == t1
+
+
+@pytest.mark.req("E-10")
+def test_markdown_opens_in_one_docs_tab_most_recent_first(inst, win, tmp_path):
+    names = [f"doc{i}.md" for i in range(1, 6)]
+    for i, name in enumerate(names):
+        folder = tmp_path / ("a" if i % 2 else "b")   # two folders: the folder doesn't matter
+        folder.mkdir(exist_ok=True)
+        (folder / name).write_text(f"# {name}\n")
+    paths = {name: next(tmp_path.glob(f"*/{name}")) for name in names}
+    before = tab_ids(inst, win["window"])
+    first = rpc(inst, "debug.ui.open_file", path=str(paths["doc1.md"]))
+    assert first["window"] == win["window"] and first["tab"] not in before
+    docs_tab = first["tab"]
+    for name in names[1:]:
+        assert rpc(inst, "debug.ui.open_file", path=str(paths[name]))["tab"] == docs_tab
+    assert len(tab_ids(inst, win["window"])) == len(before) + 1, "one tab for all of them"
+    tab = tab_of(inst, docs_tab)
+    assert tab["docs"] is True and tab["selected"]
+    files = [os.path.basename(p["file"]) for p in tab["panes"]]
+    assert files == list(reversed(names)), "one stack, the most recently opened first and on show"
+    assert [p["shown"] for p in tab["panes"]] == [True, False, False, False, False]
+    # Opening one again makes it the most recent and shows it.
+    rpc(inst, "debug.ui.open_file", path=str(paths["doc2.md"]))
+    tab = tab_of(inst, docs_tab)
+    assert [os.path.basename(p["file"]) for p in tab["panes"]] == ["doc2.md", "doc5.md", "doc4.md", "doc3.md", "doc1.md"]
+    assert tab["panes"][0]["shown"]
+    # Text files still go by folder.
+    (tmp_path / "a" / "notes.txt").write_text("notes\n")
+    assert rpc(inst, "debug.ui.open_file", path=str(tmp_path / "a" / "notes.txt"))["tab"] != docs_tab
 
 
 # ---- UI (real mouse; the lead runs these) ---------------------------------------------------------

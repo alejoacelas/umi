@@ -516,7 +516,8 @@ enum UmiEditor {
     }
 
     /// Open a file from Finder or `open FILE` (Umi is the default Markdown app), bringing it
-    /// forward: in the tab whose folder is closest to the file, else in a new tab (E-10). The
+    /// forward: Markdown in the docs tab (`UmiDocsTab`), other files in the tab whose folder is
+    /// closest to the file, else in a new tab (E-10). The
     /// Open panel (`inCurrentTab`) opens in the current tab, where the person asked.
     @discardableResult
     static func openFromSystem(_ url: URL, inCurrentTab: Bool = false) -> Bool {
@@ -538,6 +539,7 @@ enum UmiEditor {
     @discardableResult
     static func open(_ url: URL, inCurrentTab: Bool) throws -> (TerminalController, UmiTab) {
         try UmiTextFile.checkOpenable(url)
+        if !inCurrentTab, isMarkdown(url) { return try UmiDocsTab.open(url) }
         let (_, tab) = inCurrentTab
             ? try targetTab(UmiParams([:]), caller: UmiCaller([:]), createWindow: true)
             : try closestTab(to: url)
