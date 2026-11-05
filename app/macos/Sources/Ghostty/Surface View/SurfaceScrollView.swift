@@ -37,6 +37,8 @@ class SurfaceScrollView: NSView {
         // Always use the overlay style. See mouseMoved for how we make
         // it usable without a scroll wheel or gestures.
         scrollView.scrollerStyle = .overlay
+        // Umi: Warp's thumb, with no track (UmiScroller).
+        scrollView.verticalScroller = UmiScroller()
         // hide default background to show blur effect properly
         scrollView.drawsBackground = false
         // don't let the content view clip its subviews, to enable the
@@ -189,6 +191,7 @@ class SurfaceScrollView: NSView {
         let hasLightBackground = NSColor(surfaceView.derivedConfig.backgroundColor).isLightColor
         // Make sure the scroller’s appearance matches the surface's background color.
         scrollView.appearance = NSAppearance(named: hasLightBackground ? .aqua : .darkAqua)
+        (scrollView.verticalScroller as? UmiScroller)?.ink = hasLightBackground ? .black : .white
         updateTrackingAreas()
     }
 
