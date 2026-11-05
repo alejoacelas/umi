@@ -215,6 +215,48 @@ def test_keyboard_shortcuts_is_a_menu_item_on_cmd_slash(inst, win):
     assert any(e["id"] == "help.shortcuts" and e["keys"] == ["cmd+/"] for e in entries), entries
 
 
+def subsequence(query, text):
+    """The palette's fuzzy title match: the query's characters in order."""
+    it = iter(text.lower())
+    return all(c in it for c in query.lower())
+
+
+@pytest.mark.req("L-17")
+def test_the_shortcuts_page_searches_by_keys_in_any_order(inst, win):
+    def search(q):
+        return rpc(inst, "debug.shortcuts_page", window=win["window"], query=q)["rows"]
+
+    def by_keys(rows, q):
+        """The rows the query found by their keys (not by their title)."""
+        return [r for r in rows if not subsequence(q, r["title"])]
+
+    def holds(row, mods, key=None):
+        for spec in row["shortcuts"]:
+            parts = spec.split("+")
+            if set(mods) <= set(parts[:-1]) and (key is None or parts[-1] == key):
+                return True
+        return False
+
+    try:
+        # Modifiers in any order, written as words or symbols.
+        for q in ("cmd shift p", "shift cmd p", "cmd+shift+p", "⇧⌘P", "command shift p"):
+            rows = search(q)
+            assert "pane.go_to" in {r["id"] for r in rows}, (q, [r["id"] for r in rows])
+            assert all(holds(r, ["cmd", "shift"], "p") for r in by_keys(rows, q)), (q, rows)
+        # The terminal's bindings are found by their keys too.
+        rows = search("cmd c")
+        assert any(r["id"].startswith("ghostty:") and holds(r, ["cmd"], "c") for r in rows), rows
+        # A key matches exactly: ⌘P is not ⌘. or ⌘⇞.
+        rows = search("cmd p")
+        assert "view.palette" in {r["id"] for r in rows}
+        assert all(holds(r, ["cmd"], "p") for r in by_keys(rows, "cmd p")), rows
+        # Modifiers alone list every shortcut that holds them.
+        rows = search("ctrl cmd")
+        assert rows and all(holds(r, ["ctrl", "cmd"]) for r in by_keys(rows, "ctrl cmd")), rows
+    finally:
+        rpc(inst, "debug.shortcuts_page", window=win["window"], query="")
+
+
 def key(inst, win, keys, focus="terminal"):
     """A key press delivered inside the app (through Umi's key handling, not the system's)."""
     return rpc(inst, "debug.key", window=win["window"], keys=keys, focus=focus)

@@ -12,11 +12,14 @@ final class UmiShortcutsPageModel: ObservableObject {
         let section: String
         /// Each shortcut's keys, one box per key.
         let keys: [[String]]
-        /// The shortcuts as `umi shortcuts` writes them (cmd+p), which the search also matches.
+        /// The shortcuts as `umi shortcuts` writes them (cmd+p).
         let specs: [String]
+        /// The shortcuts, which a search by keys matches.
+        let shortcuts: [UmiShortcut]
 
         var json: [String: Any] {
-            ["id": id, "title": title, "section": section, "keys": keys.map { $0.joined() }, "specs": specs]
+            ["id": id, "title": title, "section": section, "keys": keys.map { $0.joined() }, "specs": specs,
+             "shortcuts": shortcuts.map(\.spec)]
         }
     }
 
@@ -77,18 +80,60 @@ final class UmiShortcutsPageModel: ObservableObject {
         }
     }
 
-    /// The rows the query matches: by title (fuzzy), or by key (⌘P, cmd+p).
+    /// The rows the query matches: by title (fuzzy), or by keys (⌘P, cmd p, shift cmd p).
     var rows: [Row] {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return all }
-        let lowered = q.lowercased()
-        // "cmd d" (Warp's example) is cmd+d.
-        let spec = lowered.split(separator: " ").joined(separator: "+")
+        let keys = Self.keystroke(in: q)
         return all.filter { row in
             UmiFuzzy.score(q, row.title) != nil
-                || row.keys.contains { $0.joined().lowercased().contains(lowered) }
-                || row.specs.contains { $0.lowercased().contains(spec) }
+                || keys.map { keys in row.shortcuts.contains { Self.matches($0, keys) } } ?? false
         }
+    }
+
+    /// A query read as keys, as Warp's keybinding search reads it: modifier words (cmd/command,
+    /// ctrl/control, alt/option/opt, shift) or symbols (⌃⌥⇧⌘) in any order, and at most one
+    /// key. Nil when it isn't keys (a word that's no key, a modifier twice, nothing at all).
+    static func keystroke(in query: String) -> (modifiers: NSEvent.ModifierFlags, key: String?)? {
+        var modifiers: NSEvent.ModifierFlags = []
+        var key: String?
+        let symbols: [Character: NSEvent.ModifierFlags] = ["⌃": .control, "⌥": .option, "⇧": .shift, "⌘": .command]
+        func add(_ flag: NSEvent.ModifierFlags) -> Bool {
+            guard !modifiers.contains(flag) else { return false }
+            modifiers.insert(flag)
+            return true
+        }
+        let tokens = query.split(whereSeparator: { $0 == " " || $0 == "+" }).map(String.init)
+        for token in tokens {
+            var text = Substring(token)
+            while let first = text.first, let flag = symbols[first] {
+                guard add(flag) else { return nil }
+                text.removeFirst()
+            }
+            guard !text.isEmpty else { continue }
+            switch text.lowercased() {
+            case "cmd", "command": guard add(.command) else { return nil }
+            case "ctrl", "control": guard add(.control) else { return nil }
+            case "alt", "option", "opt": guard add(.option) else { return nil }
+            case "shift": guard add(.shift) else { return nil }
+            default:
+                guard key == nil, let shortcut = UmiShortcut(spec: String(text)), shortcut.modifiers.isEmpty else { return nil }
+                key = shortcut.key
+            }
+        }
+        guard !modifiers.isEmpty || key != nil else { return nil }
+        return (modifiers, key)
+    }
+
+    /// A shortcut has every modifier the query names, and its key when it names one (Warp).
+    static func matches(_ shortcut: UmiShortcut, _ keys: (modifiers: NSEvent.ModifierFlags, key: String?)) -> Bool {
+        shortcut.modifiers.isSuperset(of: keys.modifiers) && (keys.key == nil || keys.key == shortcut.key)
+    }
+
+    /// Search the page (debug.shortcuts_page), listing every shortcut even while it's closed.
+    func search(_ text: String) {
+        if all.isEmpty { all = Self.build() }
+        query = text
     }
 
     /// The rows by section, in Umi's menu order and then the terminal's bindings.
@@ -114,7 +159,8 @@ final class UmiShortcutsPageModel: ObservableObject {
                 section = menu == "App" ? "Umi" : (sectionOrder.contains(menu) ? menu : "Umi")
             }
             let specs = entry.kind == .umi ? entry.shortcuts.map(\.spec) : entry.triggers
-            return Row(id: entry.id, title: entry.title, section: section, keys: shown, specs: specs)
+            return Row(id: entry.id, title: entry.title, section: section, keys: shown, specs: specs,
+                       shortcuts: entry.shortcuts)
         }
         .sorted { a, b in a.title.localizedStandardCompare(b.title) == .orderedAscending }
     }

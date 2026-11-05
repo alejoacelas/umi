@@ -149,7 +149,9 @@ enum UmiNavigationRPC {
 
         case "debug.shortcuts_page":
             // The shortcuts page (⌘/) of a window: shown or not, its query and rows.
+            // With `query`, search it first.
             let window = try UmiTopology.window(params.string("window"), caller: caller)
+            if let query = params.string("query") { window.palette.shortcutsPage.search(query) }
             return window.palette.shortcutsPage.stateJSON
 
         case "debug.palette.close":
