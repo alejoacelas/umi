@@ -98,3 +98,17 @@ it is guidance"). What this design gives up:
 | **`clear` clears**, and ⌘K clears scrollback; Warp's `clear` instead pushes the blocks up out of view, keeping them in scrollback. | `clear` is zsh's (and the program's) command; Tern doesn't replace it. The prompt stays at the bottom either way. | zsh unchanged. |
 | **Other shells keep the usual look**, and so does a zsh started inside a Tern pane unless it loads the integration. | The look needs Tern's prompt marks; only Tern's zsh integration prints them. | "The user's shell is zsh; other shells may keep the usual look." |
 | **On Linux (OpenGL) only the bottom alignment, colors, durations and bold apply**; the lines, tint, bar and box are a Metal pipeline. | Tern ships for macOS; the shared renderer must still build elsewhere. | Correct highlights where shapes aren't drawn (review round 2). |
+
+===================================================================================================
+
+# Compromises (Warp parity: palettes and the shortcuts page, 2026-11-05)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **⇧⌘P's rows show no prompt and no "Completed N minutes ago".** Warp draws each session's prompt (its PS1 or chips) and how long ago its last command ended; Umi shows the pane's title with folder and branch chips, the command and "Running..." or "Completed". | Umi keeps no time for when a command ended, and its prompt is zsh's text, not chips. | L-15 (each pane's own title, folder, branch, command, tab). |
+| **Recent forgets on quit.** The empty palette's Recent lists the rows chosen since the app started. | Warp's Recent also lives in memory; persisting it would add state for little. | — |
+| **Suggested is Umi's own three** (Keyboard Shortcuts, Settings…, Show Project Explorer). | Warp's suggestions (AI input, theme chooser, new workflow) have no Umi counterpart. | — |
+| **`tabs:` is Umi's.** Warp's tabs filter has no prefix (it backs ⌃Tab's palette). | ⌃Tab cycles tabs directly in Umi (L-11); a prefix makes the list reachable from the keyboard. | L-11. |
+| **The shortcuts page is read-only and has no "configure" link.** Warp links to its settings editor. | Umi changes shortcuts with `umi shortcuts` (L-17); the page says so. | L-17. |
+| **⌘/ in the editor's source is left to the editor** (toggle comment); the page doesn't open there. Warp disables its page key while a code editor is open. | Both keys can't act at once; focus decides. | E-* editor keys. |
+
