@@ -711,7 +711,14 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_layouts.py`**: `test_command_palette_finds_launch_configurations_by_name`
   (⌘P's list finds a configuration by name and opens it; unreadable files stay out of it).
 - **Changed, `tests/test_umi_layouts.py`**: `test_palette_lists_configurations_and_opens_the_chosen_one`
-  now asserts what the filtered query returns (it sent the query without checking the result).
+  now asserts what the query returns: a query that matches nothing empties the list, and `alp`
+  ranks Alpha first (it sent the query without checking the result). The query also matches the
+  file paths shown under the entries, so a weaker match can stay below Alpha.
+- **Changed, `tests/test_umi_layouts.py`**: `test_save_new_launch_configuration_from_the_file_menu`
+  (UI, real keys) now also checks that the dialog shown again after a duplicate name has the name in
+  its focused field, that Cancel keeps the file, and that "Open YAML File" opens the saved file in
+  the editor. AXPress on that button reports a failure because the sheet is gone when it returns;
+  the test checks the editor instead of the code.
 - **New, `tests/test_umi_layouts.py`**: `test_file_menu_lists_each_launch_configuration_by_name`
   (File ▸ Launch Configurations lists each readable configuration by name before the two items,
   choosing one opens it, and the list follows the folder).
