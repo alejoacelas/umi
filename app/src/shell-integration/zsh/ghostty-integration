@@ -115,7 +115,8 @@ _ghostty_deferred_init() {
         fi
         PS1=$'\n\n'
         [[ -n $before ]] && PS1+=$'%{\e[2m%}'${before//\%/%%}$'%{\e[22m%}'
-        PS1+="%-$(( 4 + ${#before} + ${#after} ))<…<%~%<<"
+        # (zsh counts the negative width from where the folder starts.)
+        PS1+="%-$(( 4 + ${#after} ))<…<%~%<<"
         [[ -n $after ]] && PS1+=$'%{\e[2m%}'${after//\%/%%}$'%{\e[22m%}'
         PS1+=$'\n'
     }
