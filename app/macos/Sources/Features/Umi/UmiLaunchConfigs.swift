@@ -224,6 +224,18 @@ enum UmiLaunchConfigs {
         }
     }
 
+    /// The name a saved file uses for a tab color: Warp's terminal-color name where Warp has one,
+    /// so Warp can read the file; pink and orange have none and keep Umi's names (Warp then can't
+    /// read that file).
+    static func fileColorName(_ color: TerminalTabColor) -> String {
+        switch color {
+        case .purple: return "magenta"
+        case .teal: return "cyan"
+        case .graphite: return "white"
+        default: return UmiTopology.colorName(color)
+        }
+    }
+
     // MARK: Capturing
 
     /// The windows as a configuration (Warp's "save the current configuration").
@@ -284,7 +296,7 @@ enum UmiLaunchConfigs {
                 var tabPairs: [(String, UmiYAML.Node)] = []
                 if let title = tab.title { tabPairs.append(("title", .string(title))) }
                 tabPairs.append(("layout", yaml(tab.layout)))
-                if tab.color != .none { tabPairs.append(("color", .string(UmiTopology.colorName(tab.color)))) }
+                if tab.color != .none { tabPairs.append(("color", .string(fileColorName(tab.color)))) }
                 return .map(tabPairs)
             })))
             return .map(pairs)

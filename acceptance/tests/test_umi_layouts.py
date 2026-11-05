@@ -173,6 +173,29 @@ def test_save_writes_warp_format_and_open_brings_the_layout_back(clean, tmp_path
 
 
 @pytest.mark.req("L-21")
+def test_saved_colors_use_warps_names_where_warp_has_them(clean, tmp_path):
+    """Warp reads only its eight terminal colors: purple, teal and graphite are saved as magenta,
+    cyan and white, and read back as Umi's colors."""
+    inst = clean
+    (folder,) = folders(tmp_path, "colors")
+    win = inst.json("window", "new", "--cwd", folder)
+    tabs = [win["tab"]]
+    for _ in range(3):
+        pane = inst.cli("tab", "new", "--window", win["window"], "--cwd", folder, "--no-focus").stdout.strip()
+        tabs.append(inst.find_pane(pane)[1]["id"])
+    for tab, color in zip(tabs, ("purple", "teal", "graphite", "pink")):
+        inst.cli("tab", "color", tab, color)
+    inst.json("layout", "save", "colors")
+    text = open(os.path.join(inst.configs, "colors.yaml")).read()
+    written = [line.split("color:", 1)[1].strip() for line in text.splitlines() if line.strip().startswith("color:")]
+    assert written == ["magenta", "cyan", "white", "pink"], text
+    inst.cli("window", "close", win["window"])
+    opened = inst.json("layout", "open", "colors")
+    window = next(w for w in inst.tree()["windows"] if w["id"] == opened["windows"][0])
+    assert [t.get("color") for t in window["tabs"]] == ["purple", "teal", "graphite", "pink"], window["tabs"]
+
+
+@pytest.mark.req("L-21")
 def test_hand_written_config_opens_windows_splits_and_runs_commands(clean, tmp_path):
     inst = clean
     one, two, three = folders(tmp_path, "one", "two", "three")

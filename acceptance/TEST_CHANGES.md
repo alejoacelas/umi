@@ -705,3 +705,6 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_layouts.py`**: `test_a_file_with_several_documents_holds_several_configurations`
   (each `---` document is a configuration, listed and opened by name; the file's name is then
   ambiguous and says so; a broken second document is reported with its line in the file).
+- **New, `tests/test_umi_layouts.py`**: `test_saved_colors_use_warps_names_where_warp_has_them`
+  (purple, teal, graphite and pink tabs are saved as `magenta`, `cyan`, `white` and `pink`, and open
+  with their Umi colors again).

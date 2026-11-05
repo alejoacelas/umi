@@ -336,7 +336,9 @@ the menu.
   `commands` as `- exec: COMMAND`, `is_focused`) or a split (`split_direction: horizontal` for side
   by side, `vertical` for one above the other, and its `panes`, any number, in equal shares). A
   tab's own `commands` go to its focused pane, else its first. Colors are Umi's tab colors, or
-  Warp's `magenta`, `cyan`, `black` and `white` (purple, teal, graphite, graphite). A file without a
+  Warp's `magenta`, `cyan`, `black` and `white` (purple, teal, graphite, graphite). Saving writes
+  Warp's names where Warp has the color (purple as `magenta`, teal as `cyan`, graphite as `white`),
+  so Warp can read the file; pink and orange keep Umi's names. A file without a
   `name` is named after the file (`my_work.yaml` → "My Work"). A file can hold several
   configurations as YAML documents separated by `---`, as in Warp; each is listed and opened on its
   own.
