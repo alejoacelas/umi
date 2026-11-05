@@ -939,17 +939,23 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
         }
     }
 
-    func focusFindField() {
-        guard let field = findField, let window = field.window else { return }
-        window.makeFirstResponder(field)
-        field.currentEditor()?.selectAll(nil)
-    }
+    func focusFindField() { focusWhenShown { [weak self] in self?.findField } }
 
     func focusReplaceField() {
-        DispatchQueue.main.async { [weak self] in
-            guard let field = self?.replaceField, let window = field.window else { return }
+        DispatchQueue.main.async { [weak self] in self?.focusWhenShown { [weak self] in self?.replaceField } }
+    }
+
+    /// Focus a box's field once SwiftUI has put it in the window: a bar shown for the first time
+    /// (or right after the source view replaced a preview) gets its fields a pass or more later.
+    private func focusWhenShown(selectAll: Bool = true, tries: Int = 50, _ field: @escaping () -> NSTextField?) {
+        if let field = field(), let window = field.window {
             window.makeFirstResponder(field)
-            field.currentEditor()?.selectAll(nil)
+            if selectAll { field.currentEditor()?.selectAll(nil) }
+            return
+        }
+        guard tries > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+            MainActor.assumeIsolated { self?.focusWhenShown(selectAll: selectAll, tries: tries - 1, field) }
         }
     }
 
@@ -1090,8 +1096,7 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
         goTo.isOpen = true
         goToHost?.isHidden = false
         DispatchQueue.main.async { [weak self] in
-            guard let field = self?.goToField, let window = field.window else { return }
-            window.makeFirstResponder(field)
+            self?.focusWhenShown(selectAll: false) { [weak self] in self?.goToField }
         }
     }
 
