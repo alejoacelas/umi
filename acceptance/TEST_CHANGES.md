@@ -1074,3 +1074,18 @@ New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24
   active" check ran only when the test app happened to be in the background. A new hook,
   `debug.ui.inbox.assume_inactive`, makes the app count as inactive, so the check always runs
   (stronger).
+
+## Merging the Warp branches (warp/parity, 2026-11-05)
+
+Two tests changed because two branches' behaviours met; what each checks is unchanged.
+
+- **Changed, `tests/test_umi_warp_panes.py` `test_the_zoom_scales_the_editor_and_the_markdown_preview`**:
+  the editor's text now uses the terminal's font (E-21) instead of a fixed 12.5 pt, so the test reads
+  the size at 100% and expects 110% of it after ⌘=, instead of 12.5 → 13.75. **Requirements:** L-33.
+- **Changed, `tests/test_umi_editor_warp.py` `test_cmd_f_in_a_preview_finds_in_the_source`**: it
+  opens a JSON file instead of a Markdown file. A rendered Markdown file now has its own find bar
+  (MD-4), which ⌘F opens; JSON and CSV previews still switch to the source. **Requirements:** E-22.
+- **Changed, `tests/test_umi_layouts.py` `test_tab_menu_save_as_new_config_saves_the_tab_and_opens_the_file`**:
+  the item before "Save as New Config" is "Close tab", not "Close Tabs Below": the tab is its
+  window's only tab, and Warp's menu (S-4) leaves out close items that can't apply. It still checks
+  the item comes after the close items and before the colors. **Requirements:** L-21, S-4.
