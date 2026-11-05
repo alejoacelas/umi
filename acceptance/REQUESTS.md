@@ -269,9 +269,10 @@ Then:
 > let's add the warp right click options as well
 
 Keyboard features, looks and Warp's right-click menu items are in; other click- or hover-only
-gestures are out.
+gestures are out. Warp's right-click items in a file's text (Go to definition, Find references)
+need a language server and are not in (COMPROMISES).
 
 - The file editor (SPEC E-4, E-21 to E-24): Warp's code view (terminal font, no soft wrap, line
   numbers, current line, marks against the last commit, tree-sitter colors), its find and replace,
-  ⌃G, ⌘/, ⇧⌘S, the "File saved." toast, the file pane header with its ⋯ and right-click menu, and
-  file chips with type icons.
+  ⌃G, ⌘/, ⇧⌘S, the "File saved." toast, the file pane header with Warp's ⋯ menu for each view (the
+  same menu on a right-click of the header is an Umi addition), and file chips with type icons.

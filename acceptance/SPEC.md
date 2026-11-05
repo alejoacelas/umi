@@ -580,8 +580,10 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   ⇧⌘G in a file pane act on the file, never on the terminal under it. ⌘F opens a bar floating at the
   top right (10 down, 20 in, 500 wide) with the selection (one line of it) as the query and its
   field focused. Enter or ⌘G goes to the next match, Shift-Enter or ⇧⌘G to the previous one,
-  wrapping; the selected match is selected in the text; the bar counts "n/N" ("?/N" with no
-  selected match). Toggles: regex, case-sensitive, and preserve case for replacing. The replace row
+  wrapping; the caret goes to the selected match's start and the match shows in orange, the others
+  in yellow; the bar counts "n/N" ("?/N" with no selected match). With the bar closed, ⌘G opens it
+  on the first match at or after the caret and ⇧⌘G on the last match before it. In a preview
+  (Markdown, JSON, CSV) these keys switch the pane to its source and find there. Toggles: regex, case-sensitive, and preserve case for replacing. The replace row
   (the bar's toggle, or ⌥⌘F) replaces the selected match on Enter and every match with Replace all,
   as one undo step; Select all selects every match in the text. Esc closes the bar and returns to
   the text.
@@ -589,14 +591,19 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   "Line number:Column"; Enter goes there, Esc closes; Warp's messages for empty or invalid input);
   ⌘/ comments or uncomments the selected lines with the language's line-comment prefix after their
   indentation (uncomments when every non-blank line has it); ⇧⌘S saves under a name the user picks
-  and the pane then shows that file; ⌘S shows a "File saved." toast at the top of the tab for 4
+  and the pane then shows that file (when another pane already shows that file, that pane takes the
+  text and focus and this one closes; with unsaved edits there, Save As refuses and says why); ⌘S shows a "File saved." toast at the top of the tab for 4
   seconds. Saving never reformats the file. When no file pane is focused these keys go to whatever
   is (a terminal gets ⌃G).
 - **E-24 [A+W]** File pane header and stack chips, as Warp's (Warp parity, 2026-11-05): the file's
   name centred, with an 8-point dot 4 points before it while there are unsaved changes; on the right
-  the preview/source control (E-2), ⋯ and close. ⋯ and a right-click on the header open the pane
-  menu: Maximize pane (Minimize pane while maximized; only in a split), Reload file (asks first when
-  there are unsaved changes), Copy file path, Reveal in Finder. A stack chip (M-7) for a file shows
+  the preview/source control (E-2), ⋯ and close. ⋯ opens the pane menu, as Warp's for each view
+  (W: `code/view.rs`, `notebooks/file/mod.rs`); a right-click on the header opens the same menu (an
+  Umi addition: Warp's header has none). In the source view: Maximize pane (Minimize pane while
+  maximized; outside a split it does nothing), Copy file path, Reveal in Finder, and View Markdown
+  preview for Markdown. In a preview: Maximize pane, Refresh file (asks first when there are unsaved
+  changes), Open in editor (the source view), Copy file path. A right-click in the source text offers
+  Cut, Copy and Paste. A stack chip (M-7) for a file shows
   the file type's colored icon and the same dot, and is at most 300 points wide.
 
 ## AG. Agent sessions
