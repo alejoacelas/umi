@@ -98,3 +98,19 @@ it is guidance"). What this design gives up:
 | **`clear` clears**, and ⌘K clears scrollback; Warp's `clear` instead pushes the blocks up out of view, keeping them in scrollback. | `clear` is zsh's (and the program's) command; Tern doesn't replace it. The prompt stays at the bottom either way. | zsh unchanged. |
 | **Other shells keep the usual look**, and so does a zsh started inside a Tern pane unless it loads the integration. | The look needs Tern's prompt marks; only Tern's zsh integration prints them. | "The user's shell is zsh; other shells may keep the usual look." |
 | **On Linux (OpenGL) only the bottom alignment, colors, durations and bold apply**; the lines, tint, bar and box are a Metal pipeline. | Tern ships for macOS; the shared renderer must still build elsewhere. | Correct highlights where shapes aren't drawn (review round 2). |
+
+===================================================================================================
+
+# Compromises (Warp parity: the Markdown preview, 2026-11-05)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **⌘E, ⌘F, ⌘G and ⇧⌘G aren't Umi menu items.** In a file pane ⌘E toggles Rendered / Raw (the pane takes the key, and Ghostty's Edit ▸ Find ▸ Use Selection for Find reaches it through the responder chain); in a Markdown preview Edit ▸ Find's Find…, Find Next and Find Previous search the document. They don't show as their own entries in the palette or `umi shortcuts` (⇧⌘M, Toggle Markdown Preview, still does). | Umi's menu items take their keys whatever has focus, so a Umi item for ⌘E or ⌘F would take them from terminals, where they are Ghostty's search keys. | Terminals keep Ghostty's find and use-selection-for-find (MD-4, E-2). |
+| **Code in the preview is SF Mono**, not the terminal's font as in Warp. | The terminal's default font is embedded in libghostty, which the preview's web page can't use. | MD-1's other numbers (13 px, line height 1.5). |
+| **Roboto covers Latin and Latin Extended only**; Greek, Cyrillic and other scripts use the system font. | The bundled font stays small (140 KB), embedded in each page. | MD-1. |
+| **Highlighting is highlight.js's common languages** (about 35), with Warp's color for each kind of token, instead of Warp's tree-sitter grammars. Languages outside that set show unhighlighted. | A browser-side highlighter fits the preview; tree-sitter would need a native pass per block. | MD-2. |
+| **Diagrams are drawn by mermaid.js**, so they can look different from Warp's own Mermaid renderer; it loads only into pages that have a diagram (2.5 MB). | Warp's renderer isn't available outside Warp (and it's AGPL). | MD-3. |
+| **Open full screen covers the preview's pane**, not the whole window as Warp's lightbox does. | The page can't draw outside its pane. | MD-3. |
+| **Run in terminal pastes into the tab's terminal used most recently**, without Warp's workflow features (argument fields, history). Without a terminal in the tab it says so. | Umi has no workflows; pasting is what puts text in zsh's input without running it. | MD-2. |
+| **The right-click menu shows no key labels** beside its split items (Warp shows its own keys). | Umi's split keys are Ghostty's configurable bindings; showing them would need reading them per menu. | MD-5. |
+| **Light backgrounds use Warp's Light theme colors** (terminal palette included), not the user's terminal palette. | The preview's palette is fixed per light or dark; Umi's own default theme is Warp's Dark. | MD-1, MD-2. |

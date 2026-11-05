@@ -78,14 +78,16 @@ def shown(inst, win, path):
     """Open the file in the preview beside win's terminal; wait for the preview's script."""
     inst.cli("sidebar", "off", "--window", win["window"])
     inst.cli("edit", path, "--pane", win["pane"])
-
-    def ready():
-        try:
-            return md(inst, path).get("code_blocks") == 3
-        except AssertionError:
-            return False
-    wait_until(ready, 15, message="the preview's script")
+    wait_until(lambda: ready(inst, path), 15, message="the preview's script")
     return file_pane(inst, win, path)
+
+
+def ready(inst, path):
+    """The preview's script has run (every test document has three code blocks)."""
+    try:
+        return md(inst, path).get("code_blocks") == 3
+    except AssertionError:
+        return False
 
 
 def style(inst, path, selector, *props):
@@ -245,7 +247,7 @@ def test_cmd_e_menu_action_toggles_a_file_pane_but_not_a_terminal(inst, win, doc
     wait_until(lambda: doc_mode(inst, win, doc) == "source", 5, message="raw")
     inst.cli("editor", "mode", "preview", doc, "--pane", win["pane"], check=False)
     wait_until(lambda: doc_mode(inst, win, doc) == "preview", 5, message="rendered again")
-    wait_until(lambda: md(inst, doc).get("code_blocks") == 3, 10, message="the preview back")
+    wait_until(lambda: ready(inst, doc), 10, message="the preview back")
     md(inst, doc, "perform", selector="selectionForFind", pane=win["pane"])
     time.sleep(0.3)
     assert doc_mode(inst, win, doc) == "preview", "in a terminal it is the terminal's"

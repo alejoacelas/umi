@@ -689,3 +689,19 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## The Markdown preview as Warp's (MD-1 to MD-5, E-2; Warp parity, 2026-11-05)
+
+New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing test changed.
+
+- **New, `tests/test_markdown_warp.py`**: the look (computed styles: font, sizes, weights, colors,
+  borders, padding, full width; bare URLs linked), code blocks (labels, highlighting, Copy, Run in
+  terminal), Mermaid (drawn, Raw / Rendered, Open full screen, Esc, a broken diagram), find (Edit ▸
+  Find's items through the responder chain, Return / ⇧Return, Aa, `.*`, No matches, Esc), ⌘E's menu
+  action in a file pane and in a terminal, and the right-click menu's items and actions. UI tests
+  press the real keys (⌘F, ⌘G, ⇧⌘G, Return, Esc, ⌘E), check the Rendered / Raw buttons and open
+  the right-click menu through the accessibility tree.
+- **Test hook, `debug.ui.markdown`**: reads the preview's state and computed styles, clicks its
+  buttons, types into find, performs menu actions through the responder chain, and lists or chooses
+  the right-click menu's items. Once a test has used it, Copy and Copy file path write to a private
+  pasteboard (`action=pasteboard` reads it), never the test Mac's clipboard.
