@@ -258,3 +258,20 @@ Relayed by Alejo's agent, not his own words; Alejo approved: remove the Settings
 SPEC L-17), the copy of Tern's state on the first launch (both Macs already have Umi state), and
 `umi://open` links (documents from the server are read and edited on a web page the agent server
 serves).
+
+## 2026-11-05: the rest of Warp
+
+> Implement, test, and ship ... to match all the unchosen gaps against warp features except those
+> that would add actions on click ... I basically only use the warp features I can access from the
+> keyboard
+
+Then:
+> let's add the warp right click options as well
+
+Keyboard features, looks and Warp's right-click menu items are in; other click- or hover-only
+gestures are out.
+
+- The file editor (SPEC E-4, E-21 to E-24): Warp's code view (terminal font, no soft wrap, line
+  numbers, current line, marks against the last commit, tree-sitter colors), its find and replace,
+  ⌃G, ⌘/, ⇧⌘S, the "File saved." toast, the file pane header with its ⋯ and right-click menu, and
+  file chips with type icons.
