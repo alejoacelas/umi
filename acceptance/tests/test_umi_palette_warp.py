@@ -399,6 +399,27 @@ def test_the_empty_palette_selects_nothing_until_an_arrow_key_ui(inst, win, ui):
         close(inst, win)
 
 
+@pytest.mark.req("L-14")
+def test_arrows_in_the_empty_palette_stop_at_its_ends_ui(inst, win, ui):
+    ui.activate()
+    inst.cli("pane", "focus", win["pane"])
+    press(ui, "p", "cmd")
+    assert ui.focused_input(5) is not None
+    try:
+        count = len(state(inst, win)["entries"])
+        assert count >= 2, state(inst, win)
+        press(ui, "down")
+        press(ui, "up")
+        assert state(inst, win)["selection"] == -1, "Up from the first row selects nothing"
+        press(ui, "up")
+        assert state(inst, win)["selection"] == -1, "and doesn't wrap to the last"
+        for _ in range(count + 1):
+            press(ui, "down")
+        assert state(inst, win)["selection"] == count - 1, "Down stops on the last row"
+    finally:
+        close(inst, win)
+
+
 @pytest.mark.req("L-16")
 def test_cmd_o_creates_a_file_nothing_matches_ui(inst, win, ui, tmp_path):
     repo, pane = repo_pane(inst, win, tmp_path)

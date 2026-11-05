@@ -758,7 +758,13 @@ final class UmiPaletteModel: ObservableObject {
             if delta > 0 { selection = 0 }
             return
         }
-        selection = ((selection + delta) % entries.count + entries.count) % entries.count
+        // The empty palette doesn't wrap (Warp): Up from the first row selects nothing again,
+        // Down stays on the last.
+        if isZeroState {
+            selection = selection + delta < 0 ? -1 : min(selection + delta, entries.count - 1)
+            return
+        }
+        selection =((selection + delta) % entries.count + entries.count) % entries.count
     }
 
     var placeholder: String {
