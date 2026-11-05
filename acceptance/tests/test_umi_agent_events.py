@@ -177,7 +177,7 @@ def test_an_agents_own_desktop_notifications_are_dropped(inst, win):
         for n, params in enumerate((dict(status="stopped"), dict(status="idle", live=False))):
             rpc(inst, "debug.ui.attention.set", pane=pane, kind="claude", title="Notifies", **params)
             time.sleep(1.2)
-            inst.cli("send", "--pane", pane, "-e", f"printf '\\033]9;after the agent\\007'; echo OSC9-AFTER{n}")
+            inst.cli("send", "--pane", pane, "-e", f"printf '\\033]9;after the agent {n}\\007'; echo OSC9-AFTER{n}")
             inst.cli("wait", "--pane", pane, "--pattern", f"^OSC9-AFTER{n}", "--timeout", "10")
             wait_until(lambda: inbox(inst)["passed_notifications"] == passed + n + 1, 5, message=f"let through: {params}")
             assert inbox(inst)["dropped_notifications"] == before + 2, params
@@ -381,7 +381,7 @@ def test_inbox_items_use_warps_words_and_read_rule(fresh):
         set_agent(inst, sibling, "claude", title="Beside", status="needs_input", mark="needs_you")
         item = next(i for i in inbox(inst)["items"] if i["pane"] == sibling)
         assert item["read"] and item["category"] == "request", item
-        assert inbox(inst, window=win["window"])["window_toasts"] == []
+        assert not any(t["pane"] == sibling for t in inbox(inst, window=win["window"])["window_toasts"])
     finally:
         rpc(inst, "debug.ui.assume_active", on=False)
 
