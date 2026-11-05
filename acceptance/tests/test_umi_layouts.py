@@ -11,11 +11,13 @@ import json
 import os
 import shutil
 import socket
+import subprocess
+import threading
 import time
 
 import pytest
 
-from harness import UI, Instance, wait_until
+from harness import UI, Instance, frontmost_pid, wait_until
 
 pytestmark = pytest.mark.layout
 
@@ -116,6 +118,58 @@ def real(path):
     return os.path.realpath(path) if path else path
 
 
+def parse_saved(text):
+    """The YAML Umi writes (block maps, `- ` lists at their key's indent, plain or double-quoted
+    scalars) as Python values. Enough for the files these tests save; not a general YAML reader."""
+    lines = [(len(raw) - len(raw.lstrip(" ")), raw.strip()) for raw in text.splitlines()
+             if raw.strip() and not raw.strip().startswith("#")]
+    pos = 0
+
+    def scalar(value):
+        if value.startswith('"'):
+            return json.loads(value)
+        if value in ("true", "false"):
+            return value == "true"
+        return int(value) if value.lstrip("-").isdigit() else value
+
+    def block(indent):
+        return seq(indent) if lines[pos][1].startswith("- ") else mapping(indent)
+
+    def seq(indent):
+        nonlocal pos
+        out = []
+        while pos < len(lines) and lines[pos][0] == indent and lines[pos][1].startswith("- "):
+            lines[pos] = (indent + 2, lines[pos][1][2:])
+            out.append(block(indent + 2))
+        return out
+
+    def mapping(indent):
+        nonlocal pos
+        out = {}
+        while pos < len(lines) and lines[pos][0] == indent and not lines[pos][1].startswith("- "):
+            key, _, rest = lines[pos][1].partition(":")
+            rest = rest.strip()
+            pos += 1
+            if rest:
+                out[key] = scalar(rest)
+            elif pos < len(lines) and (lines[pos][0] > indent or lines[pos][1].startswith("- ")):
+                out[key] = block(lines[pos][0])
+            else:
+                out[key] = None
+        return out
+
+    return block(0)
+
+
+def normalize_cwds(value):
+    """Every `cwd` as a real path (the shell may report /var for /private/var)."""
+    if isinstance(value, dict):
+        return {k: (os.path.realpath(v) if k == "cwd" else normalize_cwds(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [normalize_cwds(v) for v in value]
+    return value
+
+
 # ---- saving and opening through the CLI ------------------------------------------------------------
 
 @pytest.mark.req("L-21")
@@ -170,6 +224,105 @@ def test_save_writes_warp_format_and_open_brings_the_layout_back(clean, tmp_path
     assert len(inst.json("layout", "open", "work.yaml")["windows"]) == 1
     missing = inst.cli("layout", "open", "nope", check=False)
     assert missing.returncode != 0 and "no launch configuration" in missing.stderr
+
+
+@pytest.mark.req("L-21")
+def test_save_captures_every_window_merges_rows_and_leaves_out_file_panes(clean, tmp_path):
+    """Two windows. The first: (a | b) | (c over d), the row a | b nested inside the outer row
+    (Warp's splits hold any number of panes, so it is saved as one row of three), then a tab
+    holding only a file pane, then a third tab, selected. The second window: g with a file pane
+    beside it. The first window is the current one."""
+    inst = clean
+    a, b, c, d, e, f, g = folders(tmp_path, "a", "b", "c", "d", "e", "f", "g")
+    first = inst.json("window", "new", "--cwd", a)
+    wait_prompt(inst, first["pane"])
+    pc = inst.cli("split", "right", "--pane", first["pane"], "--cwd", c).stdout.strip()
+    pd = inst.cli("split", "down", "--pane", pc, "--cwd", d).stdout.strip()
+    pb = inst.cli("split", "right", "--pane", first["pane"], "--cwd", b).stdout.strip()
+    inst.cli("pane", "focus", pb)
+    pe = inst.cli("tab", "new", "--window", first["window"], "--cwd", e, "--no-focus").stdout.strip()
+    file_tab = inst.find_pane(pe)[1]["id"]
+    other = tmp_path / "other.txt"
+    other.write_text("only a file\n")
+    inst.cli("edit", str(other), "--pane", pe)
+    inst.cli("pane", "close", pe)
+
+    def file_tab_panes():
+        return [p for w in inst.tree()["windows"] for t in w["tabs"] if t["id"] == file_tab for p in t["panes"]]
+    wait_until(lambda: len(file_tab_panes()) == 1, 10, message="a tab holding only the file pane")
+    pf = inst.cli("tab", "new", "--window", first["window"], "--cwd", f, "--no-focus").stdout.strip()
+    second = inst.json("window", "new", "--cwd", g)
+    note = tmp_path / "note.txt"
+    note.write_text("a file pane\n")
+    inst.cli("edit", str(note), "--pane", second["pane"])
+    for pane, folder in ((first["pane"], a), (pb, b), (pc, c), (pd, d), (pf, f), (second["pane"], g)):
+        wait_cwd(inst, pane, folder)
+    assert len(inst.find_pane(second["pane"])[1]["panes"]) == 2, "the file pane is beside g"
+    left, right = (p["frame"]["x"] for p in (inst.find_pane(first["pane"])[2], inst.find_pane(pb)[2]))
+    assert right > left, "b is right of a"
+    inst.cli("tab", "focus", inst.find_pane(pf)[1]["id"])
+    inst.cli("window", "focus", first["window"])
+    wait_until(lambda: inst.tree().get("current_window") == first["window"], 5, message="the first window current")
+
+    # A tab with no terminal pane can't be saved from its menu.
+    menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=file_tab)["items"]}
+    assert menu["Save as New Config"]["enabled"] is False, menu["Save as New Config"]
+
+    inst.json("layout", "save", "two_windows")
+    text = open(os.path.join(inst.configs, "two_windows.yaml")).read()
+    saved = normalize_cwds(parse_saved(text))
+    assert saved == {
+        "name": "Two Windows",
+        "active_window_index": 0,
+        "windows": [
+            {"active_tab_index": 1, "tabs": [
+                {"layout": {"split_direction": "horizontal", "panes": [
+                    {"cwd": a},
+                    {"cwd": b, "is_focused": True},
+                    {"split_direction": "vertical", "panes": [{"cwd": c}, {"cwd": d}]},
+                ]}},
+                {"layout": {"cwd": f, "is_focused": True}},
+            ]},
+            {"active_tab_index": 0, "tabs": [{"layout": {"cwd": g, "is_focused": True}}]},
+        ],
+    }, text
+
+
+@pytest.mark.req("L-21", "L-8")
+def test_layout_open_no_focus_keeps_the_users_focus_and_front_app(clean, tmp_path):
+    inst = clean
+    (folder,) = folders(tmp_path, "bg")
+    write_config(inst, "quiet.yaml", f"name: Quiet\nwindows:\n  - tabs:\n      - title: quiet-tab\n        layout:\n          cwd: {folder}\n")
+    win = inst.json("window", "new")
+    wait_prompt(inst, win["pane"])
+    inst.cli("pane", "focus", win["pane"])
+    wait_until(lambda: inst.tree().get("current_pane") == win["pane"], 5, message="the user's pane current")
+    subprocess.run(["osascript", "-e", 'tell application "Finder" to activate'], capture_output=True, timeout=20)
+    time.sleep(1.0)
+    front = frontmost_pid()
+    samples, stop = [], threading.Event()
+
+    def sample():
+        while not stop.is_set():
+            try:
+                tree = inst.tree()
+                samples.append((tree.get("current_window"), tree.get("current_pane")))
+            except Exception:  # noqa: BLE001
+                pass
+
+    thread = threading.Thread(target=sample, daemon=True)
+    thread.start()
+    time.sleep(0.3)
+    opened = inst.json("layout", "open", "quiet", "--no-focus")
+    time.sleep(1.0)
+    stop.set()
+    thread.join(5)
+    assert len(opened["windows"]) == 1 and opened["windows"][0] != win["window"], opened
+    assert any(t.get("name") == "quiet-tab" for w in inst.tree()["windows"] for t in w["tabs"])
+    moved = [s for s in samples if s != (win["window"], win["pane"])]
+    assert samples and not moved, f"focus moved during layout open --no-focus: {moved[:3]}"
+    if front is not None and front != inst.app_pid:
+        assert frontmost_pid() == front, "layout open --no-focus brought the app to the front"
 
 
 @pytest.mark.req("L-21")

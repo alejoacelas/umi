@@ -715,3 +715,8 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_layouts.py`**: `test_file_menu_lists_each_launch_configuration_by_name`
   (File ▸ Launch Configurations lists each readable configuration by name before the two items,
   choosing one opens it, and the list follows the folder).
+- **New, `tests/test_umi_layouts.py`**: `test_save_captures_every_window_merges_rows_and_leaves_out_file_panes`
+  (two windows saved and read back as a structure: `active_window_index` from the current window,
+  `active_tab_index` counted among the saved tabs, a row nested in a row saved as one row, file
+  panes left out, a tab of only a file pane left out and its "Save as New Config" disabled) and
+  `test_layout_open_no_focus_keeps_the_users_focus_and_front_app` (L-8 for `layout open --no-focus`).
