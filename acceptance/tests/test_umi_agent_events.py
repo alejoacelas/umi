@@ -74,25 +74,63 @@ def test_the_agents_mark_wears_warps_status_badge(inst, win):
 
 # ---- S-3: Warp's seen rule ------------------------------------------------------------------------
 
+def agent_beside(inst, pane):
+    """A fake Claude session shown in a split right of `pane` (the split isn't focused)."""
+    sid = inst.start_agent("claude", f"ECHO hi {uuid.uuid4().hex[:6]}")
+    inst.wait(sid)
+    beside = inst.json("agent", "open", sid, "--split", "right", "--pane", pane)["pane"]
+    return sid, beside
+
+
+def run_a_turn(inst, sid, window, tab):
+    """A short turn through the engine, until it has ended."""
+    inst.send(sid, "SLEEP 2")
+    wait_until(lambda: row(inst, window, tab)["badge"] == "working", 15, message="the turn runs")
+    wait_until(lambda: row(inst, window, tab)["badge"] != "working", 20, message="the turn ends")
+
+
+@pytest.mark.harness
 @pytest.mark.req("S-3")
 def test_a_finish_seen_from_another_pane_of_its_tab_leaves_no_mark(inst, win, active):
-    """Warp counts a session as seen if any pane of its tab had focus as it finished."""
-    beside = split(inst, "right", win["pane"], "--no-focus")
-    inst.cli("pane", "focus", win["pane"])
-    other, other_tab = new_tab(inst, win)
+    """The engine: Warp counts a session as seen if any pane of its tab had focus as it finished."""
+    sid, beside = agent_beside(inst, win["pane"])
     try:
+        inst.cli("pane", "focus", win["pane"])
         wait_until(lambda: rpc(inst, "debug.ui.attention")["looked_at"] == win["pane"], 5, message="looking at the pane")
-        finish(inst, beside, title="Beside")
-        wait_until(lambda: row(inst, win["window"], win["tab"])["mark"] == "none", 5,
-                   message="a finish in the tab being looked at is seen")
-        # Another tab's finish isn't.
-        finish(inst, other, title="Elsewhere")
+        run_a_turn(inst, sid, win["window"], win["tab"])
         time.sleep(0.5)
-        assert row(inst, win["window"], other_tab)["mark"] == "finished"
-        assert row(inst, win["window"], other_tab)["badge"] == "done"
+        r = row(inst, win["window"], win["tab"])
+        assert r["mark"] == "none" and r["badge"] == "none", r
+        item = next(i for i in inbox(inst)["items"] if i["pane"] == beside)
+        assert item["category"] == "complete" and item["read"], item
     finally:
-        clear_agent(inst, beside)
-        clear_agent(inst, other)
+        inst.cli("agent", "stop", sid, check=False)
+
+
+@pytest.mark.harness
+@pytest.mark.req("S-3")
+def test_a_sibling_that_finished_out_of_sight_keeps_its_mark(inst, win, active):
+    """A finish nobody saw keeps its mark when the user later switches to a sibling pane of its tab;
+    only a look at its own pane clears it (Warp marks items read for the focused pane only)."""
+    a, tab = new_tab(inst, win)
+    sid, beside = agent_beside(inst, a)
+    inst.cli("pane", "focus", win["pane"])
+    try:
+        wait_until(lambda: rpc(inst, "debug.ui.attention")["looked_at"] == win["pane"], 5, message="looking elsewhere")
+        run_a_turn(inst, sid, win["window"], tab)
+        wait_until(lambda: row(inst, win["window"], tab)["mark"] == "finished", 5, message="finished out of sight")
+        inst.cli("pane", "focus", a)
+        wait_until(lambda: rpc(inst, "debug.ui.attention")["looked_at"] == a, 5, message="looking at the sibling")
+        # Something unrelated changes (any agent's status or title): the mark stays.
+        set_agent(inst, win["pane"], "claude", title="Unrelated", status="working")
+        time.sleep(0.5)
+        assert row(inst, win["window"], tab)["mark"] == "finished"
+        assert not next(i for i in inbox(inst)["items"] if i["pane"] == beside)["read"]
+        inst.cli("pane", "focus", beside)
+        wait_until(lambda: row(inst, win["window"], tab)["mark"] == "none", 5, message="a look at its pane clears it")
+    finally:
+        clear_agent(inst, win["pane"])
+        inst.cli("agent", "stop", sid, check=False)
 
 
 @pytest.mark.harness

@@ -707,3 +707,13 @@ New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24
   update-note tests write `updates/attempt.json` in the instance's state directory, as the run
   before an update does.
 
+### After review (2026-11-05)
+
+- **Changed, `test_a_finish_seen_from_another_pane_of_its_tab_leaves_no_mark`**: it set the finished
+  mark through `debug.ui.attention.set`, so it never ran the seen rule in the engine and passed only
+  because looking cleared every finished mark in the looked-at tab (a bug). It now runs a fake
+  Claude turn in a split beside the focused pane and checks the engine leaves no mark and a read
+  item. Stronger, not weaker.
+- **New**: `test_a_sibling_that_finished_out_of_sight_keeps_its_mark` (the negative case: switching
+  to a sibling pane and an unrelated attention change leave the mark; a look at its own pane clears
+  it).

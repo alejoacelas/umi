@@ -5,8 +5,8 @@ import Combine
 /// Looking clears the quiet mark on that pane's agent (UmiAttention), which also updates the
 /// Dock badge. It happens on pane focus changes, tab switches, and window and app activation.
 /// A session that finishes while the user looks at its pane, or at any pane of its tab (Warp's
-/// rule), was seen finishing: its mark clears at once. (A session that needs the user keeps its
-/// mark until the next look at its own pane.)
+/// rule), was seen finishing: it gets no mark. A mark already there clears only when the user
+/// looks at its own pane. (A session that needs the user keeps its mark until then too.)
 @MainActor
 enum UmiLooking {
     private static var cancellables: Set<AnyCancellable> = []
@@ -29,11 +29,11 @@ enum UmiLooking {
         UmiAttention.shared.$revision
             .sink { _ in
                 // After the change is in place (the publisher fires before it is).
+                // Only the looked-at pane's own mark: the tab rule applies as a turn finishes
+                // (publishAttention), as Warp applies it when the event arrives.
                 DispatchQueue.main.async {
-                    let attention = UmiAttention.shared
-                    for (id, agent) in attention.panes where agent.mark == .finished && isLookingAtTab(of: id) {
-                        attention.looked(atPane: id)
-                    }
+                    guard let pane = lookedAt, UmiAttention.shared.agent(forPane: pane.id)?.mark == .finished else { return }
+                    UmiAttention.shared.looked(atPane: pane.id)
                 }
             }
             .store(in: &cancellables)
