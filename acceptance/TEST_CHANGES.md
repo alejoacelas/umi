@@ -689,3 +689,18 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## The file editor as Warp's (E-4, E-21 to E-24, 2026-11-05)
+
+Warp parity for the file editor. **Requirements:** E-4 (amended: the banner's wording), E-21 to E-24
+(new).
+
+- **New, `tests/test_umi_editor_warp.py`**: the code view (terminal font and size, no wrap, the
+  94-point gutter), syntax colors from the terminal's palette, marks against the last commit, ⌃G go
+  to line (and ⌃G still reaching a terminal), ⌘F/⌘G/⇧⌘G driving the editor's own find with its
+  toggles, replace one, Replace all with preserve case as one undo step, ⌘/ by language, ⌘S's toast
+  and ⇧⌘S through the save panel, the disk-change banner's Discard this version / Overwrite, the
+  header menu's items (Maximize/Minimize pane, Reload file asking first), the unsaved dot and the
+  300-point chip limit. Keys are pressed as key events; results are read from files, the
+  accessibility tree and the internal `debug.ui.editor`.
+- No existing test changed.
