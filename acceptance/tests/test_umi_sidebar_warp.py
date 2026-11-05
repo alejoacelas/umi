@@ -545,7 +545,8 @@ def test_groups_are_restored_with_the_layout(target, fresh):
 
 # ---- With real key presses (accessibility) --------------------------------------------------------
 
-KEYCODES = {"]": 30, "[": 33, "\\": 42, "b": 11, "f": 3, "r": 15, "tab": 48, "return": 36, "esc": 53}
+KEYCODES = {"]": 30, "[": 33, "\\": 42, "b": 11, "f": 3, "r": 15, "tab": 48, "return": 36, "esc": 53,
+            "left": 123, "right": 124}
 
 
 def press(ui, key, *mods):
@@ -834,3 +835,109 @@ def test_move_tab_to_group_and_new_tab_in_group_from_the_menu_bar_ui(inst, win, 
     members = groups(inst, win["window"])["groups"][0]["tabs"]
     assert members[:2] == [t2, t3] and selected(inst, win["window"]) == members[2]
     assert groups(inst, win["window"])["groups"][0]["id"] == gid
+
+
+def click(rect_or_point, count=1):
+    """Real left clicks at a point, or the middle of rect (top-left screen coordinates, as AX
+    gives); count 2 is a double-click."""
+    import Quartz
+    if len(rect_or_point) == 4:
+        x, y, w, h = rect_or_point
+        point = (x + w / 2, y + h / 2)
+    else:
+        point = rect_or_point
+    move = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, point, Quartz.kCGMouseButtonLeft)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, move)
+    time.sleep(0.15)
+    for n in range(1, count + 1):
+        for kind in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
+            event = Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft)
+            Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventClickState, n)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+            time.sleep(0.03)
+        time.sleep(0.05)
+
+
+@pytest.mark.req("S-14")
+def test_a_group_header_click_folds_it_and_a_double_click_only_renames_ui(inst, win, ui):
+    from test_umi_panes_ui import _frame
+    _, t2 = new_tab(inst, win)
+    perform(inst, t2, "New group with tab")
+    sidebar(inst, win["window"], rename_text="Clicky")
+    gid = groups(inst, win["window"])["groups"][0]["id"]
+    collapsed = lambda: groups(inst, win["window"])["groups"][0]["collapsed"]  # noqa: E731
+    front(inst, win, ui, win["pane"])
+    header = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Group: Clicky"), 5, message="the header")
+    click(_frame(ui, header))
+    wait_until(collapsed, 3, message="a click collapsed the group")
+    time.sleep(0.6)
+    click(_frame(ui, header))
+    wait_until(lambda: not collapsed(), 3, message="a click expanded it")
+    time.sleep(0.6)
+    click(_frame(ui, header), count=2)
+    wait_until(lambda: sidebar(inst, win["window"]).get("renaming") == {"group": gid}, 3,
+               message="a double-click renames the group in place")
+    time.sleep(0.6)
+    assert not collapsed(), "a double-click leaves the group open"
+    press(ui, "esc")
+    wait_until(lambda: "renaming" not in sidebar(inst, win["window"]), 3, message="Esc ended the rename")
+
+
+@pytest.mark.req("S-4")
+def test_a_color_dot_in_the_row_menu_colors_the_tab_ui(inst, win, ui):
+    from test_umi_panes_ui import _frame, _right_click, _row_element
+    _, tab = new_tab(inst, win, "--name", "dot-target")
+    front(inst, win, ui, win["pane"])
+    element = wait_until(lambda: _row_element(ui, "dot-target"), 5, message="the row")
+    _right_click(_frame(ui, element))
+    dot = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Magenta" and ui.role(e) == "AXButton"), 3,
+                     message="the Magenta dot in the open menu")
+    click(_frame(ui, dot))
+    wait_until(lambda: tab_of(inst, tab).get("color") == "magenta", 3, message="clicking the dot colored the tab")
+    wait_until(lambda: not ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the menu closed")
+
+
+@pytest.mark.req("S-4")
+def test_a_click_outside_cancels_a_rename_in_the_row_ui(inst, win, ui):
+    from test_umi_panes_ui import _frame, _row_element, _window_of
+    _, tab = new_tab(inst, win, "--name", "keep-this-name")
+    inst.cli("tab", "focus", tab)
+    front(inst, win, ui)
+    press(ui, "r", "cmd", "ctrl")
+    wait_until(lambda: sidebar(inst, win["window"]).get("renaming") == {"tab": tab}, 5, message="renaming in the row")
+    field = ui.focused_input(5)
+    assert field is not None
+    ui.enter_text("typed-but-dropped", field, replace=True)
+    window = _window_of(ui, field)
+    x, y, w, h = _frame(ui, window)
+    click((x + w * 0.75, y + h * 0.6))
+    wait_until(lambda: "renaming" not in sidebar(inst, win["window"]), 3, message="the click outside ended the rename")
+    assert tab_of(inst, tab).get("name") == "keep-this-name", "the name stayed as it was"
+
+
+@pytest.mark.req("S-14", "L-13")
+def test_move_tab_keys_keep_groups_whole_ui(inst, win, ui):
+    """⌃⇧← / ⌃⇧→ (Move Tab Up / Down): the last tab of a group can't leave it downwards; the tab
+    below the group hops over all of it."""
+    t1 = win["tab"]
+    _, t2 = new_tab(inst, win)
+    _, t3 = new_tab(inst, win)
+    _, t4 = new_tab(inst, win)
+    perform(inst, t2, "New group with tab")
+    sidebar(inst, win["window"], rename_text="Keys")
+    perform(inst, t3, "Move to group > Keys")
+    order = lambda: tab_ids(inst, win["window"])  # noqa: E731
+    assert order() == [t1, t2, t3, t4]
+    inst.cli("tab", "focus", t3)
+    front(inst, win, ui)
+    press(ui, "right", "ctrl", "shift")
+    time.sleep(0.5)
+    assert order() == [t1, t2, t3, t4], "the group's last tab stayed in its group"
+    inst.cli("tab", "focus", t4)
+    front(inst, win, ui)
+    press(ui, "left", "ctrl", "shift")
+    wait_until(lambda: order() == [t1, t4, t2, t3], 3, message="⌃⇧← hopped over the group")
+    time.sleep(0.5)
+    assert order() == [t1, t4, t2, t3]
+    press(ui, "right", "ctrl", "shift")
+    wait_until(lambda: order() == [t1, t2, t3, t4], 3, message="⌃⇧→ hopped back below it")
