@@ -312,6 +312,25 @@ def test_tab_menu_save_as_new_config_saves_the_tab_and_opens_the_file(clean, tmp
                message="a second save takes the next free name")
 
 
+@pytest.mark.req("L-21", "L-10")
+@pytest.mark.parametrize("focus", ["terminal", "editor", "palette"])
+def test_ctrl_cmd_l_reaches_the_launch_palette_whatever_has_focus(clean, tmp_path, focus):
+    """The key press as the app's key monitor sees it (the real-key UI test below needs an unlocked
+    screen): ⌃⌘L opens the launch configuration list from a terminal, the editor or another palette."""
+    inst = clean
+    win = inst.json("window", "new")
+    wait_prompt(inst, win["pane"])
+    if focus == "editor":
+        doc = tmp_path / "lc.md"
+        doc.write_text("# lc\n")
+        inst.cli("edit", str(doc), "--tab", win["tab"])
+    result = rpc(inst, "debug.key", window=win["window"], keys="ctrl+cmd+l", focus=focus)
+    assert result["handled"], result
+    state = rpc(inst, "debug.palette.state", window=win["window"])
+    assert state["presented"] and state["mode"] == "launch_configs", state
+    rpc(inst, "debug.palette.close", window=win["window"])
+
+
 # ---- real key presses ----------------------------------------------------------------------------------
 
 @pytest.mark.req("L-21")
