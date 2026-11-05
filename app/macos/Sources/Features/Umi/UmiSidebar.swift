@@ -504,9 +504,10 @@ struct UmiSidebarTabRow: View {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .strokeBorder(row.selected ? UmiTheme.overlay3 : .clear, lineWidth: 1)
         )
-        // Warp's pin: a 16 pt diagonal pin 6 pt inside the top-right corner, hidden on hover.
+        // Warp's pin: a 16 pt diagonal pin 6 pt inside the top-right corner, hidden on hover
+        // (and while ⌘ shows the tab keys there).
         .overlay(alignment: .topTrailing) {
-            if tab.pinned && !hovering {
+            if tab.pinned && !hovering && row.hint == nil {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 10))
                     .rotationEffect(.degrees(45))
