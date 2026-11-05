@@ -137,6 +137,10 @@ pub const Message = union(enum) {
     /// The terminal encountered a bell character.
     ring_bell,
 
+    /// Umi: the terminal switched between the primary and the alternate
+    /// screen (window-padding-alternate-screen).
+    umi_screen_changed,
+
     /// Report the progress of an action using a GUI element
     progress_report: terminal.osc.Command.ProgressReport,
 

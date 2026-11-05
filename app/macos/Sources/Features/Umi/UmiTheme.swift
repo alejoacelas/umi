@@ -112,7 +112,7 @@ enum UmiTheme {
 
         # Warp's terminal (Warp parity): Hack 13 (bundled; the default when no font-family is
         # set), rows 1.2× the font size, no ligatures, a 3-point bar cursor with round ends,
-        # 16 points either side, 20 below the prompt.
+        # 16 points either side, 20 below the prompt, none for full-screen programs.
         cursor-style = bar
         font-size = 13
         adjust-cell-height = 3%
@@ -123,6 +123,7 @@ enum UmiTheme {
         window-padding-x = 16
         window-padding-y = 10,20
         window-padding-balance = bottom
+        window-padding-alternate-screen = false
         window-padding-color = extend
         unfocused-split-opacity = 1
         mouse-hide-while-typing = true

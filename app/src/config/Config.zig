@@ -2065,6 +2065,12 @@ keybind: Keybinds = .{},
 ///   places its prompt a fixed distance above the bottom.
 @"window-padding-balance": WindowPaddingBalance = .false,
 
+/// Umi: whether full-screen programs (those that use the alternate screen,
+/// such as vim, less or htop) get the window padding. When `false` they get
+/// the whole pane, as in Warp; the terminal's size changes as they start and
+/// end.
+@"window-padding-alternate-screen": bool = true,
+
 /// The color of the padding area of the window. Valid values are:
 ///
 /// * `background` - The background color specified in `background`.

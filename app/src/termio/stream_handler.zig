@@ -133,6 +133,13 @@ pub const StreamHandler = struct {
         self.messageWriter(.{ .color_scheme_report = .{ .force = false } });
     }
 
+    /// Umi: tell the surface when the active screen changed, so full-screen
+    /// programs can get the whole pane (window-padding-alternate-screen).
+    fn umiScreenSwitched(self: *StreamHandler, before: anytype) void {
+        if (self.terminal.screens.active_key == before) return;
+        self.surfaceMessageWriter(.umi_screen_changed);
+    }
+
     inline fn surfaceMessageWriter(
         self: *StreamHandler,
         msg: apprt.surface.Message,
@@ -699,15 +706,21 @@ pub const StreamHandler = struct {
             },
 
             .alt_screen_legacy => {
+                const before = self.terminal.screens.active_key;
                 try self.terminal.switchScreenMode(.@"47", enabled);
+                self.umiScreenSwitched(before);
             },
 
             .alt_screen => {
+                const before = self.terminal.screens.active_key;
                 try self.terminal.switchScreenMode(.@"1047", enabled);
+                self.umiScreenSwitched(before);
             },
 
             .alt_screen_save_cursor_clear_enter => {
+                const before = self.terminal.screens.active_key;
                 try self.terminal.switchScreenMode(.@"1049", enabled);
+                self.umiScreenSwitched(before);
             },
 
             // Mode 1048 is xterm's conditional save cursor depending

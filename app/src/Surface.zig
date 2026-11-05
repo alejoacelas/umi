@@ -187,6 +187,10 @@ search: ?Search = null,
 /// Used to rate limit BEL handling.
 last_bell_time: ?std.Io.Timestamp = null,
 
+/// Umi: true while a full-screen program has the pane without padding
+/// (window-padding-alternate-screen = false).
+umi_unpadded: bool = false,
+
 /// The effect of an input event. This can be used by callers to take
 /// the appropriate action after an input event. For example, key
 /// input can be forwarded to the OS for further processing if it
@@ -336,6 +340,8 @@ const DerivedConfig = struct {
     window_padding_left: u32,
     window_padding_right: u32,
     window_padding_balance: configpkg.Config.WindowPaddingBalance,
+    /// Umi: window-padding-alternate-screen.
+    window_padding_alternate_screen: bool,
     window_height: u32,
     window_width: u32,
     title: ?[:0]const u8,
@@ -417,6 +423,7 @@ const DerivedConfig = struct {
             .window_padding_left = config.@"window-padding-x".top_left,
             .window_padding_right = config.@"window-padding-x".bottom_right,
             .window_padding_balance = config.@"window-padding-balance",
+            .window_padding_alternate_screen = config.@"window-padding-alternate-screen",
             .window_height = config.@"window-height",
             .window_width = config.@"window-width",
             .title = config.title,
@@ -1127,6 +1134,8 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .present_surface => try self.presentSurface(),
 
         .password_input => |v| try self.passwordInput(v),
+
+        .umi_screen_changed => try self.umiScreenChanged(),
 
         .ring_bell => bell: {
             const now: std.Io.Timestamp = .now(global.io(), .awake);
@@ -2617,9 +2626,36 @@ fn resize(self: *Surface, size: rendererpkg.ScreenSize) !void {
     };
 }
 
+/// Umi: the active screen changed. With window-padding-alternate-screen
+/// off, a full-screen program gets the pane without padding (Warp's), and
+/// the shell gets it back when the program ends.
+fn umiScreenChanged(self: *Surface) !void {
+    const alternate = alternate: {
+        self.renderer_state.mutex.lockUncancelable(global.io());
+        defer self.renderer_state.mutex.unlock(global.io());
+        break :alternate self.io.terminal.screens.active_key == .alternate;
+    };
+    const unpadded = alternate and !self.config.window_padding_alternate_screen;
+    if (unpadded == self.umi_unpadded) return;
+    self.umi_unpadded = unpadded;
+    if (self.config.window_padding_balance == .false) {
+        const content_scale = try self.rt_surface.getContentScale();
+        self.size.padding = if (unpadded) .{} else self.config.scaledPadding(
+            content_scale.x * font.face.default_dpi,
+            content_scale.y * font.face.default_dpi,
+        );
+    }
+    try self.resize(self.size.screen);
+}
+
 /// Recalculate the balanced padding if needed.
 fn balancePaddingIfNeeded(self: *Surface) void {
     if (self.config.window_padding_balance == .false) return;
+    // Umi: a full-screen program's pane has no padding of its own.
+    if (self.umi_unpadded) {
+        self.size.balancePadding(.{}, self.config.window_padding_balance);
+        return;
+    }
     const content_scale = try self.rt_surface.getContentScale();
     const x_dpi = content_scale.x * font.face.default_dpi;
     const y_dpi = content_scale.y * font.face.default_dpi;
