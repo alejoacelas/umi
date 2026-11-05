@@ -451,6 +451,8 @@ struct UmiTabGroupHeader: View {
     @ObservedObject var model: UmiSidebarModel
     @State private var hovering = false
     @State private var draftName = ""
+    /// When a click last collapsed or expanded the group, and the state before it.
+    @State private var lastToggle: (at: Date, wasCollapsed: Bool)?
     @FocusState private var nameFieldFocused: Bool
 
     private var renaming: Bool { model.renaming == .group(group.id) }
@@ -508,11 +510,22 @@ struct UmiTabGroupHeader: View {
             .strokeBorder(holdsSelected ? UmiTheme.overlay3 : .clear, lineWidth: 1))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        // A double-click only renames, as Warp's: if its first click already collapsed or
+        // expanded the group, that is put back.
         .onTapGesture(count: 2) {
-            UmiTabGroups.setCollapsed(group, !group.collapsed, in: controller)
+            if let last = lastToggle, Date().timeIntervalSince(last.at) <= NSEvent.doubleClickInterval + 0.1 {
+                UmiTabGroups.setCollapsed(group, last.wasCollapsed, in: controller)
+            }
+            lastToggle = nil
             UmiTabMenu.beginRename(.group(group.id), in: controller)
         }
-        .onTapGesture { if !renaming { UmiTabGroups.setCollapsed(group, !group.collapsed, in: controller) } }
+        .onTapGesture {
+            guard !renaming else { return }
+            // The state before a run of clicks is what a double-click puts back.
+            let inRun = lastToggle.map { Date().timeIntervalSince($0.at) <= NSEvent.doubleClickInterval + 0.1 } ?? false
+            lastToggle = (Date(), inRun ? lastToggle!.wasCollapsed : group.collapsed)
+            UmiTabGroups.setCollapsed(group, !group.collapsed, in: controller)
+        }
         .overlay(UmiRowMenuCatcher { UmiTabMenu.nsMenu(UmiTabGroups.headerMenuItems(for: group, in: controller)) })
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Group: \(group.displayName)")
