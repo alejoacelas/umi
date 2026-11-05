@@ -78,7 +78,7 @@ enum UmiTheme {
     cursor-color = #00c2ff
     selection-background = #24435c
     selection-foreground = #ffffff
-    split-divider-color = #1f1f1f
+    split-divider-color = #262626
     unfocused-split-fill = #000000
     palette = 0=#616161
     palette = 1=#ff8272
