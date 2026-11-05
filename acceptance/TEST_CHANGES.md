@@ -699,5 +699,6 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
   `cyan`) opens as written and its commands run; a broken file is listed with its line and opens
   nothing; the File menu items and ⌃⌘L; the palette lists configurations and opens the chosen one;
   the row menu's "Save as New Config" sits where Warp has it, writes `my_tab_config.yaml` (then
-  `_1`) and opens it in the editor; real key presses: ⌃⌘L then Return, and File ▸ Save New Launch
+  `_1`) and opens it in the editor; ⌃⌘L through the app's key monitor from a terminal, the editor
+  and a palette; real key presses (UI, need an unlocked screen): ⌃⌘L then Return, and File ▸ Save New Launch
   Configuration… through its dialog, including the duplicate-name message.
