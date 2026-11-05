@@ -849,7 +849,11 @@ def test_move_tab_to_group_and_new_tab_in_group_from_the_menu_bar_ui(inst, win, 
     item = wait_until(lambda: ui.menu_item("Kbd target"), 5, message="the group in Move Tab to Group")
     parent = ui.attr(ui.attr(item, "AXParent"), "AXParent")
     assert ui.label(parent) == "Move Tab to Group", ui.label(parent)
-    ui.choose(item)
+    # As a person does: open Window, then the submenu, then pick the group.
+    ui.choose(parent)
+    item = wait_until(lambda: ui.menu_item("Kbd target"), 3, message="the group in the open submenu")
+    ui.press(item)
+    time.sleep(0.3)
     wait_until(lambda: groups(inst, win["window"])["groups"][0]["tabs"] == [t2, t3], 5, message="moved into the group")
     assert selected(inst, win["window"]) == t3
     ui.choose(ui.menu_item("New Tab in Group"))
