@@ -4,8 +4,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The left sidebar: Warp-style vertical tabs and a project explorer. No cards, borders or
-/// "agents" section: rows sit directly on the terminal background with a subtle hover and
-/// selection tint (S-1, S-2). Its width is per window, dragged at its edge (S-8).
+/// "agents" section: rows sit on a faint tint of the terminal background, as in Warp, with a
+/// subtle hover and selection tint (S-1, S-2). Its width is per window, dragged at its edge (S-8).
 struct UmiSidebar: View {
     @ObservedObject var controller: TerminalController
     /// Height of the titlebar band above the sidebar content (traffic lights).
@@ -50,6 +50,7 @@ struct UmiSidebar: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+        .background(UmiTheme.sidebarFill)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Sidebar")
         .onChange(of: state.sidebarMode) { _ in syncFileTree() }

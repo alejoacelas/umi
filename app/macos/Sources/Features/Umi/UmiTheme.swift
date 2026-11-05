@@ -17,6 +17,9 @@ enum UmiTheme {
     static var textTertiary: Color { ink.opacity(isLight ? 0.50 : 0.42) }
 
     static var chromeFill: Color { ink.opacity(0.035) }
+    /// The sidebar's fill: ink at 5% over the window background, as Warp paints its vertical
+    /// tabs panel (`fg_overlay_1`; #0D0D0D on the default Dark theme).
+    static var sidebarFill: Color { ink.opacity(0.05) }
     static var hoverFill: Color { ink.opacity(0.06) }
     static var selectedFill: Color { ink.opacity(isLight ? 0.07 : 0.085) }
     static var hairline: Color { ink.opacity(0.07) }
