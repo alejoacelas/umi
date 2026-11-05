@@ -149,7 +149,27 @@ enum UmiShortcuts {
                      UmiAgentUI.shared.toggleTerminal(pane)
                  },
                  enabled: { UmiTopology.currentPane.map { UmiAgentUI.shared.session(forPane: $0.id) != nil } ?? false }),
-        ] + inputSyncItems
+        ] + inputSyncItems + zoomItems
+    }
+
+    /// The interface's zoom and the terminals' font size, as Warp's (L-23).
+    private static var zoomItems: [Item] {
+        [
+            Item(id: "view.zoom_in", title: "Zoom In", key: "=", modifiers: [.command], symbol: "plus.magnifyingglass",
+                 menu: "View", action: { if !UmiZoom.shared.step(1) { NSSound.beep() } }),
+            Item(id: "view.zoom_out", title: "Zoom Out", key: "-", modifiers: [.command], symbol: "minus.magnifyingglass",
+                 menu: "View", action: { if !UmiZoom.shared.step(-1) { NSSound.beep() } }),
+            Item(id: "view.zoom_reset", title: "Actual Size", key: "0", modifiers: [.command], symbol: "1.magnifyingglass",
+                 menu: "View", action: { UmiZoom.shared.reset() }),
+            Item(id: "view.font_bigger", title: "Increase Font Size", key: ".", modifiers: [.option, .shift],
+                 symbol: "textformat.size.larger", menu: "View",
+                 action: { if !UmiZoom.shared.stepFontSize(1) { NSSound.beep() } }),
+            Item(id: "view.font_smaller", title: "Decrease Font Size", key: ",", modifiers: [.option, .shift],
+                 symbol: "textformat.size.smaller", menu: "View",
+                 action: { if !UmiZoom.shared.stepFontSize(-1) { NSSound.beep() } }),
+            Item(id: "view.font_reset", title: "Reset Font Size", key: "", modifiers: [], symbol: "textformat.size",
+                 menu: "View", action: { UmiZoom.shared.resetFontSize() }),
+        ]
     }
 
     /// Synchronized input, as Warp's (L-22).
@@ -216,6 +236,11 @@ enum UmiShortcuts {
         applyShortcuts()
         // Ghostty's own palette item is Umi's Command Palette… now.
         for existing in allItems(mainMenu) where existing.action == #selector(BaseTerminalController.toggleCommandPalette(_:)) {
+            existing.isHidden = true
+        }
+        // So are its font size items: Umi's set the size for every pane, with the zoom (L-23).
+        let fontActions = ["increaseFontSize:", "decreaseFontSize:", "resetFontSize:"].map(NSSelectorFromString)
+        for existing in allItems(mainMenu) where handlers[existing] == nil && existing.action.map(fontActions.contains) == true {
             existing.isHidden = true
         }
         // Every session, shown in a pane or not, with its status (AP-3, AP-4).
@@ -304,9 +329,11 @@ enum UmiShortcuts {
     /// Perform the Umi item whose shortcut this key is. True when the key was Umi's. Every
     /// key press goes through here before any view sees it.
     static func dispatch(_ event: NSEvent) -> Bool {
-        // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing.
+        // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing,
+        // except ⌥⇧ keys an item has (⌥⇧> and ⌥⇧<, Warp's font size keys).
         let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false
-        guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey else { return false }
+        let isOptionShift = event.modifierFlags.contains([.option, .shift])
+        guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey || isOptionShift else { return false }
         guard let pressed = UmiShortcut(event: event), let menuItem = byShortcut[pressed], let item = handlers[menuItem] else {
             return false
         }

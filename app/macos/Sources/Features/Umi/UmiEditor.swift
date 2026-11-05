@@ -803,6 +803,8 @@ final class UmiEditorContainerView: NSView {
 /// Plain-text source editing.
 struct UmiSourceEditor: NSViewRepresentable {
     @ObservedObject var doc: UmiDocument
+    /// Umi: the interface's zoom scales the editor's text (L-23).
+    @ObservedObject private var zoom = UmiZoom.shared
     let group: UmiEditorGroup
 
     func makeCoordinator() -> Coordinator { Coordinator(doc: doc) }
@@ -833,7 +835,7 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.isAutomaticTextReplacementEnabled = false
             textView.isAutomaticSpellingCorrectionEnabled = false
             textView.isContinuousSpellCheckingEnabled = false
-            textView.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
+            textView.font = NSFont.monospacedSystemFont(ofSize: 12.5 * zoom.factor, weight: .regular)
             textView.textColor = UmiTheme.textNSColor
             textView.insertionPointColor = UmiTheme.accentNSColor
             textView.textContainerInset = NSSize(width: 12, height: 10)
@@ -868,6 +870,9 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.selectedRanges = clamped.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : clamped
         }
         if textView.textColor != UmiTheme.textNSColor { textView.textColor = UmiTheme.textNSColor }
+        // Umi: the interface's zoom (L-23).
+        let fontSize = 12.5 * zoom.factor
+        if textView.font?.pointSize != fontSize { textView.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular) }
         if let line = doc.revealLine {
             DispatchQueue.main.async { doc.revealLine = nil }
             Self.reveal(line: line, in: textView)
@@ -929,6 +934,8 @@ struct UmiSourceEditor: NSViewRepresentable {
 /// drawn by Umi's own script, which runs apart from the page (`UmiCommentsScript`).
 struct UmiMarkdownPreview: NSViewRepresentable {
     @ObservedObject var doc: UmiDocument
+    /// Umi: the interface's zoom scales the page (L-23).
+    @ObservedObject private var zoom = UmiZoom.shared
     let group: UmiEditorGroup
     let background: Color
 
@@ -949,6 +956,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                                            forMainFrameOnly: true, in: UmiCommentsUI.world))
         scripts.add(UmiScriptHandlerProxy(context.coordinator), contentWorld: UmiCommentsUI.world, name: "umi")
         let web = UmiPreviewWebView(frame: .zero, configuration: config)
+        web.pageZoom = zoom.factor
         container.attach(to: group, focusTarget: web)
         web.navigationDelegate = context.coordinator
         web.setValue(false, forKey: "drawsBackground")
@@ -969,6 +977,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
 
     func updateNSView(_ container: UmiEditorContainerView, context: Context) {
         context.coordinator.group = group
+        if let web = context.coordinator.web, web.pageZoom != zoom.factor { web.pageZoom = zoom.factor }
         context.coordinator.render()
         context.coordinator.showWaiters()
     }

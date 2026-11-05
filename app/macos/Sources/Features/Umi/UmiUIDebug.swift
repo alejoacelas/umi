@@ -1,4 +1,5 @@
 import AppKit
+import GhosttyKit
 
 /// Internal `debug.ui.*` control methods (not part of the CLI contract): scripted checks of
 /// sidebar rows, drops, drags, the row menu, dividers and the open-file path, which otherwise
@@ -155,6 +156,18 @@ enum UmiUIDebug {
                 throw UmiError.badRequest("action is equalize or move")
             }
             return ["pane": pane.umiID]
+
+        case "debug.ui.zoom":
+            // The interface's zoom and the terminals' font size (L-23), and a pane's cell size.
+            let zoom = UmiZoom.shared
+            var out: [String: Any] = ["level": zoom.level, "font_size": Double(zoom.baseFontSize),
+                                      "terminal_font_size": Double(zoom.terminalFontSize)]
+            if let pane = try? UmiTopology.pane(params.string("pane"), caller: caller), let surface = pane.surface {
+                let size = ghostty_surface_size(surface)
+                out["cell_width_px"] = Int(size.cell_width_px)
+                out["cell_height_px"] = Int(size.cell_height_px)
+            }
+            return out
 
         case "debug.ui.pane.menu":
             // The terminal's right-click menu (L-21): its items, or choose one by title.

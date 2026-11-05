@@ -63,6 +63,8 @@ final class UmiState: ObservableObject {
             self.prune()
             UmiFilePanes.shared.prune()
             UmiWebPanes.shared.prune()
+            // New panes get the zoom's font size (L-23).
+            UmiZoom.shared.apply()
             // Panes opened, closed or moved: Window > Agent Sessions marks the shown sessions,
             // and `agent ls` says where each session is.
             UmiAgentMenu.shared.setNeedsRebuild()

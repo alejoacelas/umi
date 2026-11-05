@@ -62,6 +62,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     // Umi: the sidebar beside a window's panes.
     @ObservedObject private var umiState = UmiState.shared
+    // Umi: the interface's zoom (L-23).
+    @ObservedObject private var umiZoom = UmiZoom.shared
 
     /// The focused terminal's initial size plus the sidebar.
     private var idealContentSize: CGSize? {
@@ -95,7 +97,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
                     HStack(spacing: 0) {
                         if umiState.sidebarVisible, let controller {
-                            UmiSidebar(controller: controller, topInset: topInset)
+                            UmiSidebar(controller: controller, topInset: topInset / umiZoom.factor)
+                                .umiZoomed(umiZoom.factor)
                                 .frame(width: controller.sidebarWidth)
                                 .overlay(alignment: .trailing) { UmiSidebarResizeEdge(controller: controller) }
                                 .transition(.move(edge: .leading))
@@ -112,6 +115,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 if let controller = viewModel as? TerminalController {
                     // Umi's palette: commands, panes and files, whatever has focus (L-14–L-16).
                     UmiPaletteView(model: controller.palette, background: ghostty.config.backgroundColor)
+                        .umiZoomed(umiZoom.factor)
                 } else if let surfaceView = lastFocusedSurface?.value {
                     TerminalCommandPaletteView(
                         surfaceView: surfaceView,

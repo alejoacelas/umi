@@ -140,6 +140,12 @@ enum UmiTheme {
         # terminal inspector moves to ⌃⌥⌘I.
         keybind = super+alt+i=unbind
         keybind = super+alt+ctrl+i=inspector:toggle
+        # ⌘= ⌘- ⌘0 zoom the whole interface (View menu), as in Warp; the terminals' font size
+        # is ⌥⇧> and ⌥⇧<.
+        keybind = super+==unbind
+        keybind = super++=unbind
+        keybind = super+-=unbind
+        keybind = super+0=unbind
         \(digitUnbinds)
         """
     }
