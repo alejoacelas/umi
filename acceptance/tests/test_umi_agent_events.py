@@ -58,6 +58,7 @@ def test_the_agents_mark_wears_warps_status_badge(inst, win):
             (dict(status="working"), "working"),
             (dict(status="idle", mark="finished"), "done"),
             (dict(status="needs_input", mark="needs_you"), "needs_you"),
+            (dict(status="needs_input"), "needs_you"),   # seen, still waiting: Warp keeps "blocked"
             (dict(status="error", mark="finished"), "error"),
             (dict(status="stopped"), "cancelled"),
             (dict(status="idle"), "none"),

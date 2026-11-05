@@ -41,6 +41,8 @@ final class UmiAttention: ObservableObject {
             switch status {
             case "error": return .error
             case "working", "starting": return .working
+            // Blocked for as long as it waits, seen or not (the mark only sets the brightness).
+            case "needs_input": return .needsYou
             case "stopped": return .cancelled
             default: return mark == .finished ? .done : .none
             }

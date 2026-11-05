@@ -726,3 +726,5 @@ New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24
   opens it there; closing that window closes it; toasts show again) and
   `test_a_click_outside_the_inbox_closes_it_and_typing_reaches_the_pane_ui` (real clicks inside and
   outside the panel, then real typing). `debug.ui.inbox.toggle` now takes `window`.
+- **Extended, `test_the_agents_mark_wears_warps_status_badge`**: a session still waiting after the
+  user looked (`needs_input`, no mark) keeps the "needs you" badge.
