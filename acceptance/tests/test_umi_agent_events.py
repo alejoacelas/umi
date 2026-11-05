@@ -367,3 +367,17 @@ def test_no_note_after_a_failed_update(fresh):
     window_for(inst, "no-note")
     time.sleep(1)
     assert inbox(inst)["update_note"] is None
+
+
+@pytest.mark.req("I-4")
+def test_no_note_after_a_rollback(fresh, target):
+    """`update --rollback` installs an older version through the same path: it isn't an update."""
+    version = app_version(target)
+    inst = fresh(start_app=False, prefix="acc-upnote-rollback-")
+    os.makedirs(os.path.join(inst.dir, "updates"), exist_ok=True)
+    with open(os.path.join(inst.dir, "updates", "attempt.json"), "w") as f:
+        json.dump({"version": version, "from": "999.0.0", "at": "2026-11-05T00:00:00Z"}, f)
+    inst.start_app()
+    window_for(inst, "rollback")
+    time.sleep(1)
+    assert inbox(inst)["update_note"] is None

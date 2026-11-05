@@ -717,3 +717,8 @@ New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24
 - **New**: `test_a_sibling_that_finished_out_of_sight_keeps_its_mark` (the negative case: switching
   to a sibling pane and an unrelated attention change leave the mark; a look at its own pane clears
   it).
+- **New**: `test_no_note_after_a_rollback` (an `attempt.json` going down shows no note).
+- **Extended, `tests/test_umi_extra.py`**: `test_not_now_activity_install_now_and_rollback` serves a
+  feed with release notes and checks the relaunched 999.0.0 shows them in the note (the real path:
+  feed, staged `release.json`, `attempt.json`), and that the rollback to 0.0.1 shows no note. Added
+  assertions only.
