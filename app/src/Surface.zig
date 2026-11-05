@@ -1867,6 +1867,10 @@ pub fn updateConfig(
         log.warn("failed to notify renderer of config change err={}", .{err});
     };
 
+    // Umi: window-padding-alternate-screen may have changed while a
+    // full-screen program runs.
+    try self.umiScreenChanged();
+
     // If we have a title set then we update our window to have the
     // newly configured title.
     if (config.title) |title| _ = try self.rt_app.performAction(
@@ -3793,7 +3797,8 @@ pub fn contentScaleCallback(self: *Surface, content_scale: apprt.ContentScale) !
 
     // Update our padding which is dependent on DPI. We only do this for
     // unbalanced padding since balanced padding is not dependent on DPI.
-    if (self.config.window_padding_balance == .false) {
+    // (Umi: a full-screen program without padding keeps none.)
+    if (self.config.window_padding_balance == .false and !self.umi_unpadded) {
         self.size.padding = self.config.scaledPadding(x_dpi, y_dpi);
     }
 
@@ -5081,9 +5086,13 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         },
 
         .reset => {
-            self.renderer_state.mutex.lockUncancelable(global.io());
-            defer self.renderer_state.mutex.unlock(global.io());
-            self.renderer_state.terminal.fullReset();
+            {
+                self.renderer_state.mutex.lockUncancelable(global.io());
+                defer self.renderer_state.mutex.unlock(global.io());
+                self.renderer_state.terminal.fullReset();
+            }
+            // Umi: a reset returns to the primary screen, and its padding.
+            try self.umiScreenChanged();
         },
 
         .start_search => {

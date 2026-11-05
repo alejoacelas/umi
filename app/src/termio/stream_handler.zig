@@ -927,7 +927,11 @@ pub const StreamHandler = struct {
     pub fn fullReset(
         self: *StreamHandler,
     ) !void {
+        const before = self.terminal.screens.active_key;
         self.terminal.fullReset();
+        // Umi: a reset leaves the alternate screen (`reset` after a crashed
+        // full-screen program), so the shell gets its padding back.
+        self.umiScreenSwitched(before);
         try self.setMouseShape(.text);
 
         // Full reset clears Kitty clipboard session grants.
