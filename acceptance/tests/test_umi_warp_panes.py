@@ -530,6 +530,14 @@ def clipboard():
     subprocess.run(["pbcopy"], input=saved, check=True)
 
 
+def stop_sync(inst):
+    try:
+        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+    except AssertionError as e:
+        if "disabled" not in str(e):
+            raise
+
+
 def menu_item(inst, pane, title):
     return next((i for i in rpc(inst, "debug.ui.pane.menu", pane=pane)["items"] if i.get("title") == title), None)
 
@@ -564,7 +572,7 @@ def test_option_command_i_in_a_one_tab_window_leaves_tabs_opened_later_out(inst,
         assert key(inst, win, "option+cmd+i")["handled"]
         wait_until(lambda: not row(inst, win["window"], win["tab"]).get("input_synced"), 5, message="stopped")
     finally:
-        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+        stop_sync(inst)
 
 
 @pytest.mark.req("L-32")
@@ -609,7 +617,7 @@ def test_a_paste_into_a_synced_pane_is_confirmed_once_and_reaches_every_pane(ins
         assert third not in screen(inst, a) and third not in screen(inst, b)
         key(inst, win, "ctrl+c")
     finally:
-        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+        stop_sync(inst)
 
 
 @pytest.mark.req("L-32")
@@ -645,28 +653,31 @@ def test_file_and_web_panes_in_a_synced_tab_get_no_keys(web, tmp_path):
             assert screen(inst, p) == hidden[p]
         assert marker not in doc.read_text()
     finally:
-        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+        stop_sync(inst)
 
 
 @pytest.mark.ui
 @pytest.mark.req("L-32")
 def test_a_synced_tabs_row_shows_the_link_mark_ui(inst, win, ui):
+    from test_umi_panes_ui import _row_element
     inst.cli("window", "focus", win["window"])
     ui.activate()
     time.sleep(0.5)
-    window = ui.attr(ui.app, "AXFocusedWindow")
+    title = row(inst, win["window"], win["tab"])["line1"]
 
     def mark():
-        return ui.find(lambda e: ui.label(e) == "Synchronized input", root=window)
+        # The row is one accessibility element: the mark shows in its value.
+        element = _row_element(ui, title)
+        return element is not None and "Synchronized input" in ui.value(element)
 
-    assert mark() is None
+    assert not mark()
     try:
         ui.key(KEY_I, ui.CMD | ui.OPT)
         wait_until(mark, 5, message="the row's link mark")
         ui.key(KEY_I, ui.CMD | ui.OPT | ui.SHIFT)
-        wait_until(lambda: mark() is None, 5, message="the mark gone after ⌥⇧⌘I")
+        wait_until(lambda: not mark(), 5, message="the mark gone after ⌥⇧⌘I")
     finally:
-        rpc(inst, "debug.menu.perform", title="Stop Synchronizing Any Panes")
+        stop_sync(inst)
 
 
 @pytest.mark.req("L-31")
@@ -764,9 +775,10 @@ def test_a_pane_already_smaller_than_190_points_may_grow_but_not_shrink(inst, wi
     b = split(inst, "right", a, "--ratio", f"{150 / total:.4f}")
     before = frames(inst, win["tab"])
     assert before[b]["width"] < MINIMUM, before
-    # Smaller still: refused, nothing moves.
+    # Smaller still: refused, nothing moves (but for half a point of rounding).
     rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=(total - 100) / total)
-    assert frames(inst, win["tab"]) == before
+    f = frames(inst, win["tab"])
+    assert f[b]["width"] >= before[b]["width"] - 0.5, (before, f)
     # Bigger: it grows (a stays above the minimum).
     rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=(total - 210) / total)
     f = frames(inst, win["tab"])
@@ -862,3 +874,35 @@ def test_sidebar_rows_drag_and_click_when_zoomed_ui(inst, win, ui):
         wait_until(lambda: inst.tree().get("current_tab") == t2, 5, message="the clicked row's tab shown")
     finally:
         ui.key(KEY_ZERO, ui.CMD)
+
+
+@pytest.mark.ui
+@pytest.mark.req("L-31")
+def test_right_clicking_selected_text_opens_the_selection_menu_ui(inst, win, ui):
+    """With text selected before the right-click, Warp's menu has Copy and the pane's items; a
+    right-click with nothing selected (Ghostty selects the word under it) keeps Paste and Clear."""
+    from test_umi_panes_ui import _frame, _right_click
+    a = win["pane"]
+    split(inst, "right", a)
+    inst.cli("pane", "focus", a)
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+    time.sleep(0.5)
+    window = ui.attr(ui.app, "AXFocusedWindow")
+
+    def menu_texts():
+        pane = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Left pane", root=window), 5, message="the left pane")
+        _right_click(_frame(ui, pane))
+        menus = wait_until(lambda: ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the pane's menu")
+        texts = [t for m in menus for t in ui.texts(m)]
+        ui.key(ui.ESCAPE)
+        wait_until(lambda: not ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the menu closed")
+        return texts
+
+    texts = menu_texts()
+    assert "Paste" in texts and "Clear" in texts, texts
+    key(inst, win, "cmd+a")
+    wait_until(lambda: rpc(inst, "debug.selection", pane=a)["text"], 5, message="a's text selected")
+    texts = menu_texts()
+    assert "Copy" in texts and "Paste" not in texts and "Clear" not in texts, texts
+    assert "Split Pane Right" in texts and "Close Pane" in texts, texts
