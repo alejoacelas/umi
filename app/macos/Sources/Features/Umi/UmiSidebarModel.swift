@@ -115,10 +115,17 @@ enum UmiSidebarSearch {
         window.sidebarModel.focusSearch()
     }
 
+    /// Whether the window's query filters tab cycling: it has one, and the sidebar isn't showing
+    /// the Files mode, which has no search field to see or clear it in. (A hidden sidebar keeps
+    /// filtering, as Warp's closed panel does.)
+    static func filtersCycling(_ window: TerminalController) -> Bool {
+        window.sidebarModel.isSearching && UmiState.shared.sidebarMode == .tabs
+    }
+
     /// Next or previous tab for ⇧⌘] and ⌃Tab (and ⇧⌘[ and ⌃⇧Tab): only the matching tabs
     /// while the current window's sidebar has a query. Returns nil when no query applies.
     static func cycleMatches(_ delta: Int) -> UmiTab?? {
-        guard let window = UmiTopology.currentWindow, window.sidebarModel.isSearching else { return nil }
+        guard let window = UmiTopology.currentWindow, filtersCycling(window) else { return nil }
         guard let tab = window.sidebarModel.adjacentMatch(delta, in: window) else { return .some(nil) }
         if tab !== window.selectedTab { UmiLayout.focusTab(tab, in: window) }
         return .some(tab)

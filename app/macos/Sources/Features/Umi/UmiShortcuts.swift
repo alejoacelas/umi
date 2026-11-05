@@ -96,7 +96,7 @@ enum UmiShortcuts {
                      if let searched = UmiSidebarSearch.cycleMatches(-1) { if searched == nil { NSSound.beep() }; return }
                      if UmiNavigation.tabBack() == nil { NSSound.beep() }
                  },
-                 enabled: { UmiTabHistory.canGoBack || UmiTopology.currentWindow?.sidebarModel.isSearching == true }),
+                 enabled: { UmiTabHistory.canGoBack || UmiTopology.currentWindow.map(UmiSidebarSearch.filtersCycling) == true }),
             Item(id: "tab.next", title: "Show Next Tab", key: "]", modifiers: [.command, .shift], symbol: "arrow.down.square",
                  menu: "Window", action: { adjacentTab(1) },
                  enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),

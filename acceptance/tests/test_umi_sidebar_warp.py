@@ -561,6 +561,51 @@ def test_search_field_keys_ui(inst, win, ui, tmp_path):
 
 
 @pytest.mark.req("S-13")
+def test_search_from_a_hidden_sidebar_or_files_mode_ui(inst, win, ui):
+    """⌥⌘F shows a hidden sidebar in Tabs mode with the cursor in "Search tabs..."; Esc gives the
+    keyboard back to the pane that had it. In Files mode the query (which can't be seen there)
+    doesn't filter ⌃Tab; back in Tabs mode it does again."""
+    _, a = new_tab(inst, win, "--name", "modesearch-a")
+    _, skip = new_tab(inst, win, "--name", "unrelated-m")
+    _, b = new_tab(inst, win, "--name", "modesearch-b")
+    front(inst, win, ui, win["pane"])
+    try:
+        inst.cli("sidebar", "files", "--window", win["window"])
+        inst.cli("sidebar", "off", "--window", win["window"])
+        wait_until(lambda: sidebar(inst, win["window"])["key_pane"] == win["pane"], 5, message="the pane has the keys")
+        press(ui, "f", "cmd", "option")
+        wait_until(lambda: sidebar(inst, win["window"])["search_focused"], 5, message="⌥⌘F focused the field")
+        status = inst.json("sidebar", "status", "--window", win["window"])
+        assert status["visible"] is True and status["mode"] == "tabs", status
+        field = ui.focused_input(5)
+        assert field is not None, "the cursor is in the field"
+        ui.enter_text("modesearch", field)
+        wait_until(lambda: sidebar(inst, win["window"])["matching"] == [a, b], 5, message="the query took")
+        press(ui, "esc")
+        wait_until(lambda: not sidebar(inst, win["window"])["search_focused"], 5, message="the field let go")
+        wait_until(lambda: sidebar(inst, win["window"])["key_pane"] == win["pane"], 5,
+                   message="Esc gave the keyboard back to the pane that had it")
+        assert sidebar(inst, win["window"])["query"] == ""
+
+        # A query left in the field while the sidebar shows Files doesn't filter ⌃Tab.
+        sidebar(inst, win["window"], query="modesearch")
+        inst.cli("tab", "focus", a)
+        inst.cli("sidebar", "files", "--window", win["window"])
+        front(inst, win, ui)
+        press(ui, "tab", "ctrl")
+        wait_until(lambda: selected(inst, win["window"]) == skip, 5, message="⌃Tab to the next tab in order")
+        inst.cli("sidebar", "tabs", "--window", win["window"])
+        inst.cli("tab", "focus", a)
+        front(inst, win, ui)
+        press(ui, "tab", "ctrl")
+        wait_until(lambda: selected(inst, win["window"]) == b, 5, message="⌃Tab to the next match in Tabs mode")
+    finally:
+        sidebar(inst, win["window"], query="")
+        inst.cli("sidebar", "tabs", "--window", win["window"])
+        inst.cli("sidebar", "on", "--window", win["window"])
+
+
+@pytest.mark.req("S-13")
 def test_no_match_says_so_ui(inst, win, ui):
     front(inst, win, ui, win["pane"])
     try:

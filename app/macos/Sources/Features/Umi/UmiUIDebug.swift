@@ -246,6 +246,8 @@ enum UmiUIDebug {
             "visible": window.sidebarVisible, "query": model.query,
             "matching": model.matchingTabs(in: window).map(\.idString),
             "hints": UmiTabHints.shared.revealed, "search_focused": model.searchFocused,
+            // The pane that has the keyboard in this window, if a pane has it.
+            "key_pane": (window.window?.firstResponder as? Ghostty.SurfaceView)?.umiID ?? "",
         ]
         switch model.renaming {
         case .tab(let id): json["renaming"] = ["tab": id.uuidString.lowercased()]
