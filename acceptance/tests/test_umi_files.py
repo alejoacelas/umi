@@ -206,7 +206,7 @@ def test_explorer_menu_has_warps_items(inst, win, tmp_path):
     time.sleep(0.5)
     assert os.path.realpath(inst.json("pane", "info", term["pane"])["cwd"] or "/") == os.path.realpath(repo), \
         "not run yet"
-    inst.cli("send", "--pane", term["pane"], "--enter", "")
+    inst.cli("keys", "--pane", term["pane"], "enter")
     wait_until(lambda: os.path.realpath(inst.json("pane", "info", term["pane"])["cwd"] or "/") == os.path.realpath(src),
                10, message="Enter runs it: the terminal is in src")
     # While a program runs in the terminal, cd to Directory is off (it would type into the program).
@@ -218,6 +218,11 @@ def test_explorer_menu_has_warps_items(inst, win, tmp_path):
     wait_until(lambda: dict((i["title"], i["enabled"]) for i in rpc(inst, "debug.ui.files.menu", window=win["window"],
                                                                      path=src)["items"])["cd to Directory"] is True,
                5, message="cd to Directory is back at the prompt")
+
+    # Insert Path in Terminal types the quoted path and a space at the prompt.
+    perform(inst, win, readme, "Insert Path in Terminal")
+    wait_until(lambda: screen().endswith(readme), 5, message="the path at the prompt")
+    inst.cli("keys", "--pane", term["pane"], "ctrl+c")
 
     # Open in New Pane: the file in the editor, in a pane beside the terminal, in the same tab.
     notes = os.path.join(repo, "notes.txt")
@@ -354,10 +359,18 @@ def test_explorer_keys(inst, win, tmp_path):
 
     # Dotfiles: ⇧⌘> hides and shows them.
     assert row(files(inst, win), os.path.join(repo, ".gitignore")) is not None
+    def saved_show_hidden():
+        try:
+            with open(os.path.join(inst.dir, "ui.json")) as f:
+                return json.load(f).get("files", {}).get("show_hidden")
+        except (OSError, ValueError):
+            return None
     press(inst, win, "cmd+shift+.")
     wait_until(lambda: row(files(inst, win), os.path.join(repo, ".gitignore")) is None, 5, message="⇧⌘> hides dotfiles")
+    wait_until(lambda: saved_show_hidden() is False, 5, message="the setting is saved in ui.json")
     press(inst, win, "cmd+shift+.")
     wait_until(lambda: row(files(inst, win), os.path.join(repo, ".gitignore")) is not None, 5, message="⇧⌘> shows them")
+    wait_until(lambda: saved_show_hidden() is True, 5, message="and saved again")
 
     # ⇧⌘E: hides the explorer when it's shown, shows it with focus in the tree when it isn't.
     press(inst, win, "cmd+shift+e")
@@ -367,7 +380,51 @@ def test_explorer_keys(inst, win, tmp_path):
     wait_until(lambda: files(inst, win)["focused"], 5, message="⇧⌘E puts focus in the tree")
     press(inst, win, "esc")
     wait_until(lambda: not files(inst, win)["focused"], 5, message="Esc leaves the tree")
+
+    # ⌃1 pressed while the explorer has focus: back to Tabs, with focus in the pane.
+    press(inst, win, "ctrl+1")
+    wait_until(lambda: inst.json("sidebar", "status")["mode"] == "tabs", 5, message="⌃1 hides the explorer")
+    press(inst, win, "ctrl+1", focus="terminal")
+    wait_until(lambda: files(inst, win)["focused"], 5, message="⌃1 shows it with focus in the tree")
+    press(inst, win, "ctrl+1")
+    wait_until(lambda: inst.json("sidebar", "status")["mode"] == "tabs", 5, message="⌃1 again: Tabs")
+    responder = rpc(inst, "debug.key", window=win["window"], keys="left", focus="none")["focus"]
+    assert "SurfaceView" in responder, f"focus is back in the pane, not {responder}"
     inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2")
+def test_explorer_opens_binary_files_with_their_default_app(fresh, tmp_path):
+    """Enter on a binary file hands it to its default app (not the editor); Open with Default App
+    does the same for any file; Open in New Pane and Open in New Tab are off for binary files.
+    UMI_TEST_OPEN_LOG makes the app write what it hands over instead of opening an app."""
+    log = tmp_path / "opened.log"
+    other = fresh(prefix="acc-files-", env={"UMI_TEST_OPEN_LOG": str(log)})
+    created = other.json("window", "new", "--name", "binary")
+    w = {"window": other.find_pane(created["pane"])[0]["id"]}
+    repo = make_repo(tmp_path)
+    blob = os.path.join(repo, "blob.bin")
+    with open(blob, "wb") as f:
+        f.write(b"\x00\x01\x02 binary\n")
+    term = open_repo(other, w, repo)
+    show_files(other, w, repo)
+    items = {i["title"]: i["enabled"] for i in rpc(other, "debug.ui.files.menu", window=w["window"], path=blob)["items"]}
+    assert items["Open in New Pane"] is False and items["Open in New Tab"] is False, items
+    readme = os.path.join(repo, "README.md")
+    perform(other, w, readme, "Open with Default App")
+    wait_until(lambda: log.exists() and log.read_text().splitlines() == [readme], 5, message="handed to its app")
+
+    # Enter on blob.bin (rows: root, build, src, .env.example, .gitignore, blob.bin).
+    other.cli("sidebar", "tabs")
+    other.cli("pane", "focus", term["pane"])
+    press(other, w, "ctrl+1", focus="terminal")
+    wait_until(lambda: files(other, w)["focused"], 5, message="the tree has keyboard focus")
+    for _ in range(6):
+        press(other, w, "down")
+    assert os.path.realpath(files(other, w)["selected"]) == blob
+    press(other, w, "return")
+    wait_until(lambda: log.read_text().splitlines() == [readme, blob], 5, message="Enter hands it to its app")
+    assert blob not in editor_paths(other, term["tab"]), "not in the editor"
 
 
 @pytest.mark.req("S-2")
@@ -487,6 +544,97 @@ def test_global_search(inst, win, tmp_path):
     wait_until(lambda: search(inst, win)["focus"] == "query", 5, message="with the query focused")
     press(inst, win, "esc")
     wait_until(lambda: search(inst, win)["focus"] == "none", 5, message="Esc leaves search")
+    inst.cli("sidebar", "tabs")
+
+
+def open_search(inst, win, term):
+    inst.cli("sidebar", "tabs")
+    inst.cli("pane", "focus", term["pane"])
+    press(inst, win, "cmd+shift+f", focus="terminal")
+    wait_until(lambda: search(inst, win)["focus"] == "query", 5, message="the query has focus")
+
+
+@pytest.mark.req("S-2")
+def test_global_search_regex_is_perl_style_and_opens_at_the_match(inst, win, tmp_path):
+    """A regex escape class means the same to the search and to the highlight (`\\d` is a digit,
+    not a "d"); Enter puts the cursor on the match's column; a bad regex shows git's error."""
+    repo = make_repo(tmp_path)
+    codes = os.path.join(repo, "codes.txt")
+    with open(codes, "w") as f:
+        f.write("ad and a7 here\nplain ad\n")
+    term = open_repo(inst, win, repo)
+    open_search(inst, win, term)
+    rpc(inst, "debug.ui.search.toggle", window=win["window"], name="regex")
+    type_keys(inst, win, "a\\d")
+    wait_until(lambda: search(inst, win)["regex"] and settled(inst, win, "a\\d") and search(inst, win)["files"], 10,
+               message="regex results")
+    state = search(inst, win)
+    assert [(f["path"], [m["line"] for m in f["matches"]]) for f in state["files"]] == [("codes.txt", [1])], state["files"]
+    match = next(r for r in state["rows"] if r["kind"] == "match")
+    assert match["highlights"] == ["a7"], match
+    assert match["column"] == 8
+
+    # Enter opens codes.txt with the cursor on the match: a key typed there lands before "a7".
+    press(inst, win, "down")
+    press(inst, win, "down")
+    assert search(inst, win)["selected"]["kind"] == "match"
+    press(inst, win, "return")
+    wait_until(lambda: os.path.realpath(codes) in editor_paths(inst, term["tab"]), 10, message="the file opens")
+    time.sleep(0.5)
+    press(inst, win, "x")
+    text = rpc(inst, "debug.editor.type", tab=term["tab"], path=codes, text="")["text"]
+    assert text.splitlines()[0] == "ad and xa7 here", text
+
+    # A bad regex: git's error under the query, no results.
+    open_search(inst, win, term)
+    type_keys(inst, win, "[")
+    wait_until(lambda: settled(inst, win, "["), 10, message="the search ran")
+    state = search(inst, win)
+    assert "missing terminating ]" in state["message"] and state["files"] == [], state["message"]
+    rpc(inst, "debug.ui.search.toggle", window=win["window"], name="regex")
+    inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2")
+def test_global_search_outside_git_and_capped(inst, win, tmp_path):
+    """Outside a git repository the folder's files are searched; past 20,000 matching lines the
+    results stop, with Warp's note."""
+    folder = os.path.realpath(str(tmp_path / ("plain-" + uuid.uuid4().hex[:6])))
+    os.makedirs(folder)
+    with open(os.path.join(folder, "many.txt"), "w") as f:
+        f.write("needle\n" * 20005)
+    with open(os.path.join(folder, "one.txt"), "w") as f:
+        f.write("one xneedle\n")
+    term = open_repo(inst, win, folder)
+    open_search(inst, win, term)
+    type_keys(inst, win, "needle")
+    wait_until(lambda: settled(inst, win, "needle") and search(inst, win)["files"], 20, message="results")
+    state = search(inst, win)
+    assert os.path.realpath(state["root"]) == folder
+    assert state["capped"] is True
+    assert sum(len(f["matches"]) for f in state["files"]) == 20000
+    press(inst, win, "esc")
+    open_search(inst, win, term)
+    type_keys(inst, win, "xneedle")
+    wait_until(lambda: settled(inst, win, "xneedle"), 10, message="a narrower search")
+    state = search(inst, win)
+    assert [f["path"] for f in state["files"]] == ["one.txt"] and state["capped"] is False, state
+    inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2", "L-9")
+def test_shift_cmd_f_leaves_a_terminal_search_open(inst, win):
+    """⇧⌘F opens global search and no longer ends the terminal's own search (⌘F); Esc in the
+    terminal still ends it."""
+    inst.cli("sidebar", "tabs")
+    inst.cli("pane", "focus", win["pane"])
+    press(inst, win, "cmd+f", focus="terminal")
+    wait_until(lambda: search(inst, win)["terminal_search"], 5, message="⌘F starts a terminal search")
+    press(inst, win, "cmd+shift+f")
+    wait_until(lambda: inst.json("sidebar", "status")["mode"] == "search", 5, message="⇧⌘F shows global search")
+    assert search(inst, win)["terminal_search"], "the terminal search is still open"
+    press(inst, win, "esc", focus="terminal")
+    wait_until(lambda: not search(inst, win)["terminal_search"], 5, message="Esc ends the terminal search")
     inst.cli("sidebar", "tabs")
 
 
