@@ -301,9 +301,8 @@ the menu.
     grow or shrink, sharing equally the stretch between the dragged divider and the nearest
     divider placed by hand (or the row's end) on each side. In a row of three, dragging the first
     divider gives the first pane the width dragged to and the other two half the rest each;
-    dragging the second divider then leaves the first pane as it is. In a row of four (wide
-    enough for the 190-point minimum below), dragging the first divider to 40% and the last to 90%
-    gives 40/25/25/10. A pane split the other way (a
+    dragging the second divider then leaves the first pane as it is. In a row of four, dragging
+    the first divider to 28% and the last to 78% gives 28/25/25/22. A pane split the other way (a
     column in a row) counts as one pane of the row and keeps its inside;
   - file panes (E-1) are panes like any other;
   - keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one pane's edge,
