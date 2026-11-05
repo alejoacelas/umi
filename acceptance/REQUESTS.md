@@ -302,3 +302,4 @@ gestures are out.
   `~/.config/umi/launch_configurations`, ⌃⌘L to open one, File ▸ Save New Launch Configuration…,
   "Save as New Config" in a sidebar row's right-click menu, `umi layout ls|save|open`. ⌃⌘T stays
   Umi's Move Pane to New Tab, so Warp's tab-configs menu key isn't added.
+- Agent status, attention, inbox, toasts and the update note (SPEC S-3, AG-24, I-4, L-9).

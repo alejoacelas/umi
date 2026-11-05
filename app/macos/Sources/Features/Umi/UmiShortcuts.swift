@@ -213,6 +213,12 @@ enum UmiShortcuts {
                  symbol: "arrow.uturn.backward.circle", menu: "Window",
                  action: { if UmiNavigation.jumpBack() == nil { NSSound.beep() } },
                  enabled: { UmiNavigation.canJumpBack }),
+            // Agent events inside the app (Warp parity, 2026-11-05; S-9).
+            Item(id: "view.inbox", title: "Toggle Notifications", key: "u", modifiers: [.command, .shift],
+                 symbol: "tray", menu: "View", action: { UmiInbox.shared.toggle() }),
+            Item(id: "view.dismiss_toasts", title: "Dismiss Toasts", key: "u", modifiers: [.command, .control],
+                 symbol: "xmark.circle", menu: "View", action: { UmiInbox.shared.dismissToasts() },
+                 enabled: { UmiInbox.shared.hasToasts }),
             // A session in the focused pane (AG-6, AG-8).
             Item(id: "session.take_over", title: "Take Over Session", key: "o", modifiers: [.command, .control],
                  symbol: "arrow.down.right.and.arrow.up.left", menu: "Window",

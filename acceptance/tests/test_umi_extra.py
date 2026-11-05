@@ -489,6 +489,9 @@ def update_releases(target, tmp_path_factory):
     server.shutdown()
 
 
+UPDATE_NOTES = "Inbox on ⇧⌘U.\nToasts for agents."
+
+
 def _serve_feed(root, which):
     """Point the instance's feed at a version: "old" (up to date), "new" (999.0.0) or a newer
     999.1.0 whose download would fail (it must never be requested)."""
@@ -998,6 +1001,10 @@ def test_not_now_activity_install_now_and_rollback(target, update_releases, tmp_
         _shell_ready(installed, pane)
         wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
         _serve_feed(root, "new")
+        # The feed's release notes reach the note after the update (Warp parity, 2026-11-05).
+        feed = json.loads((root / "feed" / "appcast.json").read_text())
+        feed["notes"] = UPDATE_NOTES
+        (root / "feed" / "appcast.json").write_text(json.dumps(feed))
         wait_until(lambda: _update_status(installed)["state"] == "ready", 120, message="downloaded")
         status = wait_until(lambda: (s := _update_status(installed)).get("countdown") and s, 30, message="the countdown")
         assert 0 < status["countdown"] <= 60, status
@@ -1023,6 +1030,8 @@ def test_not_now_activity_install_now_and_rollback(target, update_releases, tmp_
         _wait_relaunched(installed, dest, "999.0.0")
         status = _update_status(installed)
         assert status.get("rollback") == "0.0.1", status
+        note = wait_until(lambda: installed.rpc("debug.ui.inbox").get("update_note"), 15, message="the note after the update")
+        assert note == {"version": "999.0.0", "notes": UPDATE_NOTES}, note
 
         # Rollback, and no update loop.
         out = installed.json("update", "--rollback")
@@ -1034,6 +1043,7 @@ def test_not_now_activity_install_now_and_rollback(target, update_releases, tmp_
         assert bundle_version(dest) == "0.0.1" and status["installed"] == "0.0.1", status
         assert status.get("rolled_back_from") == "999.0.0" and status["state"] == "held_back", status
         assert "ready" not in status, status
+        assert installed.rpc("debug.ui.inbox").get("update_note") is None, "a rollback says nothing"
         # The user asks for it: it installs again.
         installed.cli("update", "--now", timeout=600)
         _wait_relaunched(installed, dest, "999.0.0")

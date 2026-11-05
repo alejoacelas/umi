@@ -68,7 +68,7 @@ tab or window they choose; second, agents supervising and steering other agents.
 - **A CLI agents can use with no instructions.**
 - **Robustness:** crashes, restarts, upgrades, isolation, long runs, no orphans.
 
-Requirements: AG-1 to AG-23, R-3 to R-7.
+Requirements: AG-1 to AG-24, R-3 to R-7.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
@@ -175,7 +175,10 @@ and agents reaching the app from their own processes.
   - it verifies what it downloads (signature, hash, bundle id, version, code signature), and a helper
     swaps the bundle and puts the old one back if that fails;
   - an isolated or test instance (its own state directory) never updates the user's installed app;
-  - an older build updates to a newer one end to end.
+  - an older build updates to a newer one end to end;
+  - *Warp parity, 2026-11-05:* after an update installs, the relaunched app says once, inside the
+    window, "Umi updated to X.Y.Z" with that release's notes from the feed (Warp's "Warp updated!"
+    toast); it stays until ⌃⌘U dismisses it, and a failed install shows nothing.
 
   `<cli> update --check` prints the installed and the newest version. Publishing a new version from
   the development Mac is one command.
@@ -228,6 +231,8 @@ the menu.
     it keeps running (AG-6, AG-8);
   - (Warp parity, 2026-11-05) ⌥⌘I and ⌥⇧⌘I synchronize input and stop it (L-32); ⌘= ⌘- ⌘0 zoom
     the interface and ⌥⇧> ⌥⇧< change the terminals' font size (L-33).
+  - ⇧⌘U opens or closes the notifications inbox, and ⌃⌘U dismisses the toasts and the update note
+    (AG-24, I-4; Warp parity, 2026-11-05).
 
   Each is a menu item, and the command palette lists them. `<cli> shortcuts` changes them (L-17).
 
@@ -556,14 +561,25 @@ A "live session" is a pane with a running program, its scrollback and its state.
     modifiers held with it or added later don't hide them or restart the delay), each row shows
     the key that selects it at 12 pt, 60%: ⌘1–⌘8 for the first eight tabs, ⌘9 for the last.
   - The header (Warp's control bar) is 4 pt above and below, 8 pt at the sides, 4 pt between
-    items: "Search tabs..." (S-13; Tabs mode), the Tabs and Files buttons, and + (24 pt high,
-    radius 4).
-  - A tab with an agent session shows the agent's mark (Claude or Codex), small and monochrome, as
-    its icon. When a session finished and the user hasn't looked at it yet, or it needs the user,
-    the mark takes a quiet color. Looking at the pane (it has focus in the front window while the
+    items: "Search tabs..." (S-13; Tabs mode), the Tabs, Files and Search buttons, and + (24 pt
+    high, radius 4).
+  - A tab with an agent session shows the agent's mark (Claude or Codex), small and monochrome, in
+    the 24 pt circle instead of the terminal glyph. When a session finished and the user hasn't looked at it yet, or it needs the user,
+    the mark's status badge says so (below). Looking at the pane (it has focus in the front window while the
     app is active, by a tab switch, a pane focus, or switching windows or apps) clears it; a session
     that finishes while the user looks at it leaves no mark. Colors and hints stay subtle. No desktop
     notifications. The Dock badge counts the sessions that need the user.
+  - *Warp parity, 2026-11-05.* The mark wears Warp's status badge, 57% of the icon's size, its
+    bottom-right corner 5% of the icon's size inside the icon's, in a ring of the terminal's
+    background, in Warp's default Dark colors: working (magenta clock),
+    finished and not seen yet (green check), needs the user (yellow stop), error (red triangle),
+    stopped (grey stop). The mark itself stays monochrome; the badge carries the color. A finish
+    counts as seen when the user looks at any pane of its tab as it finishes (Warp's rule), and the
+    agent starting a new turn clears the mark. The agents' own desktop notifications (OSC 9 and
+    777, which Claude Code and Codex send) are dropped while an agent session's own interface runs
+    in the pane's terminal (one the product started or one its plugin reports, AG-18) and the
+    session isn't stopped; other programs' notifications, including the shell's after the agent
+    exits, are Ghostty's as before.
 - **S-4 [A+W]** Rows can be clicked to select, double-clicked to rename, dragged to reorder
   (M-4), and right-clicked for Warp's menu, with Warp's labels and order (Warp parity, 2026-11-05):
   Pin tab (Unpin tab); New group with tab, Move to group ▸, Remove from group (S-14); Copy branch,
@@ -571,7 +587,7 @@ A "live session" is a pane with a running program, its scrollback and its state.
   (the branch's pull request, found with `gh`); Rename tab, Reset tab name, Rename active pane,
   Reset active pane name (the tab's focused pane), Move Tab Down, Move Tab Up (within the pinned or
   unpinned group and, for a tab in a tab group, within that group; a tab next to another group
-  moves past the whole group in one step, as Warp's); Close tab, Close other tabs, Close Tabs Below; a row of color dots: "Default (no
+  moves past the whole group in one step, as Warp's); Close tab, Close other tabs, Close Tabs Below; Save as New Config (L-21); a row of color dots: "Default (no
   color)" and Warp's six tab colors, the theme's ANSI red, green, yellow, blue, magenta and cyan
   (picking the tab's color again clears it); then Umi's Move Tab to New Window, Move Tab to Window ▸.
   Sections are separated by lines; an item that can't apply (nothing to reset or copy, no pull
@@ -975,6 +991,26 @@ runs, it is the same session: same id, conversation, folder and settings.
 - **AG-19 [A]** Live status is truthful through agent updates: a turn's end with background work
   still pending isn't "finished", an interrupted turn doesn't stay "working", and a session waiting
   on a permission prompt or a question is `needs_input`.
+- **AG-24 [A]** *Warp parity, 2026-11-05.* Agent events inside the app, as Warp's notification
+  mailbox and toasts:
+  - an agent shown in a pane that finishes its turn, asks for the user or fails adds an item to an
+    inbox, newest first, at most 100; a pane keeps only its newest item, and the agent starting a
+    new turn takes it away. An item is read once the user looks at its pane, or if it happened
+    while they looked at its tab. Items use Warp's words: the session's title, or "Claude
+    completed" ("Task completed."; Codex: "Notification from Codex"), "Claude needs attention"
+    (what the agent asks, or "Waiting for input."), "Claude failed" (the agent's error, or "The
+    agent encountered an error.") and "Claude cancelled" ("Cancelled by user.") for a turn that
+    was stopped;
+  - ⇧⌘U opens the inbox over the window's top right: filters All tabs, Unread and Errors (the last
+    two only while they have items), each item with the agent's icon and badge, title, message and
+    age. ↑ ↓ choose, Return goes to the session's pane (the item is read), Tab or Shift-Tab change
+    the filter, Escape or ⇧⌘U close it. A click outside it closes it too (the click still goes
+    to what it hits, so typing then reaches the pane), and so does closing its window. It is open
+    in one window at a time: ⇧⌘U in another window opens it there;
+  - an unread item also shows as a toast in the window the user is looking at (the key window of
+    the active app), for 8 seconds, at most two at once (the oldest goes), none while the inbox is
+    open in that window; opening the inbox or ⌃⌘U dismisses them, and looking at the pane takes its toast away.
+    No desktop notifications (S-3).
 
 ### CLI for agents
 - **AG-20 [A]** An agent with no instructions about the product can use it: given only a task that

@@ -47,7 +47,7 @@ What phase 2 gives up, why, and which requirement that protects.
 | **`agent wait` on Codex holds its answer up to 5 s after a (re)start** while MCP servers still report `starting`. | Codex reports server status after the thread opens; a fast first turn would otherwise end before the warning line could say what failed. | MA-29. |
 | **Tool output kept in the transcript is clipped** to its first 12 KB and last 4 KB (the agent itself got all of it). | Storage grows with what the user keeps, not with what tools print; the view and the CLI stay fast. | R-9. |
 | **`update --now` refuses while agent turns run** unless given `--force` (the "Install and Relaunch" dialog says how many turns it will interrupt; choosing it agrees). An update staged for "install on quit" installs at the next quit, which interrupts turns cleanly like any quit. | R-10: an update installs while turns run only if the user agrees. | R-10. |
-| **Desktop notifications for agents are off in isolated instances** (test runs). | A test instance must not post notifications on the user's desktop. | P-1, R-5. |
+| ~~**Desktop notifications for agents are off in isolated instances** (test runs).~~ *Superseded 2026-11-05: Umi posts no desktop notifications for agents anywhere, and drops the agents' own (OSC 9/777); agent events go to the inbox and toasts inside the window (S-3, AG-24).* | A test instance must not post notifications on the user's desktop. | P-1, R-5. |
 | **Dragging an agent pane uses the grip in its header.** The terminal's own grab handle is under the session's view. | The session's view covers the terminal so keyboard and mouse go to it. | AP-1, AP-2. |
 
 ===================================================================================================
@@ -185,3 +185,15 @@ it is guidance"). What this design gives up:
 | **A tab colored pink or orange makes its saved file readable only by Umi.** Other colors are saved under Warp's names (purple as `magenta`, teal as `cyan`, graphite as `white`). | Warp's tab colors are the eight terminal colors and it skips a file with any other name; writing pink as `magenta` or orange as `red` would change the tab's color when Umi opens it again. | Umi's own tab colors surviving a save and open. |
 | **⌘Return in the launch configuration palette** (Warp: open into the current window) isn't there; Return always opens new windows. | Warp's Return opens new windows too, and ⌘Return is Ghostty's full-screen key. | ⌘Return as it is. |
 | **The YAML reader handles the block style Warp and people write**, plus one-line `[…]`/`{…}` and several documents in a file (each a configuration, as in Warp); anchors, aliases, tags and multi-line flow collections fail with the line they're on. | No YAML library is bundled; a small reader (`UmiYAML`) covers the format without a new dependency. | Licensing and build simplicity. |
+# Compromises (Warp parity, 2026-11-05: agent status, inbox, toasts, update note)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **No desktop notifications for agents**, even when the window is in the background (Warp posts them there once the user accepts its banner). Agents' own OSC 9/777 notifications are dropped while an agent's interface runs in the pane. | S-3: the user asked for no desktop notifications; the Dock badge, the inbox (⇧⌘U) and the marks cover a window in the background. | S-3. |
+| **⌃⌘U dismisses the toasts and the update note**; Warp has only close buttons and timeouts. | The user works from the keyboard; Escape belongs to the terminal. | AG-24, I-4. |
+| **The update note stays until ⌃⌘U** and shows the release's notes in the window; Warp's "Warp updated!" toast goes after 4 seconds and links to a changelog page. | The notes are in the note itself and take longer than 4 seconds to read; the note shows once. | I-4. |
+| **⇧⌘G (Warp's "jump to the latest agent task") isn't added.** | ⌃⌘J already goes to the next session that needs the user (L-12), and the inbox goes to any. | L-12. |
+| **Sessions no pane shows have no inbox items or toasts.** They stay in the Window menu, the palette, ⌃⌘J and the Dock badge. | The inbox goes to a pane, as Warp's goes to a terminal view; a background session has none until it's shown. | AG-24, S-2. |
+| **The badges use SF Symbols** (clock, check, stop, triangle) in Warp's colors and proportions, not Warp's icons. | Warp's icons are AGPL assets; Umi is MIT. | Licensing. |
+| **Warp's inbox and toasts have no right-click menu**, so nothing was added there for "the warp right click options". | Nothing to match in this area. | — |
+

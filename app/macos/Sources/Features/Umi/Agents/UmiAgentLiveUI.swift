@@ -395,14 +395,22 @@ extension UmiAgentUI {
         if snapshot.status == "needs_input" {
             mark = looked ? .none : .needsYou
         } else if finished && wasBusy {
-            mark = looked ? .none : .finished
-        } else if snapshot.status == "working" && mark == .needsYou {
+            // Seen if the user looks at any pane of its tab as it finishes (Warp's rule).
+            let seen = paneSurface.map { UmiLooking.isLookingAtTab(of: $0.id) } ?? false
+            mark = seen ? .none : .finished
+        } else if snapshot.status == "working" || snapshot.status == "starting" {
+            // A new turn clears the mark (Warp clears it when the agent starts again).
             mark = .none
+        }
+        let detail: String? = switch snapshot.status {
+        case "error": snapshot.error
+        case "needs_input": snapshot.requests.first?.title
+        default: nil
         }
         if let paneSurface {
             attention.set(.init(session: snapshot.id, kind: kind, title: snapshot.title, status: snapshot.status,
                                 live: shared.livePanes.contains(paneSurface.id), mark: mark,
-                                lastStop: snapshot.lastStopAt), forPane: paneSurface.id)
+                                lastStop: snapshot.lastStopAt, detail: detail), forPane: paneSurface.id)
         }
         // Background sessions (no pane) count only while they need input.
         var background = attention.background.filter { $0.session != snapshot.id }
@@ -420,6 +428,7 @@ extension UmiAgentUI {
 
     /// The user is looking at this pane: focused in the key window of the active app.
     static func isLookedAt(_ surface: Ghostty.SurfaceView) -> Bool {
+        if UmiLooking.assumeActive || UmiLooking.assumeInactive { return UmiLooking.lookedAt === surface }
         guard NSApp.isActive, let location = UmiTopology.locate(surface),
               location.window.window?.isKeyWindow == true, location.tab === location.window.selectedTab else { return false }
         return location.window.focusedSurface === surface

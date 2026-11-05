@@ -86,7 +86,8 @@ enum UmiUIDebug {
             UmiAttention.shared.set(.init(session: params.string("session"), kind: kind,
                                            title: params.string("title") ?? "", status: params.string("status") ?? "idle",
                                            live: params.bool("live") ?? true, mark: mark,
-                                           lastStop: stopped ? Date() : nil), forPane: pane.id)
+                                           lastStop: stopped ? Date() : nil, detail: params.string("detail")),
+                                    forPane: pane.id)
             return attention()
 
         case "debug.ui.attention.clear":

@@ -122,6 +122,8 @@ final class UmiUpdater: ObservableObject {
     private var keepingArchive: Task<Void, Never>?
     /// The last install of this copy, from the attempt the previous run left (`attempt.json`).
     private var lastAttempt: (version: String, from: String, ok: Bool)?
+    /// The release notes of the version the previous run installed (from `attempt.json`).
+    private var lastAttemptNotes: String?
 
     private init() {
         answers = Self.loadAnswers()
@@ -132,6 +134,13 @@ final class UmiUpdater: ObservableObject {
         if let from = answers.rolledBackFrom, Self.compare(from, UmiVersion.current) != .orderedDescending { answers.rolledBackFrom = nil }
         if let failed = answers.failedInstall, Self.compare(failed, UmiVersion.current) != .orderedDescending { answers.failedInstall = nil }
         readLastAttempt()
+        // Warp parity (2026-11-05): after an update installed, a one-time note says so with
+        // what changed (Warp's "Warp updated!" toast). The attempt file is read once, so the
+        // note shows once. A rollback (an older version) shows nothing.
+        if let attempt = lastAttempt, attempt.ok, Self.compare(attempt.version, attempt.from) == .orderedDescending {
+            let notes = lastAttemptNotes
+            DispatchQueue.main.async { UmiInbox.shared.showUpdateNote(version: attempt.version, notes: notes) }
+        }
     }
 
     /// How often to check in the background, how long "Later" and "Not now" last and how long
@@ -746,8 +755,9 @@ final class UmiUpdater: ObservableObject {
     }
 
     private static func writeRecord(_ release: Release, to path: String) throws {
-        let json: [String: Any] = ["version": release.version, "url": release.url.absoluteString, "sha256": release.sha256,
+        var json: [String: Any] = ["version": release.version, "url": release.url.absoluteString, "sha256": release.sha256,
                                    "signature": release.signature.base64EncodedString()]
+        if let notes = release.notes { json["notes"] = notes }
         let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
@@ -1077,6 +1087,7 @@ final class UmiUpdater: ObservableObject {
         let from = json["from"] as? String ?? "?"
         let ok = version == UmiVersion.current
         lastAttempt = (version, from, ok)
+        lastAttemptNotes = json["notes"] as? String
         if ok {
             if answers.failedInstall == version { answers.failedInstall = nil; saveAnswers() }
         } else if from == UmiVersion.current {
@@ -1101,8 +1112,17 @@ final class UmiUpdater: ObservableObject {
         do {
             try Self.installerScript.write(toFile: script, atomically: true, encoding: .utf8)
             if UmiPaths.isIsolated { try relaunchScript().write(toFile: again, atomically: true, encoding: .utf8) }
-            let attempt = try JSONSerialization.data(withJSONObject: ["version": staged.version, "from": UmiVersion.current,
-                                                                      "at": ISO8601DateFormatter().string(from: Date())])
+            var record: [String: Any] = ["version": staged.version, "from": UmiVersion.current,
+                                         "at": ISO8601DateFormatter().string(from: Date())]
+            // The release notes, for the note after the update (Warp parity, 2026-11-05).
+            let stagedRecord = staged.app.deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("release.json")
+            if let data = FileManager.default.contents(atPath: stagedRecord.path),
+               let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+               let notes = json["notes"] as? String {
+                record["notes"] = notes
+            }
+            let attempt = try JSONSerialization.data(withJSONObject: record)
             try attempt.write(to: URL(fileURLWithPath: attemptPath), options: .atomic)
         } catch {
             return

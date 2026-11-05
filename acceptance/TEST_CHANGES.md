@@ -1024,3 +1024,53 @@ New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing tes
   `active_tab_index` counted among the saved tabs, a row nested in a row saved as one row, file
   panes left out, a tab of only a file pane left out and its "Save as New Config" disabled) and
   `test_layout_open_no_focus_keeps_the_users_focus_and_front_app` (L-8 for `layout open --no-focus`).
+## Agent status, inbox, toasts and the update note (S-3, AG-24, I-4, L-9; Warp parity, 2026-11-05)
+
+New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24 (new), I-4 and L-9
+(amended).
+
+- **New, `tests/test_umi_agent_events.py`**: Warp's status badges on the sidebar row
+  (`debug.ui.rows` reports `badge`); a finish seen from another pane of its tab leaves no mark; a
+  new turn clears the mark (`harness`, a fake Claude); OSC 9 and 777 from a pane running an agent
+  are dropped; the inbox's items, filters and keys; toasts (8 s, two at most, read by a look,
+  dismissed by ⌃⌘U and by opening the inbox); the note after an update, once; no note after a
+  failed update; one `ui` test presses ⇧⌘U, ↓, Return, Shift-Tab, Escape and ⌃⌘U for real.
+- **Test hooks**: `debug.ui.inbox` (what the inbox and toasts show), `debug.ui.inbox.toggle`,
+  `debug.ui.inbox.key` (the inbox's own key handler), `debug.ui.inbox.dismiss` (⌃⌘U's action) and
+  `debug.ui.inbox.fill` (finishes from panes that don't exist, to check the 100 limit). The
+  update-note tests write `updates/attempt.json` in the instance's state directory, as the run
+  before an update does.
+
+### After review (2026-11-05)
+
+- **Changed, `test_a_finish_seen_from_another_pane_of_its_tab_leaves_no_mark`**: it set the finished
+  mark through `debug.ui.attention.set`, so it never ran the seen rule in the engine and passed only
+  because looking cleared every finished mark in the looked-at tab (a bug). It now runs a fake
+  Claude turn in a split beside the focused pane and checks the engine leaves no mark and a read
+  item. Stronger, not weaker.
+- **New**: `test_a_sibling_that_finished_out_of_sight_keeps_its_mark` (the negative case: switching
+  to a sibling pane and an unrelated attention change leave the mark; a look at its own pane clears
+  it).
+- **New**: `test_no_note_after_a_rollback` (an `attempt.json` going down shows no note).
+- **Extended, `tests/test_umi_extra.py`**: `test_not_now_activity_install_now_and_rollback` serves a
+  feed with release notes and checks the relaunched 999.0.0 shows them in the note (the real path:
+  feed, staged `release.json`, `attempt.json`), and that the rollback to 0.0.1 shows no note. Added
+  assertions only.
+- **New**: `test_the_inbox_belongs_to_one_window_and_goes_with_it` (⇧⌘U's action in a second window
+  opens it there; closing that window closes it; toasts show again) and
+  `test_a_click_outside_the_inbox_closes_it_and_typing_reaches_the_pane_ui` (real clicks inside and
+  outside the panel, then real typing). `debug.ui.inbox.toggle` now takes `window`.
+- **Extended, `test_the_agents_mark_wears_warps_status_badge`**: a session still waiting after the
+  user looked (`needs_input`, no mark) keeps the "needs you" badge.
+- **New**: `test_inbox_items_use_warps_words_and_read_rule` (Warp's titles and messages for each
+  category, the agent's own error and question, cancelled, Codex; a request in a sibling pane of
+  the looked-at tab is read and doesn't toast). `debug.ui.attention.set` takes `detail` (what the
+  engine passes: the error or the question).
+- **Extended, `test_an_agents_own_desktop_notifications_are_dropped`**: once the session is stopped,
+  or its interface no longer runs in the terminal, OSC 9 is let through. `debug.ui.inbox` reports
+  `passed_notifications`, so the test now checks each let-through notification arrived, where it
+  only checked that nothing was dropped (stronger).
+- **Changed, `test_unread_events_toast_in_the_active_window`**: the "no toasts while the app isn't
+  active" check ran only when the test app happened to be in the background. A new hook,
+  `debug.ui.inbox.assume_inactive`, makes the app count as inactive, so the check always runs
+  (stronger).

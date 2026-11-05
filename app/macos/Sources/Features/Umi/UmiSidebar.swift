@@ -311,6 +311,9 @@ struct UmiSidebarRowModel {
         }
     }
 
+    /// The status badge on the agent's mark (Warp's states).
+    var badge: UmiAttention.Badge { agent?.badge ?? .none }
+
     /// The mark's name for the CLI and accessibility.
     var markName: String {
         switch agent?.mark ?? .none {
@@ -332,6 +335,7 @@ struct UmiSidebarRowModel {
         case .needsYou: parts.append("needs you")
         case .none: break
         }
+        if agent.badge == .error { parts.append("error") }
         return (parts + [detail.text]).joined(separator: " · ")
     }
 
@@ -349,7 +353,7 @@ struct UmiSidebarRowModel {
     func json(in controller: TerminalController? = nil) -> [String: Any] {
         var json: [String: Any] = [
             "tab": tab.idString, "selected": selected, "pinned": tab.pinned, "panes": paneCount,
-            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName,
+            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName, "badge": badge.rawValue,
             "color": UmiTopology.colorName(tab.color), "failed": failed, "maximized": maximized,
         ]
         if let hint { json["hint"] = hint }
@@ -585,16 +589,16 @@ struct UmiSidebarTabRow: View {
             }
         }
         .frame(width: 24, height: 24)
+        // Warp's status badge on the agent's icon; the mark stays monochrome and the badge carries
+        // the color (Warp parity, 2026-11-05).
+        .umiStatusBadge(row.icon == .claude || row.icon == .codex ? row.badge : .none, total: 24)
     }
 
-    /// The agent's icon takes a quiet color when its session finished unseen or needs the
-    /// user; otherwise it is as quiet as the rest of the chrome.
+    /// The agent's mark is monochrome: a little brighter when its session finished unseen or
+    /// needs the user. Its status badge carries the color (Warp parity, 2026-11-05).
     static func markColor(_ mark: UmiAttention.Mark) -> Color {
-        switch mark {
-        case .none: return UmiTheme.rowTitle
-        case .finished: return UmiTheme.accent.opacity(0.85)
-        case .needsYou: return Color(red: 0.93, green: 0.66, blue: 0.30).opacity(0.9)
-        }
+        // Quiet (60%), and the row title's 90% while marked.
+        mark == .none ? UmiTheme.textSecondary : UmiTheme.rowTitle
     }
 
     /// Line 2: Warp's 10 pt at 60%.

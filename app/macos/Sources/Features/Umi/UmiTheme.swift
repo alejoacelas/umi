@@ -31,9 +31,13 @@ enum UmiTheme {
         isLight ? NSColor.black.withAlphaComponent(0.86) : NSColor.white.withAlphaComponent(0.9)
     }
 
+    /// The terminal's configured background (Warp's `theme.background()`), as last adopted.
+    nonisolated(unsafe) private(set) static var terminalBackground: Color = .black
+
     /// Follow the configured background (called when a terminal view renders).
     @MainActor
     static func adopt(background: Color) {
+        terminalBackground = background
         let color = NSColor(background).usingColorSpace(.sRGB) ?? .black
         let luminance = 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent
         let light = luminance > 0.55

@@ -449,6 +449,8 @@ enum UmiRPC {
             return try await UmiCommentsUI.debug(params)
         case "debug.ui.markdown":
             return try await UmiMarkdownScript.debug(params)
+        case let inbox where inbox.hasPrefix("debug.ui.inbox"):
+            return try UmiInboxDebug.handle(method, params, caller: caller)
         case let ui where ui.hasPrefix("debug.ui."):
             return try UmiUIDebug.handle(method, params, caller: caller)
 
