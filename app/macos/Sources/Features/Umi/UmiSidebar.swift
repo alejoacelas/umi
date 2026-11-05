@@ -85,22 +85,22 @@ struct UmiSidebar: View {
         let _ = state.revision
         let _ = attention.revision
         let _ = hints.revealed
-        let entries = UmiTabGroups.sidebarEntries(in: controller)
+        let blocks = UmiTabGroups.sidebarBlocks(in: controller)
 
-        if entries.isEmpty && controller.sidebarModel.isSearching {
+        if blocks.isEmpty && controller.sidebarModel.isSearching {
             Text("No tabs match your search.")
                 .font(.system(size: 12))
                 .foregroundColor(UmiTheme.rowSubtitle)
                 .padding(12)
                 .accessibilityLabel("No tabs match your search.")
         }
-        ForEach(entries) { entry in
-            switch entry {
-            case .tab(let tab, let indent):
+        ForEach(blocks) { block in
+            switch block {
+            case .tab(let tab):
                 UmiSidebarTabRow(controller: controller, tab: tab, model: controller.sidebarModel, tick: tick)
-                    .padding(.leading, indent)
-            case .group(let group):
-                UmiTabGroupHeader(controller: controller, group: group, model: controller.sidebarModel)
+            case .group(let group, let members):
+                UmiTabGroupBox(controller: controller, group: group, model: controller.sidebarModel,
+                               members: members, tick: tick)
             }
         }
         // Where a drop below the rows lands.
@@ -549,10 +549,10 @@ struct UmiSidebarTabRow: View {
     // MARK: Pieces
 
     /// Warp's backgrounds: a tab color at 15% (50% selected or hovered); otherwise 10% selected
-    /// and 5% hovered, over the panel's 5%. A tab without a color of its own takes its group's.
+    /// and 5% hovered, over the panel's 5% (and a group's box, which carries the group's color).
     private func background(_ row: UmiSidebarRowModel) -> Color {
         let lit = row.selected || hovering || dropZone == .into
-        if let color = tab.color.displayColor ?? UmiTabGroups.group(of: tab, in: controller)?.color.displayColor {
+        if let color = tab.color.displayColor {
             return Color(color).opacity(lit ? 0.5 : 0.15)
         }
         if row.selected { return UmiTheme.overlay2 }

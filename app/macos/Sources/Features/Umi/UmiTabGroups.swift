@@ -25,6 +25,40 @@ final class UmiTabGroup: ObservableObject, Identifiable {
 enum UmiTabGroups {
     /// Members are indented under their header by Warp's 12 pt.
     static let memberIndent: CGFloat = 12
+    /// Warp's `TAB_GROUP_CONTENT_INSET`: the group's box reaches 4 pt past its members on the
+    /// right and, while open, at the bottom.
+    static let contentInset: CGFloat = 4
+
+    /// What the sidebar draws: an ungrouped tab, or a group (its header and shown tabs in one box).
+    enum Block: Identifiable {
+        case tab(UmiTab)
+        case group(UmiTabGroup, [UmiTab])
+
+        var id: String {
+            switch self {
+            case .tab(let tab): return "tab-" + tab.id.uuidString
+            case .group(let group, _): return "group-" + group.id.uuidString
+            }
+        }
+    }
+
+    /// The sidebar's entries gathered into blocks: each group's header with the tabs under it.
+    static func sidebarBlocks(in controller: TerminalController) -> [Block] {
+        var blocks: [Block] = []
+        for entry in sidebarEntries(in: controller) {
+            switch entry {
+            case .group(let group):
+                blocks.append(.group(group, []))
+            case .tab(let tab, let indent):
+                if indent > 0, case .group(let group, let members)? = blocks.last {
+                    blocks[blocks.count - 1] = .group(group, members + [tab])
+                } else {
+                    blocks.append(.tab(tab))
+                }
+            }
+        }
+        return blocks
+    }
 
     /// One line of the sidebar's tab list.
     enum Entry: Identifiable {
@@ -279,6 +313,42 @@ enum UmiTabGroups {
     static func json(_ group: UmiTabGroup, in controller: TerminalController) -> [String: Any] {
         ["id": group.idString, "name": group.displayName, "named": group.name != nil, "collapsed": group.collapsed,
          "color": UmiTopology.colorName(group.color), "tabs": members(of: group, in: controller).map(\.idString)]
+    }
+}
+
+// MARK: - A group's box
+
+/// A group in the sidebar as Warp draws it: one rounded box (radius 4) holding the header and the
+/// tabs under it, 4 pt apart; the tabs 12 pt in from the left and 4 pt from the right, and 4 pt
+/// of box below them while open. The box takes the group's color at 15%, 25% while hovered or
+/// holding the selected tab; without a color, 5% while hovered or holding the selected tab. Each
+/// tab keeps its own color on top.
+struct UmiTabGroupBox: View {
+    @ObservedObject var controller: TerminalController
+    @ObservedObject var group: UmiTabGroup
+    @ObservedObject var model: UmiSidebarModel
+    let members: [UmiTab]
+    var tick: Int = 0
+    @State private var hovering = false
+
+    var body: some View {
+        let active = UmiTabGroups.members(of: group, in: controller).contains { $0 === controller.selectedTab }
+        VStack(alignment: .leading, spacing: 4) {
+            UmiTabGroupHeader(controller: controller, group: group, model: model)
+            ForEach(members, id: \.id) { tab in
+                UmiSidebarTabRow(controller: controller, tab: tab, model: model, tick: tick)
+                    .padding(.leading, UmiTabGroups.memberIndent)
+                    .padding(.trailing, UmiTabGroups.contentInset)
+            }
+        }
+        .padding(.bottom, members.isEmpty ? 0 : UmiTabGroups.contentInset)
+        .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Self.fill(group.color, lit: hovering || active)))
+        .onHover { hovering = $0 }
+    }
+
+    static func fill(_ color: TerminalTabColor, lit: Bool) -> Color {
+        if let color = color.displayColor { return Color(color).opacity(lit ? 0.25 : 0.15) }
+        return lit ? UmiTheme.overlay1 : .clear
     }
 }
 

@@ -464,6 +464,44 @@ def test_undo_and_reopen_bring_a_tab_back_into_its_group(inst, win):
     wait_until(lambda: state() == expected, 5, message="reopen brought the group back")
 
 
+@pytest.mark.req("S-14")
+def test_a_group_is_one_box_in_its_color(inst, win, tmp_path):
+    """As Warp: the group's color tints one box around its header and tabs (reaching into the
+    tabs' 12 pt indent), not each tab's own row."""
+    from test_umi_blocks import load_png
+    inst.cli("sidebar", "on", "--window", win["window"])
+    _, t2 = new_tab(inst, win)
+    _, t3 = new_tab(inst, win)
+    perform(inst, t2, "New group with tab")
+    sidebar(inst, win["window"], rename_text="Boxed")
+    perform(inst, t3, "Move to group > Boxed")
+    gid = groups(inst, win["window"])["groups"][0]["id"]
+    group_perform(inst, win["window"], gid, "Tab Color > Red")
+    assert not tab_of(inst, t2).get("color") and not tab_of(inst, t3).get("color")
+    time.sleep(0.6)
+    path = tmp_path / "group.png"
+    inst.cli("screenshot", "--window", win["window"], str(path))
+    w, h, buf = load_png(path)
+    width = inst.json("sidebar", "status", "--window", win["window"])["width"]
+    scale = w / (width + inst.json("pane", "info", win["pane"])["frame"]["width"])
+
+    def red_rows(x_points):
+        x = int(x_points * scale)
+        out = []
+        for y in range(h):
+            i = (y * w + x) * 4
+            r, g, b = buf[i], buf[i + 1], buf[i + 2]
+            if r - max(g, b) > 12:
+                out.append(y)
+        return out
+
+    # 8 pt list padding, then 6 pt into the members' 12 pt indent: only the group's box is there.
+    rows_in_indent = red_rows(14)
+    assert rows_in_indent, "the group's color fills the box beside its indented tabs"
+    span = (max(rows_in_indent) - min(rows_in_indent)) / scale
+    assert span > 100, f"the box spans the header and both tabs ({span:.0f} pt)"
+
+
 @pytest.mark.req("S-14", "R-3")
 def test_groups_are_restored_with_the_layout(target, fresh):
     if not target.restoration_safe:
