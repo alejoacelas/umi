@@ -431,6 +431,9 @@ enum UmiRPC {
             if UmiNavigationRPC.methods.contains(method) {
                 return try await UmiNavigationRPC.handle(method, params, caller: caller)
             }
+            if UmiLaunchConfigs.methods.contains(method) {
+                return try UmiLaunchConfigs.handle(method, params)
+            }
             if method.hasPrefix("agent.") {
                 return try await UmiAgentRPC.handle(method: method, params: params, caller: caller, connection: connection)
             }

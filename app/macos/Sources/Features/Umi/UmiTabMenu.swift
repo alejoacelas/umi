@@ -17,7 +17,8 @@ struct UmiTabMenuItem {
 
 /// A tab row's right-click menu, with Warp's items (WARP-PARITY gap 11): pin; copy the branch,
 /// working directory and title; rename and reset the tab and its focused pane; move the tab up
-/// and down; close it, the others, or the ones below; its color; move it to another window.
+/// and down; close it, the others, or the ones below; save it as a launch configuration; its
+/// color; move it to another window.
 @MainActor
 enum UmiTabMenu {
     /// Copies go here (tests point it at a private pasteboard).
@@ -71,6 +72,16 @@ enum UmiTabMenu {
         let index = controller.index(of: tab) ?? 0
         items.append(.init(title: "Close Tabs Below", enabled: index < controller.tabs.count - 1) {
             controller.closeTabs(below: tab)
+        })
+        items.append(.divider)
+
+        // Warp puts "Save as new config" between the close items and the colors (L-21).
+        items.append(.init(title: "Save as New Config", enabled: UmiLaunchConfigs.capture(tab: tab, in: controller) != nil) {
+            do {
+                try UmiLaunchConfigs.saveTab(tab, in: controller)
+            } catch {
+                NSSound.beep()
+            }
         })
         items.append(.divider)
 

@@ -11,7 +11,7 @@ import SwiftUI
 /// - **Files (⌘O, L-16):** a quick search over the focused pane's repository.
 @MainActor
 final class UmiPaletteModel: ObservableObject {
-    enum Mode: String { case commands, panes, files }
+    enum Mode: String { case commands, panes, files, launchConfigs = "launch_configs" }
     enum Step: Equatable { case list, ask, running, output }
 
     @Published private(set) var isPresented = false
@@ -131,6 +131,7 @@ final class UmiPaletteModel: ObservableObject {
         case .commands: base = commandEntries()
         case .panes: base = paneEntries()
         case .files: startFiles()
+        case .launchConfigs: base = launchConfigEntries()
         }
     }
 
@@ -147,7 +148,7 @@ final class UmiPaletteModel: ObservableObject {
                 var ranked = rank(base, query: query, keepOrder: false)
                 if let run = freeRunEntry() { ranked.insert(run, at: 0) }
                 entries = ranked
-            case .panes:
+            case .panes, .launchConfigs:
                 entries = rank(base, query: query, keepOrder: false)
             case .files:
                 refreshFiles()
@@ -390,6 +391,34 @@ final class UmiPaletteModel: ObservableObject {
         return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
 
+    // MARK: Launch configurations (⌃⌘L, L-21)
+
+    private func launchConfigEntries() -> [UmiPaletteEntry] {
+        UmiLaunchConfigs.list().map { item in
+            let file = Self.abbreviate(item.path)
+            guard let config = item.config else {
+                return UmiPaletteEntry(id: "launch:" + item.path, title: (item.path as NSString).lastPathComponent,
+                                        subtitle: item.error ?? file, icon: "exclamationmark.triangle", value: item.path,
+                                        kind: .action) { [weak self] in
+                    self?.close(restoreFocus: false)
+                    _ = UmiEditor.openFromSystem(URL(fileURLWithPath: item.path), inCurrentTab: true)
+                }
+            }
+            let windows = config.windows.count == 1 ? "1 window" : "\(config.windows.count) windows"
+            let tabs = config.tabCount == 1 ? "1 tab" : "\(config.tabCount) tabs"
+            return UmiPaletteEntry(id: "launch:" + item.path, title: config.name, subtitle: "\(windows) · \(tabs)  ·  \(file)",
+                                    icon: "rectangle.3.group", keywords: (item.path as NSString).lastPathComponent,
+                                    value: item.path, kind: .action) { [weak self] in
+                self?.close(restoreFocus: false)
+                do {
+                    try UmiLaunchConfigs.open(config)
+                } catch {
+                    NSSound.beep()
+                }
+            }
+        }
+    }
+
     // MARK: Files
 
     private func startFiles() {
@@ -504,6 +533,7 @@ final class UmiPaletteModel: ObservableObject {
             case .commands: return "Run a command, or type a \(UmiPaths.cliName) command line…"
             case .panes: return "Go to a pane…"
             case .files: return "Open a file (name, or path:line)…"
+            case .launchConfigs: return "Open a launch configuration…"
             }
         }
     }

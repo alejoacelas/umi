@@ -129,7 +129,7 @@ enum UmiNavigationRPC {
         case "debug.palette":
             let window = try UmiTopology.window(params.string("window"), caller: caller)
             guard let mode = UmiPaletteModel.Mode(rawValue: params.string("mode") ?? "commands") else {
-                throw UmiError.badRequest("mode is commands, panes or files")
+                throw UmiError.badRequest("mode is commands, panes, files or launch_configs")
             }
             let entries = await window.palette.preview(mode, query: params.string("query") ?? "", in: window)
             return ["entries": entries.map(\.json), "presented": window.palette.isPresented,
