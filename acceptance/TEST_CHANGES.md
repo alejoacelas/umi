@@ -689,3 +689,20 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## 3. Explorer and global search tests, and `debug.key` that keeps focus (`tests/test_umi_files.py`)
+
+**What was missing.** Nothing tested the project explorer beyond the sidebar's mode, and global
+search is new (SPEC S-2, Warp parity 2026-11-05).
+
+**Change.** A new file, `tests/test_umi_files.py` (8 tests): the explorer's root, order, ignored
+marks and row numbers; file-system changes without a refresh; the right-click menu's items and
+what each does; revealing the active file; every new key (⌃1, ⇧⌘E, ↑↓←→, Enter, Esc, ⇧⌘>, ⇧⌘F,
+⌃3, typing into the inline name field and the query); New File and Rename in the row; global
+search's results, folding, opening at the line, the toggles. Keys go through `debug.key`, which
+gains `focus: "none"` (keep focus where it is; an unhandled key goes to the window's first
+responder), so the tests also run while the test Mac's screen is locked. Two internal methods back
+them: `debug.ui.files*` (state and the right-click menu) and `debug.ui.search*` (state and the
+toggles). No existing test changed.
+
+**Requirement.** S-2 and L-9, L-10 as amended.

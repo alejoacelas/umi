@@ -98,3 +98,15 @@ it is guidance"). What this design gives up:
 | **`clear` clears**, and ⌘K clears scrollback; Warp's `clear` instead pushes the blocks up out of view, keeping them in scrollback. | `clear` is zsh's (and the program's) command; Tern doesn't replace it. The prompt stays at the bottom either way. | zsh unchanged. |
 | **Other shells keep the usual look**, and so does a zsh started inside a Tern pane unless it loads the integration. | The look needs Tern's prompt marks; only Tern's zsh integration prints them. | "The user's shell is zsh; other shells may keep the usual look." |
 | **On Linux (OpenGL) only the bottom alignment, colors, durations and bold apply**; the lines, tint, bar and box are a Metal pipeline. | Tern ships for macOS; the shared renderer must still build elsewhere. | Correct highlights where shapes aren't drawn (review round 2). |
+
+===================================================================================================
+
+# Compromises (2026-11-05: the explorer and global search, Warp parity)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **Global search runs `git grep`, not ripgrep.** It skips what git ignores, as Warp's ripgrep does, but also searches dotfiles (ripgrep skips hidden files), and its regex is POSIX extended, not Rust's syntax. Outside a git repository it searches the folder's files (`--no-index`). | Git is already Umi's dependency (the palette's file list, branches); ripgrep isn't on every Mac and bundling it adds a binary. | S-2 (search without installing anything). |
+| **One search root.** Warp searches every repository the tab's panes are in, with a header per root; Umi searches the focused pane's repository and shows file headers only. Likewise the explorer has one root. | The sidebar follows the focused pane everywhere else (Files, tab rows). | S-2. |
+| **Delete moves to the Trash and doesn't ask.** Warp deletes permanently, also without asking. | A delete from a menu should be recoverable; the Trash makes a confirmation unnecessary. | No silent loss of files. |
+| **A rename doesn't follow into an open editor.** Renaming a file that is open in a pane leaves that pane on the old path, so a save there writes the old name. Warp tells its editors. | The editor has no notion of a moved file yet. | E-3 (edits aren't lost; they save under the old name). |
+| **"Open Terminal Here" is "Open in New Tab"** on folders: the two were the same action, so the menu keeps Warp's name. | One item per action. | S-2. |
