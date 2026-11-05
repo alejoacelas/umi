@@ -298,7 +298,26 @@ private struct UmiInboxPanel: View {
         }
         .modifier(UmiCard(background: background, width: 420))
         .frame(maxHeight: 500)
+        .background(UmiInboxPanelMarker())
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Notifications")
+    }
+}
+
+/// An empty view the size of the open panel: UmiInbox asks it whether a click fell inside.
+private struct UmiInboxPanelMarker: NSViewRepresentable {
+    /// Never the target of a click itself.
+    final class Marker: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = Marker()
+        UmiInbox.shared.panelView = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        UmiInbox.shared.panelView = view
     }
 }

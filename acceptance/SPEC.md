@@ -701,10 +701,12 @@ runs, it is the same session: same id, conversation, folder and settings.
   - ⇧⌘U opens the inbox over the window's top right: filters All tabs, Unread and Errors (the last
     two only while they have items), each item with the agent's icon and badge, title, message and
     age. ↑ ↓ choose, Return goes to the session's pane (the item is read), Tab or Shift-Tab change
-    the filter, Escape or ⇧⌘U close it;
+    the filter, Escape or ⇧⌘U close it. A click outside it closes it too (the click still goes
+    to what it hits, so typing then reaches the pane), and so does closing its window. It is open
+    in one window at a time: ⇧⌘U in another window opens it there;
   - an unread item also shows as a toast in the window the user is looking at (the key window of
     the active app), for 8 seconds, at most two at once (the oldest goes), none while the inbox is
-    open; opening the inbox or ⌃⌘U dismisses them, and looking at the pane takes its toast away.
+    open in that window; opening the inbox or ⌃⌘U dismisses them, and looking at the pane takes its toast away.
     No desktop notifications (S-3).
 
 ### CLI for agents

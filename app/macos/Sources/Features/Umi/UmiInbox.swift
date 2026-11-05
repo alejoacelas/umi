@@ -84,6 +84,12 @@ final class UmiInbox: ObservableObject {
     /// OSC 9/777 notifications dropped because an agent runs in the pane (S-3).
     private(set) var droppedNotifications = 0
     private var keyMonitor: Any?
+    /// Closes the inbox on a click outside it (Warp's mailbox sits in a Dismiss).
+    private var mouseMonitor: Any?
+    /// Closes the inbox when its window closes.
+    private var closeObserver: NSObjectProtocol?
+    /// The open panel's view (for the click-outside check).
+    weak var panelView: NSView?
 
     // MARK: Agent events (from UmiAttention)
 
@@ -167,8 +173,8 @@ final class UmiInbox: ObservableObject {
     // MARK: Toasts
 
     private func toast(_ item: Item) {
-        // Only in the window the user is looking at, and not while the inbox shows it already.
-        guard openWindow == nil, let window = UmiLooking.activeWindow else { return }
+        // Only in the window the user is looking at, and not while its inbox shows it already.
+        guard let window = UmiLooking.activeWindow, !isOpen(in: window) else { return }
         toasts.append(Toast(id: item.id, window: ObjectIdentifier(window)))
         while toasts.count > Self.maxToasts { toasts.removeFirst() }
         let id = item.id
@@ -225,12 +231,16 @@ final class UmiInbox: ObservableObject {
 
     var shown: [Item] { filtered(filter) }
 
-    func toggle() {
-        if isOpen { close() } else { open() }
+    /// ⇧⌘U: close the inbox if it's open in this window; otherwise open it here (closing it in
+    /// another window).
+    func toggle(in window: TerminalController? = nil) {
+        let here = window ?? UmiTopology.currentWindow
+        if let here, isOpen(in: here) { close() } else { open(in: here) }
     }
 
     func open(in window: TerminalController? = nil) {
         guard let window = window ?? UmiTopology.currentWindow else { NSSound.beep(); return }
+        if isOpen { close() }
         openWindow = ObjectIdentifier(window)
         // The inbox shows the same events (Warp dismisses the toasts as it opens).
         toasts.removeAll()
@@ -246,6 +256,10 @@ final class UmiInbox: ObservableObject {
         selected = nil
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        mouseMonitor = nil
+        if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+        closeObserver = nil
         UmiEvents.shared.emit("inbox.closed", [:])
     }
 
@@ -295,6 +309,8 @@ final class UmiInbox: ObservableObject {
     /// While the inbox is open, its window's arrow keys, Return, Tab and Escape are the
     /// inbox's, whatever has focus; other typing is held back (the panel has the focus, as in
     /// Warp). Shortcuts with ⌘ or ⌃ still work.
+    /// A click anywhere else in its window closes it, and the click goes on to what it hit (Warp
+    /// closes its mailbox on an outside click). Closing its window closes it.
     private func installKeys(for window: TerminalController) {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         weak var target = window.window
@@ -304,6 +320,25 @@ final class UmiInbox: ObservableObject {
                 return UmiInbox.shared.handleKey(event) ? nil : event
             }
         }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { event in
+            MainActor.assumeIsolated {
+                guard let target, event.window === target else { return event }
+                UmiInbox.shared.clicked(at: event.locationInWindow)
+                return event
+            }
+        }
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window.window, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { UmiInbox.shared.close() }
+        }
+    }
+
+    /// A click in the inbox's window (window coordinates): outside the panel, the inbox closes.
+    func clicked(at point: NSPoint) {
+        guard isOpen else { return }
+        if let panel = panelView, panel.window != nil, panel.bounds.contains(panel.convert(point, from: nil)) { return }
+        close()
     }
 
     /// One key while the inbox is open. True when the inbox took it.
@@ -380,7 +415,7 @@ enum UmiInboxDebug {
         case "debug.ui.inbox":
             break
         case "debug.ui.inbox.toggle":
-            inbox.toggle()
+            inbox.toggle(in: window)
         case "debug.ui.inbox.key":
             guard inbox.isOpen else { throw UmiError.badRequest("the inbox isn't open") }
             let codes: [String: UInt16] = ["up": 126, "down": 125, "return": 36, "escape": 53, "tab": 48]

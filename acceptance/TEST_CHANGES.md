@@ -722,3 +722,7 @@ New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24
   feed with release notes and checks the relaunched 999.0.0 shows them in the note (the real path:
   feed, staged `release.json`, `attempt.json`), and that the rollback to 0.0.1 shows no note. Added
   assertions only.
+- **New**: `test_the_inbox_belongs_to_one_window_and_goes_with_it` (⇧⌘U's action in a second window
+  opens it there; closing that window closes it; toasts show again) and
+  `test_a_click_outside_the_inbox_closes_it_and_typing_reaches_the_pane_ui` (real clicks inside and
+  outside the panel, then real typing). `debug.ui.inbox.toggle` now takes `window`.

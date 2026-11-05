@@ -327,6 +327,69 @@ def test_inbox_and_toast_keys_ui(fresh, ui):
     wait_until(lambda: not inbox(inst)["open"], 5, message="⇧⌘U closes it")
 
 
+@pytest.mark.req("AG-24")
+def test_the_inbox_belongs_to_one_window_and_goes_with_it(fresh):
+    """⇧⌘U in another window opens the inbox there; closing its window closes it, and toasts show
+    again."""
+    inst = fresh(prefix="acc-inbox-windows-")
+    a = window_for(inst, "inbox-a")
+    b = window_for(inst, "inbox-b")
+    assert rpc(inst, "debug.ui.inbox.toggle", window=a["window"])["open_here"]
+    got = rpc(inst, "debug.ui.inbox.toggle", window=b["window"])
+    assert got["open"] and got["open_here"], "⇧⌘U in the other window opens it there"
+    assert not inbox(inst, window=a["window"])["open_here"]
+    inst.cli("window", "close", b["window"], check=False)
+    wait_until(lambda: not inbox(inst)["open"], 10, message="the inbox goes with its window")
+    rpc(inst, "debug.ui.assume_active", on=True)
+    try:
+        pane, _ = new_tab(inst, a)
+        finish(inst, pane, title="After the close")
+        assert [t["title"] for t in inbox(inst, window=a["window"])["window_toasts"]] == ["After the close"]
+    finally:
+        rpc(inst, "debug.ui.assume_active", on=False)
+
+
+def click(point):
+    import Quartz
+    for kind in (Quartz.kCGEventMouseMoved, Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
+        event = Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+        time.sleep(0.1)
+    time.sleep(0.3)
+
+
+def element_frame(ui, element):
+    import ApplicationServices as AX  # noqa: N812
+    p = AX.AXValueGetValue(ui.attr(element, "AXPosition"), AX.kAXValueCGPointType, None)[1]
+    s = AX.AXValueGetValue(ui.attr(element, "AXSize"), AX.kAXValueCGSizeType, None)[1]
+    return p.x, p.y, s.width, s.height
+
+
+@pytest.mark.req("AG-24")
+def test_a_click_outside_the_inbox_closes_it_and_typing_reaches_the_pane_ui(fresh, ui):
+    """Warp closes its mailbox on a click outside it. A click inside keeps it open; a click in the
+    terminal closes it, and what the user types then reaches the pane."""
+    from harness import UI
+    inst = fresh(prefix="acc-inbox-click-")
+    win = window_for(inst, "inbox-click")
+    ui = UI(inst.app_pid)
+    ui.activate()
+    wait_until(lambda: rpc(inst, "debug.ui.attention")["active"], 5, message="the app in front")
+    ui.press_shortcut("cmd+shift+u")
+    wait_until(lambda: inbox(inst)["open"], 5, message="⇧⌘U opens the inbox")
+    panel = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Notifications"), 5, message="the panel")
+    px, py, pw, ph = element_frame(ui, panel)
+    click((px + pw / 2, py + 12))
+    assert inbox(inst)["open"], "a click inside keeps it open"
+    x, y, w, h = element_frame(ui, ui.attr(ui.app, "AXFocusedWindow"))
+    click((x + w * 0.6, y + h - 40))
+    wait_until(lambda: not inbox(inst)["open"], 5, message="a click outside closes it")
+    marker = uuid.uuid4().hex[:6]
+    ui.type_text(f"echo CLICKED-{marker}")
+    ui.key(ui.RETURN)
+    inst.cli("wait", "--pane", win["pane"], "--pattern", f"^CLICKED-{marker}", "--timeout", "10")
+
+
 # ---- I-4: the note after an update ----------------------------------------------------------------
 
 def app_version(target):
