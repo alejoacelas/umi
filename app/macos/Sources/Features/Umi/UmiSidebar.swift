@@ -100,7 +100,7 @@ struct UmiSidebar: View {
                 UmiSidebarTabRow(controller: controller, tab: tab, model: controller.sidebarModel, tick: tick)
                     .padding(.leading, indent)
             case .group(let group):
-                UmiTabGroupHeader(controller: controller, group: group)
+                UmiTabGroupHeader(controller: controller, group: group, model: controller.sidebarModel)
             }
         }
         // Where a drop below the rows lands.
@@ -142,10 +142,17 @@ struct UmiSidebarHeader: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .onChange(of: model.searchFocusRequest) { _ in
-            DispatchQueue.main.async { searchFocused = true }
-        }
+        .onChange(of: model.searchFocusRequest) { _ in takeFocusRequest() }
+        .onAppear { if model.searchFocusPending { takeFocusRequest() } }
         .onChange(of: searchFocused) { model.searchFocused = $0 }
+    }
+
+    /// ⌥⌘F: once the field is on screen, give it the keyboard.
+    private func takeFocusRequest() {
+        DispatchQueue.main.async {
+            model.searchFocusPending = false
+            searchFocused = true
+        }
     }
 
     private var searchField: some View {
@@ -160,13 +167,6 @@ struct UmiSidebarHeader: View {
                 .foregroundColor(UmiTheme.rowTitle)
                 .focused($searchFocused)
                 .onExitCommand { model.endSearch(in: controller) }
-                .onSubmit {
-                    // Return goes to the first matching tab.
-                    if let tab = model.matchingTabs(in: controller).first {
-                        model.query = ""
-                        UmiLayout.focusTab(tab, in: controller)
-                    }
-                }
                 .accessibilityLabel("Search tabs")
         }
         .frame(height: 24)
@@ -548,10 +548,10 @@ struct UmiSidebarTabRow: View {
     // MARK: Pieces
 
     /// Warp's backgrounds: a tab color at 15% (50% selected or hovered); otherwise 10% selected
-    /// and 5% hovered, over the panel's 5%.
+    /// and 5% hovered, over the panel's 5%. A tab without a color of its own takes its group's.
     private func background(_ row: UmiSidebarRowModel) -> Color {
         let lit = row.selected || hovering || dropZone == .into
-        if let color = tab.color.displayColor {
+        if let color = tab.color.displayColor ?? UmiTabGroups.group(of: tab, in: controller)?.color.displayColor {
             return Color(color).opacity(lit ? 0.5 : 0.15)
         }
         if row.selected { return UmiTheme.overlay2 }
@@ -629,9 +629,9 @@ struct UmiSidebarTabRow: View {
             .onSubmit { UmiSidebarRename.commit(target, text: draftName, in: controller) }
             .onExitCommand { UmiSidebarRename.cancel(target, in: controller) }
             .onChange(of: nameFieldFocused) { focused in
-                // Clicking elsewhere keeps what was typed, as Warp does.
+                // Focus going elsewhere (a click outside) cancels, as Warp's CancelActiveRename.
                 if !focused, model.renaming == target {
-                    UmiSidebarRename.commit(target, text: draftName, in: controller)
+                    UmiSidebarRename.cancel(target, in: controller, focusPane: false)
                 }
             }
             .accessibilityLabel(placeholder)
@@ -642,7 +642,7 @@ struct UmiSidebarTabRow: View {
     private func startEditing() {
         guard let renaming else { return }
         switch renaming {
-        case .tab: draftName = tab.name ?? ""
+        case .tab, .group: draftName = tab.name ?? ""
         case .pane(_, let paneID): draftName = UmiState.shared.paneName(paneID) ?? ""
         }
         DispatchQueue.main.async { nameFieldFocused = true }

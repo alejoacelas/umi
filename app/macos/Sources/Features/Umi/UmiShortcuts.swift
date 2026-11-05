@@ -136,6 +136,33 @@ enum UmiShortcuts {
             Item(id: "pane.rename", title: "Rename Pane…", key: "r", modifiers: [.command, .control, .shift], symbol: "pencil",
                  menu: "Window", action: { renamePane() }),
 
+            // Tab groups (Warp's "New group with tab"), from the keyboard through the palette.
+            Item(id: "tab.group_new", title: "New Group with Tab", key: "", modifiers: [], symbol: "rectangle.stack.badge.plus",
+                 menu: "Window", action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiTabGroups.newGroup(with: window.selectedTab, in: window)
+                 }),
+            Item(id: "tab.group_toggle", title: "Collapse or Expand Tab Group", key: "", modifiers: [],
+                 symbol: "chevron.up.chevron.down", menu: "Window", action: {
+                     guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabGroups.setCollapsed(group, !group.collapsed, in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+            Item(id: "tab.group_rename", title: "Rename Tab Group", key: "", modifiers: [], symbol: "pencil",
+                 menu: "Window", action: {
+                     guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabMenu.beginRename(.group(group.id), in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+            Item(id: "tab.group_remove", title: "Remove Tab from Group", key: "", modifiers: [], symbol: "rectangle.badge.minus",
+                 menu: "Window", action: {
+                     guard let (window, _) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabGroups.remove(window.selectedTab, in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+            Item(id: "tab.group_ungroup", title: "Ungroup Tabs", key: "", modifiers: [], symbol: "rectangle.stack",
+                 menu: "Window", action: {
+                     guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabGroups.ungroup(group, in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+
             // Sessions that need the user (L-12).
             Item(id: "session.next_needing_you", title: "Jump to Next Session Needing You", key: "j", modifiers: [.command, .control],
                  symbol: "exclamationmark.bubble", menu: "Window",

@@ -27,6 +27,38 @@ enum UmiUIDebug {
             if params.bool("rename_cancel") == true { model.renaming = nil }
             return sidebarJSON(window)
 
+        case "debug.ui.groups":
+            // A window's tab groups; `toggle` clicks a group's header (collapse or expand).
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            if let id = params.string("toggle") {
+                guard let group = UmiTabGroups.group(id: id, in: window) else { throw UmiError.notFound("no group \"\(id)\"") }
+                UmiTabGroups.setCollapsed(group, !group.collapsed, in: window)
+            }
+            return ["groups": window.sidebarModel.groups.map { UmiTabGroups.json($0, in: window) },
+                    "entries": UmiTabGroups.sidebarEntries(in: window).map { entry -> String in
+                        switch entry {
+                        case .tab(let tab, let indent): return (indent > 0 ? "  " : "") + tab.idString
+                        case .group(let group): return "group:" + group.idString
+                        }
+                    }]
+
+        case "debug.ui.group.menu", "debug.ui.group.perform":
+            // A group header's right-click menu.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            guard let id = params.string("group"), let group = UmiTabGroups.group(id: id, in: window) else {
+                throw UmiError.notFound("give a group of the window")
+            }
+            let items = UmiTabMenu.flatten(UmiTabGroups.headerMenuItems(for: group, in: window))
+            if method == "debug.ui.group.menu" {
+                return ["items": items.map { ["title": $0.item.title, "path": $0.path.joined(separator: " > "),
+                                              "checked": $0.item.checked] }]
+            }
+            guard let path = params.string("title"),
+                  let entry = items.first(where: { $0.path.joined(separator: " > ") == path || $0.item.title == path }),
+                  let action = entry.item.action else { throw UmiError.notFound("no such item") }
+            action()
+            return ["performed": path]
+
         case "debug.ui.open_url":
             // A link ⌘-clicked in a pane: what the terminal's open-URL action runs (E-12).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
@@ -217,6 +249,7 @@ enum UmiUIDebug {
         ]
         switch model.renaming {
         case .tab(let id): json["renaming"] = ["tab": id.uuidString.lowercased()]
+        case .group(let id): json["renaming"] = ["group": id.uuidString.lowercased()]
         case .pane(let tab, let pane):
             json["renaming"] = ["tab": tab.uuidString.lowercased(),
                                 "pane": UmiTopology.allSurfaces.first { $0.id == pane }?.umiID ?? ""]

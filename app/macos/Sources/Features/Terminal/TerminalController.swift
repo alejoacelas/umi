@@ -1001,7 +1001,7 @@ class TerminalController: BaseTerminalController {
         closeTabs(Array(tabs[(index + 1)...]), actionName: "Close Tabs Below", question: "Close Tabs Below?")
     }
 
-    private func closeTabs(_ toClose: [UmiTab], actionName: String, question: String) {
+    func closeTabs(_ toClose: [UmiTab], actionName: String, question: String) {
         guard !toClose.isEmpty else { return }
         let close = { [weak self] in
             guard let self else { return }

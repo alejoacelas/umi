@@ -64,6 +64,8 @@ final class UmiState: ObservableObject {
             self.revision &+= 1
             self.prune()
             UmiFilePanes.shared.prune()
+            // Tab groups stay whole whatever moved (Warp's tab groups).
+            UmiTabGroups.normalizeAll()
             UmiWebPanes.shared.prune()
             // Panes opened, closed or moved: Window > Agent Sessions marks the shown sessions,
             // and `agent ls` says where each session is.

@@ -17,27 +17,40 @@ final class UmiSidebarModel: ObservableObject {
     /// Bumped to move keyboard focus into the search field.
     @Published private(set) var searchFocusRequest = 0
 
-    /// A row being renamed in place: the tab, or the tab's focused pane.
+    /// A row being renamed in place: the tab, the tab's focused pane, or a tab group's header.
     enum RenameTarget: Equatable {
         case tab(UUID)
         case pane(tab: UUID, pane: UUID)
+        case group(UUID)
 
-        var tabID: UUID {
+        /// The tab whose row holds the field (none for a group's header).
+        var tabID: UUID? {
             switch self {
             case .tab(let id): return id
             case .pane(let tab, _): return tab
+            case .group: return nil
             }
         }
     }
 
     @Published var renaming: RenameTarget?
 
+    /// The window's tab groups (Warp's "New group with tab"), in no particular order: the sidebar
+    /// lists each where its first member is. Their tabs say which they belong to (`UmiTab.groupID`).
+    @Published var groups: [UmiTabGroup] = []
+
     /// Whether the search field has keyboard focus (set by the field).
     var searchFocused = false
 
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    func focusSearch() { searchFocusRequest &+= 1 }
+    /// A focus request the field hasn't taken yet (the sidebar may be appearing for it).
+    var searchFocusPending = false
+
+    func focusSearch() {
+        searchFocusPending = true
+        searchFocusRequest &+= 1
+    }
 
     /// Esc in the field: clear the query and give focus back to the window's pane.
     func endSearch(in controller: TerminalController) {
@@ -73,7 +86,7 @@ final class UmiSidebarModel: ObservableObject {
     /// The window's tabs the query admits, in sidebar order (all of them without a query).
     func matchingTabs(in controller: TerminalController) -> [UmiTab] {
         guard isSearching else { return controller.tabs }
-        return controller.tabs.filter { Self.matches(UmiSidebarRowModel(tab: $0, in: controller), query: query) }
+        return controller.tabs.filter { UmiTabGroups.tabMatches($0, query: query, in: controller) }
     }
 
     /// The tab ⇧⌘] / ⌃Tab (`delta` 1) or ⇧⌘[ / ⌃⇧Tab (-1) go to while searching: the next or
@@ -295,52 +308,6 @@ extension Ghostty.Config {
     }
 }
 
-// MARK: - Tab groups
-
-/// Warp's tab groups (its row menu's "New group with tab").
-@MainActor
-enum UmiTabGroups {
-    /// One line of the sidebar's tab list.
-    enum Entry: Identifiable {
-        case tab(UmiTab, indent: CGFloat)
-        case group(UmiTabGroup)
-
-        var id: String {
-            switch self {
-            case .tab(let tab, _): return "tab-" + tab.id.uuidString
-            case .group(let group): return "group-" + group.id.uuidString
-            }
-        }
-    }
-
-    static func menuItems(for tab: UmiTab, in controller: TerminalController) -> [UmiTabMenuItem] { [] }
-
-    /// Make sure a tab's row is on show (its group expanded).
-    static func reveal(_ tabID: UUID, in controller: TerminalController) {}
-
-    static func group(of tab: UmiTab, in controller: TerminalController) -> UmiTabGroup? { nil }
-
-    /// The tab's row is on show: not hidden in a collapsed group.
-    static func isShown(_ tab: UmiTab, in controller: TerminalController) -> Bool { true }
-
-    /// The sidebar's lines in order: the tabs the search admits.
-    static func sidebarEntries(in controller: TerminalController) -> [Entry] {
-        controller.sidebarModel.matchingTabs(in: controller).map { .tab($0, indent: 0) }
-    }
-}
-
-final class UmiTabGroup: ObservableObject {
-    let id = UUID()
-    @Published var name: String?
-}
-
-struct UmiTabGroupHeader: View {
-    @ObservedObject var controller: TerminalController
-    @ObservedObject var group: UmiTabGroup
-
-    var body: some View { EmptyView() }
-}
-
 // MARK: - Renaming in place
 
 @MainActor
@@ -356,15 +323,21 @@ enum UmiSidebarRename {
             if let tab = controller.tabs.first(where: { $0.id == id }) { UmiTabMenu.rename(tab, in: controller, to: name) }
         case .pane(_, let paneID):
             if let pane = UmiTopology.allSurfaces.first(where: { $0.id == paneID }) { UmiTabMenu.setPaneName(pane, name) }
+        case .group(let id):
+            if let group = controller.sidebarModel.groups.first(where: { $0.id == id }) {
+                UmiTabGroups.rename(group, to: name, in: controller)
+            }
         }
         returnFocus(in: controller)
     }
 
     /// Esc: leave the names as they were.
-    static func cancel(_ target: UmiSidebarModel.RenameTarget, in controller: TerminalController) {
+    /// Focus that already went elsewhere (a click outside the field) stays there.
+    static func cancel(_ target: UmiSidebarModel.RenameTarget, in controller: TerminalController,
+                       focusPane: Bool = true) {
         guard controller.sidebarModel.renaming == target else { return }
         controller.sidebarModel.renaming = nil
-        returnFocus(in: controller)
+        if focusPane { returnFocus(in: controller) }
     }
 
     private static func returnFocus(in controller: TerminalController) {

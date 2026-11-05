@@ -165,17 +165,19 @@ enum UmiTabMenu {
         UmiEvents.shared.emit("pane.renamed", ["pane": pane.umiID, "name": name])
     }
 
-    /// Rename a tab or its active pane in place, in the row (as Warp), showing the sidebar's
-    /// tab list first if needed.
+    /// Rename a tab, its active pane or a tab group in place, in its row (as Warp), showing the
+    /// sidebar's tab list first if needed.
     static func beginRename(_ target: UmiSidebarModel.RenameTarget, in controller: TerminalController) {
         UmiSidebarVisibility.set(true, in: controller)
         UmiState.shared.sidebarMode = .tabs
-        // A row the search hides comes back.
-        if let tab = controller.tabs.first(where: { $0.id == target.tabID }), controller.sidebarModel.isSearching,
-           !UmiSidebarModel.matches(UmiSidebarRowModel(tab: tab, in: controller), query: controller.sidebarModel.query) {
-            controller.sidebarModel.query = ""
+        if let tabID = target.tabID, let tab = controller.tabs.first(where: { $0.id == tabID }) {
+            // A row the search hides comes back.
+            if controller.sidebarModel.isSearching,
+               !UmiSidebarModel.matches(UmiSidebarRowModel(tab: tab, in: controller), query: controller.sidebarModel.query) {
+                controller.sidebarModel.query = ""
+            }
+            UmiTabGroups.reveal(tab, in: controller)
         }
-        UmiTabGroups.reveal(target.tabID, in: controller)
         controller.sidebarModel.renaming = target
     }
 
