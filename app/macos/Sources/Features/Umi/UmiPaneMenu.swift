@@ -42,10 +42,10 @@ enum UmiPaneMenu {
                 let maximized = tree.zoomed != nil && tree.zoomed == tree.root?.node(view: pane)
                 entries.append(Entry(title: maximized ? "Minimize Pane" : "Maximize Pane", shortcutAction: "toggle_split_zoom",
                                      symbol: maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") {
-                    binding("toggle_split_zoom", on: pane)
+                    try? UmiLayout.toggleZoom(pane)
                 })
                 entries.append(Entry(title: "Close Pane", shortcutAction: "close_surface", symbol: "xmark") {
-                    binding("close_surface", on: pane)
+                    close(pane)
                 })
             }
         }
@@ -87,6 +87,16 @@ enum UmiPaneMenu {
             menu.addItem(item)
         }
         return menu
+    }
+
+    /// As ⌘W closes the focused pane: a pane whose program would be stopped asks first.
+    private static func close(_ pane: Ghostty.SurfaceView) {
+        guard let surface = pane.surface else { return }
+        if ghostty_surface_needs_confirm_quit(surface) {
+            ghostty_surface_request_close(surface)
+        } else {
+            try? UmiLayout.closePane(pane)
+        }
     }
 
     private static func binding(_ action: String, on pane: Ghostty.SurfaceView) {

@@ -169,10 +169,12 @@ def test_the_pane_menu_maximizes_minimizes_splits_and_closes(inst, win):
     assert "Minimize Pane" in menu_titles(inst, a)
     rpc(inst, "debug.ui.pane.menu", pane=a, title="Minimize Pane")
     wait_until(lambda: zoomed_pane(inst, win["tab"]) is None, 5, message="a back in its split")
-    # Close Pane closes the pane it was opened on, focused or not.
+    # Close Pane closes the pane it was opened on, focused or not (a shell at its prompt asks nothing).
+    wait_until(lambda: screen(inst, b).strip() != "", 20, message="b's prompt")
     inst.cli("pane", "focus", a)
     rpc(inst, "debug.ui.pane.menu", pane=b, title="Close Pane")
-    wait_until(lambda: [p["id"] for p in tab_of(inst, win["tab"])["panes"]] == [a], 10, message="b closed")
+    wait_until(lambda: [p["id"] for p in tab_of(inst, win["tab"])["panes"]] == [a], 10,
+               message=f"b closed ({rpc(inst, 'debug.ui.views', window=win['window'])['views'][:3]}, {screen(inst, b)!r})")
     rpc(inst, "debug.ui.pane.menu", pane=a, title="Split Pane Down")
     wait_until(lambda: len(tab_of(inst, win["tab"])["panes"]) == 2, 5, message="Split Pane Down")
     f = frames(inst, win["tab"])
