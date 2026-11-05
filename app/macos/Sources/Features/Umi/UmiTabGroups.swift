@@ -385,15 +385,19 @@ final class UmiTabGroupMenu: NSObject, NSMenuDelegate {
     func rebuild() {
         guard let menu else { return }
         menu.removeAllItems()
-        guard let (window, tab, targets) = UmiTabGroups.moveTargets(), !targets.isEmpty else {
+        guard let (_, _, targets) = UmiTabGroups.moveTargets(), !targets.isEmpty else {
             let empty = NSMenuItem(title: "No Other Groups", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
             return
         }
         for group in targets {
-            menu.addItem(UmiClosureMenuItem(title: group.displayName) { [weak window, weak tab] in
-                guard let window, let tab else { return }
+            // The tab current when the item is chosen (the list may be older than that).
+            menu.addItem(UmiClosureMenuItem(title: group.displayName) {
+                guard let (window, tab, targets) = UmiTabGroups.moveTargets(), targets.contains(where: { $0 === group }) else {
+                    NSSound.beep()
+                    return
+                }
                 UmiTabGroups.move(tab, to: group, in: window)
             })
         }
