@@ -941,8 +941,9 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
             colorMatches()
             return
         }
+        // Warp moves the caret to the match's start; the orange highlight shows the match.
         let range = find.matches[index]
-        textView.setSelectedRange(range)
+        textView.setSelectedRange(NSRange(location: range.location, length: 0))
         textView.scrollRangeToVisible(range)
         colorMatches()
     }
