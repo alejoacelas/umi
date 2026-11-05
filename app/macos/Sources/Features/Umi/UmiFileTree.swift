@@ -200,7 +200,7 @@ final class UmiFileTreeModel: ObservableObject {
         let pwd = UmiTopology.cwd(of: pane)
         if !pwd.isEmpty {
             let rootURL = Self.projectRoot(for: URL(fileURLWithPath: pwd))
-            if root?.url.standardizedFileURL.path != rootURL.path { setRoot(rootURL) }
+            if root?.url.path != rootURL.path { setRoot(rootURL) }
         }
         // Reveal the file the focused pane shows, once each time it changes (Warp's active file).
         if let doc = UmiFilePanes.shared.document(of: pane) {
@@ -232,7 +232,7 @@ final class UmiFileTreeModel: ObservableObject {
     /// A path with symlinks resolved as the file system does (realpath). Foundation's
     /// `resolvingSymlinksInPath` strips `/private`, but FSEvents reports `/private/var/…`.
     nonisolated static func realURL(_ url: URL) -> URL {
-        guard let resolved = realpath(url.path, nil) else { return url.standardizedFileURL }
+        guard let resolved = realpath(url.path, nil) else { return url }
         defer { free(resolved) }
         return URL(fileURLWithPath: String(cString: resolved), isDirectory: url.hasDirectoryPath)
     }
@@ -247,7 +247,7 @@ final class UmiFileTreeModel: ObservableObject {
             }
             current.deleteLastPathComponent()
         }
-        return url.standardizedFileURL
+        return url
     }
 
     // MARK: File system changes
@@ -262,7 +262,7 @@ final class UmiFileTreeModel: ObservableObject {
             if trimmed.hasSuffix("/.git") || trimmed.contains("/.git/") { continue }
             touched = true
             if rescan { break }
-            for folder in folders where folder.url.standardizedFileURL.path == trimmed {
+            for folder in folders where folder.url.path == trimmed {
                 folder.loadChildren(force: true)
             }
         }
