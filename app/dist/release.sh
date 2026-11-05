@@ -54,8 +54,10 @@ if [[ "$build" == 1 ]]; then
     echo "building libghostty…"
     (cd "$root" && "$zig" build -Doptimize=ReleaseFast -Dxcframework-target=native -Demit-macos-app=false)
     echo "building Umi.app…"
+    # An absolute SYMROOT: with the default (relative) one, Xcode builds the Swift packages
+    # (app/macos/UmiSyntax) in their own folders and can't find their module maps.
     (cd "$root/macos" && { xattr -cr build/ReleaseLocal/Umi.app 2>/dev/null || true; } \
-        && xcodebuild -target Ghostty -configuration ReleaseLocal -arch arm64 build \
+        && xcodebuild -target Ghostty -configuration ReleaseLocal -arch arm64 build SYMROOT="$root/macos/build" \
                CODE_SIGN_IDENTITY="$umi_sign_identity" UMI_SIGN_IDENTITY="$umi_sign_identity" > "$root/dist/build.log" 2>&1) \
         || { grep -E "error:" "$root/dist/build.log" | head -20 >&2; echo "release.sh: the build failed (dist/build.log)" >&2; exit 1; }
 fi

@@ -109,5 +109,5 @@ say Tern). [AGENTS.md](AGENTS.md) explains how to build, test and release.
 
 ## License
 
-MIT, like Ghostty: see [LICENSE](LICENSE). Fonts embedded in the app are under the licenses in
+MIT, like Ghostty: see [LICENSE](LICENSE). Fonts, syntax-highlighting grammars and file icons in the app are under the licenses in
 [licenses/](licenses/). Umi's icon is its own (`app/dist/icon/icon.swift` draws it).

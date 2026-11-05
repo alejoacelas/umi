@@ -233,8 +233,14 @@ private struct UmiStackChip: View {
     var body: some View {
         let doc = files.document(of: member)
         HStack(spacing: 5) {
-            Image(systemName: doc.map { UmiEditor.icon(for: $0.url) } ?? (web.isWebPane(member.id) ? "globe" : "terminal"))
-                .font(.system(size: 10))
+            // A file's type icon in its colors and its unsaved dot, as Warp's file tabs show them.
+            if let doc {
+                UmiFileIcon(url: doc.url)
+                UmiChipDirtyDot(doc: doc)
+            } else {
+                Image(systemName: web.isWebPane(member.id) ? "globe" : "terminal")
+                    .font(.system(size: 10))
+            }
             Text(UmiStacks.label(of: member))
                 .font(UmiTheme.uiFont)
                 .lineLimit(1)
@@ -252,14 +258,44 @@ private struct UmiStackChip: View {
         .foregroundColor(shown ? UmiTheme.textPrimary : UmiTheme.textTertiary)
         .padding(.horizontal, 8)
         .frame(height: 22)
-        .frame(maxWidth: 200)
+        .frame(maxWidth: 300)
         .background(RoundedRectangle(cornerRadius: 6).fill(shown ? UmiTheme.selectedFill : (hovering ? UmiTheme.hoverFill : .clear)))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { try? UmiStacks.show(member) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(UmiStacks.label(of: member))
+        .modifier(UmiChipDirtyValue(doc: doc))
         .accessibilityAddTraits(shown ? .isSelected : [])
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// A file chip says "Unsaved changes" while its dot shows (the chip reads as one element).
+private struct UmiChipDirtyValue: ViewModifier {
+    let doc: UmiDocument?
+
+    func body(content: Content) -> some View {
+        if let doc { content.modifier(Observed(doc: doc)) } else { content }
+    }
+
+    private struct Observed: ViewModifier {
+        @ObservedObject var doc: UmiDocument
+        func body(content: Content) -> some View {
+            content.accessibilityValue(doc.isDirty ? "Unsaved changes" : "")
+        }
+    }
+}
+
+/// A stack chip's unsaved-changes dot: 8 points, 4 before the name (Warp's tabs).
+private struct UmiChipDirtyDot: View {
+    @ObservedObject var doc: UmiDocument
+
+    var body: some View {
+        if doc.isDirty {
+            Circle().fill(UmiTheme.textSecondary).frame(width: 8, height: 8)
+                .padding(.trailing, -1)
+                .accessibilityLabel("Unsaved changes")
+        }
     }
 }

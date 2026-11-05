@@ -77,7 +77,10 @@ if [[ "$build" == 1 ]]; then
     xattr -cr "$root/macos/build/Debug/Umi.app" 2>/dev/null || true
     source "$here/signing.sh"
     umi_require_sign_identity || { echo "dev.sh: can't sign the app" >&2; exit 1; }
-    (cd "$root/macos" && xcodebuild -target Ghostty -configuration Debug -arch arm64 build \
+    # An absolute SYMROOT: with the default (relative) one, Xcode builds the Swift packages
+    # (app/macos/UmiSyntax) in their own folders and can't find their module maps.
+    # No index store: Xcode 27 fails to make its folder for the grammars' C sources.
+    (cd "$root/macos" && xcodebuild -target Ghostty -configuration Debug -arch arm64 build SYMROOT="$root/macos/build" COMPILER_INDEX_STORE_ENABLE=NO \
         CODE_SIGN_IDENTITY="$umi_sign_identity" UMI_SIGN_IDENTITY="$umi_sign_identity" > "$log" 2>&1) \
         || { grep -E "error:" "$log" | head -20 >&2; echo "dev.sh: the build failed ($log)" >&2; exit 1; }
     echo "built in $((SECONDS - start)) s"

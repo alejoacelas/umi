@@ -24,6 +24,9 @@ enum UmiShortcuts {
         let action: @MainActor () -> Void
         /// Whether the item applies right now.
         var enabled: @MainActor () -> Bool = { true }
+        /// When the item doesn't apply, its key goes on to whatever has focus (a terminal gets
+        /// ⌃G) instead of beeping.
+        var passesThrough = false
 
         var defaultShortcut: UmiShortcut? {
             key.isEmpty ? nil : UmiShortcut(key: key, modifiers: modifiers)
@@ -46,8 +49,33 @@ enum UmiShortcuts {
             Item(id: "file.open", title: "Open File…", key: "", modifiers: [], symbol: "doc", menu: "File",
                  action: { UmiEditor.openPanel() }),
             Item(id: "file.save", title: "Save File", key: "s", modifiers: [.command], symbol: "square.and.arrow.down", menu: "File",
-                 action: { UmiEditor.currentDocument?.save() },
+                 action: { UmiEditor.currentDocument.map { UmiEditor.saveFromUser($0) } },
                  enabled: { UmiEditor.currentDocument != nil }),
+            // The file editor (E-22, E-23), Warp's keys.
+            Item(id: "file.save_as", title: "Save As…", key: "s", modifiers: [.command, .shift],
+                 symbol: "square.and.arrow.down.on.square", menu: "File",
+                 action: { UmiEditor.currentDocument.map { UmiEditor.saveAs($0) } },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
+            Item(id: "edit.go_to_line", title: "Go to Line…", key: "g", modifiers: [.control], symbol: "arrow.right.to.line",
+                 menu: "Edit", action: { UmiEditor.currentCode?.openGoToLine() },
+                 enabled: { UmiEditor.currentCode != nil }, passesThrough: true),
+            Item(id: "edit.toggle_comment", title: "Toggle Comment", key: "/", modifiers: [.command], symbol: "number",
+                 menu: "Edit", action: { UmiEditor.currentCode?.toggleComment() },
+                 enabled: { UmiEditor.currentCode?.language?.commentPrefix != nil }, passesThrough: true),
+            // In a file pane, find acts on the file (Ghostty's Find items have no keys of their own); a
+            // preview switches to its source first.
+            Item(id: "edit.find", title: "Find in File…", key: "f", modifiers: [.command], symbol: "magnifyingglass",
+                 menu: "Edit", action: { UmiEditor.inSource { $0.openFind() } },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
+            Item(id: "edit.find_next", title: "Find Next in File", key: "g", modifiers: [.command], symbol: "chevron.down",
+                 menu: "Edit", action: { UmiEditor.inSource { $0.findStep(1) } },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
+            Item(id: "edit.find_previous", title: "Find Previous in File", key: "g", modifiers: [.command, .shift],
+                 symbol: "chevron.up", menu: "Edit", action: { UmiEditor.inSource { $0.findStep(-1) } },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
+            Item(id: "edit.find_replace", title: "Find and Replace…", key: "f", modifiers: [.command, .option],
+                 symbol: "text.magnifyingglass", menu: "Edit", action: { UmiEditor.inSource { $0.openFind(replace: true) } },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
             // L-20. Its title names what it would reopen (see `validate`).
             Item(id: "file.reopen", title: UmiReopen.anyTitle, key: "t", modifiers: [.command, .shift],
                  symbol: "arrow.uturn.backward", menu: "File",
@@ -334,6 +362,7 @@ enum UmiShortcuts {
         if NSApp.modalWindow != nil { return false }
         if let sheetParent = NSApp.keyWindow, sheetParent.attachedSheet != nil { return false }
         guard item.enabled() else {
+            if item.passesThrough { return false }
             NSSound.beep()
             return true
         }
