@@ -689,3 +689,15 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## Added: launch configurations (L-21, 2026-11-05)
+
+- **New, `tests/test_umi_layouts.py`**: its own instance with a temporary `XDG_CONFIG_HOME`, so the
+  user's launch configurations are never read or written. `umi layout save` writes Warp's format and
+  `layout open` brings the windows, tabs, names, colors, folders, split direction and focused pane
+  back; a hand-written file (two windows, a three-pane vertical split, pane and tab commands, Warp's
+  `cyan`) opens as written and its commands run; a broken file is listed with its line and opens
+  nothing; the File menu items and ⌃⌘L; the palette lists configurations and opens the chosen one;
+  the row menu's "Save as New Config" sits where Warp has it, writes `my_tab_config.yaml` (then
+  `_1`) and opens it in the editor; real key presses: ⌃⌘L then Return, and File ▸ Save New Launch
+  Configuration… through its dialog, including the duplicate-name message.
