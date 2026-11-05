@@ -267,10 +267,13 @@ the menu.
   sessions (Warp's conversations), panes and the files of L-16 together, at most 250 results. A
   query starting with `actions:`, `sessions:`, `files:`, `conversations:` or `tabs:` filters it to
   that source; the prefix leaves the query and shows before it as an italic filter word, and
-  Backspace in the empty query removes the filter. ⇧⌘P and ⌘O open it filtered to sessions and
-  files. Empty and unfiltered it selects nothing and shows filter chips (files, actions, sessions,
-  conversations), Recent (the last three rows chosen from it) and Suggested (Keyboard Shortcuts,
-  Settings…, Show Project Explorer); ↓ selects the first. Its look is Warp's: 640 px wide, at most
+  Backspace in the empty query removes the filter. A query that begins a filter word shows the
+  rest of the word dimmed after it, and Tab applies that filter ("fi", Tab: `files:`). ⇧⌘P and ⌘O
+  open it filtered to sessions and files. Empty and unfiltered it selects nothing, indexes no
+  files, and shows filter chips (files, actions, sessions, conversations; each but actions with
+  its filter's icon), Recent (the last three rows chosen from it, files opened from it included)
+  and Suggested (Keyboard Shortcuts, Settings…, Show Project Explorer; a row can be in both); ↓
+  selects the first, ↑ from the first selects nothing again, and the arrows stop at the ends. Its look is Warp's: 640 px wide, at most
   464 tall, 117 px below the window's top, on Warp's `surface_2` (the background with 10% of the
   foreground) with a 1 px border and radius 8; a magnifier (or the filter word) before the query in
   13 pt; one-line 28 px rows with a bold title whose matched characters are brighter, shortcuts in
@@ -292,7 +295,7 @@ the menu.
   editor; a "Browse…" entry opens the Open panel. *Warp parity, 2026-11-05:* rows are one line: a
   file-type icon, the name, then its folder cut at the start, matched characters bold. When no
   file matches, a "Create a file named NAME…" entry makes that file (and its folders) in the
-  pane's folder and opens it.
+  pane's folder and opens it; a NAME starting with `~/` or `/` names the place itself.
 
 - **L-17 [A]** ⌘, (Settings…) opens the user's config file (`~/.config/<cli>/config`) in the app's
   editor, as Ghostty opens its own config file; a missing one is made, empty, first. `<cli>
@@ -304,7 +307,9 @@ the menu.
   *Warp parity, 2026-11-05:* ⌘/ (Help ▸ Keyboard Shortcuts) opens and closes a shortcuts page as
   Warp's keybindings panel: 361 px at the window's right, read-only, listing what `<cli>
   shortcuts` lists (every shortcut in effect), by menu and then "Terminal" for Ghostty's
-  keybindings, searchable by name or keys ("cmd p"); Esc closes it. With focus in the editor's
+  keybindings, searchable by name or keys as Warp's: modifier words or symbols in any order and
+  at most one key ("cmd shift p", "shift cmd p", "⇧⌘P"), matching shortcuts that hold those
+  modifiers and exactly that key, Ghostty's keybindings included; Esc closes it. With focus in the editor's
   source, ⌘/ is the editor's key and the page stays closed.
 
 - **L-18 [A]** After a pane closes (⌘W, `pane close`, its program exiting), focus goes to the pane

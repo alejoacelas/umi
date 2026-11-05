@@ -710,4 +710,14 @@ state) instead of every action. **Requirements:** L-14 to L-17.
   editor's source.
 - **Test hook, `debug.palette.state`** now also returns the query, filter word, selection, whether
   the empty state shows, its chips and the rows; **`debug.shortcuts_page`** returns the page's state.
+- **After review, `tests/test_umi_palette_warp.py`**: new tests that an entry under Recent and
+  Suggested is two rows with distinct ids; that ⌘O creates `~/…` and absolute names there; that
+  the shortcuts page finds keys in any order, as words or symbols, Ghostty's bindings included,
+  and never ⌘. for "cmd p"; that a file opened from the palette shows under Recent (with its
+  line) and opens from there; that the empty palette indexes no files until a query; that a
+  partial filter word is suggested; and `ui` tests for Tab applying it and for the arrows
+  stopping at the empty palette's ends. `test_the_empty_palette_shows_filter_chips_recent_and_suggested`
+  also checks the chips' icons. Hooks: rows carry `id` and `row_id`; `debug.palette.state` adds
+  `files_index`, `suggestion` and `chip_icons`; `debug.shortcuts_page` takes a `query` and its
+  rows carry their `shortcuts`.
 
