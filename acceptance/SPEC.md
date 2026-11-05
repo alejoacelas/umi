@@ -346,6 +346,7 @@ the menu.
     windows and tabs each opens; Return opens the chosen one: each window as a new window, the
     active one in front, with its tabs' titles, colors and selected tab, its panes in their folders
     and the focused pane focused. Each pane's commands are typed into its shell as it starts.
+  - The command palette (⌘P) lists them by name too, as Warp's does; Return opens the chosen one.
   - File ▸ Save New Launch Configuration… asks for a file name (`work` saves `work.yaml`) and saves
     every window: tabs with their names and colors, terminal panes with their folders, the focused
     pane and selected tab. File and web panes are left out, as Warp leaves out panes that aren't

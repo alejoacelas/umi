@@ -218,7 +218,8 @@ final class UmiPaletteModel: ObservableObject {
             })
         }
         var titles = Set(out.map(\.title))
-        return out + ghostty.filter { titles.insert($0.title).inserted }
+        // Launch configurations by name, as in Warp's command palette (L-21).
+        return out + ghostty.filter { titles.insert($0.title).inserted } + launchConfigEntries(inCommands: true)
     }
 
     private func reloadCommands() {
@@ -393,8 +394,10 @@ final class UmiPaletteModel: ObservableObject {
 
     // MARK: Launch configurations (⌃⌘L, L-21)
 
-    private func launchConfigEntries() -> [UmiPaletteEntry] {
-        UmiLaunchConfigs.list().map { item in
+    /// The launch configurations; `inCommands` (⌘P's list) leaves out files that can't be read and
+    /// says what each entry is.
+    private func launchConfigEntries(inCommands: Bool = false) -> [UmiPaletteEntry] {
+        UmiLaunchConfigs.list().filter { !inCommands || $0.config != nil }.map { item in
             let file = Self.abbreviate(item.path)
             guard let config = item.config else {
                 return UmiPaletteEntry(id: "launch:" + item.path, title: (item.path as NSString).lastPathComponent,
@@ -406,7 +409,8 @@ final class UmiPaletteModel: ObservableObject {
             }
             let windows = config.windows.count == 1 ? "1 window" : "\(config.windows.count) windows"
             let tabs = config.tabCount == 1 ? "1 tab" : "\(config.tabCount) tabs"
-            return UmiPaletteEntry(id: "launch:" + item.id, title: config.name, subtitle: "\(windows) · \(tabs)  ·  \(file)",
+            let what = inCommands ? "Launch configuration · " : ""
+            return UmiPaletteEntry(id: "launch:" + item.id, title: config.name, subtitle: "\(what)\(windows) · \(tabs)  ·  \(file)",
                                     icon: "rectangle.3.group", keywords: (item.path as NSString).lastPathComponent,
                                     value: item.path, kind: .action) { [weak self] in
                 self?.close(restoreFocus: false)

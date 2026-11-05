@@ -332,7 +332,8 @@ def test_palette_lists_configurations_and_opens_the_chosen_one(clean, tmp_path):
     entries = rpc(inst, "debug.palette", window=win["window"], mode="launch_configs")["entries"]
     assert [e["title"] for e in entries] == ["Alpha", "Beta Two"], "named after the file when it has no name"
     assert "1 window · 1 tab" in entries[0]["subtitle"], entries[0]
-    rpc(inst, "debug.palette", window=win["window"], mode="launch_configs", query="alp")
+    filtered = rpc(inst, "debug.palette", window=win["window"], mode="launch_configs", query="alp")["entries"]
+    assert [e["title"] for e in filtered] == ["Alpha"], filtered
     rpc(inst, "debug.palette.perform", window=win["window"], title="Alpha")
     wait_until(lambda: any(t.get("name") == "from-alpha" for w in inst.tree()["windows"] for t in w["tabs"]), 10,
                message="the configuration opened")
@@ -342,6 +343,25 @@ def test_palette_lists_configurations_and_opens_the_chosen_one(clean, tmp_path):
     assert "Open Launch Configuration…" in titles and "Save New Launch Configuration…" in titles
     assert "List Launch Configurations" in titles
     rpc(inst, "debug.palette.close", window=win["window"])
+
+
+@pytest.mark.req("L-21")
+def test_command_palette_finds_launch_configurations_by_name(clean, tmp_path):
+    """As in Warp, ⌘P's list has the launch configurations too: typing a name finds it, Return opens it."""
+    inst = clean
+    (folder,) = folders(tmp_path, "cmdp")
+    write_config(inst, "gamma.yaml", f"name: Gamma Stack\nwindows:\n  - tabs:\n      - title: from-gamma\n        layout:\n          cwd: {folder}\n")
+    write_config(inst, "broken_one.yaml", "name: Broken One\nwindows: 3\n")
+    win = inst.json("window", "new")
+    entries = rpc(inst, "debug.palette", window=win["window"], mode="commands", query="gamma stack")["entries"]
+    assert entries and entries[0]["title"] == "Gamma Stack", [e["title"] for e in entries]
+    assert entries[0]["subtitle"].startswith("Launch configuration"), entries[0]
+    everything = [e["title"] for e in rpc(inst, "debug.palette", window=win["window"], mode="commands")["entries"]]
+    assert "Gamma Stack" in everything and "broken_one.yaml" not in everything, "files that can't be read stay in ⌃⌘L's list"
+    rpc(inst, "debug.palette", window=win["window"], mode="commands", query="gamma stack")
+    rpc(inst, "debug.palette.perform", window=win["window"], title="Gamma Stack")
+    wait_until(lambda: any(t.get("name") == "from-gamma" for w in inst.tree()["windows"] for t in w["tabs"]), 10,
+               message="the configuration opened from ⌘P")
 
 
 @pytest.mark.req("L-21", "S-4")

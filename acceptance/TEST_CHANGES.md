@@ -708,3 +708,7 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_layouts.py`**: `test_saved_colors_use_warps_names_where_warp_has_them`
   (purple, teal, graphite and pink tabs are saved as `magenta`, `cyan`, `white` and `pink`, and open
   with their Umi colors again).
+- **New, `tests/test_umi_layouts.py`**: `test_command_palette_finds_launch_configurations_by_name`
+  (⌘P's list finds a configuration by name and opens it; unreadable files stay out of it).
+- **Changed, `tests/test_umi_layouts.py`**: `test_palette_lists_configurations_and_opens_the_chosen_one`
+  now asserts what the filtered query returns (it sent the query without checking the result).
