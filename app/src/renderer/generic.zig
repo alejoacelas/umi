@@ -288,6 +288,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         umi: umi_blocks.Layout = .{},
         umi_drawn: std.ArrayList(umi_blocks.Drawn) = .empty,
         umi_glyph_dx: i32 = 0,
+        /// Umi: the glyph being added keeps its color whatever the
+        /// minimum contrast (minimum-contrast-colors = named).
+        umi_keep_contrast: bool = false,
         umi_glyph_dy: i32 = 0,
         umi_rects: std.ArrayList(UmiRect) = .empty,
         /// Umi: per row, how many pixels its text is drawn above its place
@@ -628,6 +631,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             foreground: terminal.color.RGB,
             selection_background: ?configpkg.Config.TerminalColor,
             selection_foreground: ?configpkg.Config.TerminalColor,
+            /// Umi: selection-background-opacity, 0-1.
+            selection_background_opacity: f32,
+            /// Umi: minimum-contrast applies only to named colors.
+            min_contrast_named_only: bool,
             search_background: configpkg.Config.TerminalColor,
             search_foreground: configpkg.Config.TerminalColor,
             search_selected_background: configpkg.Config.TerminalColor,
@@ -706,6 +713,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                     .selection_background = config.@"selection-background",
                     .selection_foreground = config.@"selection-foreground",
+                    .selection_background_opacity = @floatCast(@max(0, @min(1, config.@"selection-background-opacity"))),
+                    .min_contrast_named_only = config.@"minimum-contrast-colors" == .named,
                     .search_background = config.@"search-background",
                     .search_foreground = config.@"search-foreground",
                     .search_selected_background = config.@"search-selected-background",
@@ -3097,6 +3106,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             defer {
                 self.umi_glyph_dx = 0;
                 self.umi_glyph_dy = 0;
+                self.umi_keep_contrast = false;
             }
             if (umi_box and umi_rects_supported) self.umiAddFolderIcon(y, umi_fg.?);
 
@@ -3251,7 +3261,16 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     // If no configuration, then our selection background
                     // is our foreground color.
                     .selection => if (self.config.selection_background) |v| switch (v) {
-                        .color => |color| color.toTerminalRGB(),
+                        // Umi: a selection less than opaque is laid over the
+                        // cell's own background (Warp's).
+                        .color => |color| if (self.config.selection_background_opacity < 1)
+                            umi_blocks.mix(
+                                (if (style.flags.inverse) fg_style else bg_style) orelse state.colors.background,
+                                color.toTerminalRGB(),
+                                self.config.selection_background_opacity,
+                            )
+                        else
+                            color.toTerminalRGB(),
                         .@"cell-foreground" => if (style.flags.inverse) bg_style else fg_style,
                         .@"cell-background" => if (style.flags.inverse) fg_style else bg_style,
                     } else state.colors.foreground,
@@ -3324,6 +3343,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                 // Foreground alpha for this cell.
                 const alpha: u8 = if (style.flags.faint) self.config.faint_opacity else 255;
+
+                // Umi: with minimum-contrast-colors = named, text a program
+                // colored from the 256-color table or with RGB keeps its color.
+                self.umi_keep_contrast = self.config.min_contrast_named_only and switch (style.fg_color) {
+                    .none => false,
+                    .palette => |i| i >= 16,
+                    .rgb => true,
+                };
 
                 // Set the cell's background color.
                 {
@@ -3987,7 +4014,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .emoji => .color,
                     .text => .grayscale,
                 },
-                .bools = .{ .no_min_contrast = noMinContrast(cp) },
+                .bools = .{ .no_min_contrast = noMinContrast(cp) or self.umi_keep_contrast },
                 .grid_pos = .{ @intCast(x), @intCast(y) },
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
