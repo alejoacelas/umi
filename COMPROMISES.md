@@ -103,7 +103,7 @@ it is guidance"). What this design gives up:
 
 | What is given up | Why | What it protects |
 |---|---|---|
-| **No desktop notifications for agents**, even when the window is in the background (Warp posts them there once the user accepts its banner). Agents' own OSC 9/777 notifications are dropped in panes running an agent session. | S-3: the user asked for no desktop notifications; the Dock badge, the inbox (⇧⌘U) and the marks cover a window in the background. | S-3. |
+| **No desktop notifications for agents**, even when the window is in the background (Warp posts them there once the user accepts its banner). Agents' own OSC 9/777 notifications are dropped while an agent's interface runs in the pane. | S-3: the user asked for no desktop notifications; the Dock badge, the inbox (⇧⌘U) and the marks cover a window in the background. | S-3. |
 | **⌃⌘U dismisses the toasts and the update note**; Warp has only close buttons and timeouts. | The user works from the keyboard; Escape belongs to the terminal. | AG-24, I-4. |
 | **The update note stays until ⌃⌘U** and shows the release's notes in the window; Warp's "Warp updated!" toast goes after 4 seconds and links to a changelog page. | The notes are in the note itself and take longer than 4 seconds to read; the note shows once. | I-4. |
 | **⇧⌘G (Warp's "jump to the latest agent task") isn't added.** | ⌃⌘J already goes to the next session that needs the user (L-12), and the inbox goes to any. | L-12. |
