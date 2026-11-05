@@ -350,10 +350,13 @@ the menu.
   ⌥⇧⌘I (Stop Synchronizing Any Panes) stops all of it in the window. Each window keeps its own.
   What is typed or pasted into a pane of a synced tab is typed into every terminal pane of every
   synced tab in that window; ⌘ shortcuts and text still being composed by an input method stay
-  in the pane. Panes showing a file, a page or a session's read-only view don't take it. As in
-  Warp, ⌥⌘I in a window syncing every tab leaves the other tabs synced and this one not, and
-  syncing every tab one by one is the same as syncing all of them. A synced tab's sidebar row
-  shows Warp's link mark (#4A93FF). The terminal inspector moves from ⌥⌘I to ⌃⌥⌘I.
+  in the pane. A paste that needs confirming (Ghostty's paste protection) is confirmed once, in
+  the pane it was pasted into, and then goes to every synced pane. Panes showing a file, a page
+  or a session's read-only view don't take it. As in Warp, ⌥⌘I in a window syncing every tab
+  leaves the other tabs synced and this one not, and syncing every tab one by one is the same as
+  syncing all of them; ⌥⌘I in a window syncing nothing syncs only that tab, so a tab opened later
+  isn't synced, even when it was the window's only one. A synced tab's sidebar row shows Warp's
+  link mark (#4A93FF). The terminal inspector moves from ⌥⌘I to ⌃⌥⌘I.
 - **L-33 [A]** (Warp parity, 2026-11-05) Zoom, as Warp's. ⌘= and ⌘- (View ▸ Zoom In, Zoom Out) step
   through Warp's levels (50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300 and 350%),
   and ⌘0 (Actual Size) goes back to 100%. The zoom scales the sidebar, the palette, the editor's

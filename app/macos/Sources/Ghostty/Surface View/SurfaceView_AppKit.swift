@@ -109,6 +109,10 @@ extension Ghostty {
         /// True when the bell is active. This is set inactive on focus or event.
         @Published private(set) var bell: Bool = false
 
+        /// Umi: true while Edit ▸ Paste reads the clipboard, so what this pane pastes, once
+        /// accepted, is also typed into the panes synced with it (L-32).
+        var umiSyncPaste = false
+
         /// A clipboard confirmation waiting to be handled by its controller.
         @Published var pendingClipboardConfirmation: ClipboardConfirmationRequest? {
             didSet {
@@ -1660,11 +1664,12 @@ extension Ghostty {
                 UmiAgentUI.shared.pasted(pane: self, text: NSPasteboard.general.string(forType: .string))
             }
             let action = "paste_from_clipboard"
+            // Umi: and into the panes synced with this one (L-32).
+            umiSyncPaste = true
+            defer { umiSyncPaste = false }
             if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action, privacy: .public)")
             }
-            // Umi: and into the panes synced with this one (L-32).
-            UmiInputSync.mirrorPaste(from: self)
         }
 
         @IBAction func pasteAsPlainText(_ sender: Any?) {

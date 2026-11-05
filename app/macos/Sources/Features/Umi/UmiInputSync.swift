@@ -50,10 +50,16 @@ final class UmiInputSync {
         switch states[key] {
         case .all: synced = all
         case .tabs(let tabs): synced = tabs.intersection(all)
-        case nil: synced = []
+        case nil:
+            // As in Warp: from nothing, just this tab, even when it's the window's only one,
+            // so a tab opened later isn't synced.
+            states[key] = .tabs([tab.idString])
+            changed(window)
+            return
         }
         if synced.contains(tab.idString) { synced.remove(tab.idString) } else { synced.insert(tab.idString) }
-        // As in Warp: every tab synced is "all tabs", which new tabs join; none is nothing.
+        // As in Warp: toggled from a synced set, every tab synced is "all tabs", which new
+        // tabs join; none is nothing.
         states[key] = synced.isEmpty ? nil : (synced == all ? .all : .tabs(synced))
         changed(window)
     }
@@ -112,13 +118,18 @@ final class UmiInputSync {
         }
     }
 
-    /// Paste into `pane`'s peers too.
-    static func mirrorPaste(from pane: Ghostty.SurfaceView) {
+    /// Paste the text `pane` accepted into its peers too, as a paste (bracketed when their
+    /// program asks for it). They don't ask again: the user confirmed it once, in `pane`.
+    static func mirrorPaste(_ text: String, from pane: Ghostty.SurfaceView) {
         guard !shared.states.isEmpty else { return }
-        let action = "paste_from_clipboard"
-        for peer in shared.peers(of: pane) {
-            guard let surface = peer.surface else { continue }
-            _ = ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))
+        let peers = shared.peers(of: pane)
+        guard !peers.isEmpty else { return }
+        let length = UInt(text.utf8.count)
+        text.withCString { ptr in
+            for peer in peers {
+                guard let surface = peer.surface else { continue }
+                ghostty_surface_text(surface, ptr, length)
+            }
         }
     }
 }
