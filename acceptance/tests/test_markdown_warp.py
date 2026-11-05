@@ -205,10 +205,23 @@ def test_mermaid_diagrams_render_and_open_larger(inst, win, doc):
     shown(inst, win, doc)
     wait_until(lambda: md(inst, doc)["mermaid"]["diagrams"] == 1, 20, message="the diagram drawn")
     assert md(inst, doc)["mermaid"]["errors"] == []
+    # Warp's footer: the label, Raw / Rendered and Open full screen on the left; Copy on the right.
+    footer = style(inst, doc, ".umi-mermaid .umi-code-footer", "display")["rect"]
+    mode = style(inst, doc, ".umi-mermaid .umi-mode", "display")["rect"]
+    full = style(inst, doc, ".umi-mermaid .umi-full", "display")
+    copy = style(inst, doc, ".umi-mermaid .umi-copy", "display")["rect"]
+    assert mode["x"] - footer["x"] < 120 and mode["x"] < full["rect"]["x"] < copy["x"], (footer, mode, full, copy)
+    assert footer["x"] + footer["width"] - (copy["x"] + copy["width"]) < 12, "Copy at the right"
+    assert copy["x"] - (full["rect"]["x"] + full["rect"]["width"]) > 40, "a gap between the two groups"
+
     assert md(inst, doc, "click", selector=".umi-mermaid .umi-raw")["result"]
     assert md(inst, doc)["mermaid"]["diagrams"] == 0, "Raw shows the source"
+    assert style(inst, doc, ".umi-mermaid .umi-full", "display")["display"] == "none", "no full screen in Raw"
+    md(inst, doc, "click", selector=".umi-mermaid .umi-full")
+    assert not md(inst, doc)["lightbox"]["open"]
     assert md(inst, doc, "click", selector=".umi-mermaid .umi-rendered")["result"]
     assert md(inst, doc)["mermaid"]["diagrams"] == 1
+    assert full["display"] != "none"
 
     assert md(inst, doc, "click", selector=".umi-mermaid .umi-full")["result"]
     assert md(inst, doc)["lightbox"] == {"open": True, "svg": True}

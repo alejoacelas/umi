@@ -585,8 +585,8 @@ and links (E-7) work as before.
   `fish`) also have Run in terminal: the command goes to the input of the tab's terminal used most
   recently, which takes focus; it isn't run until the user presses Return, as Warp puts it in its
   input.
-- **MD-3 [A]** Mermaid blocks show the diagram. Each has Raw / Rendered and Open full screen, which
-  shows the diagram larger over the page; Esc or a click outside closes it. A diagram that fails
+- **MD-3 [A]** Mermaid blocks show the diagram. Each has Raw / Rendered beside its language label
+  and, while rendered, Open full screen, which shows the diagram larger over the page; Esc or a click outside closes it. A diagram that fails
   to parse shows its source and the error.
 - **MD-4 [A]** ⌘F in the preview opens a find bar (Warp's: top right, up to 500 px). Matches are
   highlighted as typed, case-insensitively unless Aa is on, as a regular expression when `.*` is

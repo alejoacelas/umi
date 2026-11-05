@@ -716,3 +716,6 @@ New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing tes
   Python block gained a comment and a number and the expected copied text changed with it.
 - New, `test_on_a_light_background_the_preview_uses_warps_light_theme`: with a light background the
   preview's text, links and done checkboxes use Warp's Light theme (accent `#00c2ff`).
+- `test_mermaid_diagrams_render_and_open_larger` also checks the footer's layout (Raw / Rendered and
+  Open full screen beside the label, Copy at the right) and that Raw hides Open full screen, as in
+  Warp.

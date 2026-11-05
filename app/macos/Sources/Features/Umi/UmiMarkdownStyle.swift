@@ -86,8 +86,9 @@ enum UmiMarkdownStyle {
         .umi-code { border: 1px solid var(--surface-3); border-radius: 8px; background: var(--bg); margin: 8px 16px 1em 4px; position: relative; }
         .umi-code pre { margin: 0; padding: 16px 8px 0 16px; overflow-x: auto; background: none; }
         .umi-code pre code { color: var(--fg); background: none; padding: 0; tab-size: 4; }
-        .umi-code-footer { height: 42px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 0 8px 0 16px; font: 12px var(--ui); }
-        .umi-code-footer::before { content: attr(data-label); color: var(--fg-sub); font-weight: 300; margin-right: auto; }
+        .umi-code-footer { height: 42px; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 16px; font: 12px var(--ui); }
+        .umi-code-footer::before { content: attr(data-label); color: var(--fg-sub); font-weight: 300; }
+        .umi-code-footer .umi-copy { margin-left: auto; }
         .umi-code-footer button { font: 12px var(--ui); color: var(--fg-sub); background: none; border: none; border-radius: 4px; height: 24px; padding: 0 8px; cursor: default; }
         .umi-code-footer button:hover { background: var(--surface-3); color: var(--fg); }
         .umi-code-footer button.umi-copy::before { content: "Copy"; }
@@ -101,7 +102,7 @@ enum UmiMarkdownStyle {
         .umi-mermaid-view { padding: 16px 16px 0; overflow-x: auto; text-align: center; }
         .umi-mermaid-view svg { max-width: 100%; height: auto; }
         .umi-mermaid.umi-showing-diagram pre { display: none; }
-        .umi-mermaid:not(.umi-showing-diagram) .umi-mermaid-view { display: none; }
+        .umi-mermaid:not(.umi-showing-diagram) .umi-mermaid-view, .umi-mermaid:not(.umi-showing-diagram) .umi-full { display: none; }
         .umi-mermaid-error { color: var(--red); font: 12px var(--ui); padding: 8px 16px 0; white-space: pre-wrap; }
         .umi-mermaid-error::before { content: attr(data-error); }
 

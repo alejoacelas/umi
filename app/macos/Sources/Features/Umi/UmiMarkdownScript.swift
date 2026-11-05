@@ -3,7 +3,8 @@ import WebKit
 
 /// What the Markdown preview does beyond the page itself (Warp parity, 2026-11-05): code
 /// highlighting (highlight.js), each code block's Copy and, for shell blocks, Run in terminal,
-/// Mermaid diagrams (mermaid.js) with Raw / Rendered and Open full screen, and find (⌘F, ⌘G,
+/// Mermaid diagrams (mermaid.js) with Raw / Rendered and, when rendered, Open full screen (both
+/// beside the language label, Copy and Run at the right, as Warp's footer), and find (⌘F, ⌘G,
 /// ⇧⌘G). The scripts run in Umi's content world beside the comment margin's; the document's own
 /// scripts still never run (E-7).
 ///
@@ -126,7 +127,8 @@ enum UmiMarkdownScript {
       document.documentElement.append(box);
       const lightbox = {
         open(block) {
-          const svg = block.querySelector('.umi-mermaid-view svg');
+          // As Warp's: only a diagram on show (Rendered) opens full screen.
+          const svg = block.classList.contains('umi-showing-diagram') && block.querySelector('.umi-mermaid-view svg');
           if (!svg) return false;
           frame.replaceChildren(svg.cloneNode(true));
           box.classList.add('umi-open');
