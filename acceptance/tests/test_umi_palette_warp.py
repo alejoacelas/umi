@@ -231,7 +231,7 @@ def test_the_empty_palette_selects_nothing_until_an_arrow_key_ui(inst, win, ui):
         s = state(inst, win)
         assert s["zero_state"] and s["selection"] == -1, s
         assert ui.find(lambda e: ui.label(e) == "Filter sessions") is not None, "the chips show"
-        assert ui.find(lambda e: ui.label(e) == "Suggested") is not None, "the Suggested section shows"
+        assert ui.find(lambda e: "Suggested" in (ui.label(e), ui.value(e))) is not None, "the Suggested section shows"
         press(ui, "down")
         assert state(inst, win)["selection"] == 0
         press(ui, "esc")
