@@ -729,7 +729,9 @@ S-12.
   `seq 1 400` and a page up, the scroller is in the overlay style and visible, and its image shows
   one rounded `#696969` thumb 8 points wide, 2 points from the edge, with background above, below
   and right of it (it read back the class's constants before).
-- **Test hook, `debug.terminal.scroller`**: writes an image of a pane's scrollbar as AppKit draws it,
-  over the pane's background (the window's screenshot draws the terminal's image over the
-  scrollbar). `debug.terminal`'s `scroller` adds `style`, `hidden`, `knob_proportion`, `value`,
-  `width_pt` and `edge_inset`.
+- **Test hook, `debug.terminal.scroller`**: writes an image of a pane's scrollbar as shown (its
+  layers as on screen, mid-fade included), over the pane's background (the window's screenshot draws
+  the terminal's image over the scrollbar). `debug.terminal`'s `scroller` adds `style`, `hidden`,
+  `knob_proportion`, `value`, `width_pt`, `edge_inset`, `knob_rect_pt` (AppKit's knob),
+  `thumb_rect_pt` and `thumb_attached`. This test found that AppKit drew the old thumb clipped to
+  its own 6-point knob.

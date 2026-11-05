@@ -296,19 +296,27 @@ def test_the_scrollbar_is_warps_thumb_without_a_track(inst, win, tmp_path):
     assert s["style"] == "overlay" and s["hidden"] is False, s
     assert 0 < s["knob_proportion"] < 1, s
     assert s["ink"] == [1, 1, 1], "the text color on the dark background"
-    time.sleep(0.3)
-    info = inst.rpc("debug.terminal.scroller", pane=pane, path=str(tmp_path / "scroller.png"))
-    w, h, buf = load_png(tmp_path / "scroller.png")
-    scale = w / info["width_pt"]
-
-    def px(x, y):
-        i = (y * w + x) * 4
-        return tuple(buf[i:i + 3])
+    assert s["thumb_attached"] is True, s
     thumb = (0x69, 0x69, 0x69)
     bg = (5, 5, 5)
-    # The thumb's column: its middle, 6 points in from the right edge.
-    cx = w - int(6 * scale)
-    lit = [y for y in range(h) if near(px(cx, y), thumb, 12)]
+    # The image as on screen: the thumb fades out a second after scrolling, so scroll and take it
+    # at once (again if it was taken mid-fade).
+    for attempt in range(3):
+        if attempt:
+            inst.rpc("debug.terminal.action", pane=pane, action="scroll_page_down")
+            inst.rpc("debug.terminal.action", pane=pane, action="scroll_page_up")
+        info = inst.rpc("debug.terminal.scroller", pane=pane, path=str(tmp_path / "scroller.png"))
+        w, h, buf = load_png(tmp_path / "scroller.png")
+        scale = w / info["width_pt"]
+
+        def px(x, y):
+            i = (y * w + x) * 4
+            return tuple(buf[i:i + 3])
+        # The thumb's column: its middle, 6 points in from the right edge.
+        cx = w - int(6 * scale)
+        lit = [y for y in range(h) if near(px(cx, y), thumb, 12)]
+        if lit:
+            break
     assert lit, f"a #696969 thumb: column {[px(cx, y) for y in range(0, h, max(1, h // 8))]}"
     top, bottom = min(lit), max(lit)
     assert len(lit) == bottom - top + 1, "one thumb"

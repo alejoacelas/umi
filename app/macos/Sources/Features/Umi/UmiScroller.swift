@@ -5,11 +5,21 @@ import AppKit
 /// pointer is on it or it is dragged. It shows and hides as macOS overlay scrollbars do.
 final class UmiScroller: NSScroller {
     /// The text color: white on dark backgrounds, black on light ones.
-    var ink: NSColor = .white { didSet { needsDisplay = true } }
+    var ink: NSColor = .white { didSet { updateThumbColor() } }
 
     /// True while the pointer is on the scrollbar or the thumb is dragged.
-    private(set) var active = false { didSet { if active != oldValue { needsDisplay = true } } }
+    private(set) var active = false { didSet { if active != oldValue { updateThumbColor() } } }
     private var trackingArea: NSTrackingArea?
+
+    /// The thumb. AppKit draws an overlay scroller's knob into a layer of its own, 6 points wide,
+    /// which it moves and fades; the thumb is a layer inside that one (sublayers aren't clipped),
+    /// so it moves and fades with it at Warp's width.
+    private let thumbLayer: CALayer = {
+        let layer = CALayer()
+        layer.actions = ["position": NSNull(), "bounds": NSNull(), "frame": NSNull(),
+                         "backgroundColor": NSNull(), "cornerRadius": NSNull()]
+        return layer
+    }()
 
     static let thumbWidth: CGFloat = 8
     /// The space between the thumb and the pane's right edge (Warp's padding after the track).
@@ -24,14 +34,42 @@ final class UmiScroller: NSScroller {
 
     override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
 
-    override func drawKnob() {
+    /// Where the thumb is, in the scroller's coordinates: 8 points wide, 2 points in from the right
+    /// edge, as tall as AppKit's knob.
+    var thumbRect: NSRect {
         let knob = rect(for: .knob)
-        guard knob.height > 0 else { return }
         let inset = min(Self.edgeInset, max(0, bounds.width - Self.thumbWidth))
         let width = min(Self.thumbWidth, bounds.width)
-        let thumb = NSRect(x: bounds.maxX - inset - width, y: knob.minY, width: width, height: knob.height)
-        thumbColor.setFill()
-        NSBezierPath(roundedRect: thumb, xRadius: width / 2, yRadius: width / 2).fill()
+        return NSRect(x: bounds.maxX - inset - width, y: knob.minY, width: width, height: knob.height)
+    }
+
+    /// True once the thumb sits in AppKit's knob layer.
+    var thumbAttached: Bool { thumbLayer.superlayer != nil }
+
+    /// AppKit calls this when its knob layer needs drawing (it was made, or changed size): the
+    /// knob layer draws nothing itself; the thumb layer goes into it, placed for its new size.
+    override func drawKnob() {
+        let knob = rect(for: .knob)
+        guard knob.height > 0,
+              let host = layer?.sublayers?.first(where: {
+                  $0 !== thumbLayer && abs($0.frame.minX - knob.minX) < 0.5 && abs($0.frame.minY - knob.minY) < 0.5
+                      && abs($0.frame.width - knob.width) < 0.5 && abs($0.frame.height - knob.height) < 0.5
+              }) else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if thumbLayer.superlayer !== host { host.addSublayer(thumbLayer) }
+        let thumb = thumbRect
+        thumbLayer.frame = NSRect(x: thumb.minX - host.frame.minX, y: 0, width: thumb.width, height: host.bounds.height)
+        thumbLayer.cornerRadius = thumb.width / 2
+        thumbLayer.backgroundColor = thumbColor.cgColor
+        CATransaction.commit()
+    }
+
+    private func updateThumbColor() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        thumbLayer.backgroundColor = thumbColor.cgColor
+        CATransaction.commit()
     }
 
     override func updateTrackingAreas() {
@@ -84,6 +122,13 @@ extension UmiScroller {
             entry["knob_proportion"] = scroller.knobProportion
             entry["value"] = scroller.doubleValue
             entry["width_pt"] = scroller.bounds.width
+            let knob = scroller.rect(for: .knob)
+            entry["knob_rect_pt"] = [knob.minX, knob.minY, knob.width, knob.height]
+            if let umi = scroller as? UmiScroller {
+                let thumb = umi.thumbRect
+                entry["thumb_rect_pt"] = [thumb.minX, thumb.minY, thumb.width, thumb.height]
+                entry["thumb_attached"] = umi.thumbAttached
+            }
             info["scroller"] = entry
         }
         if let config = UmiLayout.ghostty?.config {
@@ -97,27 +142,26 @@ extension UmiScroller {
 }
 
 extension UmiScroller {
-    /// An image of a pane's scrollbar as AppKit draws it, over the pane's background, the size of
-    /// the scrollbar's frame (`debug.terminal.scroller`). The window's screenshot draws the
-    /// terminal's own image over it, so tests read the scrollbar from here.
+    /// An image of a pane's scrollbar as shown now (its layers as on screen, mid-fade included),
+    /// over the pane's background, the size of the scrollbar's frame (`debug.terminal.scroller`).
+    /// The window's screenshot draws the terminal's own image over it, so tests read the scrollbar
+    /// from here.
     @MainActor
     static func capture(_ pane: Ghostty.SurfaceView, to path: String) throws -> [String: Any] {
         guard let scroller = pane.enclosingScrollView?.verticalScroller else {
             throw UmiError.failed("the pane has no scrollbar")
         }
         let bounds = scroller.bounds
-        guard bounds.width > 0, bounds.height > 0,
-              let rep = scroller.bitmapImageRepForCachingDisplay(in: bounds) else {
+        guard bounds.width > 0, bounds.height > 0, let layer = scroller.layer else {
             throw UmiError.failed("the scrollbar has no size")
         }
-        scroller.cacheDisplay(in: bounds, to: rep)
-        let drawn = NSImage(size: bounds.size)
-        drawn.addRepresentation(rep)
         let composed = NSImage(size: bounds.size)
         composed.lockFocus()
         NSColor(pane.derivedConfig.backgroundColor).setFill()
         NSRect(origin: .zero, size: bounds.size).fill()
-        drawn.draw(in: NSRect(origin: .zero, size: bounds.size))
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            (layer.presentation() ?? layer).render(in: ctx)
+        }
         composed.unlockFocus()
         guard let tiff = composed.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
               let png = bitmap.representation(using: .png, properties: [:]) else {
