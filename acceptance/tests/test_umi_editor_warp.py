@@ -180,6 +180,21 @@ def test_cmd_f_opens_the_editors_own_find(inst, win, code, ui):
 
 
 @pytest.mark.req("E-22")
+def test_cmd_f_in_a_terminal_still_searches_the_terminal(inst, win, ui):
+    inst.cli("pane", "focus", win["pane"])
+    ui.activate()
+
+    def fields():
+        return ui.find_all(lambda e: ui.role(e) == "AXTextField")
+
+    before = len(fields())
+    ui.key(K_F, CMD)
+    wait_until(lambda: len(fields()) > before, 5, message="⌘F opens the terminal's search field")
+    ui.key(K_ESC)
+    wait_until(lambda: len(fields()) == before, 5, message="Esc closes it")
+
+
+@pytest.mark.req("E-22")
 def test_replace_one_replace_all_and_preserve_case(inst, win, tmp_path, ui):
     path = tmp_path / "words.txt"
     path.write_text("foo Foo FOO foo\n")
