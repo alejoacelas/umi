@@ -156,6 +156,23 @@ enum UmiUIDebug {
             }
             return ["pane": pane.umiID]
 
+        case "debug.ui.pane.menu":
+            // The terminal's right-click menu (L-21): its items, or choose one by title.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            let entries = UmiPaneMenu.entries(for: pane)
+            if let title = params.string("title") {
+                guard let entry = entries.compactMap({ $0 }).first(where: { $0.title == title }) else {
+                    throw UmiError.notFound("no menu item \"\(title)\"")
+                }
+                guard entry.enabled else { throw UmiError.failed("the menu item \"\(title)\" is disabled") }
+                entry.action()
+                return ["performed": title]
+            }
+            return ["items": entries.map { entry -> [String: Any] in
+                guard let entry else { return ["separator": true] }
+                return ["title": entry.title, "enabled": entry.enabled, "checked": entry.checked]
+            }]
+
         case "debug.ui.views":
             // The window's AppKit views, as an indented list of class names and frames.
             let window = try UmiTopology.window(params.string("window"), caller: caller)
