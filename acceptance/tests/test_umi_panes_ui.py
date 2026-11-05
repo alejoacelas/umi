@@ -594,9 +594,10 @@ def test_looking_at_the_pane_clears_the_mark_ui(inst, win, ui):
 
 # ---- S-4: the row menu ---------------------------------------------------------------------------
 
-WARP_ITEMS = ["Pin Tab", "Copy Working Directory", "Copy Title", "Rename Tab…", "Rename Pane…", "Move Tab Up",
-              "Move Tab Down", "Close Tab", "Close Other Tabs", "Close Tabs Below", "Tab Color",
-              "Move Tab to New Window"]
+# Warp's labels (its tab.rs). Move Tab Down and Close Tabs Below are left out for the last tab, as in
+# Warp; test_umi_sidebar_warp.py checks them on a tab in the middle.
+WARP_ITEMS = ["Pin tab", "Copy working directory", "Copy tab title", "Rename tab", "Rename active pane", "Move Tab Up",
+              "Close tab", "Close other tabs", "Tab Color", "Move Tab to New Window"]
 
 
 @pytest.mark.req("S-4")
@@ -607,29 +608,29 @@ def test_the_row_menu_has_warps_items(inst, win, tmp_path):
     pane, tab = new_tab(inst, win, "--cwd", str(repo))
     inst.cli("tab", "rename", tab, "named")
     inst.cli("pane", "rename", pane, "pane-named")
-    wait_until(lambda: any(i["title"] == "Copy Branch" for i in rpc(inst, "debug.ui.menu", tab=tab)["items"]), 10,
-               message="Copy Branch")
+    wait_until(lambda: any(i["title"] == "Copy branch" for i in rpc(inst, "debug.ui.menu", tab=tab)["items"]), 10,
+               message="Copy branch")
     titles = [i["title"] for i in rpc(inst, "debug.ui.menu", tab=tab)["items"]]
-    missing = [t for t in WARP_ITEMS + ["Copy Branch", "Reset Tab Name", "Reset Pane Name"] if t not in titles]
+    missing = [t for t in WARP_ITEMS + ["Copy branch", "Reset tab name", "Reset active pane name"] if t not in titles]
     assert not missing, f"missing: {missing}"
     colors = [i for i in rpc(inst, "debug.ui.menu", tab=tab)["items"] if i["path"].startswith("Tab Color > ")]
-    assert len(colors) == 10 and sum(i["checked"] for i in colors) == 1
+    assert len(colors) == 7 and sum(i["checked"] for i in colors) == 1
 
     def perform(title):
         return rpc(inst, "debug.ui.menu.perform", tab=tab, title=title)
 
-    assert perform("Copy Branch")["copied"] == "menu-branch"
-    assert os.path.realpath(perform("Copy Working Directory")["copied"]) == os.path.realpath(repo)
-    assert perform("Copy Title")["copied"] == "named"
-    perform("Reset Tab Name")
+    assert perform("Copy branch")["copied"] == "menu-branch"
+    assert os.path.realpath(perform("Copy working directory")["copied"]) == os.path.realpath(repo)
+    assert perform("Copy tab title")["copied"] == "named"
+    perform("Reset tab name")
     assert not tab_of(inst, tab).get("name")
-    perform("Reset Pane Name")
+    perform("Reset active pane name")
     assert not inst.json("pane", "info", pane).get("name")
     perform("Tab Color > Blue")
     assert tab_of(inst, tab)["color"] == "blue"
-    perform("Pin Tab")
+    perform("Pin tab")
     assert tab_of(inst, tab)["pinned"] and tab_ids(inst, win["window"])[0] == tab
-    perform("Unpin Tab")
+    perform("Unpin tab")
 
 
 @pytest.mark.req("S-4", "L-2")
@@ -643,15 +644,15 @@ def test_move_tab_up_and_down_stay_in_their_pin_group(inst, win):
     rpc(inst, "debug.ui.menu.perform", tab=t1, title="Move Tab Down")
     assert tab_ids(inst, win["window"]) == [t3, t1, t2]
     menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t3)["items"]}
-    assert not menu["Move Tab Up"]["enabled"], "the first tab can't move up"
+    assert "Move Tab Up" not in menu, "the first tab can't move up (left out, as in Warp)"
     inst.cli("tab", "pin", t2)
     # Pinning moves only the pinned tab, to the end of the pinned group (S-7); the first unpinned
     # tab sits right below it and can't move up into it.
     assert tab_ids(inst, win["window"]) == [t2, t3, t1]
     menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t3)["items"]}
-    assert not menu["Move Tab Up"]["enabled"], "an unpinned tab can't move into the pinned group"
+    assert "Move Tab Up" not in menu, "an unpinned tab can't move into the pinned group"
     menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t2)["items"]}
-    assert not menu["Move Tab Down"]["enabled"], "a pinned tab can't move out of the pinned group"
+    assert "Move Tab Down" not in menu, "a pinned tab can't move out of the pinned group"
     inst.cli("tab", "unpin", t2)
 
 
@@ -1044,11 +1045,12 @@ def test_dragging_a_tab_row_reorders_and_the_row_menu_opens_ui(inst, win, ui):
     wait_until(lambda: tab_ids(inst, win["window"])[0] == t3, 5, message="dropped before the first row")
     # Right-click menu: Warp's items. The menu sits in the window's accessibility tree, not
     # among the app's children.
-    _right_click(_frame(ui, _row_element(ui, "drag-second")))
+    # The middle row (now the window's first tab), where every move and close item applies.
+    _right_click(_frame(ui, _row_element(ui, tab_of(inst, win["tab"])["title"])))
     menus = wait_until(lambda: ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the row menu")
     titles = set(t for m in menus for t in ui.texts(m))
     ui.key(ui.ESCAPE)
     wait_until(lambda: not ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="Escape closed the menu")
-    missing = [t for t in ("Copy Title", "Move Tab Up", "Close Tabs Below", "Close Other Tabs", "Tab Color")
-               if t not in titles]
+    missing = [t for t in ("Copy tab title", "Move Tab Up", "Close Tabs Below", "Close other tabs",
+                           "Default (no color)") if t not in titles]
     assert not missing, f"the row menu lacks {missing} (it has {sorted(titles)})"

@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-12.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-14, E-1 to E-12.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -392,10 +392,15 @@ A "live session" is a pane with a running program, its scrollback and its state.
 
 - **S-1 [W]** No visible containers or borders around the content, Warp-like: the chrome blends into
   the terminal background. The window shows no native tab bar and no titlebar icons on the upper
-  right.
+  right. As in Warp, a 1 px line at foreground 10% separates the sidebar from the panes (Warp
+  parity, 2026-11-05).
 - **S-2 [A+W]** A left sidebar, full height, toggled with ⌘B. It has two modes: Tabs and Files
   (project explorer for the focused pane's folder). It has no "agents" section, no "no agents
   running" text and no "new agent" button.
+  Warp parity, 2026-11-05: each window shows or hides its own sidebar, at once (no slide), as Warp's
+  left panel; ⌘\ (Warp's left-panel key) toggles it too. A new window starts as the window last
+  toggled. `<cli> sidebar on|off|toggle` act on the given window, else the caller's, else the
+  current one. Its list scrolls under Warp's 4 pt overlay scrollbar.
 - **S-3 [W]** Tabs mode lists the window's tabs, grouped by tab, with pinned tabs first.
   Each row has two lines:
   - Line 1: the tab's folder (its focused pane's), or the name the user gave the tab. Then the git
@@ -404,18 +409,40 @@ A "live session" is a pane with a running program, its scrollback and its state.
   - Line 2: the title of the tab's agent session, when it has one (a session Umi started, or a
     `claude`/`codex` typed in the pane and reported by Umi's plugin, AG-18). Otherwise what the
     focused pane is doing: the running command or the last one it ran; else the folder's path.
+  - Rows look like Warp's vertical tabs (Warp parity, 2026-11-05): line 1 at 12 pt regular, 90% ink,
+    selected or not; line 2 at 10 pt, 60%; 1 pt between them. The icon is a 24 pt circle filled at
+    10% with a 16 pt terminal glyph at 90%. Rows are 8 pt inside, 8 pt from icon to text, radius 4,
+    4 pt apart; the list is 8 pt in from the sides and bottom. The selected row is filled at 10%
+    with a 1 px border at 15%; a hovered row at 5%; both over the sidebar's 5%. A tab's color tints
+    its row at 15%, and 50% when selected or hovered. A pinned tab shows a 16 pt diagonal pin 6 pt
+    inside its row's top-right corner, hidden on hover; no line under the pinned tabs. When the
+    focused pane's last command failed (an exit status other than 0, 130 or 141), a 12 pt red
+    triangle (#BC362A) comes before the title. A running command has no mark of its own. A tab
+    whose pane is zoomed shows "Maximized" (an icon) on line 1. While ⌘ is held for 750 ms, each
+    row shows the key that selects it at 12 pt, 60%: ⌘1–⌘8 for the first eight tabs, ⌘9 for the
+    last.
+  - The header (Warp's control bar) is 4 pt above and below, 8 pt at the sides, 4 pt between
+    items: "Search tabs..." (S-13; Tabs mode), the Tabs and Files buttons, and + (24 pt high,
+    radius 4).
   - A tab with an agent session shows the agent's mark (Claude or Codex), small and monochrome, as
     its icon. When a session finished and the user hasn't looked at it yet, or it needs the user,
     the mark takes a quiet color. Looking at the pane (it has focus in the front window while the
     app is active, by a tab switch, a pane focus, or switching windows or apps) clears it; a session
     that finishes while the user looks at it leaves no mark. Colors and hints stay subtle. No desktop
     notifications. The Dock badge counts the sessions that need the user.
-- **S-4 [W]** Rows can be clicked to select, double-clicked to rename, dragged to reorder
-  (M-4), and right-clicked for Warp's menu: Pin/Unpin Tab; Copy Branch, Copy Working Directory,
-  Copy Title; Rename Tab…, Reset Tab Name, Rename Pane…, Reset Pane Name (the tab's focused pane);
-  Move Tab Up, Move Tab Down (within the pinned or unpinned group); Close Tab, Close Other Tabs, Close
-  Tabs Below; Tab Color ▸; Move Tab to New Window, Move Tab to Window ▸. A tab's color tints its
-  row, quietly.
+- **S-4 [A+W]** Rows can be clicked to select, double-clicked to rename, dragged to reorder
+  (M-4), and right-clicked for Warp's menu, with Warp's labels and order (Warp parity, 2026-11-05):
+  Pin tab (Unpin tab); New group with tab, Move to group ▸, Remove from group (S-14); Copy branch,
+  Copy tab title, Copy working directory, Copy pull request link
+  (the branch's pull request, found with `gh`); Rename tab, Reset tab name, Rename active pane,
+  Reset active pane name (the tab's focused pane), Move Tab Down, Move Tab Up (within the pinned or
+  unpinned group); Close tab, Close other tabs, Close Tabs Below; a row of color dots: "Default (no
+  color)" and Warp's six tab colors, the theme's ANSI red, green, yellow, blue, magenta and cyan
+  (picking the tab's color again clears it); then Umi's Move Tab to New Window, Move Tab to Window ▸.
+  Sections are separated by lines; an item that can't apply (nothing to reset or copy, no pull
+  request, a move or close past the end) is left out, as in Warp. Renaming a tab or a pane (from
+  the menu, a double-click, ⌃⌘R or ⌃⇧⌘R) happens in place in the row: Return keeps the name (empty
+  goes back to the default), Esc leaves it as it was; the sidebar shows itself for it.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
   config file (`~/.config/<cli>/config`, Ghostty's settings) and theme override the product's
   defaults. The app never reads Ghostty's own config files.
@@ -441,11 +468,34 @@ A "live session" is a pane with a running program, its scrollback and its state.
 
   This is the window's real tab order: `ls`, `#N` selectors and ⌘1–9 follow it. (Until 0.6.0 the
   current tab moved to the top and tabs whose agent stopped moved to just below it; REQUESTS.md.)
-- **S-8 [A+W]** Each window's sidebar can be made wider or narrower by dragging its edge, between
-  180 points and the smaller of 600 points and half the window. The width is per window, saved and
+- **S-8 [A+W]** Each window's sidebar can be made wider or narrower by dragging its edge (Warp's
+  5 pt strip inside the edge), between 180 points and the smaller of 600 points and half the
+  window. It starts at Warp's 248 points (Warp parity, 2026-11-05). The width is per window, saved and
   restored with the layout; a new window starts at the width last chosen. Double-clicking the edge
   goes back to the default. `<cli> sidebar width [N]` shows or sets it; `sidebar status` still
   answers `visible` and `mode` (and now the window's `width`).
+
+- **S-13 [A+W]** Search tabs (Warp parity, 2026-11-05), as Warp's vertical tabs: a "Search tabs..."
+  field at the top of the sidebar's Tabs mode (a 12 pt magnifying glass, 24 pt high). A query lists
+  only the tabs whose title, folder, branch, command or agent session title contain it (any case);
+  with none, "No tabs match your search." (12 pt, 60%). While the window's sidebar has a query, ⇧⌘[
+  and ⇧⌘] (previous and next) and ⌃Tab and ⌃⇧Tab go through the matching tabs only, wrapping
+  around. ⌥⌘F shows the sidebar and puts the cursor in the field; Esc there clears the query and
+  gives the keyboard back to the pane.
+- **S-14 [A+W]** Tab groups (Warp parity, 2026-11-05), as Warp's: a row's menu has "New group with
+  tab" (left out when the tab is its group's only tab), "Move to group ▸" (when another group
+  exists) and "Remove from group" (when in one), after Pin tab. A new group holds just that tab,
+  is called "New Group" until named, and its name is typed in place right away. The sidebar shows
+  a group's header where its first tab is: a 24 pt icon (a chevron while open), the name at 12 pt
+  over "N tabs" at 10 pt, 8 pt inside, radius 4; its tabs follow, indented 12 pt, unless it is
+  collapsed. A click on the header collapses or expands it, a double-click renames it, and its
+  right-click menu has Ungroup tabs, New tab in group; Rename; Close all tabs in group, Close
+  other tabs; the color dots (a group's color tints its tabs that have none of their own). A
+  group's tabs stay next to each other: a tab moved away from them comes back to them, and a tab
+  pinned leaves its group; an empty group goes. A search for a group's name lists all its tabs.
+  From the keyboard, the Window menu (and the palette) has New Group with Tab, Collapse or Expand
+  Tab Group, Rename Tab Group, Remove Tab from Group and Ungroup Tabs for the current tab. Groups
+  are saved and restored with the layout; `ls` gives a grouped tab's `group` (its name).
 
 ### Warp's look for terminals
 
