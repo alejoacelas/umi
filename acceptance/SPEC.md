@@ -411,16 +411,17 @@ A "live session" is a pane with a running program, its scrollback and its state.
     focused pane is doing: the running command or the last one it ran; else the folder's path.
   - Rows look like Warp's vertical tabs (Warp parity, 2026-11-05): line 1 at 12 pt regular, 90% ink,
     selected or not; line 2 at 10 pt, 60%; 1 pt between them. The icon is a 24 pt circle filled at
-    10% with a 16 pt terminal glyph at 90%. Rows are 8 pt inside, 8 pt from icon to text, radius 4,
+    10% with a terminal glyph at 90% in its middle 16 pt (Warp's 16 px icon box; the glyph drawn in
+    it is about 12 pt across, as Warp's). Rows are 8 pt inside, 8 pt from icon to text, radius 4,
     4 pt apart; the list is 8 pt in from the sides and bottom. The selected row is filled at 10%
     with a 1 px border at 15%; a hovered row at 5%; both over the sidebar's 5%. A tab's color tints
     its row at 15%, and 50% when selected or hovered. A pinned tab shows a 16 pt diagonal pin 6 pt
     inside its row's top-right corner, hidden on hover; no line under the pinned tabs. When the
     focused pane's last command failed (an exit status other than 0, 130 or 141), a 12 pt red
     triangle (#BC362A) comes before the title. A running command has no mark of its own. A tab
-    whose pane is zoomed shows "Maximized" (an icon) on line 1. While ⌘ is held for 750 ms, each
-    row shows the key that selects it at 12 pt, 60%: ⌘1–⌘8 for the first eight tabs, ⌘9 for the
-    last.
+    whose pane is zoomed shows "Maximized" (an icon) on line 1. While ⌘ is held for 750 ms (other
+    modifiers held with it or added later don't hide them or restart the delay), each row shows
+    the key that selects it at 12 pt, 60%: ⌘1–⌘8 for the first eight tabs, ⌘9 for the last.
   - The header (Warp's control bar) is 4 pt above and below, 8 pt at the sides, 4 pt between
     items: "Search tabs..." (S-13; Tabs mode), the Tabs and Files buttons, and + (24 pt high,
     radius 4).
@@ -436,11 +437,13 @@ A "live session" is a pane with a running program, its scrollback and its state.
   Copy tab title, Copy working directory, Copy pull request link
   (the branch's pull request, found with `gh`); Rename tab, Reset tab name, Rename active pane,
   Reset active pane name (the tab's focused pane), Move Tab Down, Move Tab Up (within the pinned or
-  unpinned group); Close tab, Close other tabs, Close Tabs Below; a row of color dots: "Default (no
+  unpinned group and, for a tab in a tab group, within that group; a tab next to another group
+  moves past the whole group in one step, as Warp's); Close tab, Close other tabs, Close Tabs Below; a row of color dots: "Default (no
   color)" and Warp's six tab colors, the theme's ANSI red, green, yellow, blue, magenta and cyan
   (picking the tab's color again clears it); then Umi's Move Tab to New Window, Move Tab to Window ▸.
   Sections are separated by lines; an item that can't apply (nothing to reset or copy, no pull
-  request, a move or close past the end) is left out, as in Warp. Renaming a tab or a pane (from
+  request, a move or close past the end of its group) is left out, as in Warp. The pull request is
+  looked up as soon as the row shows the branch, so the item is there at the first right-click. Renaming a tab or a pane (from
   the menu, a double-click, ⌃⌘R or ⌃⇧⌘R) happens in place in the row: Return keeps the name (empty
   goes back to the default), Esc leaves it as it was; the sidebar shows itself for it.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
@@ -480,22 +483,30 @@ A "live session" is a pane with a running program, its scrollback and its state.
   only the tabs whose title, folder, branch, command or agent session title contain it (any case);
   with none, "No tabs match your search." (12 pt, 60%). While the window's sidebar has a query, ⇧⌘[
   and ⇧⌘] (previous and next) and ⌃Tab and ⌃⇧Tab go through the matching tabs only, wrapping
-  around. ⌥⌘F shows the sidebar and puts the cursor in the field; Esc there clears the query and
-  gives the keyboard back to the pane.
+  around (also while the sidebar is hidden, as Warp's closed panel; not while it shows Files, which
+  has no field to see or clear the query in). ⌥⌘F shows the sidebar in Tabs mode and puts the
+  cursor in the field; Esc there clears the query and gives the keyboard back to the pane.
 - **S-14 [A+W]** Tab groups (Warp parity, 2026-11-05), as Warp's: a row's menu has "New group with
   tab" (left out when the tab is its group's only tab), "Move to group ▸" (when another group
   exists) and "Remove from group" (when in one), after Pin tab. A new group holds just that tab,
   is called "New Group" until named, and its name is typed in place right away. The sidebar shows
-  a group's header where its first tab is: a 24 pt icon (a chevron while open), the name at 12 pt
-  over "N tabs" at 10 pt, 8 pt inside, radius 4; its tabs follow, indented 12 pt, unless it is
-  collapsed. A click on the header collapses or expands it, a double-click renames it, and its
+  a group where its first tab is, as one rounded box (radius 4): its header (a 24 pt icon, a
+  chevron while open; the name at 12 pt over "N tabs" at 10 pt; 8 pt inside, radius 4), then its
+  tabs unless it is collapsed, 4 pt apart, 12 pt in from the box's left edge and 4 pt from its
+  right, with 4 pt of box below them. The box takes the group's color at 15%, 25% while hovered
+  or holding the selected tab; a group without a color, 5% then. Tabs keep only their own color.
+  A click on the header collapses or expands it, a double-click only renames it, and its
   right-click menu has Ungroup tabs, New tab in group; Rename; Close all tabs in group, Close
-  other tabs; the color dots (a group's color tints its tabs that have none of their own). A
-  group's tabs stay next to each other: a tab moved away from them comes back to them, and a tab
-  pinned leaves its group; an empty group goes. A search for a group's name lists all its tabs.
-  From the keyboard, the Window menu (and the palette) has New Group with Tab, Collapse or Expand
-  Tab Group, Rename Tab Group, Remove Tab from Group and Ungroup Tabs for the current tab. Groups
-  are saved and restored with the layout; `ls` gives a grouped tab's `group` (its name).
+  other tabs, Close tabs above, Close tabs below (each when there are such tabs); the color dots.
+  A group's tabs stay next to each other: a tab moved away from them comes back to them, and a
+  tab pinned leaves its group; an empty group goes. A tab taken out of its window (moved to
+  another window, closed) leaves its group; undoing that, or reopening the tab or its window,
+  brings it back into the group, and brings the group back if it went. A search for a group's
+  name lists all its tabs. From the keyboard, the Window menu (and the palette) has New Group
+  with Tab, Collapse or Expand Tab Group, Rename Tab Group, Move Tab to Group ▸ (the window's
+  other groups; "Move Tab to Group: NAME" in the palette), Remove Tab from Group, New Tab in Group
+  and Ungroup Tabs for the current tab. Groups are saved and restored with the layout; `ls` gives
+  a grouped tab's `group` (its name).
 
 ### Warp's look for terminals
 

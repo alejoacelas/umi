@@ -725,3 +725,18 @@ each window shows or hides its own sidebar. **Requirements:** S-2, S-3, S-4, S-8
   read the sidebar's state), `debug.ui.groups` (list a window's groups and sidebar lines, click a
   header), `debug.ui.group.menu` / `debug.ui.group.perform` (a header's right-click menu) and
   `UMI_GH_BIN` (the `gh` the pull request lookup runs).
+
+## Sidebar review fixes (S-3, S-4, S-13, S-14; Warp parity, 2026-11-05)
+
+- **Changed, `tests/test_umi_sidebar_warp.py` `test_the_group_header_menu`**: the exact list of
+  header items now includes "Close tabs above" and "Close tabs below" (Warp's, added). Nothing it
+  checked before was dropped.
+- **New, `tests/test_umi_sidebar_warp.py`**: Move Tab Up/Down at group edges (left out, the CLI
+  refusing, hopping over a whole group as one undo step) from the menu and with real ⌃⇧←/⌃⇧→;
+  undo of a move to a new window and of a close, and reopen, bringing the group back; the group
+  box's color in a screenshot; Close tabs above/below; Window ▸ Move Tab to Group ▸ and New Tab in
+  Group chosen for real; ⌘ hints kept while ⇧ and ⌥ join ⌘; the pull request item at the first
+  menu read; ⌥⌘F from a hidden sidebar in Files mode, Esc giving the keyboard back to the same
+  pane, and ⌃Tab not filtered in Files mode; real clicks on a group header (click folds, a
+  double-click only renames), on a color dot in the open row menu, and outside an in-row rename.
+- **Test hooks**: `debug.ui.sidebar` also reports `key_pane`, the pane that has the keyboard.

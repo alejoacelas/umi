@@ -266,7 +266,7 @@ serves).
 > keyboard
 
 Then:
-> let's add the warp right click options as well
+> go. let's add the warp right click options as well if that's not already included
 
 - The sidebar (SPEC S-1 to S-4, S-8, S-13, S-14): Warp's vertical tabs look, "Search tabs...",
   ⌘1–⌘9 hints while ⌘ is held, renames in the row, its row menu with tab groups, and each window
