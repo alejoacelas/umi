@@ -153,6 +153,11 @@ let commandTable: [CommandHelp] = [
                           PaletteAction(title: "Jump Back", argv: ["jump", "back"])]),
     CommandHelp(section: "Layout", usage: "worktree ls",
                 actions: [PaletteAction(title: "List Git Worktrees", argv: ["worktree", "ls"])]),
+    CommandHelp(section: "Layout", usage: "layout ls|save NAME [--replace]|open NAME [--no-focus]",
+                summary: "launch configurations in ~/.config/umi/launch_configurations: list, save every window, open",
+                actions: [PaletteAction(title: "List Launch Configurations", argv: ["layout", "ls"]),
+                          PaletteAction(title: "Save New Launch Configuration…", argv: ["layout", "save"],
+                                        ask: [Ask(name: "NAME", prompt: "File name (e.g. work, saved as work.yaml)")])]),
 
     // Input and output
     CommandHelp(section: "Input and output", usage: "send [--pane P] [--enter|-e] TEXT…",

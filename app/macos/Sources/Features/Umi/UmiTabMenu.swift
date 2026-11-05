@@ -25,16 +25,12 @@ struct UmiTabMenuItem {
 ///
 /// Pin tab | New group with tab | Copy branch, Copy tab title, Copy working directory, Copy pull
 /// request link | Rename tab, Reset tab name, Rename active pane, Reset active pane name, Move Tab
-/// Down, Move Tab Up | Close tab, Close other tabs, Close Tabs Below | (Save as new config) |
+/// Down, Move Tab Up | Close tab, Close other tabs, Close Tabs Below | Save as New Config |
 /// color dots | Move Tab to New Window, Move Tab to Window ▸.
 @MainActor
 enum UmiTabMenu {
     /// Copies go here (tests point it at a private pasteboard).
     static var pasteboard: NSPasteboard = .general
-
-    /// Hook for items about saving the tab as a layout ("Save as new config", Warp's tab
-    /// configs): their own section, after the close items and before the colors.
-    static var configItems: (@MainActor (UmiTab, TerminalController) -> [UmiTabMenuItem])?
 
     static func items(for tab: UmiTab, in controller: TerminalController,
                       row: UmiSidebarRowModel? = nil) -> [UmiTabMenuItem] {
@@ -94,7 +90,16 @@ enum UmiTabMenu {
         }
         sections.append(close)
 
-        sections.append(configItems?(tab, controller) ?? [])
+        // Warp puts "Save as new config" between the close items and the colors (L-21). Greyed,
+        // not left out, when the tab has no terminal pane to save.
+        sections.append([.init(title: "Save as New Config",
+                               enabled: UmiLaunchConfigs.capture(tab: tab, in: controller) != nil) {
+            do {
+                try UmiLaunchConfigs.saveTab(tab, in: controller)
+            } catch {
+                NSSound.beep()
+            }
+        }])
 
         sections.append([colorRow(current: tab.color) { color in setColor(tab, color, in: controller) }])
 

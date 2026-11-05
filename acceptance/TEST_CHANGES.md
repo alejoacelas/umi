@@ -987,3 +987,40 @@ New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing tes
 - New Swift tests, `UmiMarkdownLinksTests`: bare URLs with trailing punctuation, unbalanced and
   balanced brackets, `www.`, escaping, and URLs in links, inline code and fenced blocks left alone;
   fenced blocks' language labels and kinds.
+## Added: launch configurations (L-21, 2026-11-05)
+
+- **New, `tests/test_umi_layouts.py`**: its own instance with a temporary `XDG_CONFIG_HOME`, so the
+  user's launch configurations are never read or written. `umi layout save` writes Warp's format and
+  `layout open` brings the windows, tabs, names, colors, folders, split direction and focused pane
+  back; a hand-written file (two windows, a three-pane vertical split, pane and tab commands, Warp's
+  `cyan`) opens as written and its commands run; a broken file is listed with its line and opens
+  nothing; the File menu items and ⌃⌘L; the palette lists configurations and opens the chosen one;
+  the row menu's "Save as New Config" sits where Warp has it, writes `my_tab_config.yaml` (then
+  `_1`) and opens it in the editor; ⌃⌘L through the app's key monitor from a terminal, the editor
+  and a palette; real key presses (UI, need an unlocked screen): ⌃⌘L then Return, and File ▸ Save New Launch
+  Configuration… through its dialog, including the duplicate-name message.
+- **New, `tests/test_umi_layouts.py`**: `test_a_file_with_several_documents_holds_several_configurations`
+  (each `---` document is a configuration, listed and opened by name; the file's name is then
+  ambiguous and says so; a broken second document is reported with its line in the file).
+- **New, `tests/test_umi_layouts.py`**: `test_saved_colors_use_warps_names_where_warp_has_them`
+  (purple, teal, graphite and pink tabs are saved as `magenta`, `cyan`, `white` and `pink`, and open
+  with their Umi colors again).
+- **New, `tests/test_umi_layouts.py`**: `test_command_palette_finds_launch_configurations_by_name`
+  (⌘P's list finds a configuration by name and opens it; unreadable files stay out of it).
+- **Changed, `tests/test_umi_layouts.py`**: `test_palette_lists_configurations_and_opens_the_chosen_one`
+  now asserts what the query returns: a query that matches nothing empties the list, and `alp`
+  ranks Alpha first (it sent the query without checking the result). The query also matches the
+  file paths shown under the entries, so a weaker match can stay below Alpha.
+- **Changed, `tests/test_umi_layouts.py`**: `test_save_new_launch_configuration_from_the_file_menu`
+  (UI, real keys) now also checks that the dialog shown again after a duplicate name has the name in
+  its focused field, that Cancel keeps the file, and that "Open YAML File" opens the saved file in
+  the editor. AXPress on that button reports a failure because the sheet is gone when it returns;
+  the test checks the editor instead of the code.
+- **New, `tests/test_umi_layouts.py`**: `test_file_menu_lists_each_launch_configuration_by_name`
+  (File ▸ Launch Configurations lists each readable configuration by name before the two items,
+  choosing one opens it, and the list follows the folder).
+- **New, `tests/test_umi_layouts.py`**: `test_save_captures_every_window_merges_rows_and_leaves_out_file_panes`
+  (two windows saved and read back as a structure: `active_window_index` from the current window,
+  `active_tab_index` counted among the saved tabs, a row nested in a row saved as one row, file
+  panes left out, a tab of only a file pane left out and its "Save as New Config" disabled) and
+  `test_layout_open_no_focus_keeps_the_users_focus_and_front_app` (L-8 for `layout open --no-focus`).

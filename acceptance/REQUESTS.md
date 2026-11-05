@@ -298,3 +298,7 @@ gestures are out.
 - The Markdown preview (SPEC MD-1 to MD-5, E-2): Warp's look, code blocks with highlighting, Copy
   and Run in terminal, Mermaid diagrams, find (⌘F ⌘G ⇧⌘G), Rendered / Raw with ⌘E, and Warp's
   right-click items in the preview.
+- Saved layouts (Warp's launch configurations; SPEC L-21): YAML files in
+  `~/.config/umi/launch_configurations`, ⌃⌘L to open one, File ▸ Save New Launch Configuration…,
+  "Save as New Config" in a sidebar row's right-click menu, `umi layout ls|save|open`. ⌃⌘T stays
+  Umi's Move Pane to New Tab, so Warp's tab-configs menu key isn't added.

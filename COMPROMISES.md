@@ -173,3 +173,15 @@ it is guidance"). What this design gives up:
 | **Run in terminal pastes into the tab's terminal used most recently**, without Warp's workflow features (argument fields, history). Without a terminal in the tab it says so. | Umi has no workflows; pasting is what puts text in zsh's input without running it. | MD-2. |
 | **The right-click menu shows no key labels** beside its split items (Warp shows its own keys). | Umi's split keys are Ghostty's configurable bindings; showing them would need reading them per menu. | MD-5. |
 | **Light backgrounds use Warp's Light theme colors** (terminal palette included), not the user's terminal palette. | The preview's palette is fixed per light or dark; Umi's own default theme is Warp's Dark. | MD-1, MD-2. |
+===================================================================================================
+
+# Compromises (Warp's launch configurations, 2026-11-05)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **Split sizes aren't saved**: a launch configuration's panes open in equal shares of their row or column. | Warp's format has no sizes, and Warp opens equal shares too; keeping sizes out keeps the files in Warp's format. | L-21 (Warp's format). |
+| **Only terminal panes are saved.** File and web panes, stacks' hidden members, pane names, pins and agent sessions shown in panes aren't in the file (an agent pane is saved as a terminal in its folder). | Warp saves only terminals; the format has no fields for the rest. | L-21 (Warp's format). |
+| **Warp's tab configs (⌃⌘T, TOML, parameters, worktree panes) aren't added.** "Save as New Config" in a row's menu writes a one-tab launch configuration instead of a tab config. | ⌃⌘T is Umi's Move Pane to New Tab, by the user's choice; one format for saved layouts is simpler. | L-21, the existing ⌃⌘T. |
+| **A tab colored pink or orange makes its saved file readable only by Umi.** Other colors are saved under Warp's names (purple as `magenta`, teal as `cyan`, graphite as `white`). | Warp's tab colors are the eight terminal colors and it skips a file with any other name; writing pink as `magenta` or orange as `red` would change the tab's color when Umi opens it again. | Umi's own tab colors surviving a save and open. |
+| **⌘Return in the launch configuration palette** (Warp: open into the current window) isn't there; Return always opens new windows. | Warp's Return opens new windows too, and ⌘Return is Ghostty's full-screen key. | ⌘Return as it is. |
+| **The YAML reader handles the block style Warp and people write**, plus one-line `[…]`/`{…}` and several documents in a file (each a configuration, as in Warp); anchors, aliases, tags and multi-line flow collections fail with the line they're on. | No YAML library is bundled; a small reader (`UmiYAML`) covers the format without a new dependency. | Licensing and build simplicity. |

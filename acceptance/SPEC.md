@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -369,6 +369,37 @@ the menu.
 
   ⇧⌘T is no longer a second Undo key. ⌘Z still undoes a close for Ghostty's `undo-timeout`.
 
+- **L-21 [A]** Launch configurations, as in Warp (Warp parity, 2026-11-05). Saved sets of windows,
+  tabs and split panes are YAML files in `~/.config/umi/launch_configurations`
+  (`$XDG_CONFIG_HOME/umi/…`), in Warp's format: `name`, `active_window_index`, `windows` with
+  `active_tab_index` and `tabs`; a tab's `title`, `color` and `layout`; a layout is a pane (`cwd`,
+  `commands` as `- exec: COMMAND`, `is_focused`) or a split (`split_direction: horizontal` for side
+  by side, `vertical` for one above the other, and its `panes`, any number, in equal shares). A
+  tab's own `commands` go to its focused pane, else its first. Colors are Umi's tab colors, or
+  Warp's `magenta`, `cyan`, `black` and `white` (purple, teal, graphite, graphite). Saving writes
+  Warp's names where Warp has the color (purple as `magenta`, teal as `cyan`, graphite as `white`),
+  so Warp can read the file; pink and orange keep Umi's names. Warp requires `name`;
+  Umi also reads a file without one and names it after the file (`my_work.yaml` → "My Work", the
+  rule Warp uses for the names it saves under), and always writes `name`. A file can hold several
+  configurations as YAML documents separated by `---`, as in Warp; each is listed and opened on its
+  own.
+  - File ▸ Launch Configurations lists them by name, as Warp's File menu does (choosing one opens
+    it), then Open Launch Configuration… and Save New Launch Configuration….
+  - ⌃⌘L (File ▸ Launch Configurations ▸ Open Launch Configuration…) lists them by name in the palette, with how many
+    windows and tabs each opens; Return opens the chosen one: each window as a new window, the
+    active one in front, with its tabs' titles, colors and selected tab, its panes in their folders
+    and the focused pane focused. Each pane's commands are typed into its shell as it starts.
+  - The command palette (⌘P) lists them by name too, as Warp's does; Return opens the chosen one.
+  - File ▸ Launch Configurations ▸ Save New Launch Configuration… asks for a file name (`work` saves `work.yaml`) and saves
+    every window: tabs with their names and colors, terminal panes with their folders, the focused
+    pane and selected tab. File and web panes are left out, as Warp leaves out panes that aren't
+    terminals. A name already used fails and says so, keeping the file.
+  - A sidebar row's menu has "Save as New Config" where Warp has it (after the close items, before
+    the colors): it saves that tab as `my_tab_config.yaml` (`my_tab_config_1.yaml`, … when taken)
+    and opens the file in the editor.
+  - `<cli> layout ls`, `layout save NAME [--replace]` and `layout open NAME` do the same from the
+    CLI (CLI.md). A file that can't be read is listed with the reason and its line; opening it
+    fails with them and opens nothing.
 - **L-31 [A]** (Warp parity, 2026-11-05) The terminal's right-click menu has Warp's items, in Warp's
   order, each showing its key: Copy (when text is selected), Paste (disabled with nothing to
   paste) and Clear (⌘K) (neither when text is selected or a program's full-screen view, as vim's

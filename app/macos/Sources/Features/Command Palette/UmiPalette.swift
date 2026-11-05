@@ -14,8 +14,8 @@ import SwiftUI
 @MainActor
 final class UmiPaletteModel: ObservableObject {
     /// The palette's source: everything (`commands`) or one of Warp's query filters.
-    /// `panes` is Warp's "sessions" filter.
-    enum Mode: String, CaseIterable { case commands, actions, panes, files, tabs, conversations }
+    /// `panes` is Warp's "sessions" filter; `launchConfigs` is ⌃⌘L's list (L-21).
+    enum Mode: String, CaseIterable { case commands, actions, panes, files, tabs, conversations, launchConfigs = "launch_configs" }
     enum Step: Equatable { case list, ask, running, output }
 
     @Published private(set) var isPresented = false
@@ -237,7 +237,8 @@ final class UmiPaletteModel: ObservableObject {
 
     /// Backspace with the palette's empty query focused, under a filter.
     private func removesFilter(on event: NSEvent) -> Bool {
-        guard isPresented, step == .list, mode != .commands, query.isEmpty, event.keyCode == 51,
+        // ⌃⌘L's list (launch configurations) has no filter word to remove.
+        guard isPresented, step == .list, mode != .commands, mode.filterWord != nil, query.isEmpty, event.keyCode == 51,
               event.modifierFlags.isDisjoint(with: [.command, .control, .option]),
               let nsWindow = window?.window, event.window === nsWindow,
               let editor = nsWindow.firstResponder as? NSTextView, editor.isFieldEditor else { return false }
@@ -256,6 +257,7 @@ final class UmiPaletteModel: ObservableObject {
         case .files: startFiles()
         case .tabs: base = tabEntries()
         case .conversations: base = conversationEntries()
+        case .launchConfigs: base = launchConfigEntries()
         }
     }
 
@@ -282,6 +284,8 @@ final class UmiPaletteModel: ObservableObject {
                     startFiles()
                     appendFiles()
                 }
+            case .launchConfigs:
+                entries = rank(base, query: query, keepOrder: false)
             case .files:
                 refreshFiles()
             case .panes, .tabs, .conversations:
@@ -403,7 +407,8 @@ final class UmiPaletteModel: ObservableObject {
             })
         }
         var titles = Set(out.map(\.title))
-        return out + ghostty.filter { titles.insert($0.title).inserted }
+        // Launch configurations by name, as in Warp's command palette (L-21).
+        return out + ghostty.filter { titles.insert($0.title).inserted } + launchConfigEntries(inCommands: true)
     }
 
     /// Every managed session can be shown (again) from the palette (AP-3, AP-4), the ones that
@@ -622,6 +627,37 @@ final class UmiPaletteModel: ObservableObject {
         let home = NSHomeDirectory()
         if path == home { return "~" }
         return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
+    }
+
+    // MARK: Launch configurations (⌃⌘L, L-21)
+
+    /// The launch configurations; `inCommands` (⌘P's list) leaves out files that can't be read and
+    /// says what each entry is.
+    private func launchConfigEntries(inCommands: Bool = false) -> [UmiPaletteEntry] {
+        UmiLaunchConfigs.list().filter { !inCommands || $0.config != nil }.map { item in
+            let file = Self.abbreviate(item.path)
+            guard let config = item.config else {
+                return UmiPaletteEntry(id: "launch:" + item.path, title: (item.path as NSString).lastPathComponent,
+                                        subtitle: item.error ?? file, icon: "exclamationmark.triangle", value: item.path,
+                                        kind: .action) { [weak self] in
+                    self?.close(restoreFocus: false)
+                    _ = UmiEditor.openFromSystem(URL(fileURLWithPath: item.path), inCurrentTab: true)
+                }
+            }
+            let windows = config.windows.count == 1 ? "1 window" : "\(config.windows.count) windows"
+            let tabs = config.tabCount == 1 ? "1 tab" : "\(config.tabCount) tabs"
+            let what = inCommands ? "Launch configuration · " : ""
+            return UmiPaletteEntry(id: "launch:" + item.id, title: config.name, subtitle: "\(what)\(windows) · \(tabs)  ·  \(file)",
+                                    icon: "rectangle.3.group", keywords: (item.path as NSString).lastPathComponent,
+                                    value: item.path, kind: .action) { [weak self] in
+                self?.close(restoreFocus: false)
+                do {
+                    try UmiLaunchConfigs.open(config)
+                } catch {
+                    NSSound.beep()
+                }
+            }
+        }
     }
 
     // MARK: Files
@@ -885,13 +921,14 @@ extension UmiPaletteModel.Mode {
         case .files: return "files:"
         case .tabs: return "tabs:"
         case .conversations: return "conversations:"
+        case .launchConfigs: return nil
         }
     }
 
     /// The filter chip's title in the empty palette.
     var chipTitle: String? {
         switch self {
-        case .commands, .tabs: return nil
+        case .commands, .tabs, .launchConfigs: return nil
         case .actions: return "actions"
         case .panes: return "sessions"
         case .files: return "files"
@@ -903,7 +940,7 @@ extension UmiPaletteModel.Mode {
     /// Warp's actions chip has none).
     var chipSymbol: String? {
         switch self {
-        case .commands, .actions: return nil
+        case .commands, .actions, .launchConfigs: return nil
         case .tabs, .panes: return "terminal"
         case .files: return "doc"
         case .conversations: return "bubble.left"
@@ -919,6 +956,7 @@ extension UmiPaletteModel.Mode {
         case .files: return "Search files"
         case .tabs: return "Search tabs"
         case .conversations: return "Search conversations"
+        case .launchConfigs: return "Search launch configurations"
         }
     }
 }
