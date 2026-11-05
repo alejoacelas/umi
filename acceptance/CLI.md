@@ -61,9 +61,9 @@ present. Extra fields are fine.
 | `reopen [--list]` | reopens the last closed pane, tab or window (closed in the last 60 s); prints the pane's id (the window's for a window); JSON `{"kind": "pane"\|"tab"\|"window", "pane"?, "tab", "window"}`; exit 1 when there's nothing to reopen. `--list`: JSON `{"items": [{"kind", "closed_at", "expires_in", "panes": [id], "tab"?, "title"?, "tabs"?}]}`, most recent first |
 | `screenshot [--window W] OUT.png` | an image of the window, terminal contents included |
 | `worktree ls` | |
-| `layout ls` | launch configurations (SPEC L-21) in `$XDG_CONFIG_HOME/umi/launch_configurations` (default `~/.config/umi/…`), by name; JSON `{"directory", "configs": [{"name", "file", "path", "windows", "tabs"} or {"file", "path", "error"}]}` (a file that can't be read has `error`, with the line) |
+| `layout ls` | launch configurations (SPEC L-21) in `$XDG_CONFIG_HOME/umi/launch_configurations` (default `~/.config/umi/…`), by name; one per YAML document, so a file with several documents (separated by `---`) lists several; JSON `{"directory", "configs": [{"name", "file", "path", "document", "windows", "tabs"} or {"file", "path", "document", "error"}]}` (`document` counts from 0; a file that can't be read is listed once, with `error` and the line) |
 | `layout save NAME [--replace]` | saves every window as `NAME.yaml` (unless NAME ends in `.yaml`/`.yml`), named after the file (`my_work` → "My Work"); prints the path; JSON `{"path", "name", "windows", "tabs"}`; fails when the file exists, unless `--replace` |
-| `layout open NAME [--no-focus]` | NAME is a configuration's name or file name (case doesn't matter); opens each of its windows as a new window, the active one in front; prints the windows' ids; JSON `{"name", "windows": [id], "panes": [id]}` |
+| `layout open NAME [--no-focus]` | NAME is a configuration's name or file name (case doesn't matter; a file holding several configurations fails and lists their names); opens each of its windows as a new window, the active one in front; prints the windows' ids; JSON `{"name", "windows": [id], "panes": [id]}` |
 
 Objects in JSON:
 - **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab]}`

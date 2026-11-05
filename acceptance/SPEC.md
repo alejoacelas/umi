@@ -337,7 +337,9 @@ the menu.
   by side, `vertical` for one above the other, and its `panes`, any number, in equal shares). A
   tab's own `commands` go to its focused pane, else its first. Colors are Umi's tab colors, or
   Warp's `magenta`, `cyan`, `black` and `white` (purple, teal, graphite, graphite). A file without a
-  `name` is named after the file (`my_work.yaml` → "My Work").
+  `name` is named after the file (`my_work.yaml` → "My Work"). A file can hold several
+  configurations as YAML documents separated by `---`, as in Warp; each is listed and opened on its
+  own.
   - ⌃⌘L (File ▸ Open Launch Configuration…) lists them by name in the palette, with how many
     windows and tabs each opens; Return opens the chosen one: each window as a new window, the
     active one in front, with its tabs' titles, colors and selected tab, its panes in their folders

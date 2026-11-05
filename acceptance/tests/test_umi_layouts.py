@@ -246,6 +246,44 @@ def test_a_broken_file_is_reported_with_its_line(clean):
     assert inst.tree()["windows"] == [], "nothing opened"
 
 
+@pytest.mark.req("L-21")
+def test_a_file_with_several_documents_holds_several_configurations(clean, tmp_path):
+    """As in Warp, each YAML document (separated by `---`) is a configuration of its own."""
+    inst = clean
+    a, b = folders(tmp_path, "doc-a", "doc-b")
+    write_config(inst, "both.yaml", f"""\
+---
+name: First Doc
+windows:
+  - tabs:
+      - title: tab-of-first
+        layout:
+          cwd: {a}
+---
+# the second one
+name: Second Doc
+windows:
+  - tabs:
+      - title: tab-of-second
+        layout:
+          cwd: {b}
+""")
+    listed = inst.json("layout", "ls")["configs"]
+    assert [(x["name"], x["file"], x["document"]) for x in listed] == \
+        [("First Doc", "both.yaml", 0), ("Second Doc", "both.yaml", 1)], listed
+    opened = inst.json("layout", "open", "second doc")
+    tabs = [t for w in inst.tree()["windows"] if w["id"] in opened["windows"] for t in w["tabs"]]
+    assert [t.get("name") for t in tabs] == ["tab-of-second"], tabs
+    wait_cwd(inst, tabs[0]["panes"][0]["id"], b)
+    # The file's name is ambiguous then: it says which names to use.
+    ambiguous = inst.cli("layout", "open", "both", check=False)
+    assert ambiguous.returncode != 0 and "First Doc, Second Doc" in ambiguous.stderr, ambiguous
+    # A broken second document is reported with its line, counted in the whole file.
+    write_config(inst, "both.yaml", "name: One\nwindows: []\n---\nname: Two\nwindows:\n  - tabs: 3\n    oops\n")
+    listed = {x["file"]: x for x in inst.json("layout", "ls")["configs"]}
+    assert "line 7" in listed["both.yaml"]["error"], listed
+
+
 # ---- the palette, the menus and the sidebar row's menu ------------------------------------------------
 
 @pytest.mark.req("L-21", "L-9")

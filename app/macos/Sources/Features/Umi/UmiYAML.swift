@@ -3,8 +3,9 @@ import Foundation
 /// A small YAML reader and writer, enough for launch configurations (`UmiLaunchConfigs`):
 /// block mappings and sequences (indented or not under their key), plain, single- and
 /// double-quoted scalars, `|` and `>` block scalars, one-line flow collections (`[a, b]`,
-/// `{k: v}`) and comments. Anchors, aliases, tags, multi-line flow collections and several
-/// documents in one file aren't supported; they fail with the line they're on.
+/// `{k: v}`), comments, and several documents in one file separated by `---` (`documents`).
+/// Anchors, aliases, tags and multi-line flow collections aren't supported; they fail with the
+/// line they're on.
 ///
 /// Parsed values are `[String: Any]`, `[Any]`, `String`, `Int`, `Double`, `Bool` or `NSNull`.
 enum UmiYAML {
@@ -14,9 +15,17 @@ enum UmiYAML {
         var description: String { "line \(line): \(message)" }
     }
 
-    static func parse(_ text: String) throws -> Any {
+    /// Every document in a file, in order: each `---` after content starts a new one, as in
+    /// YAML streams. Empty documents (a leading `---`, a trailing one) are left out; a file with
+    /// no content is one null document.
+    static func documents(_ text: String) throws -> [Any] {
         var parser = Parser(text: text)
-        return try parser.document()
+        var out: [Any] = []
+        repeat {
+            let value = try parser.document()
+            if !(value is NSNull) { out.append(value) }
+        } while parser.startNextDocument()
+        return out.isEmpty ? [NSNull()] : out
     }
 
     // MARK: Reading
@@ -32,6 +41,9 @@ enum UmiYAML {
         var index = 0
         /// The rest of a `- ` line, read as a line of its own at the column it starts at.
         var pending: Line?
+        /// Whether the current document has content yet: a `---` before content is a header, after
+        /// it the start of the next document.
+        var started = false
 
         init(text: String) {
             raw = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
@@ -54,6 +66,7 @@ enum UmiYAML {
                 let indent = line.prefix { $0 == " " }.count
                 let body = Self.stripComment(String(line.dropFirst(indent)))
                 let text = body.trimmingCharacters(in: .whitespaces)
+                if indent == 0 && (text == "---" || text == "...") && started { return nil }
                 if text.isEmpty || text == "---" || text == "..." || (indent == 0 && text.hasPrefix("%")) {
                     index += 1
                     continue
@@ -70,7 +83,16 @@ enum UmiYAML {
         }
 
         mutating func consume() {
+            started = true
             if pending != nil { pending = nil } else { index += 1 }
+        }
+
+        /// Move past the `---` (or `...`) that ends the current document. False at the end of the file.
+        mutating func startNextDocument() -> Bool {
+            guard pending == nil, index < raw.count else { return false }
+            index += 1
+            started = false
+            return true
         }
 
         static func isSequenceItem(_ text: String) -> Bool { text == "-" || text.hasPrefix("- ") }

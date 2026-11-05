@@ -67,23 +67,28 @@ enum UmiLaunchConfigs {
 
     struct Listed {
         let path: String
+        /// Which document of the file it is (0 for the first); a file can hold several, as in Warp.
+        var document = 0
         let config: Config?
         let error: String?
+
+        var id: String { document == 0 ? path : "\(path)#\(document)" }
     }
 
-    /// Every file in the folder, by name; a file that can't be read is listed with its error.
+    /// Every configuration in the folder, by name: one per document of each file. A file that
+    /// can't be read is listed once, with its error.
     static func list() -> [Listed] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(atPath: directory) else { return [] }
         return files.filter { file in fileSuffixes.contains { file.lowercased().hasSuffix($0) } }
             .map { directory + "/" + $0 }
-            .map { path -> Listed in
+            .flatMap { path -> [Listed] in
                 do {
-                    return Listed(path: path, config: try load(path), error: nil)
+                    return try load(path).enumerated().map { Listed(path: path, document: $0, config: $1, error: nil) }
                 } catch let error as UmiError {
-                    return Listed(path: path, config: nil, error: error.message)
+                    return [Listed(path: path, config: nil, error: error.message)]
                 } catch {
-                    return Listed(path: path, config: nil, error: "\(error)")
+                    return [Listed(path: path, config: nil, error: "\(error)")]
                 }
             }
             .sorted {
@@ -93,16 +98,22 @@ enum UmiLaunchConfigs {
             }
     }
 
-    /// The configuration whose name or file name is `query` (case doesn't matter).
+    /// The configuration whose name is `query`, else the one in the file named `query` (case
+    /// doesn't matter). A file holding several configurations is opened by their names.
     static func find(_ query: String) throws -> Config {
         let wanted = query.trimmingCharacters(in: .whitespaces).lowercased()
         let all = list()
-        func matches(_ item: Listed) -> Bool {
+        func fileMatches(_ item: Listed) -> Bool {
             let file = (item.path as NSString).lastPathComponent.lowercased()
-            let stem = stripSuffix(file)
-            return item.config?.name.lowercased() == wanted || file == wanted || stem == wanted
+            return file == wanted || stripSuffix(file) == wanted
         }
-        guard let item = all.first(where: matches) else {
+        let byName = all.first { $0.config?.name.lowercased() == wanted }
+        let inFile = all.filter(fileMatches)
+        if byName == nil, inFile.count > 1 {
+            throw UmiError.badRequest("\(abbreviate(inFile[0].path)) holds several launch configurations; open one by name: "
+                                      + inFile.compactMap { $0.config?.name }.joined(separator: ", "))
+        }
+        guard let item = byName ?? inFile.first else {
             let names = all.compactMap { $0.config?.name }
             throw UmiError.notFound("no launch configuration \"\(query)\" in \(abbreviate(directory))"
                                     + (names.isEmpty ? "" : " (there are: \(names.joined(separator: ", ")))"))
@@ -113,24 +124,28 @@ enum UmiLaunchConfigs {
 
     // MARK: Reading
 
-    static func load(_ path: String) throws -> Config {
+    /// The configurations in a file: one per YAML document (Warp reads every document of a file).
+    static func load(_ path: String) throws -> [Config] {
         let file = (path as NSString).lastPathComponent
         guard let data = FileManager.default.contents(atPath: path), let text = String(data: data, encoding: .utf8) else {
             throw UmiError.failed("\(file): couldn't read the file")
         }
-        let parsed: Any
+        let documents: [Any]
         do {
-            parsed = try UmiYAML.parse(text)
+            documents = try UmiYAML.documents(text)
         } catch let error as UmiYAML.ParseError {
             throw UmiError.badRequest("\(file): \(error)")
         }
-        var config = try decode(parsed, file: file)
-        config.path = path
-        return config
+        return try documents.enumerated().map { n, parsed in
+            var config = try decode(parsed, file: file, document: documents.count > 1 ? n + 1 : nil)
+            config.path = path
+            return config
+        }
     }
 
-    static func decode(_ parsed: Any, file: String) throws -> Config {
-        func fail(_ message: String) -> UmiError { UmiError.badRequest("\(file): \(message)") }
+    static func decode(_ parsed: Any, file: String, document: Int? = nil) throws -> Config {
+        let place = document.map { "\(file), document \($0)" } ?? file
+        func fail(_ message: String) -> UmiError { UmiError.badRequest("\(place): \(message)") }
         guard let root = parsed as? [String: Any] else { throw fail("expected `name:` and `windows:` at the top") }
         let name = text(root["name"]) ?? humanName(file)
         guard let windowsJSON = root["windows"] as? [Any] else { throw fail("there's no `windows:` list") }
@@ -481,7 +496,8 @@ enum UmiLaunchConfigs {
         switch method {
         case "layout.ls":
             return ["directory": directory, "configs": list().map { item -> [String: Any] in
-                var out: [String: Any] = ["path": item.path, "file": (item.path as NSString).lastPathComponent]
+                var out: [String: Any] = ["path": item.path, "file": (item.path as NSString).lastPathComponent,
+                                          "document": item.document]
                 if let config = item.config {
                     out["name"] = config.name
                     out["windows"] = config.windows.count

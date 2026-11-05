@@ -702,3 +702,6 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
   `_1`) and opens it in the editor; ⌃⌘L through the app's key monitor from a terminal, the editor
   and a palette; real key presses (UI, need an unlocked screen): ⌃⌘L then Return, and File ▸ Save New Launch
   Configuration… through its dialog, including the duplicate-name message.
+- **New, `tests/test_umi_layouts.py`**: `test_a_file_with_several_documents_holds_several_configurations`
+  (each `---` document is a configuration, listed and opened by name; the file's name is then
+  ambiguous and says so; a broken second document is reported with its line in the file).

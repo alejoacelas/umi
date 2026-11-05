@@ -406,7 +406,7 @@ final class UmiPaletteModel: ObservableObject {
             }
             let windows = config.windows.count == 1 ? "1 window" : "\(config.windows.count) windows"
             let tabs = config.tabCount == 1 ? "1 tab" : "\(config.tabCount) tabs"
-            return UmiPaletteEntry(id: "launch:" + item.path, title: config.name, subtitle: "\(windows) · \(tabs)  ·  \(file)",
+            return UmiPaletteEntry(id: "launch:" + item.id, title: config.name, subtitle: "\(windows) · \(tabs)  ·  \(file)",
                                     icon: "rectangle.3.group", keywords: (item.path as NSString).lastPathComponent,
                                     value: item.path, kind: .action) { [weak self] in
                 self?.close(restoreFocus: false)
