@@ -235,13 +235,15 @@ final class UmiClosureMenuItem: NSMenuItem {
 
     init(title: String, action run: (@MainActor () -> Void)?) {
         self.run = run
-        super.init(title: title, action: run == nil ? nil : #selector(perform(_:)), keyEquivalent: "")
+        super.init(title: title, action: run == nil ? nil : #selector(runClosure(_:)), keyEquivalent: "")
         target = self
     }
 
     required init(coder: NSCoder) { fatalError("not used") }
 
-    @MainActor @objc private func perform(_ sender: Any?) { run?() }
+    // Not `perform(_:)`: that is NSObject's performSelector: in Objective-C, which the menu
+    // would call with the item as the selector.
+    @MainActor @objc private func runClosure(_ sender: Any?) { run?() }
 }
 
 /// Warp's tab color picker: 16 pt dots spread across the menu's width, the current one ringed

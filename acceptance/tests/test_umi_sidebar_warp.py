@@ -967,3 +967,18 @@ def test_move_tab_keys_keep_groups_whole_ui(inst, win, ui):
     assert order() == [t1, t4, t2, t3]
     press(ui, "right", "ctrl", "shift")
     wait_until(lambda: order() == [t1, t2, t3, t4], 3, message="⌃⇧→ hopped back below it")
+
+
+@pytest.mark.req("S-4")
+def test_an_item_clicked_in_the_row_menu_runs_ui(inst, win, ui):
+    """A real click on a row menu item (an AppKit item whose action is a closure) does what it says."""
+    from test_umi_panes_ui import _frame, _right_click, _row_element
+    _, tab = new_tab(inst, win, "--name", "click-pin")
+    front(inst, win, ui, win["pane"])
+    element = wait_until(lambda: _row_element(ui, "click-pin"), 5, message="the row")
+    _right_click(_frame(ui, element))
+    item = wait_until(lambda: ui.find(lambda e: ui.role(e) == "AXMenuItem" and ui.label(e) == "Pin tab"), 3,
+                      message="Pin tab in the open menu")
+    click(_frame(ui, item))
+    wait_until(lambda: tab_of(inst, tab).get("pinned") is True, 3, message="clicking Pin tab pinned the tab")
+    inst.cli("tab", "unpin", tab)
