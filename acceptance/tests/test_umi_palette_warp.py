@@ -117,6 +117,19 @@ def test_the_unfiltered_palette_mixes_actions_sessions_and_files(inst, win, tmp_
         close(inst, win)
 
 
+@pytest.mark.req("L-14")
+def test_the_empty_palette_indexes_no_files_until_a_query(inst, win, tmp_path):
+    repo_pane(inst, win, tmp_path)
+    try:
+        rpc(inst, "debug.palette", window=win["window"], mode="commands")
+        assert not state(inst, win)["files_index"], "⌘P alone lists no files, so it doesn't index them"
+        rpc(inst, "debug.palette", window=win["window"], mode="commands", query="pars")
+        assert state(inst, win)["files_index"]
+        wait_until(lambda: any(r["kind"] == "file" for r in state(inst, win)["rows"]), 10, message="files found")
+    finally:
+        close(inst, win)
+
+
 # ---- the empty palette ------------------------------------------------------------------------------
 
 @pytest.mark.req("L-14")

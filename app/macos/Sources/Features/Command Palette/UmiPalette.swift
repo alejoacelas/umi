@@ -224,8 +224,8 @@ final class UmiPaletteModel: ObservableObject {
     private func buildBase() {
         switch mode {
         case .commands:
+            // Files are indexed once there's a query (see refresh): the empty palette shows none.
             base = commandEntries() + conversationEntries() + paneEntries()
-            startFiles()
         case .actions: base = commandEntries()
         case .panes: base = paneEntries()
         case .files: startFiles()
@@ -253,7 +253,10 @@ final class UmiPaletteModel: ObservableObject {
                 var ranked = Array(rank(base, query: query, keepOrder: false).prefix(Self.resultLimit))
                 if let run = freeRunEntry() { ranked.insert(run, at: 0) }
                 entries = ranked
-                if mode == .commands { appendFiles() }
+                if mode == .commands {
+                    startFiles()
+                    appendFiles()
+                }
             case .files:
                 refreshFiles()
             case .panes, .tabs, .conversations:
@@ -764,7 +767,7 @@ final class UmiPaletteModel: ObservableObject {
             selection = selection + delta < 0 ? -1 : min(selection + delta, entries.count - 1)
             return
         }
-        selection =((selection + delta) % entries.count + entries.count) % entries.count
+        selection = ((selection + delta) % entries.count + entries.count) % entries.count
     }
 
     var placeholder: String {
@@ -836,7 +839,7 @@ final class UmiPaletteModel: ObservableObject {
                                   "entries": entries.map(\.title), "output": output?.text ?? "",
                                   "query": query, "filter": mode.filterWord ?? "", "selection": selection,
                                   "zero_state": isZeroState, "placeholder": placeholder,
-                                  "rows": entries.map(\.json)]
+                                  "rows": entries.map(\.json), "files_index": files != nil]
         if isZeroState { out["chips"] = Self.chips.compactMap(\.chipTitle) }
         return out
     }
