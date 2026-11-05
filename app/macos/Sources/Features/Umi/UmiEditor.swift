@@ -611,6 +611,22 @@ enum UmiEditor {
         return doc.code
     }
 
+    /// Run `body` on the focused file pane's source view. Find works on the text, so in a preview
+    /// (rendered Markdown, JSON, CSV) ⌘F, ⌘G and ⇧⌘G switch the pane to its source first (E-22).
+    static func inSource(_ body: @escaping (UmiCodeEditor) -> Void) {
+        guard let doc = currentDocument else { return }
+        if doc.mode == .source, let code = doc.code { return body(code) }
+        let stale = doc.code
+        doc.mode = .source
+        // The source view is built on SwiftUI's next pass.
+        func attempt(_ left: Int) {
+            if doc.mode == .source, let code = doc.code, code !== stale, code.textView?.window != nil { return body(code) }
+            guard left > 0 else { return NSSound.beep() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { MainActor.assumeIsolated { attempt(left - 1) } }
+        }
+        attempt(50)
+    }
+
     /// True when keyboard focus is in an editor view.
     static var editorHasFocus: Bool {
         guard let responder = NSApp.keyWindow?.firstResponder as? NSView else { return false }
