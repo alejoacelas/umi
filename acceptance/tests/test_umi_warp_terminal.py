@@ -73,8 +73,8 @@ def test_selection_is_warps_blue_over_the_text_which_keeps_its_colors(inst, win,
     pane = win["pane"]
     active(inst, pane)
     block = cat_file(inst, pane, tmp_path, "red", b"\x1b[31m" + b"R" * 30 + b"\x1b[0m\n")
-    # ⌘A (Ghostty's select_all), delivered inside the app.
-    inst.rpc("debug.key", window=win["window"], keys="cmd+a")
+    # Ghostty's select_all (⌘A), run on the pane wherever focus is.
+    assert inst.rpc("debug.terminal.action", pane=pane, action="select_all")["ok"]
     wait_until(lambda: "R" * 30 in (inst.rpc("debug.selection", pane=pane).get("text") or ""), 5, message="a selection")
     time.sleep(0.5)
     shot = Shot(inst, win, tmp_path / "selected.png")

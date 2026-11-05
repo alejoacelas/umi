@@ -404,6 +404,13 @@ enum UmiRPC {
             // with the scrollbar and the bell's effects.
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
             return UmiInput.blocks(pane).merging(UmiScroller.debugInfo(pane)) { _, new in new }
+        case "debug.terminal.action":
+            // Run a Ghostty binding action (such as `select_all`) on a pane, wherever focus is.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            guard let action = params.string("action"), let surface = pane.surface else {
+                throw UmiError.badRequest("give a pane and an action")
+            }
+            return ["ok": ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))]
         case "debug.selection":
             // The text the user selected in a pane (no clipboard involved).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)

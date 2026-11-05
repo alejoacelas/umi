@@ -710,6 +710,6 @@ S-12.
   inherited `(.venv) user@host:` from the test runner, which a window opened from the Dock never has.
   No assertion changed.
 - **Test hook, `debug.terminal`**: `debug.blocks`' report plus the scrollbar (`scroller`) and the
-  bell's effects (`bell`). `debug.blocks` now also reports each block's `header_line` (the whole
+  bell's effects (`bell`); `debug.terminal.action` runs a Ghostty binding action (`select_all`) on a pane. `debug.blocks` now also reports each block's `header_line` (the whole
   header; `header` stays the folder alone), the padding's four sides, the font's name and size, the
   cursor's size in points and the active screen.
