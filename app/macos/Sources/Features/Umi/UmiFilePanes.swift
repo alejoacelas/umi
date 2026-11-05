@@ -164,6 +164,10 @@ final class UmiFilePanes: ObservableObject {
     /// Keyboard focus for a file pane goes to its editor.
     func focusEditor(of pane: Ghostty.SurfaceView) {
         guard entries[pane.id] != nil, let target = focusTargets[pane.id]?.value, let window = target.window else { return }
+        // Focus already in this editor (its find bar or go-to box) stays there.
+        var container = target.superview
+        while let view = container, !(view is UmiEditorContainerView) { container = view.superview }
+        if let container, let current = window.firstResponder as? NSView, current.isDescendant(of: container) { return }
         if window.firstResponder !== target { window.makeFirstResponder(target) }
     }
 
