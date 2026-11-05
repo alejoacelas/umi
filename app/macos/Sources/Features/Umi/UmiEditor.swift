@@ -1277,6 +1277,20 @@ final class UmiEditorTextView: NSTextView {
         MainActor.assumeIsolated { code?.drawCurrentLine(in: rect) }
     }
 
+    /// Right-click in code: Cut, Copy and Paste only. Warp's menu here (Go to definition, Find
+    /// references) needs a language server; AppKit's full text menu would let Substitutions turn
+    /// smart quotes back on in code.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard code != nil else { return super.menu(for: event) }
+        let menu = NSMenu()
+        for (title, action) in [("Cut", #selector(cut(_:))), ("Copy", #selector(copy(_:))), ("Paste", #selector(paste(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        return menu
+    }
+
     /// Esc closes the find bar or the go-to box; otherwise it does nothing (no completion list).
     override func cancelOperation(_ sender: Any?) {
         let handled = MainActor.assumeIsolated { code?.escape() ?? false }
