@@ -213,6 +213,7 @@ class TerminalController: BaseTerminalController {
         if focus, let target, window?.isKeyWindow ?? false {
             UmiLayout.moveFocus(to: target, in: self)
         }
+        UmiTabSwitchCue.play(in: self)
         UmiLooking.focusChanged(in: self)
         UmiEvents.shared.emit("tab.selected", ["tab": tab.idString, "window": umiIDString])
         UmiState.shared.layoutDidChange()

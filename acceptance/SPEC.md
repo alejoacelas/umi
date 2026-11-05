@@ -239,6 +239,9 @@ the menu.
     prev`) to the previous one; both wrap around. Pressed several times in a row they walk down
     (or up) the list, which stays as it is (S-7).
   - ⌘1–⌘8 show the Nth tab of the window and ⌘9 its last tab.
+  - Showing another tab fades its panes in from the window's background (about 140 ms, none with
+    Reduce Motion), so a tab switch looks different from a window switch, which stays as macOS
+    draws it. The fade never holds up typing or clicks.
 
 - **L-12 [A+W]** ⌃⌘J (`<cli> jump`) goes to the next session that needs the user: sessions that
   need input first, then sessions that finished while the user wasn't looking, oldest first. A
