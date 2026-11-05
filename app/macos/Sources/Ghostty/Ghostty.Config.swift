@@ -64,7 +64,7 @@ extension Ghostty {
                 return nil
             }
 
-            // Umi: our defaults load first so the user's Ghostty config overrides them.
+            // Umi: our defaults load first so the user's Umi config overrides them.
             if path == nil, let defaults = UmiTheme.defaultsConfigPath() {
                 ghostty_config_load_file(cfg, defaults)
             }
@@ -73,9 +73,8 @@ extension Ghostty {
             if let path {
                 ghostty_config_load_file(cfg, path)
             } else {
-                ghostty_config_load_default_files(cfg)
-                // Umi: settings only Umi reads (a custom icon, say), after the user's Ghostty
-                // config and before the command line's.
+                // Umi: the user's settings come from Umi's own config file only; Ghostty's
+                // config files belong to the Ghostty app and Umi never reads them.
                 if FileManager.default.fileExists(atPath: UmiPaths.userConfigFile) {
                     ghostty_config_load_file(cfg, UmiPaths.userConfigFile)
                 }

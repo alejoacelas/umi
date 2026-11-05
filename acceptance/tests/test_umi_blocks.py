@@ -508,7 +508,7 @@ def test_the_top_padding_extends_again_once_the_view_fills(fresh, tmp_path):
     """Review round 9: with `window-padding-color = extend-always`, the top padding stopped taking the
     first row's background while the view was moved down, and didn't again once output filled the pane
     without scrolling (a redraw of some rows only)."""
-    config = tmp_path / "xdg" / "ghostty"
+    config = tmp_path / "xdg" / "umi"
     config.mkdir(parents=True)
     (config / "config").write_text("window-padding-color = extend-always\nwindow-padding-y = 30\n")
     other = fresh(prefix="acc-extend-", env={"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
@@ -541,9 +541,9 @@ def test_the_top_padding_extends_again_once_the_view_fills(fresh, tmp_path):
 
 @pytest.mark.req("S-12")
 def test_it_can_be_turned_off(fresh, tmp_path):
-    """`shell-integration-features = no-umi-blocks` in the user's Ghostty config: zsh's own prompt, at the
+    """`shell-integration-features = no-umi-blocks` in the user's Umi config: zsh's own prompt, at the
     top, no blocks."""
-    config = tmp_path / "xdg" / "ghostty"
+    config = tmp_path / "xdg" / "umi"
     config.mkdir(parents=True)
     (config / "config").write_text("shell-integration-features = no-umi-blocks\n")
     other = fresh(prefix="acc-noblocks-", env={"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
@@ -560,7 +560,7 @@ def test_it_can_be_turned_off(fresh, tmp_path):
 def test_zsh_integration_sourced_by_hand_gets_the_look(fresh, tmp_path):
     """Review round 3: with `shell-integration = none`, sourcing Ghostty's zsh integration by hand (as its
     documentation describes) printed Umi's block prompt but the terminal never drew the blocks."""
-    config = tmp_path / "xdg" / "ghostty"
+    config = tmp_path / "xdg" / "umi"
     config.mkdir(parents=True)
     (config / "config").write_text("shell-integration = none\n")
     other = fresh(prefix="acc-manual-", env={"XDG_CONFIG_HOME": str(tmp_path / "xdg")})

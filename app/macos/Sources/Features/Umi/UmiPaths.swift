@@ -97,8 +97,8 @@ enum UmiPaths {
 
     static var cliPath: String { executableDirectory + "/\(cliName)" }
 
-    /// Umi's own config file: Ghostty settings that only Umi reads (Ghostty itself never
-    /// sees them), loaded right after the user's Ghostty config, so it wins over it.
+    /// The user's config file: Ghostty settings for Umi, loaded after Umi's defaults. Umi never
+    /// reads Ghostty's own config files.
     /// `$XDG_CONFIG_HOME/umi/config`, by default ~/.config/umi/config.
     static var userConfigFile: String {
         let env = ProcessInfo.processInfo.environment

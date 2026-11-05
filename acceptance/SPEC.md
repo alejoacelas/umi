@@ -278,7 +278,7 @@ the menu.
   shortcuts` lists every Umi menu shortcut and every Ghostty keybinding, and sets, clears or resets
   each, or all at once. A change applies at once, without a restart, and is kept across restarts in
   the app's state directory (`shortcuts.json`, and `keybindings.conf` for Ghostty keybindings,
-  loaded after the user's Ghostty config files); it never changes the user's config files. A key
+  loaded after the user's config file); it never changes the user's config files. A key
   given to one shortcut is taken from any other that had it, and the command says which.
 
 - **L-18 [A]** After a pane closes (⌘W, `pane close`, its program exiting), focus goes to the pane
@@ -417,7 +417,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
   Tabs Below; Tab Color ▸; Move Tab to New Window, Move Tab to Window ▸. A tab's color tints its
   row, quietly.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
-  Ghostty config and theme override the product's defaults.
+  config file (`~/.config/<cli>/config`, Ghostty's settings) and theme override the product's
+  defaults. The app never reads Ghostty's own config files.
   The default colors are Warp's default Dark theme's: a pure black background (`#000000`), white
   text, its cyan cursor and its 16 terminal colors, with the chrome on top of it, as in Warp.
 - **S-6 [W]** The "running/last command" line updates for commands that finish instantly.
@@ -475,7 +476,7 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
     pane as before, with no block decorations;
   - programs and agents that read a pane (`read`, `wait --pattern`) see what the shell and programs
     printed (the folder line and the command line as the shell printed them), never what Umi draws;
-  - `shell-integration-features = no-umi-blocks` in the user's Ghostty config turns it off.
+  - `shell-integration-features = no-umi-blocks` in the user's config file turns it off.
 
 ## E. Editor and Markdown
 

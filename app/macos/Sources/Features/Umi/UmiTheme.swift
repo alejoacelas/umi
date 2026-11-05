@@ -98,11 +98,11 @@ enum UmiTheme {
     palette = 15=#feffff
     """
 
-    /// Configuration Umi loads before the user's Ghostty config files, so every value here
-    /// can be overridden there (S-5).
+    /// Configuration Umi loads before the user's config file (`~/.config/umi/config`), so every
+    /// value here can be overridden there (S-5).
     static func defaultsConfig(themePath: String) -> String {
         """
-        # Umi defaults. Loaded before your Ghostty config; anything you set there
+        # Umi defaults. Loaded before ~/.config/umi/config; anything you set there
         # (including `theme`) overrides these values.
         macos-titlebar-style = transparent
         macos-titlebar-proxy-icon = hidden

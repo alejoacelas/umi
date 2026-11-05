@@ -183,8 +183,8 @@ struct UmiShortcut: Hashable {
 // MARK: - Ghostty keybindings
 
 /// Ghostty's keybindings in effect, worked out the way Umi loads its configuration: Ghostty's
-/// built-in defaults, then Umi's defaults (`defaults.conf`), then the user's Ghostty config
-/// files, then the changes made with `umi shortcuts` (`keybindings.conf`).
+/// built-in defaults, then Umi's defaults (`defaults.conf`), then the user's config file
+/// (`~/.config/umi/config`), then the changes made with `umi shortcuts` (`keybindings.conf`).
 @MainActor
 enum UmiGhosttyBindings {
     struct Binding {
@@ -280,14 +280,8 @@ enum UmiGhosttyBindings {
         }.joined(separator: ">")
     }
 
-    /// The user's config files, in the order Umi loads them: Ghostty's, then Umi's own.
-    static var userConfigFiles: [String] {
-        let env = ProcessInfo.processInfo.environment
-        let xdg = env["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? (NSHomeDirectory() + "/.config")
-        let support = NSHomeDirectory() + "/Library/Application Support/com.mitchellh.ghostty"
-        return [xdg + "/ghostty/config", xdg + "/ghostty/config.ghostty", support + "/config", support + "/config.ghostty",
-                UmiPaths.userConfigFile]
-    }
+    /// The user's config files Umi loads: its own.
+    static var userConfigFiles: [String] { [UmiPaths.userConfigFile] }
 
     /// Every binding in effect, in load order.
     static func effective() -> [Binding] {
@@ -352,7 +346,7 @@ enum UmiGhosttyBindings {
 /// Shortcuts changed with `umi shortcuts` (L-17), kept in Umi's state directory:
 /// - `shortcuts.json`: the changes, for Umi's own items and for Ghostty actions;
 /// - `keybindings.conf`: the Ghostty part as Ghostty `keybind` lines, which Umi loads after
-///   the user's own Ghostty config files. The user's Ghostty config files are never edited.
+///   the user's config file. The user's config file is never edited.
 @MainActor
 final class UmiShortcutStore {
     static let shared = UmiShortcutStore()
@@ -558,7 +552,7 @@ final class UmiShortcutStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try FileManager.default.createDirectory(atPath: UmiPaths.stateDirectory, withIntermediateDirectories: true)
         try encoder.encode(saved).write(to: URL(fileURLWithPath: Self.file), options: .atomic)
-        var lines = ["# Written by `\(UmiPaths.cliName) shortcuts`. Loaded after your Ghostty config files;",
+        var lines = ["# Written by `\(UmiPaths.cliName) shortcuts`. Loaded after your config file;",
                      "# your own files aren't changed. Change shortcuts with `\(UmiPaths.cliName) shortcuts`.", ""]
         // Every unbind first: a key freed from one action and given to another must end up bound.
         let actions = saved.ghostty.keys.sorted()
