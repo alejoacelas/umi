@@ -10,11 +10,12 @@ final class UmiState: ObservableObject {
 
     enum SidebarMode: String, Codable { case tabs, files }
 
+    /// Whether a new window shows its sidebar: as the window last toggled. Each window shows or
+    /// hides its own (`TerminalController.sidebarVisible`, which reports `sidebar.changed`).
     @Published var sidebarVisible: Bool = true {
         didSet {
             guard sidebarVisible != oldValue else { return }
             UmiPersistence.shared.saveUISoon()
-            UmiEvents.shared.emit("sidebar.changed", ["visible": sidebarVisible, "mode": sidebarMode.rawValue])
         }
     }
 
@@ -22,7 +23,8 @@ final class UmiState: ObservableObject {
         didSet {
             guard sidebarMode != oldValue else { return }
             UmiPersistence.shared.saveUISoon()
-            UmiEvents.shared.emit("sidebar.changed", ["visible": sidebarVisible, "mode": sidebarMode.rawValue])
+            UmiEvents.shared.emit("sidebar.changed", ["visible": UmiTopology.currentWindow?.sidebarVisible ?? sidebarVisible,
+                                                        "mode": sidebarMode.rawValue])
         }
     }
 

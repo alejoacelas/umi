@@ -355,6 +355,8 @@ enum UmiTopology {
         case .green: return "green"
         case .teal: return "teal"
         case .graphite: return "graphite"
+        case .magenta: return "magenta"
+        case .cyan: return "cyan"
         }
     }
 

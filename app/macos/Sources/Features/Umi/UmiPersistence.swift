@@ -86,6 +86,7 @@ final class UmiPersistence {
         }
         if let name = window.windowName { json["name"] = name }
         json["sidebar_width"] = Double(window.sidebarWidth)
+        json["sidebar_visible"] = window.sidebarVisible
         if window === UmiTopology.currentWindow { json["current"] = true }
         return json
     }
@@ -216,6 +217,7 @@ final class UmiPersistence {
             made.append(controller)
             controller.windowName = windowJSON["name"] as? String
             if let width = windowJSON["sidebar_width"] as? Double { controller.sidebarWidth = CGFloat(width) }
+            if let visible = windowJSON["sidebar_visible"] as? Bool { controller.sidebarVisible = visible }
             if windowJSON["current"] as? Bool == true { current = controller }
             restored += 1
         }

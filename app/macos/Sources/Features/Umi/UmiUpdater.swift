@@ -381,6 +381,7 @@ final class UmiUpdater: ObservableObject {
         if TerminalController.all.isEmpty {
             _ = try? UmiLayout.newWindow(.init(), tabName: nil, focus: true)
         }
+        for window in UmiTopology.windows { UmiSidebarVisibility.set(true, in: window) }
         UmiState.shared.sidebarVisible = true
         return true
     }

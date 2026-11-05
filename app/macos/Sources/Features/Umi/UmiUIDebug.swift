@@ -11,7 +11,21 @@ enum UmiUIDebug {
             let window = try UmiTopology.window(params.string("window"), caller: caller)
             return ["window": window.umiIDString, "sidebar_width": Double(window.sidebarWidth),
                     "frame": frameJSON(window.window?.frame ?? .zero),
-                    "rows": window.tabs.map { UmiSidebarRowModel(tab: $0, in: window).json() }]
+                    "rows": window.tabs.map { UmiSidebarRowModel(tab: $0, in: window).json(in: window) },
+                    "sidebar": sidebarJSON(window)]
+
+        case "debug.ui.sidebar":
+            // The sidebar's search, ⌘ hints and in-place renames, without typing (Warp parity).
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            let model = window.sidebarModel
+            if let query = params.string("query") { model.query = query }
+            if let held = params.bool("command_held") { UmiTabHints.shared.set(held: held, immediately: true) }
+            if let text = params.string("rename_text") {
+                guard let target = model.renaming else { throw UmiError.failed("nothing is being renamed") }
+                UmiSidebarRename.commit(target, text: text, in: window)
+            }
+            if params.bool("rename_cancel") == true { model.renaming = nil }
+            return sidebarJSON(window)
 
         case "debug.ui.open_url":
             // A link ⌘-clicked in a pane: what the terminal's open-URL action runs (E-12).
@@ -82,7 +96,7 @@ enum UmiUIDebug {
 
         case "debug.ui.menu":
             let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
-            let items = UmiTabMenu.flatten(UmiTabMenu.items(for: tab, in: window, rename: {}))
+            let items = UmiTabMenu.flatten(UmiTabMenu.items(for: tab, in: window))
             return ["items": items.map { entry in
                 ["title": entry.item.title, "path": entry.path.joined(separator: " > "),
                  "enabled": entry.item.enabled, "checked": entry.item.checked, "submenu": !entry.item.children.isEmpty]
@@ -91,7 +105,7 @@ enum UmiUIDebug {
         case "debug.ui.menu.perform":
             let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
             guard let path = params.string("title") else { throw UmiError.badRequest("give the item's title (or path)") }
-            let items = UmiTabMenu.flatten(UmiTabMenu.items(for: tab, in: window, rename: nil))
+            let items = UmiTabMenu.flatten(UmiTabMenu.items(for: tab, in: window))
             guard let entry = items.first(where: { $0.path.joined(separator: " > ") == path })
                     ?? items.first(where: { $0.item.title == path }) else {
                 throw UmiError.notFound("no menu item \"\(path)\"")
@@ -190,6 +204,25 @@ enum UmiUIDebug {
         return ["panes": panes, "needing_you": UmiAttention.shared.needingYouCount,
                 "badge": NSApp.dockTile.badgeLabel ?? "", "looked_at": UmiLooking.lookedAt?.umiID ?? "",
                 "active": NSApp.isActive]
+    }
+
+    /// A window's sidebar besides its rows: shown, the search and what it matches, the ⌘ hints,
+    /// what is being renamed in place, and whether the search field has focus.
+    private static func sidebarJSON(_ window: TerminalController) -> [String: Any] {
+        let model = window.sidebarModel
+        var json: [String: Any] = [
+            "visible": window.sidebarVisible, "query": model.query,
+            "matching": model.matchingTabs(in: window).map(\.idString),
+            "hints": UmiTabHints.shared.revealed, "search_focused": model.searchFocused,
+        ]
+        switch model.renaming {
+        case .tab(let id): json["renaming"] = ["tab": id.uuidString.lowercased()]
+        case .pane(let tab, let pane):
+            json["renaming"] = ["tab": tab.uuidString.lowercased(),
+                                "pane": UmiTopology.allSurfaces.first { $0.id == pane }?.umiID ?? ""]
+        case nil: break
+        }
+        return json
     }
 
     private static func frameJSON(_ frame: NSRect) -> [String: Any] {

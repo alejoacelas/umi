@@ -56,15 +56,22 @@ enum UmiShortcuts {
             Item(id: "view.palette", title: "Command Palette…", key: "p", modifiers: [.command], symbol: "command", menu: "View",
                  action: { UmiPaletteModel.present(.commands) }),
             Item(id: "view.sidebar", title: "Toggle Sidebar", key: "b", modifiers: [.command], symbol: "sidebar.left", menu: "View",
-                 action: { UmiState.shared.sidebarVisible.toggle() }),
+                 action: { UmiSidebarVisibility.toggle() }),
+            // Warp's key for its left panel, a second key for the same toggle.
+            Item(id: "view.sidebar_left_panel", title: "Toggle Left Panel", key: "\\", modifiers: [.command],
+                 symbol: "sidebar.left", menu: "View", action: { UmiSidebarVisibility.toggle() }),
+            // Warp's "Search tabs..." field at the top of the sidebar.
+            Item(id: "view.search_tabs", title: "Search Tabs", key: "f", modifiers: [.command, .option],
+                 symbol: "magnifyingglass", menu: "View", action: { UmiSidebarSearch.focusField() }),
             Item(id: "view.explorer", title: "Show Project Explorer", key: "e", modifiers: [.command, .shift], symbol: "folder",
                  menu: "View", action: {
                      let state = UmiState.shared
-                     if state.sidebarVisible && state.sidebarMode == .files {
+                     let visible = UmiTopology.currentWindow?.sidebarVisible ?? state.sidebarVisible
+                     if visible && state.sidebarMode == .files {
                          state.sidebarMode = .tabs
                      } else {
                          state.sidebarMode = .files
-                         state.sidebarVisible = true
+                         if let window = UmiTopology.currentWindow { UmiSidebarVisibility.set(true, in: window) }
                      }
                  }),
             // E-11: like Google Docs' ⌥⌘M.
@@ -84,16 +91,20 @@ enum UmiShortcuts {
             Item(id: "pane.stack_next", title: "Next in Stack", key: "]", modifiers: [.command],
                  symbol: "chevron.right.square", menu: "Window", action: { UmiStacks.cycle(1) }),
             Item(id: "tab.back", title: "Back to Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.uturn.backward",
-                 menu: "Window", action: { if UmiNavigation.tabBack() == nil { NSSound.beep() } },
-                 enabled: { UmiTabHistory.canGoBack }),
+                 menu: "Window", action: {
+                     // While the sidebar has a search query: the previous matching tab, as Warp.
+                     if let searched = UmiSidebarSearch.cycleMatches(-1) { if searched == nil { NSSound.beep() }; return }
+                     if UmiNavigation.tabBack() == nil { NSSound.beep() }
+                 },
+                 enabled: { UmiTabHistory.canGoBack || UmiTopology.currentWindow?.sidebarModel.isSearching == true }),
             Item(id: "tab.next", title: "Show Next Tab", key: "]", modifiers: [.command, .shift], symbol: "arrow.down.square",
-                 menu: "Window", action: { UmiNavigation.selectAdjacentTab(1) },
+                 menu: "Window", action: { adjacentTab(1) },
                  enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
             Item(id: "tab.cycle_next", title: "Cycle to Next Tab", key: tab, modifiers: [.control], symbol: "arrow.down.square",
-                 menu: "Window", action: { UmiNavigation.selectAdjacentTab(1) },
+                 menu: "Window", action: { adjacentTab(1) },
                  enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
             Item(id: "tab.cycle_previous", title: "Cycle to Previous Tab", key: tab, modifiers: [.control, .shift],
-                 symbol: "arrow.up.square", menu: "Window", action: { UmiNavigation.selectAdjacentTab(-1) },
+                 symbol: "arrow.up.square", menu: "Window", action: { adjacentTab(-1) },
                  enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
         ] + (1...8).map { n in
             Item(id: "tab.\(n)", title: "Tab \(n)", key: "\(n)", modifiers: [.command], symbol: "\(n).square", menu: "Window",
@@ -198,6 +209,7 @@ enum UmiShortcuts {
             UmiAgentMenu.shared.install(in: windowMenu)
         }
         installMonitor()
+        UmiTabHints.shared.install()
         UmiGhosttyBindings.warm()
         // The CLI's commands for the palette, so the first ⌘P has them.
         UmiCLICatalog.shared.load {}
@@ -350,6 +362,16 @@ enum UmiShortcuts {
         }
     }
 
+    /// The next or previous tab in sidebar order; only the matching ones while the sidebar has
+    /// a search query.
+    private static func adjacentTab(_ delta: Int) {
+        if let searched = UmiSidebarSearch.cycleMatches(delta) {
+            if searched == nil { NSSound.beep() }
+            return
+        }
+        UmiNavigation.selectAdjacentTab(delta)
+    }
+
     private static func moveSelectedTab(_ delta: Int) {
         guard let window = UmiTopology.currentWindow else { return }
         if !UmiNavigation.moveTab(window.selectedTab, by: delta, in: window) { NSSound.beep() }
@@ -374,42 +396,17 @@ enum UmiShortcuts {
         }
     }
 
+    /// Rename the current tab in place, in its sidebar row (as Warp).
     private static func renameTab() {
         guard let window = UmiTopology.currentWindow else { return }
-        let tab = window.selectedTab
-        prompt(title: "Rename Tab", message: "Leave blank to name the tab after its folder.", value: tab.name ?? "",
-               window: window.window) { name in
-            tab.name = name.isEmpty ? nil : name
-            window.titleOverride = tab.name
-            UmiEvents.shared.emit("tab.renamed", ["tab": tab.idString, "name": name, "window": window.umiIDString])
-            UmiState.shared.layoutDidChange()
-        }
+        UmiTabMenu.beginRename(.tab(window.selectedTab.id), in: window)
     }
 
+    /// Rename the focused pane in place, in its tab's sidebar row (as Warp).
     private static func renamePane() {
-        guard let window = UmiTopology.currentWindow, let pane = UmiTopology.currentPane else { return }
-        prompt(title: "Rename Pane", message: "CLI commands can use the name as a selector.",
-               value: UmiState.shared.paneName(pane.id) ?? "", window: window.window) { name in
-            UmiState.shared.setPaneName(pane.id, name)
-            UmiEvents.shared.emit("pane.renamed", ["pane": pane.umiID, "name": name])
-        }
-    }
-
-    private static func prompt(title: String, message: String, value: String, window: NSWindow?, completion: @escaping (String) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.stringValue = value
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        let handle: (NSApplication.ModalResponse) -> Void = { response in
-            guard response == .alertFirstButtonReturn else { return }
-            completion(field.stringValue.trimmingCharacters(in: .whitespaces))
-        }
-        if let window { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
+        guard let window = UmiTopology.currentWindow, let pane = UmiTopology.currentPane,
+              let tab = window.tab(containing: pane) else { return }
+        UmiTabMenu.beginRename(.pane(tab: tab.id, pane: pane.id), in: window)
     }
 }
 

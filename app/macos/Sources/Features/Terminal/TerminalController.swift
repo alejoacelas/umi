@@ -49,11 +49,26 @@ class TerminalController: BaseTerminalController {
             if clamped != sidebarWidth { sidebarWidth = clamped; return }
             guard sidebarWidth != oldValue else { return }
             UmiState.shared.layoutDidChange(persistOnly: true)
-            UmiEvents.shared.emit("sidebar.changed", ["visible": UmiState.shared.sidebarVisible,
+            UmiEvents.shared.emit("sidebar.changed", ["visible": sidebarVisible,
                                                         "mode": UmiState.shared.sidebarMode.rawValue,
                                                         "width": Double(sidebarWidth), "window": umiIDString])
         }
     }
+
+    /// Whether this window shows its sidebar: per window and instant, as Warp's left panel
+    /// (⌘B, ⌘\). A new window starts as the last one toggled (`UmiState.sidebarVisible`).
+    @Published var sidebarVisible: Bool = UmiState.shared.sidebarVisible {
+        didSet {
+            guard sidebarVisible != oldValue else { return }
+            UmiState.shared.layoutDidChange(persistOnly: true)
+            UmiEvents.shared.emit("sidebar.changed", ["visible": sidebarVisible,
+                                                        "mode": UmiState.shared.sidebarMode.rawValue,
+                                                        "width": Double(sidebarWidth), "window": umiIDString])
+        }
+    }
+
+    /// This window's sidebar search, in-place renames (`UmiSidebarModel`).
+    let sidebarModel = UmiSidebarModel()
 
     /// The window was closed (AppKit may keep the object around for a moment).
     private(set) var isClosed = false
@@ -586,7 +601,7 @@ class TerminalController: BaseTerminalController {
                 c.explicitFrame = frame
                 window.setFrame(frame, display: false)
             } else if let treeSize, treeSize.width > 0, treeSize.height > 0 {
-                let chrome = UmiTheme.chromeSize(sidebar: UmiState.shared.sidebarVisible, width: c.sidebarWidth)
+                let chrome = UmiTheme.chromeSize(sidebar: c.sidebarVisible, width: c.sidebarWidth)
                 window.setContentSize(CGSize(
                     width: max(treeSize.width + chrome.width, UmiTheme.minimumContentSize.width),
                     height: max(treeSize.height + chrome.height, UmiTheme.minimumContentSize.height)))
@@ -1168,7 +1183,7 @@ class TerminalController: BaseTerminalController {
         }
 
         // The terminal's initial size plus the sidebar.
-        let chrome = UmiTheme.chromeSize(sidebar: UmiState.shared.sidebarVisible, width: sidebarWidth)
+        let chrome = UmiTheme.chromeSize(sidebar: sidebarVisible, width: sidebarWidth)
         container.initialContentSize = focusedSurface?.initialSize.map {
             NSSize(width: $0.width + chrome.width, height: $0.height + chrome.height)
         }

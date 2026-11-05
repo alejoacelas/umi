@@ -296,21 +296,27 @@ enum UmiRPC {
             let window = params.string("window") != nil
                 ? try UmiTopology.window(params.string("window"), caller: caller)
                 : try? UmiTopology.window(nil, caller: caller)
-            if params.bool("toggle") ?? false { state.sidebarVisible.toggle() }
-            if let visible = params.bool("visible") { state.sidebarVisible = visible }
+            // Shown or hidden per window, as Warp's left panel: the given window, else the
+            // caller's, else the current; with no window, what new windows start with.
+            func setVisible(_ visible: Bool) {
+                if let window { UmiSidebarVisibility.set(visible, in: window) } else { state.sidebarVisible = visible }
+            }
+            if params.bool("toggle") ?? false { setVisible(!(window?.sidebarVisible ?? state.sidebarVisible)) }
+            if let visible = params.bool("visible") { setVisible(visible) }
             if let mode = params.string("mode") {
                 guard let parsed = UmiState.SidebarMode(rawValue: mode) else {
                     throw UmiError.badRequest("unknown sidebar mode \"\(mode)\" (use tabs or files)")
                 }
                 state.sidebarMode = parsed
-                state.sidebarVisible = true
+                setVisible(true)
             }
             if let width = params.double("width") {
                 guard let window else { throw UmiError.notFound("there are no Umi windows open") }
                 window.sidebarWidth = UmiTheme.clampSidebarWidth(CGFloat(width))
                 state.sidebarWidth = window.sidebarWidth
             }
-            var json: [String: Any] = ["visible": state.sidebarVisible, "mode": state.sidebarMode.rawValue]
+            var json: [String: Any] = ["visible": window?.sidebarVisible ?? state.sidebarVisible,
+                                       "mode": state.sidebarMode.rawValue]
             if let window {
                 json["width"] = Double(window.sidebarWidth)
                 json["window"] = window.umiIDString
@@ -439,7 +445,7 @@ enum UmiRPC {
     }
 
     private static func badColor(_ name: String) -> UmiError {
-        UmiError.badRequest("unknown color \"\(name)\" (use blue, purple, pink, red, orange, yellow, green, teal, graphite or none)")
+        UmiError.badRequest("unknown color \"\(name)\" (use red, green, yellow, blue, magenta, cyan, purple, pink, orange, teal, graphite or none)")
     }
 }
 

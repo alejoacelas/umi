@@ -56,7 +56,7 @@ struct CommandHelp {
     }
 }
 
-let colorNames = ["blue", "purple", "pink", "red", "orange", "yellow", "green", "teal", "graphite", "none"]
+let colorNames = ["red", "green", "yellow", "blue", "magenta", "cyan", "purple", "pink", "orange", "teal", "graphite", "none"]
 
 let commandTable: [CommandHelp] = [
     // Layout
