@@ -57,6 +57,8 @@ final class UmiPaletteModel: ObservableObject {
     static let recentCount = 3
     /// Entries chosen from the palette, most recent first (their ids).
     private static var chosen: [String] = []
+    /// The files among `chosen`, by id: Recent lists them although the empty palette has no files.
+    private static var chosenFiles: [String: UmiPaletteEntry.FileRef] = [:]
     /// The Suggested section: Umi's counterparts of Warp's (its theme chooser and settings).
     static let suggestedIDs = ["umi:Keyboard Shortcuts", "umi:Settings…", "umi:Show Project Explorer"]
     /// The filter chips of the empty palette, in Warp's order.
@@ -279,11 +281,12 @@ final class UmiPaletteModel: ObservableObject {
     private func zeroStateEntries() -> [UmiPaletteEntry] {
         var byID: [String: UmiPaletteEntry] = [:]
         for entry in base where byID[entry.id] == nil { byID[entry.id] = entry }
-        let recent = Self.chosen.compactMap { byID[$0] }.prefix(Self.recentCount).map { entry -> UmiPaletteEntry in
-            var entry = entry
-            entry.section = "Recent"
-            return entry
-        }
+        let recent = Self.chosen.compactMap { byID[$0] ?? Self.chosenFiles[$0].flatMap(recentFileEntry) }
+            .prefix(Self.recentCount).map { entry -> UmiPaletteEntry in
+                var entry = entry
+                entry.section = "Recent"
+                return entry
+            }
         let suggested = Self.suggestedIDs.compactMap { byID[$0] }.map { entry -> UmiPaletteEntry in
             var entry = entry
             entry.section = "Suggested"
@@ -292,14 +295,34 @@ final class UmiPaletteModel: ObservableObject {
         return recent + suggested
     }
 
+    /// A file opened from the palette, for Recent (gone files are left out).
+    private func recentFileEntry(_ ref: UmiPaletteEntry.FileRef) -> UmiPaletteEntry? {
+        guard FileManager.default.fileExists(atPath: ref.absolute) else { return nil }
+        var entry = UmiPaletteEntry(id: ref.id, title: (ref.path as NSString).lastPathComponent,
+                                    subtitle: ref.line.map { "\(ref.path):\($0)" } ?? ref.path,
+                                    icon: UmiPaletteFileIcon.symbol(for: ref.path), value: ref.path, kind: .file) { [weak self] in
+            self?.openFile(ref.absolute, line: ref.line)
+        }
+        entry.fileRef = ref
+        return entry
+    }
+
     /// Perform a row, remembering it for the Recent section.
     func choose(_ entry: UmiPaletteEntry) {
-        if step == .list, [.action, .cli, .pane, .conversation].contains(entry.kind), !entry.id.hasPrefix("run:") {
-            Self.chosen.removeAll { $0 == entry.id }
-            Self.chosen.insert(entry.id, at: 0)
-            if Self.chosen.count > 20 { Self.chosen.removeLast(Self.chosen.count - 20) }
+        if step == .list, let ref = entry.fileRef {
+            Self.remember(ref.id)
+            Self.chosenFiles[ref.id] = ref
+            Self.chosenFiles = Self.chosenFiles.filter { Self.chosen.contains($0.key) }
+        } else if step == .list, [.action, .cli, .pane, .conversation].contains(entry.kind), !entry.id.hasPrefix("run:") {
+            Self.remember(entry.id)
         }
         entry.perform()
+    }
+
+    private static func remember(_ id: String) {
+        chosen.removeAll { $0 == id }
+        chosen.insert(id, at: 0)
+        if chosen.count > 20 { chosen.removeLast(chosen.count - 20) }
     }
 
     // MARK: Commands
@@ -635,12 +658,14 @@ final class UmiPaletteModel: ObservableObject {
     private func fileEntries(_ query: String, in index: UmiFileIndex, extras: Bool = true) async -> [UmiPaletteEntry] {
         let results = await index.search(query)
         let found = results.map { result in
-            UmiPaletteEntry(id: "file:" + result.path, title: (result.path as NSString).lastPathComponent,
-                             subtitle: result.line.map { "\(result.path):\($0)" } ?? result.path,
-                             icon: UmiPaletteFileIcon.symbol(for: result.path),
-                             value: result.path, kind: .file) { [weak self] in
+            var entry = UmiPaletteEntry(id: "file:" + result.path, title: (result.path as NSString).lastPathComponent,
+                                        subtitle: result.line.map { "\(result.path):\($0)" } ?? result.path,
+                                        icon: UmiPaletteFileIcon.symbol(for: result.path),
+                                        value: result.path, kind: .file) { [weak self] in
                 self?.openFile(index.root + "/" + result.path, line: result.line)
             }
+            entry.fileRef = .init(root: index.root, path: result.path, line: result.line)
+            return entry
         }
         guard extras else { return found }
         // Nothing matches a name: offer to make it, in the pane's folder (Warp); `~/…` and an
@@ -879,6 +904,17 @@ struct UmiPaletteEntry: Identifiable {
     /// The row's identity in the list: one entry can show under Recent and under Suggested.
     var rowID: String { section.map { "\($0):\(id)" } ?? id }
     var paneRow: PaneRow?
+
+    /// A file row's file: its project folder, its path there and the line asked for (what Warp
+    /// remembers of a file opened from the palette).
+    struct FileRef {
+        let root: String
+        let path: String
+        let line: Int?
+        var absolute: String { root + "/" + path }
+        var id: String { "recent-file:" + absolute + (line.map { ":\($0)" } ?? "") }
+    }
+    var fileRef: FileRef?
     var perform: @MainActor () -> Void
 
     init(id: String, title: String, subtitle: String? = nil, symbols: [String]? = nil, icon: String? = nil,

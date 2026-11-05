@@ -164,6 +164,35 @@ def test_an_entry_under_recent_and_suggested_has_two_distinct_rows(inst, win):
             key(inst, win, "cmd+/")
 
 
+@pytest.mark.req("L-14", "L-16")
+def test_a_file_opened_from_the_palette_shows_under_recent(inst, win, tmp_path):
+    repo, pane = repo_pane(inst, win, tmp_path)
+    try:
+        rows = rpc(inst, "debug.palette", window=win["window"], mode="files", query="parser:2")["entries"]
+        assert rows[0]["value"] == "src/parser.py", rows
+        rpc(inst, "debug.palette.perform", window=win["window"], title="parser.py")
+        parser = os.path.realpath(repo / "src" / "parser.py")
+
+        def opened():
+            return [os.path.realpath(d["path"]) for d in inst.json("editor", "ls", "--pane", pane)["documents"]]
+
+        wait_until(lambda: parser in opened(), 5, message="the file opened")
+        inst.cli("editor", "close", parser)
+        wait_until(lambda: parser not in opened(), 5, message="the file closed")
+        inst.cli("pane", "focus", pane)
+        time.sleep(0.3)
+        rows = rpc(inst, "debug.palette", window=win["window"], mode="commands")["entries"]
+        recent = [r for r in rows if r.get("section") == "Recent"]
+        assert recent and recent[0]["kind"] == "file" and recent[0]["value"] == "src/parser.py", recent
+        assert recent[0]["subtitle"] == "src/parser.py:2", recent
+        # Chosen from Recent, it opens again.
+        result = rpc(inst, "debug.palette.perform", window=win["window"], title="parser.py")
+        assert not result["presented"], result
+        wait_until(lambda: parser in opened(), 5, message="Recent's file opened")
+    finally:
+        close(inst, win)
+
+
 # ---- ⌘O --------------------------------------------------------------------------------------------
 
 @pytest.mark.req("L-16")
