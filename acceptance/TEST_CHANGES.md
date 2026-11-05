@@ -704,6 +704,11 @@ S-12.
   with round ends, the scrollbar's thumb, the silent bell (no Dock badge), exit codes 130 and 141 and
   Ctrl-C as success, no running time in the first second, the header's `git:(branch)` (and the commit
   when detached), `(conda) (venv) user@host:`, and the folder box ending after 40 characters.
+- **Changed, `tests/harness.py`**: instances no longer inherit the runner's `VIRTUAL_ENV`,
+  `CONDA_DEFAULT_ENV`, `CONDA_PREFIX`, `SSH_CONNECTION`, `SSH_CLIENT` and `SSH_TTY` (`uv run` and the
+  ssh session into the test Mac set them). The block header now shows them as Warp does, so panes
+  inherited `(.venv) user@host:` from the test runner, which a window opened from the Dock never has.
+  No assertion changed.
 - **Test hook, `debug.terminal`**: `debug.blocks`' report plus the scrollbar (`scroller`) and the
   bell's effects (`bell`). `debug.blocks` now also reports each block's `header_line` (the whole
   header; `header` stays the folder alone), the padding's four sides, the font's name and size, the

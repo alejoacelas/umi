@@ -42,6 +42,13 @@ def row_y(shot, inst, win, b, row):
     return pane_top(shot, inst, win) + int((b["padding_pt"]["top"] + (row + b["drawn_offset_rows"] + 0.5) * cell_h) * shot.scale)
 
 
+def output_row(b, command):
+    """The viewport row of the first line a one-row command printed (its block: two spacers, the
+    header, the command)."""
+    block = next(x for x in reversed(b["blocks"]) if x["command"] == command)
+    return block["first"] + 4
+
+
 def cat_file(inst, pane, tmp_path, name, data):
     """Print `data` (bytes with escapes) with a short command, from the test's folder."""
     (tmp_path / name).write_bytes(data)
@@ -66,8 +73,8 @@ def test_selection_is_warps_blue_over_the_text_which_keeps_its_colors(inst, win,
     pane = win["pane"]
     active(inst, pane)
     block = cat_file(inst, pane, tmp_path, "red", b"\x1b[31m" + b"R" * 30 + b"\x1b[0m\n")
-    inst.cli("window", "focus", win["window"])
-    inst.rpc("debug.menu.perform", title="Select All")
+    # ⌘A (Ghostty's select_all), delivered inside the app.
+    inst.rpc("debug.key", window=win["window"], keys="cmd+a")
     wait_until(lambda: "R" * 30 in (inst.rpc("debug.selection", pane=pane).get("text") or ""), 5, message="a selection")
     time.sleep(0.5)
     shot = Shot(inst, win, tmp_path / "selected.png")
@@ -78,8 +85,7 @@ def test_selection_is_warps_blue_over_the_text_which_keeps_its_colors(inst, win,
     assert len(blue) > len(samples) * 0.6, f"the selection is #324667 over the background: {samples[:8]}"
     # The red text keeps its color under the selection.
     b = blocks(inst, pane)
-    lines = inst.cli("read", "--pane", pane).stdout.split("\n")
-    y = row_y(shot, inst, win, b, lines.index("R" * 30))
+    y = row_y(shot, inst, win, b, output_row(b, "cat red"))
     pad = b["padding_pt"]["left"] * shot.scale
     cell_w = b["cell_pt"][0] * shot.scale
     reds = [shot.px(int(shot.left + pad + cell_w * i / 4), yy) for i in range(4, 100) for yy in range(y - 4, y + 5)]
@@ -89,8 +95,9 @@ def test_selection_is_warps_blue_over_the_text_which_keeps_its_colors(inst, win,
 
 @pytest.mark.req("S-5")
 def test_minimum_contrast_raises_named_colors_only(inst, win, tmp_path):
-    """Warp's default: text in a named color (here palette 0, #616161, about 3.3:1 on #050505) is raised
-    to 4.5:1; the same gray given as RGB keeps its color."""
+    """Warp's default: text in a named color (here palette 0, #616161, about 3.3:1 on #050505) is moved
+    toward white just enough for 4.5:1 (about #767676, not white); the same gray given as RGB keeps its
+    color."""
     pane = win["pane"]
     active(inst, pane)
     line = b"\x1b[30m" + b"N" * 20 + b"\x1b[0m" + b" " * 10 + b"\x1b[38;2;97;97;97m" + b"N" * 20 + b"\x1b[0m\n"
@@ -98,9 +105,7 @@ def test_minimum_contrast_raises_named_colors_only(inst, win, tmp_path):
     time.sleep(0.5)
     shot = Shot(inst, win, tmp_path / "contrast.png")
     b = blocks(inst, pane)
-    lines = inst.cli("read", "--pane", pane).stdout.split("\n")
-    row = next(i for i, text in enumerate(lines) if text.startswith("N" * 20))
-    y = row_y(shot, inst, win, b, row)
+    y = row_y(shot, inst, win, b, output_row(b, "cat gray"))
     pad = b["padding_pt"]["left"] * shot.scale
     cell_w = b["cell_pt"][0] * shot.scale
 
@@ -109,7 +114,8 @@ def test_minimum_contrast_raises_named_colors_only(inst, win, tmp_path):
                    for dx in range(0, int(cell_w * (c1 - c0))) for yy in range(y - 6, y + 7))
     named, rgb = brightest(1, 19), brightest(31, 49)
     assert rgb > 40, f"the RGB gray is drawn ({rgb})"
-    assert named > rgb + 25, f"the named gray is raised ({named}) and the RGB one isn't ({rgb})"
+    assert named > rgb + 12, f"the named gray is raised ({named}) and the RGB one isn't ({rgb})"
+    assert named < 170, f"only as far as 4.5:1 needs, not to white ({named})"
 
 
 # ---- S-5: font, rows and padding --------------------------------------------------------------------
