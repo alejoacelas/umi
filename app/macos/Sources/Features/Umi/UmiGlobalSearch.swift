@@ -147,7 +147,9 @@ final class UmiGlobalSearchModel: ObservableObject {
             args.append("--no-index")
         }
         if !caseSensitive { args.append("-i") }
-        args.append(regex ? "-E" : "-F")
+        // Regexes are Perl-style (PCRE), as Warp's are (Rust's regex), and as the highlight's
+        // (NSRegularExpression) are, so `\d`, `\w`, `\b` and lookarounds mean the same in both.
+        args.append(regex ? "-P" : "-F")
         args += ["-e", pattern]
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -174,6 +176,9 @@ final class UmiGlobalSearchModel: ObservableObject {
                         let line = buffer[buffer.startIndex..<newline]
                         buffer.removeSubrange(buffer.startIndex...newline)
                         guard let parsed = Self.parse(line) else { continue }
+                        // git grep -i -F can list a line once per match (with non-ASCII text);
+                        // a line is one result, at its first match.
+                        if found.last?.path == parsed.path, found.last?.matches.last?.line == parsed.match.line { continue }
                         if found.last?.path == parsed.path {
                             found[found.count - 1].matches.append(parsed.match)
                         } else {
@@ -344,17 +349,20 @@ final class UmiGlobalSearchModel: ObservableObject {
             setCollapsed(!collapsed.contains(row.path))
             return
         }
-        open(row.path, line: match.line)
+        open(row.path, match: match)
     }
 
-    /// Open the file at the line, beside the focused pane (E-9), in source view.
-    func open(_ relative: String, line: Int) {
+    /// Open the file at the match's line and column, beside the focused pane (E-9), in source view.
+    func open(_ relative: String, match: Match) {
         guard let root, let anchor = focusedPane else { return }
         let url = URL(fileURLWithPath: root).appendingPathComponent(relative)
         do {
             try UmiTextFile.checkOpenable(url)
             let doc = try UmiFilePanes.open(url, mode: .source, near: anchor, focus: true).doc
-            doc.revealLine = line
+            // git's column counts bytes from 1; the editor counts UTF-16 units from 0.
+            let bytes = Array(match.text.utf8.prefix(max(0, match.column - 1)))
+            doc.revealColumn = String(decoding: bytes, as: UTF8.self).utf16.count
+            doc.revealLine = match.line
         } catch let error as UmiError {
             let alert = NSAlert()
             alert.messageText = "Can't open \(url.lastPathComponent)"
@@ -410,6 +418,8 @@ final class UmiGlobalSearchModel: ObservableObject {
         [
             "query": query, "case_sensitive": caseSensitive, "regex": regex, "root": root ?? "",
             "searching": searching, "capped": capped, "message": message ?? "", "focus": focus.rawValue,
+            // Whether the focused pane's own terminal search (⌘F) is open.
+            "terminal_search": focusedPane?.searchState != nil,
             "selected": selected.map { id in rows.first { $0.id == id }.map(rowJSON) ?? [:] } ?? NSNull(),
             "files": files.map { ["path": $0.path, "matches": $0.matches.map { ["line": $0.line, "column": $0.column, "text": $0.text] }] },
             "rows": rows.map(rowJSON),
@@ -421,7 +431,11 @@ final class UmiGlobalSearchModel: ObservableObject {
                                    "selected": row.id == selected, "collapsed": collapsed.contains(row.path)]
         if let match = row.match {
             json["line"] = match.line
+            json["column"] = match.column
             json["text"] = match.text
+            // What the row highlights, as drawn.
+            let (shown, ranges) = Self.snippet(match.text, query: searched ?? query, caseSensitive: caseSensitive, regex: regex)
+            json["highlights"] = ranges.map { String(shown[$0]) }
         } else {
             json["count"] = row.count
         }

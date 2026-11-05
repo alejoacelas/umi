@@ -422,12 +422,15 @@ A "live session" is a pane with a running program, its scrollback and its state.
   - Search is global search (Warp parity, 2026-11-05). ⇧⌘F shows it with focus in the query, its
     text selected; ⌃3 shows or hides it. It searches the files of the focused pane's repository
     (the explorer's root), leaving out what git ignores, 300 ms after typing stops: literal and
-    case-insensitive unless its Regex or Case toggle is on, at most 20,000 matches (with Warp's
-    note when capped). Results are grouped by file (name, folder, match count), then each matching
+    case-insensitive unless its Regex (Perl-style: `\d`, `\b`, lookarounds) or Case toggle is on,
+    at most 20,000 matching lines (with Warp's note when
+    capped). Results are grouped by file (name, folder, match count), then each matching
     line with the match highlighted, under "N results in M files" ("Searching…", "No results
     found. Review your gitignore files."). ↓ moves from the query into the results and ↑ on the
-    first result goes back; ← / → fold and unfold a file; Enter opens the file at the line in the
-    editor; Esc goes back to the pane. ⇧⌘F no longer ends a terminal search; Esc still does.
+    first result goes back; ← / → fold and unfold a file; Enter opens the file in the editor with
+    the cursor on the match (its line and column); Esc goes back to the pane. ⇧⌘F no longer ends
+    a terminal search; Esc still does. A bad regex shows git's error under the query. Outside a
+    git repository it searches the folder's files.
 - **S-3 [W]** Tabs mode lists the window's tabs, grouped by tab, with pinned tabs first.
   Each row has two lines:
   - Line 1: the tab's folder (its focused pane's), or the name the user gave the tab. Then the git
