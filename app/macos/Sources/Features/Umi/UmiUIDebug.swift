@@ -158,7 +158,7 @@ enum UmiUIDebug {
             return ["pane": pane.umiID]
 
         case "debug.ui.zoom":
-            // The interface's zoom and the terminals' font size (L-23), and a pane's cell size.
+            // The interface's zoom and the terminals' font size (L-33), and a pane's cell size.
             let zoom = UmiZoom.shared
             var out: [String: Any] = ["level": zoom.level, "font_size": Double(zoom.baseFontSize),
                                       "terminal_font_size": Double(zoom.terminalFontSize)]
@@ -170,7 +170,7 @@ enum UmiUIDebug {
             return out
 
         case "debug.ui.pane.menu":
-            // The terminal's right-click menu (L-21): its items, or choose one by title.
+            // The terminal's right-click menu (L-31): its items, or choose one by title.
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
             let entries = UmiPaneMenu.entries(for: pane)
             if let title = params.string("title") {

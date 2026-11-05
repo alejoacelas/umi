@@ -803,7 +803,7 @@ final class UmiEditorContainerView: NSView {
 /// Plain-text source editing.
 struct UmiSourceEditor: NSViewRepresentable {
     @ObservedObject var doc: UmiDocument
-    /// Umi: the interface's zoom scales the editor's text (L-23).
+    /// Umi: the interface's zoom scales the editor's text (L-33).
     @ObservedObject private var zoom = UmiZoom.shared
     let group: UmiEditorGroup
 
@@ -870,7 +870,7 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.selectedRanges = clamped.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : clamped
         }
         if textView.textColor != UmiTheme.textNSColor { textView.textColor = UmiTheme.textNSColor }
-        // Umi: the interface's zoom (L-23).
+        // Umi: the interface's zoom (L-33).
         let fontSize = 12.5 * zoom.factor
         if textView.font?.pointSize != fontSize { textView.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular) }
         if let line = doc.revealLine {
@@ -934,7 +934,7 @@ struct UmiSourceEditor: NSViewRepresentable {
 /// drawn by Umi's own script, which runs apart from the page (`UmiCommentsScript`).
 struct UmiMarkdownPreview: NSViewRepresentable {
     @ObservedObject var doc: UmiDocument
-    /// Umi: the interface's zoom scales the page (L-23).
+    /// Umi: the interface's zoom scales the page (L-33).
     @ObservedObject private var zoom = UmiZoom.shared
     let group: UmiEditorGroup
     let background: Color

@@ -152,7 +152,7 @@ enum UmiShortcuts {
         ] + inputSyncItems + zoomItems
     }
 
-    /// The interface's zoom and the terminals' font size, as Warp's (L-23).
+    /// The interface's zoom and the terminals' font size, as Warp's (L-33).
     private static var zoomItems: [Item] {
         [
             Item(id: "view.zoom_in", title: "Zoom In", key: "=", modifiers: [.command], symbol: "plus.magnifyingglass",
@@ -172,7 +172,7 @@ enum UmiShortcuts {
         ]
     }
 
-    /// Synchronized input, as Warp's (L-22).
+    /// Synchronized input, as Warp's (L-32).
     private static var inputSyncItems: [Item] {
         [
             Item(id: "input.sync_tab", title: "Toggle Synchronizing All Panes in Current Tab", key: "i", modifiers: [.command, .option],
@@ -238,7 +238,7 @@ enum UmiShortcuts {
         for existing in allItems(mainMenu) where existing.action == #selector(BaseTerminalController.toggleCommandPalette(_:)) {
             existing.isHidden = true
         }
-        // So are its font size items: Umi's set the size for every pane, with the zoom (L-23).
+        // So are its font size items: Umi's set the size for every pane, with the zoom (L-33).
         let fontActions = ["increaseFontSize:", "decreaseFontSize:", "resetFontSize:"].map(NSSelectorFromString)
         for existing in allItems(mainMenu) where handlers[existing] == nil && existing.action.map(fontActions.contains) == true {
             existing.isHidden = true

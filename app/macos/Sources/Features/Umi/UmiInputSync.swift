@@ -1,7 +1,7 @@
 import AppKit
 import GhosttyKit
 
-/// Synchronized input, as Warp's (`workspace/sync_inputs.rs`, L-22): what's typed into a pane of a
+/// Synchronized input, as Warp's (`workspace/sync_inputs.rs`, L-32): what's typed into a pane of a
 /// synced tab is typed into every terminal pane of every synced tab in that window. Each window
 /// syncs nothing, some tabs, or all its tabs (new ones included). ⌥⌘I toggles the current tab,
 /// "all tabs" toggles the window, ⌥⇧⌘I stops it.

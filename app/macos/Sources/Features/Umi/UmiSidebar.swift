@@ -233,7 +233,7 @@ struct UmiSidebarRowModel {
             "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName,
             "color": UmiTopology.colorName(tab.color),
         ]
-        // Umi: synchronized input (L-22).
+        // Umi: synchronized input (L-32).
         if let window = UmiTopology.locate(tab: tab) { json["input_synced"] = UmiInputSync.shared.isSynced(tab, in: window) }
         if let git {
             json["branch"] = git.branch
@@ -319,7 +319,7 @@ struct UmiSidebarTabRow: View {
                     }
                     Spacer(minLength: 4)
 
-                    // Umi: Warp's link mark on a tab whose input is synchronized (L-22).
+                    // Umi: Warp's link mark on a tab whose input is synchronized (L-32).
                     if UmiInputSync.shared.isSynced(tab, in: controller) {
                         Image(systemName: "link")
                             .font(.system(size: 9.5, weight: .semibold))

@@ -62,7 +62,7 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     // Umi: the sidebar beside a window's panes.
     @ObservedObject private var umiState = UmiState.shared
-    // Umi: the interface's zoom (L-23).
+    // Umi: the interface's zoom (L-33).
     @ObservedObject private var umiZoom = UmiZoom.shared
 
     /// The focused terminal's initial size plus the sidebar.

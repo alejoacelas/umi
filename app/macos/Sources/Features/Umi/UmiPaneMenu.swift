@@ -1,7 +1,7 @@
 import AppKit
 import GhosttyKit
 
-/// The terminal's right-click menu (L-21): Warp's items, in Warp's order, then Ghostty's
+/// The terminal's right-click menu (L-31): Warp's items, in Warp's order, then Ghostty's
 /// terminal items Umi keeps. Warp (`terminal/view.rs`, the block list's context menu) shows
 /// Copy when text is selected, Paste, Clear, the four splits, and in a split Maximize (or
 /// Minimize) and Close. Its block, prompt and AI items have nothing to act on in Umi.

@@ -1521,7 +1521,7 @@ extension Ghostty {
             var key_ev = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
             key_ev.composing = composing
 
-            // Umi: typed into the panes synced with this one too (L-22).
+            // Umi: typed into the panes synced with this one too (L-32).
             if let text = text?.keyEventText {
                 return text.withCString { ptr in
                     key_ev.text = ptr
@@ -1568,7 +1568,7 @@ extension Ghostty {
             return text.withCString { ptr in
                 key_ev.text = ptr
                 let handled = ghostty_surface_key(surface, key_ev)
-                // Umi: typed into the panes synced with this one too (L-22).
+                // Umi: typed into the panes synced with this one too (L-32).
                 UmiInputSync.mirror(key_ev, from: self)
                 return handled
             }
@@ -1638,7 +1638,7 @@ extension Ghostty {
                 return nil
             }
 
-            // Umi: Warp's right-click items, then Ghostty's (L-21).
+            // Umi: Warp's right-click items, then Ghostty's (L-31).
             return UmiPaneMenu.menu(for: self)
         }
 
@@ -1663,7 +1663,7 @@ extension Ghostty {
             if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action, privacy: .public)")
             }
-            // Umi: and into the panes synced with this one (L-22).
+            // Umi: and into the panes synced with this one (L-32).
             UmiInputSync.mirrorPaste(from: self)
         }
 

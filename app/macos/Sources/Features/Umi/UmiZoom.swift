@@ -2,7 +2,7 @@ import AppKit
 import GhosttyKit
 import SwiftUI
 
-/// The interface's zoom and the terminals' font size, as Warp's (L-23). ⌘= / ⌘- step through
+/// The interface's zoom and the terminals' font size, as Warp's (L-33). ⌘= / ⌘- step through
 /// Warp's zoom levels and ⌘0 goes back to 100%: the sidebar, the palette, the editor, the
 /// Markdown preview and the terminals' text all scale. ⌥⇧> / ⌥⇧< change the terminals' font
 /// size by a point (5–25, as Warp), whatever the zoom; the terminals show it times the zoom.
