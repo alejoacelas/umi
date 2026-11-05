@@ -704,3 +704,23 @@ Warp parity for the file editor. **Requirements:** E-4 (amended: the banner's wo
   300-point chip limit. Keys are pressed as key events; results are read from files, the
   accessibility tree and the internal `debug.ui.editor`.
 - No existing test changed.
+
+### Review fixes (2026-11-05)
+
+- **Changed, `test_cmd_f_opens_the_editors_own_find`**: after ⇧⌘G it expects the caret at the
+  match's start (`[offset, 0]`) instead of the match selected. Warp moves the caret to the match's
+  start (W: `code/editor/view.rs` `move_cursor_to_selected_match`), and E-22 now says so. The
+  count and the match reached are checked as before.
+- **Changed, `test_header_menu_has_warps_items`**: the source view's menu is Warp's code view menu
+  (Maximize pane, Copy file path, Reveal in Finder); Reload file moved to the preview's menu as
+  Warp's "Refresh file" (new test below). Stronger: the menu is also opened through the ⋯ button and
+  a right-click on the header, and Copy file path is run and the pasteboard read back.
+- **Changed, `test_header_shows_the_unsaved_dot_and_chips_show_type_icons`**: stronger. The dot is
+  looked for on the chip itself (its accessibility value), not anywhere; the long name's chip must be
+  wider than 200 (Warp's old limit) and at most 300; the type icon is checked in a screenshot.
+- **New**: the preview's menu (Refresh file asking first, Open in editor, View Markdown preview
+  back); ⌘G and ⇧⌘G from a closed bar landing on the nearest match; regex replace with a lookbehind;
+  ⌘F in a Markdown preview; ⌘Z after Discard this version; Save As onto a file open in another
+  pane; ⌘C, ⌘X, ⌘V, ⌘Z and ⇧⌘Z in the text; right-click in the text (Cut, Copy, Paste); a
+  configured font-family; line-number colors and the current line, and the marks' colors, measured
+  in screenshots; the header's title centred.
