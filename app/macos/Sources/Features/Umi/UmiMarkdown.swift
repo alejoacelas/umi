@@ -247,11 +247,16 @@ enum UmiMarkdown {
             let ordered = parents.last.map { if case .orderedList = $0.kind { return true }; return false } ?? false
             return ordered ? "<li value=\"\(ordinal)\">" : "<li>"
         case .codeBlock(let language):
-            let cls = language.map { " class=\"language-\(escape($0))\"" } ?? ""
-            return "<pre><code\(cls)>"
+            // A bordered block with a footer naming the language, where the preview's script
+            // adds Copy, Run in terminal (shell blocks) and the diagram (Mermaid), as Warp does.
+            let code = CodeLanguage(language)
+            let cls = code.id.isEmpty ? "" : " class=\"language-\(escape(code.id))\""
+            let kind = code.kind.map { " umi-\($0)" } ?? ""
+            return "<div class=\"umi-code\(kind)\" data-lang=\"\(escape(code.id))\"><pre><code\(cls)>"
         case .blockQuote: return "<blockquote>"
         case .thematicBreak: return "<hr>"
-        case .table: return "<table>"
+        // In a box of its own, which scrolls sideways when the table is wider than the pane.
+        case .table: return "<div class=\"umi-table\"><table>"
         case .tableHeaderRow: return "<thead><tr>"
         case .tableRow: return "<tr>"
         case .tableCell(let column):
@@ -269,14 +274,58 @@ enum UmiMarkdown {
         case .orderedList: return "</ol>\n"
         case .unorderedList: return "</ul>\n"
         case .listItem: return "</li>\n"
-        case .codeBlock: return "</code></pre>\n"
+        case .codeBlock(let language):
+            return "</code></pre><div class=\"umi-code-footer\" data-label=\"\(escape(CodeLanguage(language).label))\"></div></div>\n"
         case .blockQuote: return "</blockquote>\n"
         case .thematicBreak: return "\n"
-        case .table: return "</tbody></table>\n"
+        case .table: return "</tbody></table></div>\n"
         case .tableHeaderRow: return "</tr></thead><tbody>\n"
         case .tableRow: return "</tr>\n"
         case .tableCell: return isHeaderRow(parents) ? "</th>" : "</td>"
         @unknown default: return "</div>"
+        }
+    }
+
+    /// A fenced block's language as Warp reads it: the info string's first word, lowercased.
+    /// Shell languages get Run in terminal, `mermaid` a diagram; the footer names the language
+    /// as Warp's does.
+    struct CodeLanguage {
+        static let shell: Set<String> = ["sh", "shell", "bash", "fish", "zsh", "warp-runnable-command"]
+        let id: String
+
+        init(_ info: String?) {
+            id = (info ?? "").split(whereSeparator: \.isWhitespace).first.map { $0.lowercased() } ?? ""
+        }
+
+        var kind: String? {
+            if Self.shell.contains(id) { return "shell" }
+            if id == "mermaid" { return "mermaid" }
+            return nil
+        }
+
+        var label: String {
+            if Self.shell.contains(id) { return "Shell" }
+            switch id {
+            case "", "text": return "Code"
+            case "mermaid": return "Mermaid"
+            case "go", "golang": return "Go"
+            case "c++", "cpp": return "C++"
+            case "c#", "csharp", "cs": return "C#"
+            case "java", "groovy": return "Java"
+            case "javascript", "jsx", "js": return "JavaScript"
+            case "python", "py": return "Python"
+            case "ruby on rails", "ruby": return "Ruby on Rails"
+            case "rust": return "Rust"
+            case "sql": return "SQL"
+            case "yaml": return "YAML"
+            case "json": return "JSON"
+            case "php": return "PHP"
+            case "toml": return "TOML"
+            case "swift": return "Swift"
+            case "kotlin": return "Kotlin"
+            case "powershell": return "PowerShell"
+            default: return id
+            }
         }
     }
 
@@ -306,7 +355,9 @@ enum UmiMarkdown {
         if intent.contains(.softBreak) { return "\n" }
         if intent.contains(.lineBreak) { return "<br>\n" }
 
-        var out = offset.map { "<span data-s=\"\($0)\">\(escape(text))</span>" } ?? escape(text)
+        // Bare URLs in plain text are links, as in Warp (not in code, nor inside a link already).
+        let plain = intent.contains(.code) || run.link != nil || run.imageURL != nil ? escape(text) : linkified(text)
+        var out = offset.map { "<span data-s=\"\($0)\">\(plain)</span>" } ?? plain
         if intent.contains(.code) { out = "<code>\(out)</code>" }
         if intent.contains(.stronglyEmphasized) { out = "<strong>\(out)</strong>" }
         if intent.contains(.emphasized) { out = "<em>\(out)</em>" }
@@ -433,6 +484,32 @@ enum UmiMarkdown {
         return result
     }
 
+    private static let bareURL = try? NSRegularExpression(pattern: #"\b(?:https?://|www\.)[^\s<>"'`]+"#, options: [.caseInsensitive])
+
+    /// Plain text, escaped, with its bare URLs (`https://…`, `www.…`) made links. Trailing
+    /// punctuation and an unmatched closing bracket stay text, as in GitHub's autolinks.
+    static func linkified(_ text: String) -> String {
+        guard let bareURL, text.contains("http") || text.contains("www.") || text.contains("HTTP") || text.contains("WWW.") else {
+            return escape(text)
+        }
+        let ns = text as NSString
+        var out = ""
+        var cursor = 0
+        for match in bareURL.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            var url = ns.substring(with: match.range)
+            while let last = url.last, ".,;:!?*_~".contains(last) || (last == ")" && url.filter { $0 == "(" }.count < url.filter { $0 == ")" }.count) {
+                url.removeLast()
+            }
+            guard !url.isEmpty else { continue }
+            out += escape(ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor)))
+            let href = url.lowercased().hasPrefix("www.") ? "https://" + url : url
+            out += "<a href=\"\(escape(href))\">\(escape(url))</a>"
+            cursor = match.range.location + (url as NSString).length
+        }
+        out += escape(ns.substring(from: cursor))
+        return out
+    }
+
     static func escape(_ text: String) -> String {
         var out = ""
         out.reserveCapacity(text.count)
@@ -450,7 +527,17 @@ enum UmiMarkdown {
 
     // MARK: Page
 
-    static func page(body: String, background: String, light: Bool = false, head: String = "") -> String {
+    /// `markdown`: a Markdown document, drawn as Warp draws Markdown files (Warp parity,
+    /// 2026-11-05); otherwise a data preview (JSON, CSV) in the editor's earlier style.
+    static func page(body: String, background: String, light: Bool = false, head: String = "", markdown: Bool = false) -> String {
+        if markdown {
+            return """
+            <!doctype html><html><head><meta charset="utf-8">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; img-src data: https: http:; style-src 'unsafe-inline'; font-src data:;">
+            <meta name="umi-markdown" content="1">
+            <style>\(UmiMarkdownStyle.fonts)\n\(UmiMarkdownStyle.css(light: light, background: background))</style>\(head)</head><body class="umi-md">\(body)</body></html>
+            """
+        }
         // Light and dark palettes: text, headings, muted text, code/rule tints.
         let (fg, heading, muted, tint, scheme) = light
             ? ("#24292f", "#111111", "#57606a", "0,0,0", "light")
