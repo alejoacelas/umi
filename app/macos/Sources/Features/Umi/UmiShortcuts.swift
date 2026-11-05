@@ -225,6 +225,51 @@ enum UmiShortcuts {
             Item(id: "help.shortcuts", title: "Keyboard Shortcuts", key: "/", modifiers: [.command], symbol: "keyboard",
                  menu: "Help", action: { UmiShortcutsPageModel.toggle() },
                  enabled: { !UmiShortcutsPageModel.editorSourceHasFocus }, passesThrough: true),
+        ] + inputSyncItems + zoomItems
+    }
+
+    /// The interface's zoom and the terminals' font size, as Warp's (L-33).
+    private static var zoomItems: [Item] {
+        [
+            Item(id: "view.zoom_in", title: "Zoom In", key: "=", modifiers: [.command], symbol: "plus.magnifyingglass",
+                 menu: "View", action: { if !UmiZoom.shared.step(1) { NSSound.beep() } }),
+            Item(id: "view.zoom_out", title: "Zoom Out", key: "-", modifiers: [.command], symbol: "minus.magnifyingglass",
+                 menu: "View", action: { if !UmiZoom.shared.step(-1) { NSSound.beep() } }),
+            Item(id: "view.zoom_reset", title: "Actual Size", key: "0", modifiers: [.command], symbol: "1.magnifyingglass",
+                 menu: "View", action: { UmiZoom.shared.reset() }),
+            Item(id: "view.font_bigger", title: "Increase Font Size", key: ".", modifiers: [.option, .shift],
+                 symbol: "textformat.size.larger", menu: "View",
+                 action: { if !UmiZoom.shared.stepFontSize(1) { NSSound.beep() } }),
+            Item(id: "view.font_smaller", title: "Decrease Font Size", key: ",", modifiers: [.option, .shift],
+                 symbol: "textformat.size.smaller", menu: "View",
+                 action: { if !UmiZoom.shared.stepFontSize(-1) { NSSound.beep() } }),
+            Item(id: "view.font_reset", title: "Reset Font Size", key: "", modifiers: [], symbol: "textformat.size",
+                 menu: "View", action: { UmiZoom.shared.resetFontSize() }),
+        ]
+    }
+
+    /// Synchronized input, as Warp's (L-32).
+    private static var inputSyncItems: [Item] {
+        [
+            Item(id: "input.sync_tab", title: "Toggle Synchronizing All Panes in Current Tab", key: "i", modifiers: [.command, .option],
+                 symbol: "link", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.toggleTab(window.selectedTab, in: window)
+                 }),
+            Item(id: "input.sync_all", title: "Toggle Synchronizing All Panes in All Tabs", key: "", modifiers: [],
+                 symbol: "link.circle", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.toggleAll(in: window)
+                 }),
+            Item(id: "input.sync_stop", title: "Stop Synchronizing Any Panes", key: "i", modifiers: [.command, .option, .shift],
+                 symbol: "personalhotspot.slash", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.stop(in: window)
+                 },
+                 enabled: { UmiTopology.currentWindow.map { UmiInputSync.shared.isSyncingAny($0) } ?? false }),
         ]
     }
 
@@ -269,6 +314,11 @@ enum UmiShortcuts {
         // Ghostty's own palette item is Umi's Command Palette… now.
         for existing in allItems(mainMenu) where existing.action == #selector(BaseTerminalController.toggleCommandPalette(_:)) {
             existing.isHidden = true
+        }
+        // Its font size items go: Umi's (same titles) set the size for every pane, with the zoom (L-33).
+        let fontActions = ["increaseFontSize:", "decreaseFontSize:", "resetFontSize:"].map(NSSelectorFromString)
+        for existing in allItems(mainMenu) where handlers[existing] == nil && existing.action.map(fontActions.contains) == true {
+            existing.menu?.removeItem(existing)
         }
         // Every session, shown in a pane or not, with its status (AP-3, AP-4).
         if let windowMenu = topMenu("Window", in: mainMenu) {
@@ -358,9 +408,11 @@ enum UmiShortcuts {
     /// Perform the Umi item whose shortcut this key is. True when the key was Umi's. Every
     /// key press goes through here before any view sees it.
     static func dispatch(_ event: NSEvent) -> Bool {
-        // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing.
+        // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing,
+        // except ⌥⇧ keys an item has (⌥⇧> and ⌥⇧<, Warp's font size keys).
         let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false
-        guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey else { return false }
+        let isOptionShift = event.modifierFlags.contains([.option, .shift])
+        guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey || isOptionShift else { return false }
         guard let pressed = UmiShortcut(event: event), let candidates = byShortcut[pressed], !candidates.isEmpty else {
             return false
         }

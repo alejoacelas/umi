@@ -293,3 +293,5 @@ gestures are out.
   silent bell; blocks that count Ctrl-C and SIGPIPE as success, show no running time in the first
   second and carry Warp's header (environments, user@host over SSH, git branch); the folder box
   with the folder alone, cut at 40 characters (SPEC S-5, S-10 to S-12).
+- Panes, splits, the terminal's right-click menu, synchronized input and zoom (SPEC L-19, L-31,
+  L-32, L-33).

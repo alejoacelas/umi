@@ -145,3 +145,16 @@ it is guidance"). What this design gives up:
 | **A full-screen program's pane changes size as it starts and ends** (it loses the padding), so the program gets a resize right after it starts, and the shell's screen is resized back when it ends. Warp keeps its full-screen view separate from the block list. | Ghostty's grid is one size for both screens. | S-12 (full-screen programs take the whole pane). |
 | **The scrollbar shows and hides as macOS overlay scrollbars do** (while scrolling, and when the pointer reaches the pane's edge); Warp shows its thumb whenever the pointer is over the pane. | Showing it on hover is a pointer gesture outside this round's keyboard scope. | — |
 | **Each prompt runs `git` once or twice** to find the branch for the header (as Warp's integration does), a few milliseconds per prompt. | The header is printed with the prompt; there is no other moment to learn the branch. | S-10's header. |
+===================================================================================================
+
+# Compromises (Warp parity 2026-11-05: panes, the right-click menu, synchronized input, zoom)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **The right-click menu has no link items.** Warp adds Copy URL, Copy Path, Show in Finder and Open Link when the click is on a link. Umi's menu doesn't. | Ghostty only reports the link under the mouse while ⌘ is held, so a plain right-click doesn't know there is one. | L-31's other items, unchanged Ghostty link handling. |
+| **A right-click on unselected text selects the word under the mouse, and the menu offers Copy for it** above Paste and Clear. Warp selects nothing and shows Paste and Clear alone. With text already selected, the menu is Warp's selection menu (Copy and the pane's items). | Ghostty selects the word on a right-click so Copy has something to copy; Umi keeps that. | L-31's Paste and Clear on an ordinary right-click; Ghostty's right-click copy. |
+| **Clear is in the right-click menu whenever Paste is.** Warp shows Clear Blocks only when there are blocks. | ⌘K clears the screen and scrollback whatever is in them. | L-31. |
+| **The synchronized-input mark is on the tab's row only, and there is no toast.** Warp marks each pane's row and shows "You enabled synchronized inputs in this tab. Press ⌥⌘I to undo." | Umi's sidebar rows are tabs, not panes, and Umi has no toasts. | L-32. |
+| **The sidebar keeps the width you gave it when zoomed.** Its contents grow, so fewer characters fit; Warp's panel grows with the zoom. Session read-only views, a file pane's header, a stack's strip and alerts don't zoom. | The sidebar's width is dragged in points and limited to half the window; scaling it would fight that limit. The other views are AppKit views with their own sizes. | L-33 for what's read most: terminals, sidebar text, palette, editor, preview. |
+| **Ghostty's own font size menu items are gone.** View ▸ Increase, Decrease and Reset Font Size are Umi's now and act on every pane. | Ghostty's act on one pane and would leave it out of step with the zoom. | L-33. |
+| **Nested rows count as one when checking the 190-point minimum.** The check measures each pane's frame in the tab's split tree, which can't tell a nested same-direction row from a flat one (see L-19's known limit). | The tree is Ghostty's binary split tree. | L-19. |

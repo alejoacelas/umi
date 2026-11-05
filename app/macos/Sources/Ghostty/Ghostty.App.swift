@@ -340,6 +340,9 @@ extension Ghostty {
             }
 
             let pendingBefore = surfaceView.pendingClipboardConfirmation
+            // Umi: a paste from Edit ▸ Paste also goes to the panes synced with this one, once
+            // this pane has accepted it (L-32).
+            let umiSync = surfaceView.umiSyncPaste && location == GHOSTTY_CLIPBOARD_STANDARD
             completeClipboardRequest(
                 surface,
                 contents: contents,
@@ -348,8 +351,20 @@ extension Ghostty {
             // Pasted now, unless it waits for the user's confirmation (counted once confirmed).
             if surfaceView.pendingClipboardConfirmation === pendingBefore {
                 Self.notePaste(contents, into: surfaceView)
+                if umiSync { Self.syncPaste(contents, from: surfaceView) }
             }
             return GHOSTTY_CLIPBOARD_READ_STARTED
+        }
+
+        /// Umi: the text `surfaceView` just pasted, typed into the panes synced with it as a
+        /// paste (bracketed when their program asks), with no confirmation of their own: the
+        /// user accepted it once, in the source pane (L-32).
+        private static func syncPaste(_ contents: [Ghostty.ClipboardContent], from surfaceView: SurfaceView) {
+            guard let text = contents.first(where: { $0.mime == "text/plain" }).flatMap({ String(data: $0.data, encoding: .utf8) }),
+                  !text.isEmpty else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { UmiInputSync.mirrorPaste(text, from: surfaceView) }
+            }
         }
 
         /// Text pasted into a pane running an agent's own interface is a draft there (Umi, AG-9).
@@ -375,6 +390,9 @@ extension Ghostty {
                 return
             }
             let c = confirm.pointee
+            // Umi: still inside Edit ▸ Paste's read: once confirmed, the paste also goes to
+            // the panes synced with this one, with no dialog of their own (L-32).
+            let umiSync = surfaceView.umiSyncPaste
 
             // Copy the borrowed C representations: the confirmation is
             // asynchronous and completes with exactly what the user
@@ -432,6 +450,7 @@ extension Ghostty {
                         confirmed: true,
                         remember: remember)
                     notePaste(reps, into: surfaceView)
+                    if umiSync { Self.syncPaste(reps, from: surfaceView) }
                 } else {
                     ghostty_surface_deny_clipboard_request(surface, state)
                 }

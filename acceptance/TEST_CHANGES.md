@@ -901,3 +901,49 @@ S-12.
   `knob_proportion`, `value`, `width_pt`, `edge_inset`, `knob_rect_pt` (AppKit's knob),
   `thumb_rect_pt` and `thumb_attached`. This test found that AppKit drew the old thumb clipped to
   its own 6-point knob.
+## Warp's panes, right-click menu, synchronized input and zoom (L-19, L-31–L-33, 2026-11-05)
+
+L-19 gained Warp's 190-point minimum pane size: a dragged divider stops before a pane gets smaller,
+and a keyboard resize or `pane resize` that would is refused. **Requirement:** L-19.
+
+- **Changed, `tests/test_umi_panes_ui.py`**: three drag tests used shares that put a pane at 10–20%
+  of the suite's window (its panes' area is about 928 points wide, so 20% is 186 points). Their
+  numbers now keep every pane above 190 points; what each checks is unchanged:
+  - `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row`: the b|c
+    divider goes to 78% of the row (50/28/22) instead of 80% (50/30/20);
+  - `test_panes_sized_by_hand_keep_their_size_and_the_others_share`: the first divider goes to 28%
+    and the last to 78% (28/25/25/22 instead of 40/25/25/10). The row then never holds five panes
+    (five can't all be 190 points wide there): c is closed before the split that tests a placed
+    divider surviving a split, so the drag after it still shows a keeping its share while b and e
+    share the stretch; the double-click and the last drag use four panes (25/26/26/23 instead of
+    20/23.3/23.3/23.3/10);
+  - `test_a_dragged_middle_divider_shares_both_sides`: the middle divider goes to 56% (28/28/22/22)
+    instead of 75% (37.5/37.5/12.5/12.5).
+- **New, `tests/test_umi_warp_panes.py`**: the minimum (a drag stops at 190 points on either side; a
+  keyboard resize below it is refused and says so), the divider's color and 9-point grab area, the
+  right-click menu's items and order, and Maximize/Minimize, Close and Split from it (L-31), ⌥⌘I,
+  ⌥⇧⌘I and the all-tabs toggle typing into the synced panes only, with the sidebar's mark and the
+  inspector's new key (L-32), and ⌘= ⌘- ⌘0 and ⌥⇧> ⌥⇧< with the terminal's and the sidebar's sizes
+  and the saved level (L-33). The divider grab area, the real right-click, and the key tests are
+  `ui` tests.
+
+### Review follow-ups (L-19, L-31–L-33, 2026-11-05)
+
+New tests in `tests/test_umi_warp_panes.py`; no existing test changed. **Requirements:** L-19, L-31,
+L-32, L-33.
+
+- L-32: ⌥⌘I in a one-tab window leaves a tab opened later out; a paste into a synced pane reaches
+  every pane, and a paste that needs confirming asks once, in the pane pasted into (cancelled, it
+  goes nowhere); file and web panes in synced tabs get no keys; the sidebar row's link mark comes
+  and goes (`ui`).
+- L-31: Paste disabled with an empty clipboard; with text selected the menu starts with Copy and
+  has no Paste or Clear, and Copy copies; in less's full-screen view there's no Paste, Clear or
+  Copy; Close Pane asks first when a program runs, and Cancel keeps the pane.
+- L-19: the minimum for a divider between rows; a drag stops when a pane beyond the divider's
+  neighbours reaches it; a pane already below it may grow but not shrink.
+- L-33: the zoom level and font size survive a restart; the editor's text and the Markdown
+  preview scale with the zoom; sidebar rows drag and take clicks at 125% (`ui`).
+- New internal methods for them: `debug.ui.clipboard.confirmation` (a pane's pending paste
+  confirmation, answered as its buttons do), `debug.ui.sheet` (a window's dialog, cancelled as its
+  Cancel button does), and `debug.ui.zoom` with `window` (the editor's text sizes and the preview's
+  page zoom there).

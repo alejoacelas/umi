@@ -32,8 +32,9 @@ struct SplitView<L: View, R: View>: View {
 
     /// The visible size of the splitter, in points. The invisible size is a transparent hitbox that can still
     /// be used for getting a resize handle. The total width/height of the splitter is the sum of both.
+    /// Umi: Warp's divider, a 1px line with 4px to grab on each side (9px in all).
     private let splitterVisibleSize: CGFloat = 1
-    private let splitterInvisibleSize: CGFloat = 6
+    private let splitterInvisibleSize: CGFloat = 8
 
     var body: some View {
         GeometryReader { geo in

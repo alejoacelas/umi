@@ -358,6 +358,8 @@ struct UmiSidebarRowModel {
                 && UmiSidebarModel.matches(self, query: controller.sidebarModel.query)
             if let group = UmiTabGroups.group(of: tab, in: controller) { json["group"] = group.name }
         }
+        // Umi: synchronized input (L-32).
+        if let window = UmiTopology.locate(tab: tab) { json["input_synced"] = UmiInputSync.shared.isSynced(tab, in: window) }
         if let git {
             json["branch"] = git.branch
             if let worktree = git.worktree { json["worktree"] = worktree }
@@ -465,6 +467,15 @@ struct UmiSidebarTabRow: View {
                             .font(.system(size: 12))
                             .foregroundColor(UmiTheme.rowSubtitle)
                     }
+                    // Umi: Warp's link mark on a tab whose input is synchronized (L-32).
+                    if UmiInputSync.shared.isSynced(tab, in: controller) {
+                        Image(systemName: "link")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .frame(width: 12, height: 12)
+                            .foregroundColor(UmiTheme.syncedInput)
+                            .help("Input is synchronized across this tab's panes")
+                            .accessibilityLabel("Synchronized input")
+                    }
 
                     if hovering && renaming == nil {
                         Button { pinToggle() } label: {
@@ -533,7 +544,9 @@ struct UmiSidebarTabRow: View {
         .help(row.cwd.map(UmiSidebarRowModel.abbreviate) ?? row.title)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.title)
-        .accessibilityValue(row.accessibilityValue)
+        // Umi: the link mark, which the combined row element would otherwise hide (L-32).
+        .accessibilityValue(UmiInputSync.shared.isSynced(tab, in: controller)
+                            ? "Synchronized input · " + row.accessibilityValue : row.accessibilityValue)
         .accessibilityAddTraits(row.selected ? [.isSelected, .isButton] : .isButton)
         .onAppear { if renaming != nil { startEditing() } }
         .onChange(of: renaming) { target in if target != nil { startEditing() } }

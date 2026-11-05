@@ -6,6 +6,8 @@ import SwiftUI
 enum UmiTheme {
     static let accent = Color(red: 0x19 / 255, green: 0xAA / 255, blue: 0xD8 / 255)
     static let accentNSColor = NSColor(red: 0x19 / 255, green: 0xAA / 255, blue: 0xD8 / 255, alpha: 1)
+    /// Warp's mark for synchronized input (`TAB_INDICATOR_SYNCED_COLOR`, #4A93FF).
+    static let syncedInput = Color(red: 0x4A / 255, green: 0x93 / 255, blue: 0xFF / 255)
 
     /// The chrome sits on the terminal's configured background, so its ink is white on dark
     /// backgrounds and black on light ones (S-5).
@@ -106,7 +108,7 @@ enum UmiTheme {
     selection-background = #76a7fa
     selection-background-opacity = 0.4
     selection-foreground = cell-foreground
-    split-divider-color = #1f1f1f
+    split-divider-color = #262626
     unfocused-split-fill = #050505
     palette = 0=#616161
     palette = 1=#ff8272
@@ -178,6 +180,16 @@ enum UmiTheme {
         keybind = super+,=unbind
         # ⇧⌘F opens global search in the sidebar (as in Warp); Esc still ends a terminal search.
         keybind = super+shift+f=unbind
+        # ⌥⌘I and ⌥⇧⌘I synchronize input (Window ▸ Synchronize Input), as in Warp; the
+        # terminal inspector moves to ⌃⌥⌘I.
+        keybind = super+alt+i=unbind
+        keybind = super+alt+ctrl+i=inspector:toggle
+        # ⌘= ⌘- ⌘0 zoom the whole interface (View menu), as in Warp; the terminals' font size
+        # is ⌥⇧> and ⌥⇧<.
+        keybind = super+==unbind
+        keybind = super++=unbind
+        keybind = super+-=unbind
+        keybind = super+0=unbind
         \(digitUnbinds)
         """
     }

@@ -313,6 +313,8 @@ enum UmiLayout {
         do {
             let newTree = try tree.resizing(node: node, by: UInt16(min(max(pixels, 1), 4000)), in: spatial, with: bounds)
             location.window.setTree(newTree, for: location.tab)
+        } catch SplitTree<Ghostty.SurfaceView>.SplitError.paneTooSmall {
+            throw UmiError.failed("a pane would get smaller than \(Int(SplitTree<Ghostty.SurfaceView>.minimumPaneSize)) points; the resize was refused")
         } catch {
             throw UmiError.failed("couldn't resize the pane: \(error)")
         }

@@ -1,4 +1,5 @@
 import AppKit
+import GhosttyKit
 
 /// Internal `debug.ui.*` control methods (not part of the CLI contract): scripted checks of
 /// sidebar rows, drops, drags, the row menu, dividers and the open-file path, which otherwise
@@ -204,6 +205,90 @@ enum UmiUIDebug {
                 throw UmiError.badRequest("action is equalize or move")
             }
             return ["pane": pane.umiID]
+
+        case "debug.ui.zoom":
+            // The interface's zoom and the terminals' font size (L-33), and a pane's cell size.
+            let zoom = UmiZoom.shared
+            var out: [String: Any] = ["level": zoom.level, "font_size": Double(zoom.baseFontSize),
+                                      "terminal_font_size": Double(zoom.terminalFontSize)]
+            if let pane = try? UmiTopology.pane(params.string("pane"), caller: caller), let surface = pane.surface {
+                let size = ghostty_surface_size(surface)
+                out["cell_width_px"] = Int(size.cell_width_px)
+                out["cell_height_px"] = Int(size.cell_height_px)
+            }
+            // The editor's text size and the Markdown preview's page zoom in a window.
+            if params.string("window") != nil {
+                let window = try UmiTopology.window(params.string("window"), caller: caller)
+                var editorSizes: [Double] = []
+                var previewZooms: [Double] = []
+                func walk(_ view: NSView) {
+                    if let text = view as? UmiEditorTextView, let font = text.font { editorSizes.append(Double(font.pointSize)) }
+                    if let web = view as? UmiPreviewWebView { previewZooms.append(Double(web.pageZoom)) }
+                    view.subviews.forEach(walk)
+                }
+                if let content = window.window?.contentView { walk(content) }
+                out["editor_font_sizes"] = editorSizes
+                out["preview_page_zooms"] = previewZooms
+            }
+            return out
+
+        case "debug.ui.pane.menu":
+            // The terminal's right-click menu (L-31): its items, or choose one by title.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            let entries = UmiPaneMenu.entries(for: pane)
+            if let title = params.string("title") {
+                guard let entry = entries.compactMap({ $0 }).first(where: { $0.title == title }) else {
+                    throw UmiError.notFound("no menu item \"\(title)\"")
+                }
+                guard entry.enabled else { throw UmiError.failed("the menu item \"\(title)\" is disabled") }
+                entry.action()
+                return ["performed": title]
+            }
+            return ["items": entries.map { entry -> [String: Any] in
+                guard let entry else { return ["separator": true] }
+                return ["title": entry.title, "enabled": entry.enabled, "checked": entry.checked]
+            }]
+
+        case "debug.ui.clipboard.confirmation":
+            // A pane's clipboard confirmation waiting for the user: whether there is one, or
+            // answer it as its dialog's Paste or Cancel buttons do.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            let pending = pane.pendingClipboardConfirmation
+            switch params.string("action") {
+            case nil: break
+            case "confirm":
+                guard let pending else { throw UmiError.failed("no confirmation is waiting") }
+                pending.complete(remember: false)
+                if pane.pendingClipboardConfirmation === pending { pane.pendingClipboardConfirmation = nil }
+            case "cancel":
+                guard let pending else { throw UmiError.failed("no confirmation is waiting") }
+                pending.cancel()
+                if pane.pendingClipboardConfirmation === pending { pane.pendingClipboardConfirmation = nil }
+            default:
+                throw UmiError.badRequest("action is confirm or cancel")
+            }
+            return ["pending": pending != nil]
+
+        case "debug.ui.sheet":
+            // The dialog attached to a window (a close confirmation, say): whether there is one
+            // and its texts, or dismiss it as its Cancel button (the second) does.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            let sheet = window.window?.attachedSheet
+            var texts: [String] = []
+            func walk(_ view: NSView) {
+                if let field = view as? NSTextField, !field.stringValue.isEmpty { texts.append(field.stringValue) }
+                view.subviews.forEach(walk)
+            }
+            if let content = sheet?.contentView { walk(content) }
+            switch params.string("action") {
+            case nil: break
+            case "cancel":
+                guard let sheet else { throw UmiError.failed("no dialog is open") }
+                window.window?.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+            default:
+                throw UmiError.badRequest("action is cancel")
+            }
+            return ["sheet": sheet != nil, "texts": texts]
 
         case "debug.ui.views":
             // The window's AppKit views, as an indented list of class names and frames.

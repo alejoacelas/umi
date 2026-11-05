@@ -88,6 +88,8 @@ struct SplitTree<ViewType: NSView & Codable & Identifiable> {
 
     enum SplitError: Error {
         case viewNotFound
+        /// Umi: the change would make a pane smaller than `minimumPaneSize` (Warp's 190 points).
+        case paneTooSmall
     }
 
     enum NewDirection {
@@ -352,7 +354,10 @@ extension SplitTree {
         // it change size and the others keep theirs (as in Warp). Dragging a divider is
         // different (`movingDivider`).
         let newRoot = try root.movingDividerBetweenNeighbors(at: splitPath, to: newRatio)
-        return .init(root: newRoot, zoomed: nil)
+        let resized = Self(root: newRoot, zoomed: nil)
+        // Umi: as in Warp, a resize that would make a pane smaller than the minimum is refused.
+        guard keepsMinimumPaneSize(resized, in: bounds.size) else { throw SplitError.paneTooSmall }
+        return resized
     }
 
     /// Returns the total bounds of the split hierarchy using NSView bounds.
@@ -1489,6 +1494,47 @@ func splitRowDrag(_ shares: [Double], placed: [Bool], divider k: Int, to positio
 }
 
 extension SplitTree {
+    /// Umi: the smallest a pane gets along the axis a divider moves, as in Warp (190 points,
+    /// `MINIMUM_PANE_SIZE_UDI`). A drag or keyboard resize that would go below it is refused.
+    static var minimumPaneSize: CGFloat { 190 }
+
+    /// Whether `new` (this tree after a resize, laid out in `size`) leaves every pane that it
+    /// made narrower (or shorter) at least `minimum` wide (or tall). A pane that was already
+    /// smaller (a small window) may grow; it may not shrink.
+    func keepsMinimumPaneSize(_ new: Self, in size: CGSize, minimum: CGFloat = Self.minimumPaneSize) -> Bool {
+        guard let oldRoot = root, let newRoot = new.root, size.width > 0, size.height > 0 else { return true }
+        let before = oldRoot.frames(in: size)
+        for (view, frame) in newRoot.frames(in: size) {
+            guard let old = before.first(where: { $0.view === view })?.frame else { continue }
+            if frame.width < old.width - 0.5 && frame.width < minimum { return false }
+            if frame.height < old.height - 0.5 && frame.height < minimum { return false }
+        }
+        return true
+    }
+
+    /// Drag the divider of `node` (a split) toward `ratio` (`movingDivider(of:to:)`), stopping
+    /// where the next step would make a pane smaller than `minimumPaneSize` (laid out in
+    /// `size`). Nothing moves when even the smallest step would.
+    func movingDivider(of node: Node, to ratio: Double, keepingMinimumIn size: CGSize) throws -> Self {
+        let target = try movingDivider(of: node, to: ratio)
+        if keepsMinimumPaneSize(target, in: size) { return target }
+        guard case .split(let split) = node else { return self }
+        // The furthest point between where the divider is and where it was dragged to.
+        var best = self
+        var low = 0.0, high = 1.0
+        for _ in 0..<24 {
+            let middle = (low + high) / 2
+            let candidate = try movingDivider(of: node, to: split.ratio + (ratio - split.ratio) * middle)
+            if keepsMinimumPaneSize(candidate, in: size) {
+                best = candidate
+                low = middle
+            } else {
+                high = middle
+            }
+        }
+        return best
+    }
+
     /// Give every member of the run that `node` (a split) belongs to the same share: what
     /// double-clicking a divider does. Its dividers are no longer placed. The rest of the tree
     /// keeps its sizes.
