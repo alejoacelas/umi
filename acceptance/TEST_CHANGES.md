@@ -780,3 +780,42 @@ Warp parity for the file editor. **Requirements:** E-4 (amended: the banner's wo
 - **Fixed, `test_syntax_colors_come_from_the_terminal_palette`**: it read `highlighted` before the
   code view existed and failed with a KeyError once on mac-air-2; it now waits for the key. Same
   assertions.
+## 3. Explorer and global search tests, and `debug.key` that keeps focus (`tests/test_umi_files.py`)
+
+**What was missing.** Nothing tested the project explorer beyond the sidebar's mode, and global
+search is new (SPEC S-2, Warp parity 2026-11-05).
+
+**Change.** A new file, `tests/test_umi_files.py` (8 tests): the explorer's root, order, ignored
+marks and row numbers; file-system changes without a refresh; the right-click menu's items and
+what each does; revealing the active file; every new key (⌃1, ⇧⌘E, ↑↓←→, Enter, Esc, ⇧⌘>, ⇧⌘F,
+⌃3, typing into the inline name field and the query); New File and Rename in the row; global
+search's results, folding, opening at the line, the toggles. Keys go through `debug.key`, which
+gains `focus: "none"` (keep focus where it is; an unhandled key goes to the window's first
+responder), so the tests also run while the test Mac's screen is locked. Two internal methods back
+them: `debug.ui.files*` (state and the right-click menu) and `debug.ui.search*` (state and the
+toggles). No existing test changed.
+
+**Requirement.** S-2 and L-9, L-10 as amended.
+
+## 4. Explorer and global search: the review's fixes (`tests/test_umi_files.py`, 2026-11-05)
+
+**What was missing.** A review found gaps against Warp and behaviors without a test.
+
+**Change.** In `test_explorer_menu_has_warps_items`, the file menu's first item is now Warp's
+"Open in New Pane" (it replaced "Open in Editor", the same action); the test performs it (a split
+beside the terminal, no new tab). cd to Directory is now checked as Warp does it: the typed text is
+replaced with `cd <folder>`, not run until Enter, and the item is off while a program runs. Insert
+Path in Terminal is performed; Delete of a file open in a pane closes that pane. `test_explorer_keys`
+also checks that ⇧⌘> is saved in `ui.json` and that ⌃1 pressed in the tree goes back to Tabs with
+focus in the pane. New tests: `test_explorer_reveal_keeps_folders_the_user_closed`,
+`test_explorer_opens_binary_files_with_their_default_app` (a fresh instance with the new test hook
+`UMI_TEST_OPEN_LOG`, which writes what would go to the default app to a file),
+`test_global_search_regex_is_perl_style_and_opens_at_the_match` (`a\d`, its highlight, the cursor
+on the match's column, a bad regex's error), `test_global_search_outside_git_and_capped` and
+`test_shift_cmd_f_leaves_a_terminal_search_open`. No assertion was weakened: the old cd check
+(Enter sent with the command) asserted behavior that differed from Warp's.
+
+**Requirement.** S-2, L-9.
+- **Changed, `test_explorer_follows_the_file_system`**: a new `.rs` file's icon was the monogram
+  "RS"; it is now Material Icon Theme's Rust icon, so the test checks the asset name
+  (`fileicon-rust`) and that the app loads it (`icon_loaded`), which is stricter than before.

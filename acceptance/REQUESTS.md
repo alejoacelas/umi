@@ -278,4 +278,7 @@ gestures are out.
   numbers, current line, marks against the last commit, tree-sitter colors), its find and replace,
   ⌃G, ⌘/, ⇧⌘S, the "File saved." toast, the file pane header with Warp's ⋯ menu for each view (the
   same menu on a right-click of the header is an Umi addition), and file chips with type icons.
-  Warp's right-click items in a file's text (Go to definition, Find references) need a language server and are not in (COMPROMISES).
+  Warp's right-click items in a file's text (Go to definition, Find references) need a language
+  server and are not in (COMPROMISES).
+- Project explorer and global search: the explorer's keys, look, file watching, hidden and ignored
+  files, active-file reveal and Warp's right-click menu; global search on ⇧⌘F and ⌃3 (SPEC S-2).

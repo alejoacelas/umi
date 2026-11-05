@@ -60,7 +60,8 @@ final class UmiPersistence {
     func saveUINow() {
         let state = UmiState.shared
         let json: [String: Any] = ["sidebar": ["visible": state.sidebarVisible, "mode": state.sidebarMode.rawValue,
-                                               "width": Double(state.sidebarWidth)]]
+                                               "width": Double(state.sidebarWidth)],
+                                   "files": ["show_hidden": state.showHiddenFiles]]
         write(json, to: uiPath)
     }
 
@@ -156,6 +157,7 @@ final class UmiPersistence {
         if let visible = sidebar["visible"] as? Bool { state.sidebarVisible = visible }
         if let mode = (sidebar["mode"] as? String).flatMap(UmiState.SidebarMode.init(rawValue:)) { state.sidebarMode = mode }
         if let width = sidebar["width"] as? Double { state.sidebarWidth = UmiTheme.clampSidebarWidth(CGFloat(width)) }
+        if let hidden = (json["files"] as? [String: Any])?["show_hidden"] as? Bool { state.showHiddenFiles = hidden }
     }
 
     /// Recreate the windows of the last run. Returns how many were restored.

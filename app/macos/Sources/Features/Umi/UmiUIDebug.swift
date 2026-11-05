@@ -219,6 +219,9 @@ enum UmiUIDebug {
             if let content = window.window?.contentView { walk(content, 0) }
             return ["views": lines]
 
+        case let files where files.hasPrefix("debug.ui.files") || files.hasPrefix("debug.ui.search"):
+            return try UmiFileTreeDebug.handle(method, params, caller: caller)
+
         case "debug.ui.open_file":
             // What Finder's double-click and `open FILE` call (AppDelegate's openFile).
             guard let path = params.string("path") else { throw UmiError.badRequest("give a path") }

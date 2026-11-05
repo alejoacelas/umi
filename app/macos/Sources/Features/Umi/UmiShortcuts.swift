@@ -92,16 +92,16 @@ enum UmiShortcuts {
             Item(id: "view.search_tabs", title: "Search Tabs", key: "f", modifiers: [.command, .option],
                  symbol: "magnifyingglass", menu: "View", action: { UmiSidebarSearch.focusField() }),
             Item(id: "view.explorer", title: "Show Project Explorer", key: "e", modifiers: [.command, .shift], symbol: "folder",
-                 menu: "View", action: {
-                     let state = UmiState.shared
-                     let visible = UmiTopology.currentWindow?.sidebarVisible ?? state.sidebarVisible
-                     if visible && state.sidebarMode == .files {
-                         state.sidebarMode = .tabs
-                     } else {
-                         state.sidebarMode = .files
-                         if let window = UmiTopology.currentWindow { UmiSidebarVisibility.set(true, in: window) }
-                     }
-                 }),
+                 menu: "View", action: { UmiSidebarKeys.toggleExplorer() }),
+            // Warp's keys for its left panel, the explorer's hidden files and global search.
+            Item(id: "view.explorer_panel", title: "Left Panel: Project Explorer", key: "1", modifiers: [.control],
+                 symbol: "folder", menu: "View", action: { UmiSidebarKeys.toggleExplorer() }),
+            Item(id: "view.hidden_files", title: "Toggle Hidden Files in Project Explorer", key: ".", modifiers: [.command, .shift],
+                 symbol: "eye", menu: "View", action: { UmiState.shared.showHiddenFiles.toggle() }),
+            Item(id: "view.global_search", title: "Global Search", key: "f", modifiers: [.command, .shift],
+                 symbol: "magnifyingglass", menu: "View", action: { UmiSidebarKeys.openSearch() }),
+            Item(id: "view.search_panel", title: "Left Panel: Global Search", key: "3", modifiers: [.control],
+                 symbol: "magnifyingglass", menu: "View", action: { UmiSidebarKeys.toggleSearch() }),
             // E-11: like Google Docs' ⌥⌘M.
             Item(id: "edit.comment", title: "Add Comment", key: "m", modifiers: [.command, .option], symbol: "text.bubble",
                  menu: "Edit", action: { UmiEditor.currentDocument?.commentTarget?.startComment() },

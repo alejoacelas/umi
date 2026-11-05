@@ -8,7 +8,7 @@ import Combine
 final class UmiState: ObservableObject {
     static let shared = UmiState()
 
-    enum SidebarMode: String, Codable { case tabs, files }
+    enum SidebarMode: String, Codable { case tabs, files, search }
 
     /// Whether a new window shows its sidebar: as the window last toggled. Each window shows or
     /// hides its own (`TerminalController.sidebarVisible`, which reports `sidebar.changed`).
@@ -25,6 +25,14 @@ final class UmiState: ObservableObject {
             UmiPersistence.shared.saveUISoon()
             UmiEvents.shared.emit("sidebar.changed", ["visible": UmiTopology.currentWindow?.sidebarVisible ?? sidebarVisible,
                                                         "mode": sidebarMode.rawValue])
+        }
+    }
+
+    /// Whether the project explorer shows dotfiles (⇧⌘>, as Warp; on by default).
+    @Published var showHiddenFiles: Bool = true {
+        didSet {
+            guard showHiddenFiles != oldValue else { return }
+            UmiPersistence.shared.saveUISoon()
         }
     }
 

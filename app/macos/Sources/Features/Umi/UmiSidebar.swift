@@ -17,7 +17,6 @@ struct UmiSidebar: View {
     @ObservedObject private var attention = UmiAttention.shared
     @ObservedObject private var updater = UmiUpdater.shared
     @ObservedObject private var hints = UmiTabHints.shared
-    @StateObject private var files = UmiFileTreeModel()
     /// Periodic refresh for things nothing publishes (running command, branch).
     @State private var tick = 0
     @State private var listDropTargeted = false
@@ -34,7 +33,8 @@ struct UmiSidebar: View {
                 VStack(alignment: .leading, spacing: state.sidebarMode == .tabs ? 4 : 1) {
                     switch state.sidebarMode {
                     case .tabs: tabsList
-                    case .files: UmiFileTreeView(model: files, hostWindow: controller.window)
+                    case .files: UmiFileTreeView(model: UmiFileTreeModel.model(for: controller))
+                    case .search: UmiGlobalSearchView(model: UmiGlobalSearchModel.model(for: controller))
                     }
                 }
                 .padding(.horizontal, 8)
@@ -62,19 +62,8 @@ struct UmiSidebar: View {
         .background(UmiTheme.sidebarFill)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Sidebar")
-        .onChange(of: state.sidebarMode) { _ in syncFileTree() }
-        .onAppear { syncFileTree() }
-        .onDisappear { files.stop() }
         .onReceive(refresh) { _ in
             if state.sidebarMode == .tabs { tick &+= 1 }
-        }
-    }
-
-    private func syncFileTree() {
-        if state.sidebarMode == .files {
-            files.start { [weak controller] in controller?.window }
-        } else {
-            files.stop()
         }
     }
 
@@ -110,7 +99,7 @@ struct UmiSidebar: View {
 
 // MARK: - Header
 
-/// Warp's control bar: "Search tabs..." (12 pt icon, 24 high), then Umi's Tabs and Files buttons
+/// Warp's control bar: "Search tabs..." (12 pt icon, 24 high), then Umi's Tabs, Files and Search buttons
 /// and +; 4 pt above and below, 8 at the sides, 4 between items.
 struct UmiSidebarHeader: View {
     @ObservedObject var controller: TerminalController
@@ -127,6 +116,7 @@ struct UmiSidebarHeader: View {
             }
             modeButton(.tabs, symbol: "rectangle.stack", help: "Tabs")
             modeButton(.files, symbol: "folder", help: "Project Explorer (⇧⌘E)")
+            modeButton(.search, symbol: "magnifyingglass", help: "Global Search (⇧⌘F)")
             Button {
                 _ = try? UmiLayout.newTab(in: controller, options: .init(), tabName: nil, color: .none,
                                            index: nil, focus: true, inheritFrom: nil)
@@ -184,7 +174,7 @@ struct UmiSidebarHeader: View {
         }
         .buttonStyle(UmiIconButtonStyle(active: state.sidebarMode == mode, size: 24, radius: 4))
         .help(help)
-        .accessibilityLabel(mode == .tabs ? "Tabs" : "Files")
+        .accessibilityLabel(mode == .tabs ? "Tabs" : (mode == .files ? "Files" : "Search"))
     }
 }
 

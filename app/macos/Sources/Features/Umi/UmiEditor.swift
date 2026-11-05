@@ -162,6 +162,9 @@ final class UmiDocument: ObservableObject, Identifiable {
     /// A line to show and put the cursor on (1-based), from the quick file search's
     /// `path:line`. The source view clears it once shown.
     @Published var revealLine: Int?
+    /// With `revealLine`: where in the line the cursor goes (UTF-16 offset from the line's start),
+    /// from global search's match. Cleared with `revealLine`.
+    var revealColumn: Int?
     /// How many agents wait for the user to finish commenting (`umi comments wait`, E-11).
     @Published var reviewWaiters = 0
     /// The shown view, which starts a comment on its selection (E-11).
@@ -990,13 +993,15 @@ struct UmiSourceEditor: NSViewRepresentable {
         if let code = context.coordinator.code, code.baseColor != UmiTheme.textNSColor { code.lookChanged() }
         if doc.code !== context.coordinator.code { doc.code = context.coordinator.code }
         if let line = doc.revealLine {
-            DispatchQueue.main.async { doc.revealLine = nil }
-            Self.reveal(line: line, in: textView)
+            let column = doc.revealColumn ?? 0
+            DispatchQueue.main.async { doc.revealLine = nil; doc.revealColumn = nil }
+            Self.reveal(line: line, column: column, in: textView)
         }
     }
 
-    /// Put the cursor at the start of a line and scroll it into view.
-    static func reveal(line: Int, in textView: NSTextView) {
+    /// Put the cursor in a line (at `column`, a UTF-16 offset clamped to the line) and scroll it
+    /// into view.
+    static func reveal(line: Int, column: Int = 0, in textView: NSTextView) {
         let text = textView.string as NSString
         var location = 0
         var current = 1
@@ -1005,7 +1010,14 @@ struct UmiSourceEditor: NSViewRepresentable {
             location = NSMaxRange(range)
             current += 1
         }
-        let target = NSRange(location: min(location, text.length), length: 0)
+        location = min(location, text.length)
+        if column > 0 {
+            // The line's own text, without its line break.
+            var end = 0, contentsEnd = 0
+            text.getLineStart(nil, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+            location = min(location + column, contentsEnd)
+        }
+        let target = NSRange(location: location, length: 0)
         textView.setSelectedRange(target)
         textView.scrollRangeToVisible(target)
         textView.window?.makeFirstResponder(textView)

@@ -208,7 +208,8 @@ the menu.
   and focused pane are then unchanged, at every moment, not just eventually. If the app is in the
   background, it stays in the background: the app that was in front stays in front.
 - **L-9 [A+W]** Keyboard shortcuts:
-  - ⌘B toggles the sidebar; ⇧⌘E shows the project explorer;
+  - ⌘B toggles the sidebar; ⇧⌘E and ⌃1 show the project explorer; ⇧⌘> shows or hides its dotfiles;
+    ⇧⌘F and ⌃3 show global search (S-2);
   - ⌘O opens a file (quick search, L-16; File ▸ Open File… keeps the Open panel);
   - ⇧⌘M toggles the Markdown preview and source;
   - ⌘P opens the command palette (L-14); ⇧⌘P lists panes (L-15); ⌘, opens the config file (L-17);
@@ -394,13 +395,47 @@ A "live session" is a pane with a running program, its scrollback and its state.
   the terminal background. The window shows no native tab bar and no titlebar icons on the upper
   right. As in Warp, a 1 px line at foreground 10% separates the sidebar from the panes (Warp
   parity, 2026-11-05).
-- **S-2 [A+W]** A left sidebar, full height, toggled with ⌘B. It has two modes: Tabs and Files
-  (project explorer for the focused pane's folder). It has no "agents" section, no "no agents
-  running" text and no "new agent" button.
+- **S-2 [A+W]** A left sidebar, full height, toggled with ⌘B. It has three modes: Tabs, Files and
+  Search. It has no "agents" section, no "no agents running" text and no "new agent" button.
   Warp parity, 2026-11-05: each window shows or hides its own sidebar, at once (no slide), as Warp's
   left panel; ⌘\ (Warp's left-panel key) toggles it too. A new window starts as the window last
   toggled. `<cli> sidebar on|off|toggle` act on the given window, else the caller's, else the
   current one. Its list scrolls under Warp's 4 pt overlay scrollbar.
+  - Files is the project explorer (Warp parity, 2026-11-05): the git root of the focused pane's
+    folder (else that folder) as a tree whose root is an ordinary collapsible row. It follows the
+    files on disk as they change, with no refresh. Rows as in Warp: 14 pt names, 16 pt indent per
+    level, about 25 pt tall, 16 pt chevrons and colored file-type icons; folders first, dotfiles
+    first within each group. The selected row is the foreground at 20% behind full-color text;
+    hover is 10%. Dotfiles are shown and ⇧⌘> hides or shows them; entries git ignores are italic and
+    lighter; `.git` and `.DS_Store` are never shown. When the focused pane shows a file, the tree
+    opens its folders, selects it and scrolls to it, stopping (with nothing selected) at a folder
+    the user closed. With no pane folder it says "Project explorer
+    unavailable" with Warp's explanation.
+  - Explorer keys: ⇧⌘E and ⌃1 show Files with keyboard focus in the tree (pressed again: Tabs, and
+    focus back in the pane). In the tree ↑↓ select, → expands a folder, ← collapses it or goes to
+    the parent folder, Enter opens a file (non-binary files in the editor, others with their
+    default app) or opens or closes a folder, Esc goes back to the pane.
+  - Explorer right-click menu, Warp's items with Umi's: on a folder New File, cd to Directory
+    (replaces what is typed at the prompt of the tab's terminal with `cd` and the folder, not run;
+    off while a program runs there), Open in New Tab (a terminal there); on a file Open
+    in New Pane (the editor in a pane beside the focused pane), Open in New Tab (a tab of its own),
+    Open with Default App; on both Reveal in Finder,
+    Rename and Delete (not on the root), Insert Path in Terminal, Copy Path, Copy Relative Path
+    (from the root). New File and Rename edit the name in the row: Enter commits, Esc or an empty
+    name cancels; a new file opens in the editor. Delete moves the item to the Trash without asking
+    and closes the panes showing it (or a file in it).
+  - Search is global search (Warp parity, 2026-11-05). ⇧⌘F shows it with focus in the query, its
+    text selected; ⌃3 shows or hides it. It searches the files of the focused pane's repository
+    (the explorer's root), leaving out what git ignores, 300 ms after typing stops: literal and
+    case-insensitive unless its Regex (Perl-style: `\d`, `\b`, lookarounds) or Case toggle is on,
+    at most 20,000 matching lines (with Warp's note when
+    capped). Results are grouped by file (name, folder, match count), then each matching
+    line with the match highlighted, under "N results in M files" ("Searching…", "No results
+    found. Review your gitignore files."). ↓ moves from the query into the results and ↑ on the
+    first result goes back; ← / → fold and unfold a file; Enter opens the file in the editor with
+    the cursor on the match (its line and column); Esc goes back to the pane. ⇧⌘F no longer ends
+    a terminal search; Esc still does. A bad regex shows git's error under the query. Outside a
+    git repository it searches the folder's files.
 - **S-3 [W]** Tabs mode lists the window's tabs, grouped by tab, with pinned tabs first.
   Each row has two lines:
   - Line 1: the tab's folder (its focused pane's), or the name the user gave the tab. Then the git
