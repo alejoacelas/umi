@@ -2731,6 +2731,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         ) Allocator.Error!void {
             const state: *terminal.RenderState = &self.terminal_state;
 
+            // Umi: Warp's contrast rule goes with minimum-contrast-colors = named.
+            if (comptime @hasField(@TypeOf(self.uniforms.bools), "umi_min_contrast_blend"))
+                self.uniforms.bools.umi_min_contrast_blend = self.config.min_contrast_named_only;
+
             const grid_size_diff =
                 self.cells.size.rows != state.rows or
                 self.cells.size.columns != state.cols;

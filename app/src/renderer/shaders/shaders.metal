@@ -24,6 +24,7 @@ struct Uniforms {
   bool use_display_p3;
   bool use_linear_blending;
   bool use_linear_correction;
+  bool umi_min_contrast_blend;
 };
 
 //-------------------------------------------------------------------
@@ -121,6 +122,30 @@ float4 contrasted_color(float min, float4 fg, float4 bg) {
   }
 
   return fg;
+}
+
+// Umi: Warp's rule. Return the fg if the contrast ratio is at least min,
+// otherwise the fg moved toward white or black (whichever contrasts more
+// with the bg), in gamma-encoded sRGB as Warp blends, only as far as the
+// ratio needs.
+//
+// Takes colors in linear RGB space.
+float4 contrasted_color_blend(float min, float4 fg, float4 bg) {
+  if (contrast_ratio(fg.rgb, bg.rgb) >= min) return fg;
+  float white_ratio = contrast_ratio(float3(1.0f), bg.rgb);
+  float black_ratio = contrast_ratio(float3(0.0f), bg.rgb);
+  float4 target = white_ratio > black_ratio ? float4(1.0f) : float4(0.0f, 0.0f, 0.0f, 1.0f);
+  float4 from = unlinearize(fg);
+  float lo = 0.0f;
+  float hi = 1.0f;
+  for (int i = 0; i < 10; i++) {
+    float mid = (lo + hi) * 0.5f;
+    float4 c = linearize(mix(from, target, mid));
+    if (contrast_ratio(c.rgb, bg.rgb) >= min) hi = mid; else lo = mid;
+  }
+  float4 out = linearize(mix(from, target, hi));
+  out.a = fg.a;
+  return out;
 }
 
 // Load a 4 byte RGBA non-premultiplied color and linearize
@@ -744,7 +769,9 @@ vertex CellTextVertexOut cell_text_vertex(
   // with the background.
   if (uniforms.min_contrast > 1.0f && (in.bools & NO_MIN_CONTRAST) == 0) {
     // Ensure our minimum contrast
-    out.color = contrasted_color(uniforms.min_contrast, out.color, out.bg_color);
+    out.color = uniforms.umi_min_contrast_blend
+      ? contrasted_color_blend(uniforms.min_contrast, out.color, out.bg_color)
+      : contrasted_color(uniforms.min_contrast, out.color, out.bg_color);
   }
 
   // Check if current position is under cursor (including wide cursor)
