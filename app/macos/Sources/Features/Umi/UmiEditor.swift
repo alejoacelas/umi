@@ -362,14 +362,6 @@ enum UmiEditor {
         markdownExtensions.contains(url.pathExtension.lowercased())
     }
 
-    static func icon(for url: URL) -> String {
-        switch url.pathExtension.lowercased() {
-        case "json": return "curlybraces"
-        case "csv", "tsv": return "tablecells"
-        default: return isMarkdown(url) ? "doc.richtext" : "doc.text"
-        }
-    }
-
     static func hasPreview(_ url: URL) -> Bool { isMarkdown(url) || UmiDataPreview.handles(url) }
 
     /// Whether files opened from Finder (or `open`) go to the editor.
