@@ -83,6 +83,8 @@ final class UmiInbox: ObservableObject {
 
     /// OSC 9/777 notifications dropped because an agent runs in the pane (S-3).
     private(set) var droppedNotifications = 0
+    /// OSC 9/777 notifications let through (they're Ghostty's).
+    private(set) var passedNotifications = 0
     private var keyMonitor: Any?
     /// Closes the inbox on a click outside it (Warp's mailbox sits in a Dismiss).
     private var mouseMonitor: Any?
@@ -376,7 +378,12 @@ final class UmiInbox: ObservableObject {
     /// A desktop notification a pane's program asked for (OSC 9 or 777): dropped when an agent
     /// session runs in the pane, as Warp drops them for agents its plugin reports. True: dropped.
     func dropsDesktopNotification(fromPane id: UUID, title: String) -> Bool {
-        guard UmiAttention.shared.agent(forPane: id) != nil else { return false }
+        // Only while the agent's own interface runs in the pane's terminal (Warp checks for an
+        // active listener): once it exits or the session is stopped, the shell's are Ghostty's.
+        guard let agent = UmiAttention.shared.agent(forPane: id), agent.live, agent.status != "stopped" else {
+            passedNotifications += 1
+            return false
+        }
         droppedNotifications += 1
         UmiEvents.shared.emit("notify.dropped", ["pane": id.uuidString.lowercased(), "title": title])
         return true
@@ -395,7 +402,7 @@ final class UmiInbox: ObservableObject {
             "items": items.map(json), "shown": shown.map(json),
             "toasts": toasts.compactMap { toast in item(toast.id).map { json($0) } },
             "update_note": updateNote.map { ["version": $0.version, "notes": $0.notes] as [String: Any] } ?? NSNull(),
-            "dropped_notifications": droppedNotifications,
+            "dropped_notifications": droppedNotifications, "passed_notifications": passedNotifications,
         ]
         if let window {
             out["open_here"] = isOpen(in: window)

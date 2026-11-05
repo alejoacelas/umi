@@ -164,6 +164,7 @@ def test_an_agents_own_desktop_notifications_are_dropped(inst, win):
     them, as Warp does for agents its plugin reports. Other panes keep Ghostty's behavior."""
     pane = win["pane"]
     before = inbox(inst)["dropped_notifications"]
+    passed = inbox(inst)["passed_notifications"]
     set_agent(inst, pane, "claude", title="Notifies", status="working")
     try:
         inst.cli("send", "--pane", pane, "-e", "printf '\\033]9;umi agent says hi\\007'; echo OSC9-SENT")
@@ -171,12 +172,21 @@ def test_an_agents_own_desktop_notifications_are_dropped(inst, win):
         time.sleep(1.2)   # Ghostty lets one notification through per second
         inst.cli("send", "--pane", pane, "-e", "printf '\\033]777;notify;Title;Body\\007'; echo OSC777-SENT")
         wait_until(lambda: inbox(inst)["dropped_notifications"] == before + 2, 10, message="the OSC 777 is dropped")
+        # The session stopped, or its interface no longer runs in the terminal: the shell's own
+        # notifications are Ghostty's again.
+        for n, params in enumerate((dict(status="stopped"), dict(status="idle", live=False))):
+            rpc(inst, "debug.ui.attention.set", pane=pane, kind="claude", title="Notifies", **params)
+            time.sleep(1.2)
+            inst.cli("send", "--pane", pane, "-e", f"printf '\\033]9;after the agent\\007'; echo OSC9-AFTER{n}")
+            inst.cli("wait", "--pane", pane, "--pattern", f"^OSC9-AFTER{n}", "--timeout", "10")
+            wait_until(lambda: inbox(inst)["passed_notifications"] == passed + n + 1, 5, message=f"let through: {params}")
+            assert inbox(inst)["dropped_notifications"] == before + 2, params
     finally:
         clear_agent(inst, pane)
     time.sleep(1.2)
     inst.cli("send", "--pane", pane, "-e", "printf '\\033]9;a plain shell\\007'; echo OSC9-PLAIN")
     inst.cli("wait", "--pane", pane, "--pattern", "^OSC9-PLAIN", "--timeout", "10")
-    time.sleep(0.5)
+    wait_until(lambda: inbox(inst)["passed_notifications"] == passed + 3, 5, message="a plain shell's is let through")
     assert inbox(inst)["dropped_notifications"] == before + 2, "a pane without an agent isn't affected"
 
 

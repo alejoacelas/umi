@@ -422,9 +422,10 @@ A "live session" is a pane with a running program, its scrollback and its state.
     stopped (grey stop). The mark itself stays monochrome; the badge carries the color. A finish
     counts as seen when the user looks at any pane of its tab as it finishes (Warp's rule), and the
     agent starting a new turn clears the mark. The agents' own desktop notifications (OSC 9 and
-    777, which Claude Code and Codex send) are dropped in a pane where an agent session runs (one
-    the product started or one its plugin reports, AG-18); other programs' notifications are
-    Ghostty's as before.
+    777, which Claude Code and Codex send) are dropped while an agent session's own interface runs
+    in the pane's terminal (one the product started or one its plugin reports, AG-18) and the
+    session isn't stopped; other programs' notifications, including the shell's after the agent
+    exits, are Ghostty's as before.
 - **S-4 [W]** Rows can be clicked to select, double-clicked to rename, dragged to reorder
   (M-4), and right-clicked for Warp's menu: Pin/Unpin Tab; Copy Branch, Copy Working Directory,
   Copy Title; Rename Tab…, Reset Tab Name, Rename Pane…, Reset Pane Name (the tab's focused pane);

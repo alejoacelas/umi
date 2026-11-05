@@ -732,3 +732,7 @@ New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24
   category, the agent's own error and question, cancelled, Codex; a request in a sibling pane of
   the looked-at tab is read and doesn't toast). `debug.ui.attention.set` takes `detail` (what the
   engine passes: the error or the question).
+- **Extended, `test_an_agents_own_desktop_notifications_are_dropped`**: once the session is stopped,
+  or its interface no longer runs in the terminal, OSC 9 is let through. `debug.ui.inbox` reports
+  `passed_notifications`, so the test now checks each let-through notification arrived, where it
+  only checked that nothing was dropped (stronger).
