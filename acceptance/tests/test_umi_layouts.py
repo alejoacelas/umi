@@ -509,8 +509,12 @@ def test_palette_lists_configurations_and_opens_the_chosen_one(clean, tmp_path):
     entries = rpc(inst, "debug.palette", window=win["window"], mode="launch_configs")["entries"]
     assert [e["title"] for e in entries] == ["Alpha", "Beta Two"], "named after the file when it has no name"
     assert "1 window · 1 tab" in entries[0]["subtitle"], entries[0]
+    # The query ranks the entries (it also matches the file paths shown under them, so a weaker
+    # match can stay below) and drops what it doesn't match.
+    nothing = rpc(inst, "debug.palette", window=win["window"], mode="launch_configs", query="qqq")["entries"]
+    assert nothing == [], nothing
     filtered = rpc(inst, "debug.palette", window=win["window"], mode="launch_configs", query="alp")["entries"]
-    assert [e["title"] for e in filtered] == ["Alpha"], filtered
+    assert filtered and filtered[0]["title"] == "Alpha", filtered
     rpc(inst, "debug.palette.perform", window=win["window"], title="Alpha")
     wait_until(lambda: any(t.get("name") == "from-alpha" for w in inst.tree()["windows"] for t in w["tabs"]), 10,
                message="the configuration opened")
