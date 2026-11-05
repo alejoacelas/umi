@@ -50,7 +50,8 @@ pub const Block = struct {
     state: State,
     failed: bool,
     /// How long the command took (done) or has run so far in whole
-    /// seconds (running). Null when unknown.
+    /// seconds (running). Null when unknown, and while a command has run
+    /// for less than a second.
     ms: ?u64,
     /// The block's first row. Valid only while the terminal stays locked.
     start: ?Pin = null,
@@ -262,7 +263,8 @@ pub const Layout = struct {
                 if (started) |started_at| {
                     const ns = started_at.durationTo(now).nanoseconds;
                     const ms: u64 = @intCast(@max(0, @divTrunc(ns, std.time.ns_per_ms)));
-                    b.ms = ms / 1000 * 1000;
+                    // Warp shows nothing until a whole second has passed.
+                    b.ms = if (ms < 1000) null else ms / 1000 * 1000;
                     const next = 1000 - ms % 1000;
                     self.tick_ms = if (self.tick_ms) |t| @min(t, next) else next;
                 }

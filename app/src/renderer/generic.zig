@@ -288,6 +288,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         umi: umi_blocks.Layout = .{},
         umi_drawn: std.ArrayList(umi_blocks.Drawn) = .empty,
         umi_glyph_dx: i32 = 0,
+        /// Umi: the glyph being added keeps its color whatever the
+        /// minimum contrast (minimum-contrast-colors = named).
+        umi_keep_contrast: bool = false,
         umi_glyph_dy: i32 = 0,
         umi_rects: std.ArrayList(UmiRect) = .empty,
         /// Umi: per row, how many pixels its text is drawn above its place
@@ -628,6 +631,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             foreground: terminal.color.RGB,
             selection_background: ?configpkg.Config.TerminalColor,
             selection_foreground: ?configpkg.Config.TerminalColor,
+            /// Umi: selection-background-opacity, 0-1.
+            selection_background_opacity: f32,
+            /// Umi: minimum-contrast applies only to named colors.
+            min_contrast_named_only: bool,
             search_background: configpkg.Config.TerminalColor,
             search_foreground: configpkg.Config.TerminalColor,
             search_selected_background: configpkg.Config.TerminalColor,
@@ -706,6 +713,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
 
                     .selection_background = config.@"selection-background",
                     .selection_foreground = config.@"selection-foreground",
+                    .selection_background_opacity = @floatCast(@max(0, @min(1, config.@"selection-background-opacity"))),
+                    .min_contrast_named_only = config.@"minimum-contrast-colors" == .named,
                     .search_background = config.@"search-background",
                     .search_foreground = config.@"search-foreground",
                     .search_selected_background = config.@"search-selected-background",
@@ -2722,6 +2731,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         ) Allocator.Error!void {
             const state: *terminal.RenderState = &self.terminal_state;
 
+            // Umi: Warp's contrast rule goes with minimum-contrast-colors = named.
+            if (comptime @hasField(@TypeOf(self.uniforms.bools), "umi_min_contrast_blend"))
+                self.uniforms.bools.umi_min_contrast_blend = self.config.min_contrast_named_only;
+
             const grid_size_diff =
                 self.cells.size.rows != state.rows or
                 self.cells.size.columns != state.cols;
@@ -3027,8 +3040,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // between frames) keeps what the terminal has.
             const umi_row = self.umi.row(y);
             const umi_block = self.umi.block(umi_row);
-            const umi_bold = umi_row.role == .command and
+            const umi_bold_command = umi_row.role == .command and
                 umi_block != null and umi_block.?.state != .active;
+            // The folder in the folder box is drawn bold too (Warp's box
+            // text is semibold; Hack has no semibold).
+            const umi_bold_box = umi_row.role == .header and
+                umi_block != null and umi_block.?.state == .active;
+            const umi_bold = umi_bold_command or umi_bold_box;
             var umi_cells: ?std.MultiArrayList(terminal.RenderState.Cell) =
                 if (umi_bold) try cells.clone(self.alloc) else null;
             defer if (umi_cells) |*c| c.deinit(self.alloc);
@@ -3041,7 +3059,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const cells_style = cells_slice.items(.style);
             if (umi_bold) {
                 for (cells_raw[0..cells_len], cells_style[0..cells_len]) |*raw, *st| {
-                    if (raw.semantic_content != .input or raw.isEmpty()) continue;
+                    if (umi_bold_command and raw.semantic_content != .input) continue;
+                    if (raw.isEmpty()) continue;
+                    if (raw.hasStyling() and st.flags.faint) continue;
                     if (!raw.hasStyling()) {
                         st.* = .{};
                         raw.style_id = umi_bold_style_id;
@@ -3092,13 +3112,21 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             };
             const umi_box = umi_row.role == .header and
                 umi_block != null and umi_block.?.state == .active;
-            self.umi_glyph_dx = if (umi_box) self.umiBoxTextDx() else 0;
+            // The folder box shows the folder alone (the header's other
+            // parts are faint), cut from the left at Warp's 40 characters.
+            const umi_span: ?UmiBoxSpan = if (umi_box)
+                umiBoxSpan(cells_raw[0..cells_len], cells_style[0..cells_len])
+            else
+                null;
+            self.umi_glyph_dx = if (umi_span) |sp| self.umiBoxGlyphDx(sp) else 0;
             self.umi_glyph_dy = if (umi_block) |b| self.umiRowRaise(umi_row.role, b.state) else 0;
             defer {
                 self.umi_glyph_dx = 0;
                 self.umi_glyph_dy = 0;
+                self.umi_keep_contrast = false;
             }
             if (umi_box and umi_rects_supported) self.umiAddFolderIcon(y, umi_fg.?);
+            if (umi_span) |sp| if (sp.cut) self.umiAddText(y, sp.first, "…", umi_fg.?);
 
             // Iterator of runs for shaping.
             var run_iter_opts: font.shape.RunOptions = .{
@@ -3251,7 +3279,16 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     // If no configuration, then our selection background
                     // is our foreground color.
                     .selection => if (self.config.selection_background) |v| switch (v) {
-                        .color => |color| color.toTerminalRGB(),
+                        // Umi: a selection less than opaque is laid over the
+                        // cell's own background (Warp's).
+                        .color => |color| if (self.config.selection_background_opacity < 1)
+                            umi_blocks.mix(
+                                (if (style.flags.inverse) fg_style else bg_style) orelse state.colors.background,
+                                color.toTerminalRGB(),
+                                self.config.selection_background_opacity,
+                            )
+                        else
+                            color.toTerminalRGB(),
                         .@"cell-foreground" => if (style.flags.inverse) bg_style else fg_style,
                         .@"cell-background" => if (style.flags.inverse) fg_style else bg_style,
                     } else state.colors.foreground,
@@ -3322,8 +3359,23 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Umi: a block's header is drawn in its own color.
                 const fg = if (umi_fg != null and selected == .false) umi_fg.? else fg_cell;
 
-                // Foreground alpha for this cell.
-                const alpha: u8 = if (style.flags.faint) self.config.faint_opacity else 255;
+                // Foreground alpha for this cell. Umi: a block header's faint
+                // parts (environments, git) take the header's color.
+                const alpha: u8 = if (style.flags.faint and umi_fg == null) self.config.faint_opacity else 255;
+
+                // Umi: cells the folder box doesn't show.
+                const umi_hidden = if (umi_span) |sp|
+                    x < sp.start or x >= sp.end or (cell.hasStyling() and style.flags.faint)
+                else
+                    false;
+
+                // Umi: with minimum-contrast-colors = named, text a program
+                // colored from the 256-color table or with RGB keeps its color.
+                self.umi_keep_contrast = self.config.min_contrast_named_only and switch (style.fg_color) {
+                    .none => false,
+                    .palette => |i| i >= 16,
+                    .rgb => true,
+                };
 
                 // Set the cell's background color.
                 {
@@ -3470,6 +3522,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         run.offset + shaped_cells[shaper_cells_i].x == x) : ({
                         shaper_cells_i += 1;
                     }) {
+                        if (umi_hidden) continue;
                         self.addGlyph(
                             @intCast(x),
                             @intCast(y),
@@ -3572,7 +3625,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 const r = self.umi.row(y);
                 const b = self.umi.block(r) orelse continue;
                 const raise: u16 = @intCast(self.umiRowRaise(r.role, b.state));
-                const dx: u16 = if (r.role == .header and b.state == .active) @intCast(self.umiBoxTextDx()) else 0;
+                const dx: i32 = if (r.role == .header and b.state == .active) dx: {
+                    const ts_cells = ts.row_data.items(.cells)[start + y];
+                    const raws = ts_cells.items(.raw);
+                    const styles = ts_cells.items(.style);
+                    const n = @min(raws.len, self.cells.size.columns);
+                    break :dx self.umiBoxGlyphDx(umiBoxSpan(raws[0..n], styles[0..n]));
+                } else 0;
                 if (y < self.umi_shift.items.len) self.umi_shift.items[y] = .{ @floatFromInt(raise), @floatFromInt(dx) };
                 if (y < shared.len) {
                     shared.raise[y] = raise;
@@ -3638,9 +3697,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     const box = self.umiBox();
                     const cells = self.terminal_state.row_data.items(.cells)[self.terminal_state.viewportStart() + @as(usize, @intCast(header_y))];
                     const raws = cells.items(.raw);
-                    var end: usize = raws.len;
-                    while (end > 0 and raws[end - 1].isEmpty()) end -= 1;
-                    const text_w = @as(f32, @floatFromInt(end)) * cell_w;
+                    const n = @min(raws.len, self.cells.size.columns);
+                    const span = umiBoxSpan(raws[0..n], cells.items(.style)[0..n]);
+                    const text_w = @as(f32, @floatFromInt(span.end - span.first)) * cell_w;
                     const box_w = box.border * 2 + box.pad_x * 2 + box.icon_w + box.gap + text_w;
                     // The font's own line height (the cell may be taller).
                     const font_h: f32 = @min(cell_h, @as(f32, @floatCast(self.grid_metrics.face_height)));
@@ -3723,6 +3782,39 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             return @intFromFloat(b.border + b.pad_x + b.icon_w + b.gap);
         }
 
+        /// Umi: the folder as the folder box shows it: the header row's
+        /// cells that aren't faint (Umi's zsh prints the rest of the header
+        /// faint), from `start` to `end`. Warp cuts it from the left at 40
+        /// characters: then `cut` is set and `first` is the column the
+        /// ellipsis takes, just before `start`.
+        const UmiBoxSpan = struct { first: usize, start: usize, end: usize, cut: bool };
+        const umi_box_max_chars = 40;
+
+        fn umiBoxSpan(
+            raws: []const terminal.page.Cell,
+            styles: []const terminal.Style,
+        ) UmiBoxSpan {
+            var a: ?usize = null;
+            var b: usize = 0;
+            for (raws, styles, 0..) |raw, st, x| {
+                if (raw.isEmpty()) continue;
+                if (raw.hasStyling() and st.flags.faint) continue;
+                if (a == null) a = x;
+                b = x + 1;
+            }
+            const start = a orelse return .{ .first = 0, .start = 0, .end = 0, .cut = false };
+            if (b - start <= umi_box_max_chars) return .{ .first = start, .start = start, .end = b, .cut = false };
+            const kept = b - (umi_box_max_chars - 1);
+            return .{ .first = kept - 1, .start = kept, .end = b, .cut = true };
+        }
+
+        /// Umi: how far the folder box's text is drawn from its cells: right
+        /// into the box, less the columns before the folder's first one.
+        fn umiBoxGlyphDx(self: *const Self, span: UmiBoxSpan) i32 {
+            const cell_w: i32 = @intCast(self.grid_metrics.cell_width);
+            return self.umiBoxTextDx() - @as(i32, @intCast(span.first)) * cell_w;
+        }
+
         /// Umi: the folder icon at the start of the folder box.
         fn umiAddFolderIcon(
             self: *Self,
@@ -3780,7 +3872,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             color: terminal.color.RGB,
         ) void {
             var x = x_start;
-            for (text) |ch| {
+            var it = (std.unicode.Utf8View.init(text) catch return).iterator();
+            while (it.nextCodepoint()) |ch| {
                 if (x >= self.cells.size.columns) return;
                 defer x += 1;
                 if (ch == ' ') continue;
@@ -3799,7 +3892,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
                     .glyph_size = .{ render.glyph.width, render.glyph.height },
                     .bearings = .{
-                        @intCast(render.glyph.offset_x),
+                        @intCast(render.glyph.offset_x + self.umi_glyph_dx),
                         @intCast(render.glyph.offset_y + self.umi_glyph_dy),
                     },
                 }) catch return;
@@ -3987,7 +4080,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .emoji => .color,
                     .text => .grayscale,
                 },
-                .bools = .{ .no_min_contrast = noMinContrast(cp) },
+                .bools = .{ .no_min_contrast = noMinContrast(cp) or self.umi_keep_contrast },
                 .grid_pos = .{ @intCast(x), @intCast(y) },
                 .color = .{ color.r, color.g, color.b, alpha },
                 .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },

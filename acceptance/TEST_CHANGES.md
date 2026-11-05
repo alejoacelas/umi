@@ -856,3 +856,48 @@ state) instead of every action. **Requirements:** L-14 to L-17.
   through accessibility and asserts it has focus before pressing ⌘/: `debug.editor.focus` left
   the terminal focused there, so ⌘/ rightly opened the page. Their assertions are unchanged.
 
+## Warp's look for the terminal itself (S-5, S-10 to S-12, 2026-11-05)
+
+Warp parity: Warp's built-in Dark colors, selection, contrast rule, font, padding, cursor,
+scrollbar, bell, block statuses and header, and the folder box. **Requirements:** S-5, S-10, S-11,
+S-12.
+
+- **New, `tests/test_umi_warp_terminal.py`**: the background `#050505` and the cursor `#19AAD8`
+  (screenshots; the cursor test is a `ui` test, as it needs the window focused), the selection's color
+  over the background with red text staying red, named colors raised to 4.5:1 while the same RGB gray
+  isn't, Hack 13 with 15.3–15.9-point rows and a configured `font-family` replacing it, padding 16 /
+  20 and none for a full-screen program (and back after it), the cursor 3 points wide, a row tall,
+  with round ends, the scrollbar's thumb, the silent bell (no Dock badge), exit codes 130 and 141 and
+  Ctrl-C as success, no running time in the first second, the header's `git:(branch)` (and the commit
+  when detached), `(conda) (venv) user@host:`, and the folder box ending after 40 characters.
+- **Changed, `tests/harness.py`**: instances no longer inherit the runner's `VIRTUAL_ENV`,
+  `CONDA_DEFAULT_ENV`, `CONDA_PREFIX`, `SSH_CONNECTION`, `SSH_CLIENT` and `SSH_TTY` (`uv run` and the
+  ssh session into the test Mac set them). The block header now shows them as Warp does, so panes
+  inherited `(.venv) user@host:` from the test runner, which a window opened from the Dock never has.
+  No assertion changed.
+- **Test hook, `debug.terminal`**: `debug.blocks`' report plus the scrollbar (`scroller`) and the
+  bell's effects (`bell`); `debug.terminal.action` runs a Ghostty binding action (`select_all`) on a pane. `debug.blocks` now also reports each block's `header_line` (the whole
+  header; `header` stays the folder alone), the padding's four sides, the font's name and size, the
+  cursor's size in points and the active screen.
+
+### Review fixes (2026-11-05)
+
+- **New, `tests/test_umi_warp_terminal.py`**: `test_a_branch_name_is_shown_and_never_run_with_prompt_subst`
+  (a branch named `$(touch${IFS}pwned)` plus backticks, with `prompt_subst` on and off: no file
+  made, the name shown as it is); `test_a_reset_on_the_alternate_screen_brings_the_padding_back`
+  (RIS and the `reset` action); `test_turning_the_option_on_while_a_full_screen_program_runs_brings_the_padding_back`
+  (config reload); `test_the_box_text_is_bold` (the box's folder has more heavy pixels than the same
+  folder in a block's header).
+- **Stricter**: `test_full_screen_programs_get_the_pane_without_padding` now requires no padding
+  above the first row (was: less than a row) and less than a cell below and right.
+  `test_minimum_contrast_raises_named_colors_only` adds a 256-color gray (index 59) that must keep
+  its color. `test_the_scrollbar_is_warps_thumb_without_a_track` now checks what is drawn: after
+  `seq 1 400` and a page up, the scroller is in the overlay style and visible, and its image shows
+  one rounded `#696969` thumb 8 points wide, 2 points from the edge, with background above, below
+  and right of it (it read back the class's constants before).
+- **Test hook, `debug.terminal.scroller`**: writes an image of a pane's scrollbar as shown (its
+  layers as on screen, mid-fade included), over the pane's background (the window's screenshot draws
+  the terminal's image over the scrollbar). `debug.terminal`'s `scroller` adds `style`, `hidden`,
+  `knob_proportion`, `value`, `width_pt`, `edge_inset`, `knob_rect_pt` (AppKit's knob),
+  `thumb_rect_pt` and `thumb_attached`. This test found that AppKit drew the old thumb clipped to
+  its own 6-point knob.

@@ -15,6 +15,11 @@ pub const PaddingBalance = enum {
     /// Distributes leftover space equally on all sides so the grid is
     /// centered within the screen.
     equal,
+    /// Umi: keeps the explicit padding on the left and at the bottom and
+    /// puts the leftover space above the first row and right of the last
+    /// column, so the last row sits exactly the bottom padding above the
+    /// edge (Warp's prompt) and text starts exactly the left padding in.
+    bottom,
 };
 
 /// All relevant sizes for a rendered terminal. These are all the sizes that
@@ -54,6 +59,16 @@ pub const Size = struct {
         // This ensure grid() does the right thing
         self.padding = explicit;
 
+        // Umi: the leftover goes above and to the right.
+        if (mode == .bottom) {
+            const g = self.grid();
+            const used_w = @as(u32, g.columns) * self.cell.width + explicit.left + explicit.right;
+            const used_h = @as(u32, g.rows) * self.cell.height + explicit.top + explicit.bottom;
+            self.padding.right += self.screen.width -| used_w;
+            self.padding.top += self.screen.height -| used_h;
+            return;
+        }
+
         // Now we can calculate the balanced padding
         self.padding = .balanced(
             self.screen,
@@ -62,7 +77,7 @@ pub const Size = struct {
         );
 
         switch (mode) {
-            .false => unreachable,
+            .false, .bottom => unreachable,
             .equal => {},
             .true => {
                 // Cap the top padding to avoid excessive space above the

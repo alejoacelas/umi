@@ -18,7 +18,7 @@ enum UmiTheme {
 
     static var chromeFill: Color { ink.opacity(0.035) }
     /// The sidebar's fill: ink at 5% over the window background, as Warp paints its vertical
-    /// tabs panel (`fg_overlay_1`; #0D0D0D on the default Dark theme).
+    /// tabs panel (`fg_overlay_1`; #121212 over the default Dark theme's #050505).
     static var sidebarFill: Color { ink.opacity(0.05) }
     static var hoverFill: Color { ink.opacity(0.06) }
     static var selectedFill: Color { ink.opacity(isLight ? 0.07 : 0.085) }
@@ -95,17 +95,19 @@ enum UmiTheme {
     // MARK: Default terminal configuration
 
     /// Umi's colors, shipped as a Ghostty theme so a user's own `theme` replaces them
-    /// entirely (explicit colors would otherwise override it). The background is Warp's default
-    /// Dark theme (`warp_bundled/warp_dark.yaml` in warpdotdev/themes): pure black, white text, its
-    /// cursor accent and its 16 terminal colors (S-5).
+    /// entirely (explicit colors would otherwise override it). They are Warp's built-in Dark
+    /// theme (Warp's `themes/default_themes.rs`): background #050505, white text, the cyan accent
+    /// as the cursor, its selection (blue at 40% over the text, which keeps its colors) and its 16
+    /// terminal colors (S-5).
     static let themeConfig = """
-    background = #000000
+    background = #050505
     foreground = #ffffff
-    cursor-color = #00c2ff
-    selection-background = #24435c
-    selection-foreground = #ffffff
+    cursor-color = #19aad8
+    selection-background = #76a7fa
+    selection-background-opacity = 0.4
+    selection-foreground = cell-foreground
     split-divider-color = #1f1f1f
-    unfocused-split-fill = #000000
+    unfocused-split-fill = #050505
     palette = 0=#616161
     palette = 1=#ff8272
     palette = 2=#b4fa72
@@ -134,15 +136,29 @@ enum UmiTheme {
         macos-titlebar-proxy-icon = hidden
         theme = \(themePath)
 
+        # Warp's terminal (Warp parity): Hack 13 (bundled; the default when no font-family is
+        # set), rows 1.2× the font size, no ligatures, a 3-point bar cursor with round ends,
+        # 16 points either side, 20 below the prompt, none for full-screen programs.
         cursor-style = bar
         font-size = 13
-        adjust-cell-height = 15%
-        window-padding-x = 14
-        window-padding-y = 10
-        window-padding-balance = true
+        adjust-cell-height = 3%
+        adjust-cursor-height = 3%
+        font-feature = -calt
+        font-feature = -liga
+        font-feature = -dlig
+        window-padding-x = 16
+        window-padding-y = 10,20
+        window-padding-balance = bottom
+        window-padding-alternate-screen = false
         window-padding-color = extend
         unfocused-split-opacity = 1
         mouse-hide-while-typing = true
+
+        # Warp's contrast rule (named colors raised to 4.5:1) and its silent bell (no sound,
+        # no Dock bounce, no bell in the title).
+        minimum-contrast = 4.5
+        minimum-contrast-colors = named
+        bell-features = no-system,no-audio,no-attention,no-title,no-border
 
         # ⌃⌘← / ⌃⌘→ move the pane into the previous or next tab.
         keybind = super+ctrl+arrow_left=unbind

@@ -515,8 +515,25 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **S-5 [W]** The theme's chrome text stays readable on light and dark backgrounds. The user's own
   config file (`~/.config/<cli>/config`, Ghostty's settings) and theme override the product's
   defaults. The app never reads Ghostty's own config files.
-  The default colors are Warp's default Dark theme's: a pure black background (`#000000`), white
-  text, its cyan cursor and its 16 terminal colors, with the chrome on top of it, as in Warp.
+  The default colors are Warp's built-in Dark theme's: background `#050505`, white text, the cyan
+  accent `#19AAD8` as the cursor and its 16 terminal colors, with the chrome on top of it, as in
+  Warp. (Until 2026-11-05 this said `#000000`, which came from the themes repository's YAML, not
+  the theme built into Warp; REQUESTS.md.)
+  Warp parity, 2026-11-05: the terminal itself looks like Warp's by default (all overridable in the
+  config file):
+  - selection: Warp's blue `rgba(118,167,250,0.40)` laid over the selected cells, which keep their
+    text colors;
+  - minimum contrast: text in the default color or a named color (0–15) is raised to 4.5:1 against
+    its background; text a program colors from the 256-color table or with RGB keeps its color;
+  - font: Hack (bundled) at 13 points, rows 1.2× the font size, no ligatures;
+  - padding: 16 points left and right, 20 below the last row, what's left over above the first row;
+    full-screen programs (the alternate screen) get the whole pane, without padding: their grid
+    starts at the pane's top left corner; a reset (`reset`, Reset Terminal) that leaves the alternate
+    screen gives the shell its padding back;
+  - cursor: a bar 3 points wide with fully rounded ends, a row tall, blinking every 500 ms;
+  - scrollbar: a thumb 8 points wide with round ends and no track, 2 points in from the pane's
+    right edge, the text color at 40%, 90% while the pointer is on it or it is dragged;
+  - bell: silent: no sound, no Dock bounce or badge, no mark in the title.
 - **S-6 [W]** The "running/last command" line updates for commands that finish instantly.
 - **S-7 [A+W]** The sidebar's order, in the user's words (2026-10-27): "the standard behavior from warp
   that doesn't switch tab order depending on recency". Tabs stay where they are until the user moves
@@ -586,21 +603,28 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   shown.
 - **S-10 [A+W]** Blocks. Each command and its output form a block, as in Warp:
   - a header with the folder it ran in and how long it took, in Warp's format (`(0.041s)`,
-    `(1m 8.92s)`, `(3h 4m 12s)`; while it runs, the whole seconds so far);
+    `(1m 8.92s)`, `(3h 4m 12s)`; while it runs, the whole seconds so far, nothing in its first
+    second). Warp parity, 2026-11-05: the header is Warp's whole line: the conda and Python
+    environments (`(base) (venv) `), `user@host:` over SSH, the folder (in full when it fits) and
+    ` git:(branch)` (the commit when no branch is checked out). These names are shown as text and
+    never run as shell code, also with zsh's `prompt_subst` on;
   - the command, in bold;
   - its output;
   - a thin line and some space between blocks.
 
   A command that exits with an error is marked as Warp marks it: the theme's red at 10% over the block
-  and a 5-point red bar along the pane's left edge. Not shown: the "Lines: … Size: …" line of the
+  and a 5-point red bar along the pane's left edge. As in Warp (Warp parity, 2026-11-05), exit codes
+  130 (stopped with Ctrl-C) and 141 (SIGPIPE, as when a pager quits early) count as success. Not shown: the "Lines: … Size: …" line of the
   user's Warp build, Warp's input editor, and block selection, copying and other block actions.
 - **S-11 [A+W]** The folder box. At the prompt, a small rounded box with a folder icon and the current
-  folder (`~` for the home folder), as at the bottom of the screenshot.
+  folder (`~` for the home folder), as at the bottom of the screenshot. Warp parity, 2026-11-05: the
+  box shows the folder alone (not the header's environments or git branch), in bold (Warp's is
+  semibold), cut from the left to its last 39 characters after `…` when longer than 40.
 - **S-12 [A+W]** Where it applies:
   - only inside Umi: other terminals, and zsh started anywhere else, look as they did;
   - zsh only: other shells keep the usual look;
   - full-screen programs (the alternate screen: vim, an agent's full-screen interface) take the whole
-    pane as before, with no block decorations;
+    pane as before, with no block decorations, and (Warp parity, 2026-11-05) without padding;
   - programs and agents that read a pane (`read`, `wait --pattern`) see what the shell and programs
     printed (the folder line and the command line as the shell printed them), never what Umi draws;
   - `shell-integration-features = no-umi-blocks` in the user's config file turns it off.

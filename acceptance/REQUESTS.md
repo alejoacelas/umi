@@ -237,7 +237,9 @@ that stretch equally.
 > also, make umi use the same blacks as the warp blacks I currenlty use (the defaults I think)
 
 His Warp follows the system theme, which in dark mode is Warp's default "Dark" theme (background
-`#000000`).
+`#000000`). Corrected 2026-11-05: the theme built into Warp (`themes/default_themes.rs`) is
+`#050505` with the cursor `#19AAD8`; `#000000` came from the themes repository's YAML. His screenshot
+`reference/warp-blocks.png` measures `#050505`.
 
 Then:
 > though let's use warp's terminal color config as well if it's straightforward to implement
@@ -285,3 +287,9 @@ gestures are out.
 - Palettes and the shortcuts page: one palette with Warp's filters (`files:`, `sessions:` …) and its
   empty state, Warp's look for the palette and its rows, "Create a file named …" in ⌘O, and ⌘/ for
   a shortcuts page (SPEC L-14 to L-17). Warp's palette has no right-click menu.
+- How the terminal looks: Warp's built-in Dark colors (`#050505`, cursor `#19AAD8`), its selection
+  and contrast rule, Hack 13 with rows 1.2× the font size and no ligatures, its padding (none for
+  full-screen programs), its rounded 3-point bar cursor blinking every 500 ms, its scrollbar and
+  silent bell; blocks that count Ctrl-C and SIGPIPE as success, show no running time in the first
+  second and carry Warp's header (environments, user@host over SSH, git branch); the folder box
+  with the folder alone, cut at 40 characters (SPEC S-5, S-10 to S-12).

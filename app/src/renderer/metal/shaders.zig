@@ -259,6 +259,10 @@ pub const Uniforms = extern struct {
         /// with linear alpha blending have a similar apparent weight
         /// (thickness) to gamma-incorrect blending.
         use_linear_correction: bool align(1) = false,
+
+        /// Umi: minimum contrast moves text only as far toward white or
+        /// black as the ratio needs (Warp's), instead of to white or black.
+        umi_min_contrast_blend: bool align(1) = false,
     },
 
     const PaddingExtend = packed struct(u8) {
