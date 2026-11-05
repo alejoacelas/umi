@@ -1354,12 +1354,6 @@ extension Ghostty {
                 return false
             }
 
-            // Umi: a file pane's terminal is never shown; its editor takes the keys, through the
-            // menu (⌘F, ⌘G and ⌘Z act on the file, not on this terminal).
-            if UmiFilePanes.shared.isFilePane(id) {
-                return false
-            }
-
             // Get information about if this is a binding.
             let bindingFlags = surfaceModel.flatMap { surface in
                 var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)

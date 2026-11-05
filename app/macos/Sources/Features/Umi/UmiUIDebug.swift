@@ -59,9 +59,6 @@ enum UmiUIDebug {
             action()
             return ["performed": path]
 
-        case "debug.ui.editor":
-            return try UmiEditorDebug.handle(params, caller: caller)
-
         case "debug.ui.open_url":
             // A link ⌘-clicked in a pane: what the terminal's open-URL action runs (E-12).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)

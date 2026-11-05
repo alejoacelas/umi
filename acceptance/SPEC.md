@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-14, E-1 to E-12.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -552,9 +552,7 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   tab or quitting never silently loses edits: they are saved, or a recovery copy is kept.
 - **E-4 [A+W]** If the file changes on disk:
   - an unmodified document reloads;
-  - a modified one shows that the disk changed and offers to reload; in Warp's words (Warp parity,
-    2026-11-05): "This file has saved changes that are not reflected here.", with "Discard this
-    version" (drop the edits, take the disk's file) and "Overwrite" (save the edits over it);
+  - a modified one shows that the disk changed and offers to reload;
   - a file deleted and recreated is picked up again.
 - **E-5 [A+W]** Saving keeps the file's encoding. A non-UTF-8 file stays in its encoding, or the save is
   refused with a message. It is never silently converted.
@@ -624,48 +622,6 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   open in the default browser. `<cli> edit` refuses a URL from an origin that isn't listed. A web
   pane counts as quiet for updates (I-4): the pages it is for keep unsaved drafts in their local
   storage, which survives the relaunch.
-
-- **E-21 [A+W]** The source view looks and reads like Warp's code editor (Warp parity, 2026-11-05):
-  - the terminal's font at the terminal's size; no soft wrap: long lines scroll sideways;
-  - a 94-point gutter with line numbers in that font, the current line's at 90% of the text color
-    and the others at 60%; the current line has the 10% surface color behind it while nothing is
-    selected;
-  - marks along the gutter's left edge, 3 points wide, against the file's last commit: green for
-    added lines, yellow for changed lines, red where lines were removed (the terminal's normal ANSI
-    colors);
-  - syntax colors from tree-sitter for the languages Warp's editor colors, picked by file name as
-    Warp picks them (Warp's list less jq, Nix, Objective-C, PowerShell, Vue, HCL and SQL), in the
-    terminal's ANSI colors as Warp maps them: keywords magenta, functions blue, strings and numbers
-    green, types and tags red, comments and punctuation yellow, properties cyan.
-- **E-22 [A+W]** Find and replace in a file pane, as Warp's (Warp parity, 2026-11-05). ⌘F, ⌘G and
-  ⇧⌘G in a file pane act on the file, never on the terminal under it. ⌘F opens a bar floating at the
-  top right (10 down, 20 in, 500 wide) with the selection (one line of it) as the query and its
-  field focused. Enter or ⌘G goes to the next match, Shift-Enter or ⇧⌘G to the previous one,
-  wrapping; the caret goes to the selected match's start and the match shows in orange, the others
-  in yellow; the bar counts "n/N" ("?/N" with no selected match). With the bar closed, ⌘G opens it
-  on the first match at or after the caret and ⇧⌘G on the last match before it. In a preview
-  (Markdown, JSON, CSV) these keys switch the pane to its source and find there. Toggles: regex, case-sensitive, and preserve case for replacing. The replace row
-  (the bar's toggle, or ⌥⌘F) replaces the selected match on Enter and every match with Replace all,
-  as one undo step; Select all selects every match in the text. Esc closes the bar and returns to
-  the text.
-- **E-23 [A]** Editor keys, as Warp's (Warp parity, 2026-11-05): ⌃G opens "Go to line" (top centre,
-  "Line number:Column"; Enter goes there, Esc closes; Warp's messages for empty or invalid input);
-  ⌘/ comments or uncomments the selected lines with the language's line-comment prefix after their
-  indentation (uncomments when every non-blank line has it); ⇧⌘S saves under a name the user picks
-  and the pane then shows that file (when another pane already shows that file, that pane takes the
-  text and focus and this one closes; with unsaved edits there, Save As refuses and says why); ⌘S shows a "File saved." toast at the top of the tab for 4
-  seconds. Saving never reformats the file. When no file pane is focused these keys go to whatever
-  is (a terminal gets ⌃G).
-- **E-24 [A+W]** File pane header and stack chips, as Warp's (Warp parity, 2026-11-05): the file's
-  name centred, with an 8-point dot 4 points before it while there are unsaved changes; on the right
-  the preview/source control (E-2), ⋯ and close. ⋯ opens the pane menu, as Warp's for each view
-  (W: `code/view.rs`, `notebooks/file/mod.rs`); a right-click on the header opens the same menu (an
-  Umi addition: Warp's header has none). In the source view: Maximize pane (Minimize pane while
-  maximized; outside a split it does nothing), Copy file path, Reveal in Finder, and View Markdown
-  preview for Markdown. In a preview: Maximize pane, Refresh file (asks first when there are unsaved
-  changes), Open in editor (the source view), Copy file path. A right-click in the source text offers
-  Cut, Copy and Paste. A stack chip (M-7) for a file shows
-  the file type's colored icon and the same dot, and is at most 300 points wide.
 
 ## AG. Agent sessions
 
