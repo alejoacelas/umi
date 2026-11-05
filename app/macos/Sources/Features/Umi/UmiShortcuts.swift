@@ -51,7 +51,7 @@ enum UmiShortcuts {
             Item(id: "file.save", title: "Save File", key: "s", modifiers: [.command], symbol: "square.and.arrow.down", menu: "File",
                  action: { UmiEditor.currentDocument.map { UmiEditor.saveFromUser($0) } },
                  enabled: { UmiEditor.currentDocument != nil }),
-            // The file editor (E-13 to E-16), Warp's keys.
+            // The file editor (E-22, E-23), Warp's keys.
             Item(id: "file.save_as", title: "Save As…", key: "s", modifiers: [.command, .shift],
                  symbol: "square.and.arrow.down.on.square", menu: "File",
                  action: { UmiEditor.currentDocument.map { UmiEditor.saveAs($0) } },

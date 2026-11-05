@@ -166,7 +166,7 @@ final class UmiDocument: ObservableObject, Identifiable {
     @Published var reviewWaiters = 0
     /// The shown view, which starts a comment on its selection (E-11).
     weak var commentTarget: UmiCommentTarget?
-    /// The source view's find, go to line and comments (E-13 to E-16), while it's shown.
+    /// The source view's find, go to line and comments (E-21 to E-23), while it's shown.
     weak var code: UmiCodeEditor?
 
     private(set) var encoding: String.Encoding
@@ -229,7 +229,7 @@ final class UmiDocument: ObservableObject, Identifiable {
         }
     }
 
-    /// Write the text to another file, in this document's encoding (Save As, E-15).
+    /// Write the text to another file, in this document's encoding (Save As, E-23).
     func write(to other: URL) throws {
         try UmiTextFile.write(text, to: other, encoding: encoding, bom: bom)
     }
@@ -638,7 +638,7 @@ enum UmiEditor {
         return false
     }
 
-    /// ⌘S (and Overwrite): save and say so, as Warp's "File saved." toast does (E-15).
+    /// ⌘S (and Overwrite): save and say so, as Warp's "File saved." toast does (E-23).
     @discardableResult
     static func saveFromUser(_ doc: UmiDocument) -> Bool {
         guard doc.save() else { return false }
@@ -647,7 +647,7 @@ enum UmiEditor {
         return true
     }
 
-    /// ⇧⌘S: write the document to a file the user names; the pane then shows that file (E-15).
+    /// ⇧⌘S: write the document to a file the user names; the pane then shows that file (E-23).
     static func saveAs(_ doc: UmiDocument) {
         guard let pane = UmiFilePanes.shared.open.first(where: { $0.doc === doc })?.pane else { return }
         let panel = NSSavePanel()
@@ -936,7 +936,7 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.isRichText = false
             textView.importsGraphics = false
             textView.allowsUndo = true
-            // Find is the code view's own bar (E-14), not AppKit's.
+            // Find is the code view's own bar (E-22), not AppKit's.
             textView.usesFindBar = false
             textView.isAutomaticQuoteSubstitutionEnabled = false
             textView.isAutomaticDashSubstitutionEnabled = false

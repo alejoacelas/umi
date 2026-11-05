@@ -513,7 +513,7 @@ final class UmiGutterView: NSRulerView {
 
 /// The parts of a file pane's source view beyond plain text: the terminal's font with no soft
 /// wrap, line numbers and git marks, the current line, syntax colors, find and replace, go to
-/// line and toggle comment (SPEC E-13 to E-16).
+/// line and toggle comment (SPEC E-21 to E-23).
 @MainActor
 final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
     weak var doc: UmiDocument?
