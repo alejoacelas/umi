@@ -89,13 +89,14 @@ enum UmiPaneMenu {
         return menu
     }
 
-    /// As ⌘W closes the focused pane: a pane whose program would be stopped asks first.
+    /// Close the pane right away when only its shell runs there, as Warp does; when a program
+    /// runs in front of the shell, Ghostty asks first, as for ⌘W.
     private static func close(_ pane: Ghostty.SurfaceView) {
         guard let surface = pane.surface else { return }
-        if ghostty_surface_needs_confirm_quit(surface) {
-            ghostty_surface_request_close(surface)
-        } else {
+        if UmiPaneContext.shellInFront(pane) || !ghostty_surface_needs_confirm_quit(surface) {
             try? UmiLayout.closePane(pane)
+        } else {
+            ghostty_surface_request_close(surface)
         }
     }
 
