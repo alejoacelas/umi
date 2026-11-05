@@ -1,25 +1,30 @@
 import AppKit
 import SwiftUI
 
-/// Umi's palette, over a window. Three lists:
-/// - **Commands (⌘P, L-14):** the CLI's commands, built at runtime from `umi help --json`
+/// Umi's palette, over a window: one palette, as Warp's, whose source a filter chooses.
+/// - **Everything (⌘P, L-14):** the CLI's commands, built at runtime from `umi help --json`
 ///   (so the palette follows the CLI as it changes) and run through the bundled CLI in the
-///   context of the focused pane, asking for arguments a command needs; plus Umi's menu
-///   actions, managed sessions and Ghostty's actions.
-/// - **Panes (⇧⌘P, L-15):** every pane in every window, most recently used first, each with
-///   its own title.
-/// - **Files (⌘O, L-16):** a quick search over the focused pane's repository.
+///   context of the focused pane, asking for arguments a command needs; Umi's menu actions,
+///   Ghostty's actions, managed sessions, panes and files. Empty, it shows filter chips and the
+///   Recent and Suggested sections.
+/// - **Filters**, typed as a prefix (`files:`, `sessions:`, `actions:`, `conversations:`,
+///   `tabs:`) and shown as an italic word before the query; Backspace in an empty query removes
+///   it. ⇧⌘P opens the palette filtered to sessions (every pane, most recently used first, L-15)
+///   and ⌘O to files (the focused pane's repository, L-16).
 @MainActor
 final class UmiPaletteModel: ObservableObject {
-    enum Mode: String { case commands, panes, files }
+    /// The palette's source: everything (`commands`) or one of Warp's query filters.
+    /// `panes` is Warp's "sessions" filter.
+    enum Mode: String, CaseIterable { case commands, actions, panes, files, tabs, conversations }
     enum Step: Equatable { case list, ask, running, output }
 
     @Published private(set) var isPresented = false
     @Published private(set) var mode: Mode = .commands
     @Published private(set) var step: Step = .list
     @Published var query = "" {
-        didSet { if query != oldValue { refresh() } }
+        didSet { if query != oldValue { queryChanged() } }
     }
+    /// The selected row; -1 when none is (the empty ⌘P selects nothing until an arrow key).
     @Published var selection = 0
     @Published private(set) var entries: [UmiPaletteEntry] = []
     /// The question asked while collecting an argument.
@@ -43,6 +48,22 @@ final class UmiPaletteModel: ObservableObject {
     private var runID = 0
     private var files: UmiFileIndex?
     private var filesTask: Task<Void, Never>?
+    /// Backspace in an empty query removes the filter.
+    private var keyMonitor: Any?
+
+    /// At most this many results, as Warp's palette.
+    static let resultLimit = 250
+    /// The Recent section's length (Warp: 3).
+    static let recentCount = 3
+    /// Entries chosen from the palette, most recent first (their ids).
+    private static var chosen: [String] = []
+    /// The Suggested section: Umi's counterparts of Warp's (its theme chooser and settings).
+    static let suggestedIDs = ["umi:Keyboard Shortcuts", "umi:Settings…", "umi:Show Project Explorer"]
+    /// The filter chips of the empty palette, in Warp's order.
+    static let chips: [Mode] = [.files, .actions, .panes, .conversations]
+
+    /// The shortcuts page (⌘/) of this window.
+    let shortcutsPage = UmiShortcutsPageModel()
 
     // MARK: Opening and closing
 
@@ -95,10 +116,12 @@ final class UmiPaletteModel: ObservableObject {
         output = nil
         busy = nil
         base = []
+        files = nil
         query = ""
         buildBase()
         refresh()
         isPresented = true
+        installKeyMonitor()
         UmiEvents.shared.emit("palette.opened", ["mode": mode.rawValue, "window": window.umiIDString])
     }
 
@@ -108,6 +131,7 @@ final class UmiPaletteModel: ObservableObject {
         filesTask?.cancel()
         pending = nil
         step = .list
+        removeKeyMonitor()
         guard restoreFocus, let window = window?.window else { return }
         let previous = previousResponder
         DispatchQueue.main.async {
@@ -124,13 +148,87 @@ final class UmiPaletteModel: ObservableObject {
         }
     }
 
+    // MARK: Filters
+
+    /// Switch the list to another source, keeping the palette open (a typed prefix, a chip,
+    /// Backspace in an empty query).
+    func setFilter(_ mode: Mode, query newQuery: String = "") {
+        guard isPresented, step == .list else { return }
+        filesTask?.cancel()
+        self.mode = mode
+        busy = nil
+        base = []
+        buildBase()
+        query = newQuery
+        refresh()
+        UmiEvents.shared.emit("palette.filter", ["mode": mode.rawValue])
+    }
+
+    /// The filter a query starts with, and the rest of the query.
+    static func filterPrefix(in query: String) -> (Mode, String)? {
+        let lowered = query.lowercased()
+        for mode in Mode.allCases {
+            guard let word = mode.filterWord, lowered.hasPrefix(word) else { continue }
+            return (mode, String(query.dropFirst(word.count).drop(while: { $0 == " " })))
+        }
+        return nil
+    }
+
+    private func queryChanged() {
+        if step == .list, mode == .commands, Self.filterPrefix(in: query) != nil {
+            // After the field has taken the typed text, so it then shows the rest.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.step == .list, self.mode == .commands,
+                      let (filter, rest) = Self.filterPrefix(in: self.query) else { return }
+                self.setFilter(filter, query: rest)
+            }
+            return
+        }
+        refresh()
+    }
+
+    /// The empty unfiltered palette: filter chips, Recent and Suggested (Warp's zero state).
+    var isZeroState: Bool {
+        step == .list && mode == .commands && query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, self.removesFilter(on: event) else { return event }
+                self.setFilter(.commands)
+                return nil
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+    }
+
+    /// Backspace with the palette's empty query focused, under a filter.
+    private func removesFilter(on event: NSEvent) -> Bool {
+        guard isPresented, step == .list, mode != .commands, query.isEmpty, event.keyCode == 51,
+              event.modifierFlags.isDisjoint(with: [.command, .control, .option]),
+              let nsWindow = window?.window, event.window === nsWindow,
+              let editor = nsWindow.firstResponder as? NSTextView, editor.isFieldEditor else { return false }
+        return true
+    }
+
     // MARK: Lists
 
     private func buildBase() {
         switch mode {
-        case .commands: base = commandEntries()
+        case .commands:
+            base = commandEntries() + conversationEntries() + paneEntries()
+            startFiles()
+        case .actions: base = commandEntries()
         case .panes: base = paneEntries()
         case .files: startFiles()
+        case .tabs: base = tabEntries()
+        case .conversations: base = conversationEntries()
         }
     }
 
@@ -142,15 +240,22 @@ final class UmiPaletteModel: ObservableObject {
         case .running, .output:
             entries = []
         case .list:
+            if isZeroState {
+                filesTask?.cancel()
+                entries = zeroStateEntries()
+                selection = -1
+                return
+            }
             switch mode {
-            case .commands:
-                var ranked = rank(base, query: query, keepOrder: false)
+            case .commands, .actions:
+                var ranked = Array(rank(base, query: query, keepOrder: false).prefix(Self.resultLimit))
                 if let run = freeRunEntry() { ranked.insert(run, at: 0) }
                 entries = ranked
-            case .panes:
-                entries = rank(base, query: query, keepOrder: false)
+                if mode == .commands { appendFiles() }
             case .files:
                 refreshFiles()
+            case .panes, .tabs, .conversations:
+                entries = Array(rank(base, query: query, keepOrder: false).prefix(Self.resultLimit))
             }
         }
         selection = 0
@@ -169,6 +274,35 @@ final class UmiPaletteModel: ObservableObject {
         return scored.sorted { a, b in keepOrder || a.0 == b.0 ? a.1 < b.1 : a.0 > b.0 }.map(\.2)
     }
 
+    /// Recent (the last entries chosen, at most three) and Suggested.
+    private func zeroStateEntries() -> [UmiPaletteEntry] {
+        var byID: [String: UmiPaletteEntry] = [:]
+        for entry in base where byID[entry.id] == nil { byID[entry.id] = entry }
+        var shown = Set<String>()
+        let recent = Self.chosen.compactMap { byID[$0] }.prefix(Self.recentCount).map { entry -> UmiPaletteEntry in
+            shown.insert(entry.id)
+            var entry = entry
+            entry.section = "Recent"
+            return entry
+        }
+        let suggested = Self.suggestedIDs.compactMap { byID[$0] }.map { entry -> UmiPaletteEntry in
+            var entry = entry
+            entry.section = "Suggested"
+            return entry
+        }
+        return recent + suggested
+    }
+
+    /// Perform a row, remembering it for the Recent section.
+    func choose(_ entry: UmiPaletteEntry) {
+        if step == .list, [.action, .cli, .pane, .conversation].contains(entry.kind), !entry.id.hasPrefix("run:") {
+            Self.chosen.removeAll { $0 == entry.id }
+            Self.chosen.insert(entry.id, at: 0)
+            if Self.chosen.count > 20 { Self.chosen.removeLast(Self.chosen.count - 20) }
+        }
+        entry.perform()
+    }
+
     // MARK: Commands
 
     private func commandEntries() -> [UmiPaletteEntry] {
@@ -180,17 +314,19 @@ final class UmiPaletteModel: ObservableObject {
         let asking = Dictionary(catalog.actions.filter { !$0.ask.isEmpty }.map { ($0.title, $0) }, uniquingKeysWith: { a, _ in a })
         var menuTitles = Set<String>()
         var symbols: [String: [String]] = [:]
-        // Umi's menu actions (and managed sessions), with their shortcuts.
-        for option in UmiShortcuts.paletteOptions() {
-            menuTitles.insert(option.title)
-            if asking[option.title] != nil {
-                symbols[option.title] = option.symbols
+        // Umi's menu actions, with their shortcuts.
+        for item in UmiShortcuts.items {
+            menuTitles.insert(item.title)
+            let keys = item.shortcut?.symbols
+            if asking[item.title] != nil {
+                symbols[item.title] = keys
                 continue
             }
-            out.append(UmiPaletteEntry(id: "umi:" + option.title, title: option.title, subtitle: option.description,
-                                        symbols: option.symbols, icon: option.leadingIcon, kind: .action) { [weak self] in
+            out.append(UmiPaletteEntry(id: "umi:" + item.title, title: item.title, symbols: keys, icon: item.symbol,
+                                        kind: .action) { [weak self] in
                 self?.close()
-                option.action()
+                guard item.enabled() else { NSSound.beep(); return }
+                item.action()
             })
         }
         // Ghostty's own actions on the focused terminal (a menu action of the same name wins).
@@ -220,12 +356,47 @@ final class UmiPaletteModel: ObservableObject {
         return out + ghostty.filter { titles.insert($0.title).inserted }
     }
 
+    /// Every managed session can be shown (again) from the palette (AP-3, AP-4), the ones that
+    /// need the user first: Warp's conversations.
+    private func conversationEntries() -> [UmiPaletteEntry] {
+        UmiAgentMenu.ordered().map { session in
+            UmiPaletteEntry(id: "agent:" + session.id, title: "Show Agent: \(session.name)",
+                            subtitle: "\(session.kind) · \(UmiAgentMenu.describe(status: session.status, activity: session.activity))",
+                            icon: UmiAgentMenu.symbol(for: session.status), value: session.id, kind: .conversation) { [weak self] in
+                self?.close(restoreFocus: false)
+                _ = try? UmiAgentUI.open(session.id, placement: .init(kind: .tab, focus: true), caller: UmiCaller([:]))
+            }
+        }
+    }
+
+    /// Every tab of every window, the most recently shown first.
+    private func tabEntries() -> [UmiPaletteEntry] {
+        let recent = UmiTabHistory.recentFirst
+        let manyWindows = UmiTopology.windows.count > 1
+        var out: [(rank: Int, entry: UmiPaletteEntry)] = []
+        for window in UmiTopology.windows {
+            for (index, tab) in window.tabs.enumerated() {
+                let rank = recent.firstIndex { $0 === tab } ?? Int.max
+                let place = "tab #\(index + 1)" + (manyWindows ? " · window #\(UmiTopology.windowNumber(window))" : "")
+                out.append((rank, UmiPaletteEntry(id: "tab:" + tab.idString, title: tab.title, subtitle: place,
+                                                  icon: "rectangle.stack", color: tab.color.displayColor.map { Color($0) },
+                                                  value: tab.idString, kind: .tab) { [weak self, weak window, weak tab] in
+                    self?.close(restoreFocus: false)
+                    if let window, let tab { UmiLayout.focusTab(tab, in: window) }
+                }))
+            }
+        }
+        return out.enumerated().sorted { a, b in
+            a.element.rank != b.element.rank ? a.element.rank < b.element.rank : a.offset < b.offset
+        }.map(\.element.entry)
+    }
+
     private func reloadCommands() {
-        guard isPresented, mode == .commands, step == .list else { return }
-        base = commandEntries()
+        guard isPresented, step == .list, mode == .commands || mode == .actions else { return }
         let keep = selection
+        base = mode == .commands ? commandEntries() + conversationEntries() + paneEntries() : commandEntries()
         refresh()
-        selection = min(keep, max(entries.count - 1, 0))
+        selection = isZeroState ? keep : min(max(keep, 0), max(entries.count - 1, 0))
     }
 
     /// "Run `umi <query>`" when the query starts like a CLI command.
@@ -351,25 +522,38 @@ final class UmiPaletteModel: ObservableObject {
             guard let location = UmiTopology.locate(pane) else { return nil }
             let cwd = UmiTopology.cwd(of: pane)
             var details: [String] = []
+            var row = UmiPaletteEntry.PaneRow()
             if !cwd.isEmpty {
-                var place = Self.abbreviate(cwd)
-                if let git = UmiPaneContext.git(for: cwd) { place += " · " + git.branch }
+                row.folder = Self.abbreviate(cwd)
+                var place = row.folder ?? ""
+                if let git = UmiPaneContext.git(for: cwd) {
+                    row.branch = git.branch
+                    place += " · " + git.branch
+                }
                 details.append(place)
             }
             if let agent = UmiAttention.shared.agent(forPane: pane.id) {
                 details.append("\(agent.kind.rawValue) · \(agent.status)")
+                row.command = agent.kind.rawValue
+                row.hint = agent.status
             } else if let command = UmiPaneContext.command(for: pane) {
                 details.append(command.running ? "▸ \(command.text)" : command.text)
+                row.command = command.text
+                row.hint = command.running ? "Running..." : "Completed"
             }
-            details.append("in \(location.tab.title)" + (manyWindows ? " · window #\(UmiTopology.windowNumber(location.window))" : ""))
-            return UmiPaletteEntry(id: "pane:" + pane.umiID, title: Self.title(of: pane), subtitle: details.joined(separator: "  ·  "),
-                                    icon: UmiAttention.shared.agent(forPane: pane.id) != nil ? "bubble.left" : "terminal",
-                                    color: location.tab.color.displayColor.map { Color($0) },
-                                    badge: pane === self.pane ? "Current" : nil, value: pane.umiID,
-                                    kind: .pane) { [weak self, weak pane] in
+            let place = "in \(location.tab.title)" + (manyWindows ? " · window #\(UmiTopology.windowNumber(location.window))" : "")
+            details.append(place)
+            row.place = place
+            var entry = UmiPaletteEntry(id: "pane:" + pane.umiID, title: Self.title(of: pane), subtitle: details.joined(separator: "  ·  "),
+                                        icon: UmiAttention.shared.agent(forPane: pane.id) != nil ? "bubble.left" : "terminal",
+                                        color: location.tab.color.displayColor.map { Color($0) },
+                                        badge: pane === self.pane ? "Current" : nil, value: pane.umiID,
+                                        kind: .pane) { [weak self, weak pane] in
                 self?.close(restoreFocus: false)
                 if let pane { UmiLayout.focusPane(pane, activate: true) }
             }
+            entry.paneRow = row
+            return entry
         }
     }
 
@@ -394,13 +578,19 @@ final class UmiPaletteModel: ObservableObject {
 
     private func startFiles() {
         let cwd = pane.map(UmiTopology.cwd(of:)).flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()
+        if let files, files.folder == cwd {
+            if mode == .files && !files.isLoaded { busy = "Indexing files…" }
+            return
+        }
         let index = UmiFileIndex(folder: cwd)
         files = index
-        busy = "Indexing files…"
+        if mode == .files { busy = "Indexing files…" }
         index.load { [weak self, weak index] in
             guard let self, let index, self.files === index else { return }
             self.busy = nil
-            if self.isPresented, self.mode == .files, self.step == .list { self.refresh() }
+            guard self.isPresented, self.step == .list else { return }
+            if self.mode == .files { self.refresh() }
+            if self.mode == .commands, !self.isZeroState { self.appendFiles() }
         }
     }
 
@@ -428,16 +618,62 @@ final class UmiPaletteModel: ObservableObject {
         }
     }
 
-    private func fileEntries(_ query: String, in index: UmiFileIndex) async -> [UmiPaletteEntry] {
+    /// The unfiltered palette's matching files, after its other results.
+    private func appendFiles() {
+        filesTask?.cancel()
+        guard let index = files, index.isLoaded, !isZeroState else { return }
+        let query = self.query
+        filesTask = Task { [weak self] in
+            guard let found = await self?.fileEntries(query, in: index, extras: false) else { return }
+            guard !Task.isCancelled, let self, self.query == query, self.mode == .commands, self.step == .list,
+                  self.files === index else { return }
+            let room = max(Self.resultLimit - self.entries.count, 0)
+            let known = Set(self.entries.map(\.id))
+            self.entries += found.filter { !known.contains($0.id) }.prefix(room)
+        }
+    }
+
+    private func fileEntries(_ query: String, in index: UmiFileIndex, extras: Bool = true) async -> [UmiPaletteEntry] {
         let results = await index.search(query)
-        return results.map { result in
+        let found = results.map { result in
             UmiPaletteEntry(id: "file:" + result.path, title: (result.path as NSString).lastPathComponent,
                              subtitle: result.line.map { "\(result.path):\($0)" } ?? result.path,
-                             icon: result.recent ? "clock" : (result.changed ? "pencil.circle" : "doc.text"),
+                             icon: UmiPaletteFileIcon.symbol(for: result.path),
                              value: result.path, kind: .file) { [weak self] in
                 self?.openFile(index.root + "/" + result.path, line: result.line)
             }
-        } + [browseEntry]
+        }
+        guard extras else { return found }
+        // Nothing matches a name: offer to make it, in the pane's folder (Warp).
+        let name = UmiFileIndex.fileName(in: query)
+        if found.isEmpty, !name.isEmpty {
+            let path = (index.folder as NSString).appendingPathComponent(name)
+            let create = UmiPaletteEntry(id: "create:" + path, title: "Create a file named \(name)…", icon: "plus.circle",
+                                         value: path, kind: .create) { [weak self] in
+                self?.createFile(path)
+            }
+            return [create, browseEntry]
+        }
+        return found + [browseEntry]
+    }
+
+    private func createFile(_ path: String) {
+        let fm = FileManager.default
+        do {
+            if !fm.fileExists(atPath: path) {
+                try fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+                guard fm.createFile(atPath: path, contents: Data()) else {
+                    throw UmiError.failed("couldn't create \(path)")
+                }
+            }
+            openFile(path, line: nil)
+        } catch let error as UmiError {
+            output = ("Create \((path as NSString).lastPathComponent)", error.message, true)
+            step = .output
+        } catch {
+            output = ("Create \((path as NSString).lastPathComponent)", error.localizedDescription, true)
+            step = .output
+        }
     }
 
     private func openFile(_ path: String, line: Int?) {
@@ -477,8 +713,8 @@ final class UmiPaletteModel: ObservableObject {
             }
         case .list:
             if entries.indices.contains(selection) {
-                entries[selection].perform()
-            } else {
+                choose(entries[selection])
+            } else if !isZeroState {
                 NSSound.beep()
             }
         }
@@ -491,6 +727,11 @@ final class UmiPaletteModel: ObservableObject {
 
     func move(_ delta: Int) {
         guard !entries.isEmpty else { return }
+        // Nothing selected (the empty palette): Down selects the first row.
+        guard selection >= 0 else {
+            if delta > 0 { selection = 0 }
+            return
+        }
         selection = ((selection + delta) % entries.count + entries.count) % entries.count
     }
 
@@ -499,13 +740,14 @@ final class UmiPaletteModel: ObservableObject {
         case .ask: return prompt ?? "Value"
         case .running: return busy ?? "Running…"
         case .output: return "Return or Esc closes"
-        case .list:
-            switch mode {
-            case .commands: return "Run a command, or type a \(UmiPaths.cliName) command line…"
-            case .panes: return "Go to a pane…"
-            case .files: return "Open a file (name, or path:line)…"
-            }
+        case .list: return mode.placeholder
         }
+    }
+
+    /// The text a row's matched characters are found in: the query without a filter or `:line`.
+    var matchQuery: String {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return mode == .files ? UmiFileIndex.fileName(in: q) : q
     }
 
     // MARK: Scripted checks (debug.palette)
@@ -513,7 +755,7 @@ final class UmiPaletteModel: ObservableObject {
     /// Open a list with a query and return what it shows, once the CLI's commands or the
     /// files are loaded.
     func preview(_ mode: Mode, query: String, in window: TerminalController) async -> [UmiPaletteEntry] {
-        if mode == .commands { await UmiCLICatalog.shared.ensureLoaded() }
+        if mode == .commands || mode == .actions { await UmiCLICatalog.shared.ensureLoaded() }
         open(mode, in: window)
         if mode == .files, let index = files {
             while !index.isLoaded { try? await Task.sleep(nanoseconds: 50_000_000) }
@@ -525,6 +767,10 @@ final class UmiPaletteModel: ObservableObject {
             return entries
         }
         self.query = query
+        if mode == .commands, Self.filterPrefix(in: query) != nil {
+            // The filter applies on the next turn of the main loop.
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
         return entries
     }
 
@@ -533,7 +779,7 @@ final class UmiPaletteModel: ObservableObject {
         guard let entry = entries.first(where: { $0.title == title }) else {
             return ["error": "no entry \"\(title)\"", "entries": entries.map(\.title)]
         }
-        entry.perform()
+        choose(entry)
         for value in answers {
             guard step == .ask else { break }
             if let choice = entries.first(where: { $0.value == value || $0.title == value }) {
@@ -551,11 +797,69 @@ final class UmiPaletteModel: ObservableObject {
         if step == .ask { out["prompt"] = prompt ?? "" }
         return out
     }
+
+    /// What the palette shows now, for `debug.palette.state`.
+    var stateJSON: [String: Any] {
+        var out: [String: Any] = ["presented": isPresented, "mode": mode.rawValue, "step": "\(step)",
+                                  "entries": entries.map(\.title), "output": output?.text ?? "",
+                                  "query": query, "filter": mode.filterWord ?? "", "selection": selection,
+                                  "zero_state": isZeroState, "placeholder": placeholder,
+                                  "rows": entries.map(\.json)]
+        if isZeroState { out["chips"] = Self.chips.compactMap(\.chipTitle) }
+        return out
+    }
+}
+
+extension UmiPaletteModel.Mode {
+    /// The prefix that chooses this filter, shown in italics before the query (Warp's filter
+    /// atoms; `tabs:` is Umi's, Warp reaches tabs only through ⌃Tab).
+    var filterWord: String? {
+        switch self {
+        case .commands: return nil
+        case .actions: return "actions:"
+        case .panes: return "sessions:"
+        case .files: return "files:"
+        case .tabs: return "tabs:"
+        case .conversations: return "conversations:"
+        }
+    }
+
+    /// The filter chip's title in the empty palette.
+    var chipTitle: String? {
+        switch self {
+        case .commands, .tabs: return nil
+        case .actions: return "actions"
+        case .panes: return "sessions"
+        case .files: return "files"
+        case .conversations: return "conversations"
+        }
+    }
+
+    /// The field's placeholder (Warp's).
+    var placeholder: String {
+        switch self {
+        case .commands: return "Search for a command"
+        case .actions: return "Search actions"
+        case .panes: return "Search sessions"
+        case .files: return "Search files"
+        case .tabs: return "Search tabs"
+        case .conversations: return "Search conversations"
+        }
+    }
 }
 
 /// One row of the palette.
 struct UmiPaletteEntry: Identifiable {
-    enum Kind: String { case action, cli, pane, file, choice }
+    enum Kind: String { case action, cli, pane, file, choice, tab, conversation, create }
+
+    /// What a pane's two-line row shows (Warp's navigation palette).
+    struct PaneRow {
+        var folder: String?
+        var branch: String?
+        var command: String?
+        var hint = "Empty Session"
+        var place = ""
+    }
 
     let id: String
     var title: String
@@ -569,6 +873,9 @@ struct UmiPaletteEntry: Identifiable {
     /// What choosing it stands for (a pane id, a file path).
     var value: String?
     let kind: Kind
+    /// The empty palette's section ("Recent", "Suggested").
+    var section: String?
+    var paneRow: PaneRow?
     var perform: @MainActor () -> Void
 
     init(id: String, title: String, subtitle: String? = nil, symbols: [String]? = nil, icon: String? = nil,
@@ -593,7 +900,25 @@ struct UmiPaletteEntry: Identifiable {
         if let badge { out["badge"] = badge }
         if let value { out["value"] = value }
         if let symbols { out["shortcut"] = symbols.joined() }
+        if let section { out["section"] = section }
+        if let icon { out["icon"] = icon }
         return out
+    }
+}
+
+/// The icon of a file row: an SF Symbol by file type. (One function, so a shared file-icon
+/// table can replace it.)
+enum UmiPaletteFileIcon {
+    static func symbol(for path: String) -> String {
+        switch (path as NSString).pathExtension.lowercased() {
+        case "md", "markdown", "txt", "rst": return "doc.text"
+        case "swift", "zig", "rs", "go", "c", "h", "cpp", "m", "py", "rb", "js", "ts", "tsx", "jsx", "java", "kt", "sh", "zsh", "bash":
+            return "chevron.left.forwardslash.chevron.right"
+        case "json", "yaml", "yml", "toml", "xml", "plist", "conf", "ini": return "curlybraces"
+        case "png", "jpg", "jpeg", "gif", "svg", "webp", "icns", "pdf": return "photo"
+        case "html", "css": return "globe"
+        default: return "doc"
+        }
     }
 }
 
@@ -863,6 +1188,22 @@ enum UmiFuzzy {
         return score * 4 - min(text.count, 120) / 8
     }
 
+    /// Which characters of `text` a query matches (the same greedy left-to-right match as
+    /// `score`), nil when it doesn't.
+    static func positions(_ query: String, _ text: String) -> Set<Int>? {
+        let q = query.map { String($0).lowercased() }
+        guard !q.isEmpty else { return [] }
+        var out = Set<Int>()
+        var qi = 0
+        for (index, character) in text.enumerated() where qi < q.count {
+            if String(character).lowercased() == q[qi] {
+                out.insert(index)
+                qi += 1
+            }
+        }
+        return qi == q.count ? out : nil
+    }
+
     @inline(__always) static func lower(_ c: UInt8) -> UInt8 { c >= 65 && c <= 90 ? c + 32 : c }
     @inline(__always) static func isUpper(_ c: UInt8) -> Bool { c >= 65 && c <= 90 }
     @inline(__always) static func isSeparator(_ c: UInt8) -> Bool {
@@ -910,6 +1251,19 @@ final class UmiFileIndex {
     }
 
     static let limit = 100
+
+    /// A query's file name: without `:line` (or `:line:column`) and a leading "./".
+    static func fileName(in raw: String) -> String {
+        var query = raw.trimmingCharacters(in: .whitespaces)
+        let parts = query.split(separator: ":", omittingEmptySubsequences: false)
+        if parts.count >= 2, Int(parts[1]) != nil {
+            query = String(parts[0])
+        } else if query.hasSuffix(":") {
+            query.removeLast()
+        }
+        if query.hasPrefix("./") { query.removeFirst(2) }
+        return query
+    }
 
     init(folder: String) {
         self.folder = folder
@@ -1031,6 +1385,30 @@ final class UmiFileIndex {
 
 // MARK: - View
 
+/// Warp's palette measures (`search/palette_styles.rs`, `command_palette/view.rs`,
+/// `zero_state.rs`, `filter_chip_renderer.rs`, `navigation/render.rs`).
+enum UmiPaletteStyle {
+    static let width: CGFloat = 640
+    static let maxHeight: CGFloat = 464
+    static let top: CGFloat = 117
+    static let cornerRadius: CGFloat = 8
+    static let paddingBottom: CGFloat = 10
+    /// Warp's monospace size, which the field, rows and filter word use.
+    static let fontSize: CGFloat = 13
+    static let fieldPaddingVertical: CGFloat = 16
+    static let paddingHorizontal: CGFloat = 24
+    static let rowHeight: CGFloat = 28
+    static let rowGutter: CGFloat = 4
+    static let rowRadius: CGFloat = 4
+    static let paneRowHeight: CGFloat = 70
+    static let sectionHeight: CGFloat = 31
+    static let chipsHeight: CGFloat = 31 + 16
+    static let zeroStatePadding: CGFloat = 8
+    /// Rows highlighted with the accent: 90% when selected, 20% hovered (`with_opacity(90/20)`).
+    static let selectedOpacity = 0.9
+    static let hoveredOpacity = 0.2
+}
+
 /// The palette over a window's content.
 struct UmiPaletteView: View {
     @ObservedObject var model: UmiPaletteModel
@@ -1040,57 +1418,86 @@ struct UmiPaletteView: View {
         ZStack {
             if model.isPresented {
                 GeometryReader { geometry in
-                    VStack {
-                        Spacer().frame(height: geometry.size.height * 0.05)
-                        UmiPalettePanel(model: model, background: background)
-                            .frame(maxWidth: 580)
-                        Spacer()
+                    VStack(spacing: 0) {
+                        Spacer().frame(height: UmiPaletteStyle.top)
+                        UmiPalettePanel(model: model, background: background,
+                                        maxHeight: max(min(UmiPaletteStyle.maxHeight, geometry.size.height - UmiPaletteStyle.top - 16), 120))
+                            .frame(width: min(UmiPaletteStyle.width, max(geometry.size.width - 32, 200)))
+                        Spacer(minLength: 0)
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
                 }
+                .ignoresSafeArea(.container, edges: .top)
             }
         }
     }
 }
 
+/// Colors of the palette, derived from the terminal background as Warp's theme derives them.
+struct UmiPaletteColors {
+    let background: Color
+    let light: Bool
+
+    init(background: Color) {
+        self.background = background
+        light = NSColor(background).isLightColor
+    }
+
+    var ink: Color { light ? .black : .white }
+    /// `surface_2`: the background with the foreground at 10% over it.
+    var surface: Color {
+        let base = NSColor(background).usingColorSpace(.sRGB) ?? .black
+        let mixed = base.blended(withFraction: 0.10, of: light ? .black : .white) ?? base
+        return Color(nsColor: mixed)
+    }
+    /// `outline`: the foreground at 10%.
+    var outline: Color { ink.opacity(0.10) }
+    var main: Color { ink.opacity(0.9) }
+    var sub: Color { ink.opacity(0.6) }
+    var hint: Color { ink.opacity(0.4) }
+    var keycap: Color { ink.opacity(0.05) }
+    var selected: Color { UmiTheme.accent.opacity(UmiPaletteStyle.selectedOpacity) }
+    var hovered: Color { UmiTheme.accent.opacity(UmiPaletteStyle.hoveredOpacity) }
+    /// Text on the selected row: the color that contrasts most with the accent (black).
+    var mainOnSelected: Color { Color.black.opacity(0.9) }
+    var subOnSelected: Color { Color.black.opacity(0.6) }
+}
+
 private struct UmiPalettePanel: View {
     @ObservedObject var model: UmiPaletteModel
     let background: Color
+    let maxHeight: CGFloat
     @FocusState private var focused: Bool
     @State private var hovered: String?
 
+    private var colors: UmiPaletteColors { UmiPaletteColors(background: background) }
+
     var body: some View {
-        let scheme: ColorScheme = NSColor(background).isLightColor ? .light : .dark
+        let colors = self.colors
         VStack(alignment: .leading, spacing: 0) {
             field
             if model.step == .ask, let prompt = model.prompt {
                 Text(prompt)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 16)
+                    .font(.system(size: 12))
+                    .foregroundColor(colors.sub)
+                    .padding(.horizontal, UmiPaletteStyle.paddingHorizontal)
                     .padding(.bottom, 6)
             }
-            Divider().opacity(0.6)
             content
         }
-        .background(
-            ZStack {
-                Rectangle().fill(.ultraThinMaterial)
-                Rectangle().fill(background).blendMode(.color)
-            }
-            .compositingGroup()
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(nsColor: .tertiaryLabelColor).opacity(0.5)))
-        .shadow(radius: 28, x: 0, y: 10)
-        .padding()
-        .environment(\.colorScheme, scheme)
+        .padding(.bottom, UmiPaletteStyle.paddingBottom)
+        .background(colors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: UmiPaletteStyle.cornerRadius))
+        .overlay(RoundedRectangle(cornerRadius: UmiPaletteStyle.cornerRadius).strokeBorder(colors.outline, lineWidth: 1))
+        .shadow(color: .black.opacity(0.25), radius: 8, x: 0, y: 4)
+        .environment(\.colorScheme, colors.light ? .light : .dark)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Palette")
     }
 
     private var field: some View {
-        ZStack {
+        let colors = self.colors
+        return ZStack {
             Group {
                 Button { model.move(-1) } label: { Color.clear }
                     .buttonStyle(.plain).keyboardShortcut(.upArrow, modifiers: [])
@@ -1104,13 +1511,26 @@ private struct UmiPalettePanel: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
 
-            HStack(spacing: 8) {
-                if model.busy != nil {
-                    ProgressView().controlSize(.small)
+            HStack(spacing: 0) {
+                if let word = model.step == .list ? model.mode.filterWord : nil {
+                    // The filter, as Warp writes it: italic and semibold, before the query.
+                    Text(word)
+                        .font(.system(size: UmiPaletteStyle.fontSize, weight: .semibold).italic())
+                        .foregroundColor(colors.main)
+                        .padding(.trailing, 8)
+                        .accessibilityLabel("Filter \(word)")
+                } else {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: UmiPaletteStyle.fontSize - 1))
+                        .foregroundColor(colors.sub)
+                        .frame(width: UmiPaletteStyle.fontSize, height: UmiPaletteStyle.fontSize)
+                        .padding(.trailing, 12)
+                        .accessibilityHidden(true)
                 }
                 TextField(model.placeholder, text: $model.query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 18, weight: .light))
+                    .font(.system(size: UmiPaletteStyle.fontSize))
+                    .foregroundColor(colors.main)
                     .focused($focused)
                     .onSubmit { model.submit() }
                     .onExitCommand { model.cancel() }
@@ -1126,98 +1546,346 @@ private struct UmiPalettePanel: View {
                     }
                     .onAppear { DispatchQueue.main.async { focused = true } }
                     .onChange(of: model.step) { _ in DispatchQueue.main.async { focused = true } }
+                    .onChange(of: model.mode) { _ in DispatchQueue.main.async { focused = true } }
                     .accessibilityLabel("Palette query")
+                if model.busy != nil {
+                    ProgressView().controlSize(.small).padding(.leading, 8)
+                }
             }
-            .padding(.horizontal, 16)
-            .frame(height: 46)
+            .padding(.horizontal, UmiPaletteStyle.paddingHorizontal)
+            .padding(.vertical, UmiPaletteStyle.fieldPaddingVertical)
         }
     }
 
     @ViewBuilder
     private var content: some View {
+        let colors = self.colors
         if let output = model.output, model.step == .output {
             VStack(alignment: .leading, spacing: 6) {
-                Text(output.title).font(.caption).foregroundStyle(output.failed ? Color.red.opacity(0.8) : .secondary)
+                Text(output.title).font(.system(size: 12)).foregroundColor(output.failed ? Color.red.opacity(0.8) : colors.sub)
                 ScrollView {
                     Text(output.text)
                         .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundColor(colors.main)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 320)
+                .frame(maxHeight: maxHeight - 100)
             }
-            .padding(14)
+            .padding(.horizontal, UmiPaletteStyle.paddingHorizontal)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Command output")
         } else if model.step == .running {
-            Text(model.busy ?? "Running…").font(.caption).foregroundStyle(.secondary).padding(14)
+            Text(model.busy ?? "Running…").font(.system(size: 12)).foregroundColor(colors.sub)
+                .padding(.horizontal, UmiPaletteStyle.paddingHorizontal)
+        } else if model.isZeroState {
+            zeroState
         } else if model.entries.isEmpty {
-            Text(model.busy ?? (model.step == .ask ? "Type a value, then Return" : "No matches"))
-                .font(.caption).foregroundStyle(.secondary).padding(14)
+            if let busy = model.busy {
+                Text(busy).font(.system(size: 12)).foregroundColor(colors.sub)
+                    .padding(.horizontal, UmiPaletteStyle.paddingHorizontal)
+            } else if model.step == .ask {
+                Text("Type a value, then Return").font(.system(size: 12)).foregroundColor(colors.sub)
+                    .padding(.horizontal, UmiPaletteStyle.paddingHorizontal)
+            } else {
+                // Warp draws its placeholder row as selected.
+                placeholderRow("No results found")
+            }
         } else {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
-                            row(entry, selected: index == model.selection)
-                                .id(entry.id)
-                                .onTapGesture { model.selection = index; model.submit() }
-                        }
+            list(model.entries, zero: false)
+        }
+    }
+
+    /// The empty unfiltered palette: filter chips, then Recent and Suggested.
+    private var zeroState: some View {
+        let colors = self.colors
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                ForEach(UmiPaletteModel.chips, id: \.self) { mode in
+                    if let title = mode.chipTitle {
+                        Text(title)
+                            .font(.system(size: UmiPaletteStyle.fontSize - 2))
+                            .foregroundColor(colors.main)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(Capsule().fill(colors.surface))
+                            .overlay(Capsule().strokeBorder(colors.sub, lineWidth: 1))
+                            .contentShape(Capsule())
+                            .onTapGesture { model.setFilter(mode) }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Filter \(title)")
+                            .accessibilityAddTraits(.isButton)
                     }
-                    .padding(8)
                 }
-                .frame(maxHeight: 340)
-                .onChange(of: model.selection) { selection in
-                    guard model.entries.indices.contains(selection) else { return }
-                    proxy.scrollTo(model.entries[selection].id)
+            }
+            .padding(.bottom, 16)
+            .padding(.horizontal, UmiPaletteStyle.paddingHorizontal)
+            if !model.entries.isEmpty {
+                list(model.entries, zero: true)
+            }
+        }
+        .padding(.vertical, UmiPaletteStyle.zeroStatePadding)
+    }
+
+    private func height(of entry: UmiPaletteEntry) -> CGFloat {
+        entry.kind == .pane && entry.paneRow != nil ? UmiPaletteStyle.paneRowHeight : UmiPaletteStyle.rowHeight
+    }
+
+    private func list(_ entries: [UmiPaletteEntry], zero: Bool) -> some View {
+        var total: CGFloat = 0
+        var previous: String?
+        for entry in entries {
+            if zero, entry.section != previous { total += UmiPaletteStyle.sectionHeight }
+            previous = entry.section
+            total += height(of: entry)
+        }
+        let room = maxHeight - (UmiPaletteStyle.fontSize + 4 + 2 * UmiPaletteStyle.fieldPaddingVertical)
+            - UmiPaletteStyle.paddingBottom - (zero ? UmiPaletteStyle.chipsHeight + 2 * UmiPaletteStyle.zeroStatePadding : 0)
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        if zero, let section = entry.section, index == 0 || entries[index - 1].section != section {
+                            Text(section)
+                                .font(.system(size: 12))
+                                .foregroundColor(colors.main)
+                                .frame(height: UmiPaletteStyle.sectionHeight)
+                                .padding(.horizontal, UmiPaletteStyle.paddingHorizontal)
+                                .accessibilityAddTraits(.isHeader)
+                        }
+                        row(entry, selected: index == model.selection)
+                            .id(entry.id)
+                            .onTapGesture { model.selection = index; model.submit() }
+                    }
                 }
+            }
+            .frame(height: max(min(total, room), UmiPaletteStyle.rowHeight))
+            .onChange(of: model.selection) { selection in
+                guard model.entries.indices.contains(selection) else { return }
+                proxy.scrollTo(model.entries[selection].id)
             }
         }
     }
 
+    private func placeholderRow(_ text: String) -> some View {
+        let colors = self.colors
+        return HStack {
+            Text(text).font(.system(size: UmiPaletteStyle.fontSize, weight: .bold)).foregroundColor(colors.subOnSelected)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, UmiPaletteStyle.paddingHorizontal - UmiPaletteStyle.rowGutter)
+        .frame(height: UmiPaletteStyle.rowHeight)
+        .background(RoundedRectangle(cornerRadius: UmiPaletteStyle.rowRadius).fill(colors.selected))
+        .padding(.horizontal, UmiPaletteStyle.rowGutter)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
+    }
+
+    @ViewBuilder
     private func row(_ entry: UmiPaletteEntry, selected: Bool) -> some View {
-        HStack(spacing: 9) {
-            if let color = entry.color {
-                Circle().fill(color).frame(width: 7, height: 7)
-            }
-            if let icon = entry.icon {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(entry.title).lineLimit(1)
-                if let subtitle = entry.subtitle, !subtitle.isEmpty {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+        let colors = self.colors
+        let main = selected ? colors.mainOnSelected : colors.main
+        let sub = selected ? colors.subOnSelected : colors.sub
+        Group {
+            if entry.kind == .pane, let pane = entry.paneRow {
+                paneRow(entry, pane, main: main, sub: sub, selected: selected)
+            } else if entry.kind == .file {
+                fileRow(entry, main: main, sub: sub)
+            } else {
+                HStack(spacing: 0) {
+                    icon(entry, color: selected ? main : colors.main.opacity(0.8))
+                    if entry.kind == .create {
+                        Text(entry.title).font(.system(size: UmiPaletteStyle.fontSize)).foregroundColor(sub).lineLimit(1)
+                    } else {
+                        // Bold, in the secondary color, the matched characters in the primary.
+                        UmiHighlight.text(entry.title, matching: model.matchQuery, base: sub, match: main,
+                                          size: UmiPaletteStyle.fontSize, weight: .bold, matchWeight: .bold)
+                            .lineLimit(1)
+                    }
+                    if entry.kind == .tab, let subtitle = entry.subtitle {
+                        Text(subtitle).font(.system(size: UmiPaletteStyle.fontSize - 2)).foregroundColor(sub)
+                            .lineLimit(1).padding(.leading, 8)
+                    }
+                    Spacer(minLength: 8)
+                    if let symbols = entry.symbols {
+                        UmiKeycaps(symbols: symbols, colors: colors)
+                    }
                 }
-            }
-            Spacer(minLength: 6)
-            if let badge = entry.badge {
-                Text(badge)
-                    .font(.caption2.weight(.medium))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.15)))
-                    .foregroundStyle(Color.accentColor)
-            }
-            if let symbols = entry.symbols {
-                HStack(spacing: 1) {
-                    ForEach(Array(symbols.enumerated()), id: \.offset) { _, symbol in Text(symbol).frame(minWidth: 12) }
-                }
-                .foregroundStyle(.secondary)
+                .frame(height: UmiPaletteStyle.rowHeight)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, UmiPaletteStyle.paddingHorizontal - UmiPaletteStyle.rowGutter)
         .contentShape(Rectangle())
         .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(selected ? Color.accentColor.opacity(0.2) : (hovered == entry.id ? Color.secondary.opacity(0.15) : .clear))
+            RoundedRectangle(cornerRadius: UmiPaletteStyle.rowRadius)
+                .fill(selected ? colors.selected : (hovered == entry.id ? colors.hovered : .clear))
         )
+        .padding(.horizontal, UmiPaletteStyle.rowGutter)
         .onHover { hovered = $0 ? entry.id : (hovered == entry.id ? nil : hovered) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(entry.title)
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private func icon(_ entry: UmiPaletteEntry, color: Color) -> some View {
+        HStack(spacing: 0) {
+            if let dot = entry.color {
+                Circle().fill(dot).frame(width: 7, height: 7).padding(.trailing, 6)
+            }
+            Image(systemName: entry.icon ?? "circle")
+                .font(.system(size: 12))
+                .foregroundColor(color)
+                .opacity(entry.icon == nil ? 0 : 1)
+                .frame(width: 16, height: 16)
+                .padding(.trailing, 8)
+        }
+    }
+
+    /// ⌘O's one-line row: file-type icon, name, then the folder, cut at its start.
+    private func fileRow(_ entry: UmiPaletteEntry, main: Color, sub: Color) -> some View {
+        let path = entry.value ?? entry.title
+        let name = (path as NSString).lastPathComponent
+        let folder = (path as NSString).deletingLastPathComponent
+        let query = model.matchQuery
+        let inName = UmiFuzzy.positions(query, name)
+        let inPath = inName == nil ? UmiFuzzy.positions(query, path) : nil
+        let nameStart = path.count - name.count
+        let nameHits = inName ?? Set((inPath ?? []).filter { $0 >= nameStart }.map { $0 - nameStart })
+        let folderHits = Set((inPath ?? []).filter { $0 < folder.count })
+        return HStack(spacing: 0) {
+            Image(systemName: entry.icon ?? "doc")
+                .font(.system(size: 12))
+                .foregroundColor(main.opacity(0.8))
+                .frame(width: 16, height: 16)
+                .padding(.trailing, 8)
+            UmiHighlight.text(name, positions: nameHits, base: main, match: main,
+                              size: UmiPaletteStyle.fontSize - 1, weight: .regular, matchWeight: .bold)
+                .lineLimit(1)
+                .layoutPriority(1)
+            if !folder.isEmpty {
+                UmiHighlight.text(folder, positions: folderHits, base: sub, match: sub,
+                                  size: UmiPaletteStyle.fontSize - 2, weight: .regular, matchWeight: .bold)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .padding(.leading, 8)
+            }
+            if let subtitle = entry.subtitle, let colon = subtitle.lastIndex(of: ":"), subtitle.hasPrefix(path) {
+                Text(String(subtitle[colon...])).font(.system(size: UmiPaletteStyle.fontSize - 2)).foregroundColor(sub)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(height: UmiPaletteStyle.rowHeight)
+    }
+
+    /// ⇧⌘P's two-line row (Warp's navigation palette): title and folder/branch chips, then what
+    /// runs there and where, with a "Current" pill on the pane the palette was opened from.
+    private func paneRow(_ entry: UmiPaletteEntry, _ pane: UmiPaletteEntry.PaneRow, main: Color, sub: Color,
+                         selected: Bool) -> some View {
+        let colors = self.colors
+        let small = UmiPaletteStyle.fontSize - 2
+        let query = model.matchQuery
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                icon(entry, color: main.opacity(0.8))
+                UmiHighlight.text(entry.title, matching: query, base: main, match: main,
+                                  size: UmiPaletteStyle.fontSize, weight: .bold, matchWeight: .bold)
+                    .lineLimit(1)
+                    .padding(.trailing, 6)
+                if let folder = pane.folder { chip(folder, symbol: "folder", main: main) }
+                if let branch = pane.branch { chip(branch, symbol: "arrow.triangle.branch", main: main) }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 0) {
+                if let command = pane.command, !command.isEmpty {
+                    UmiHighlight.text(command, matching: query, base: main, match: main,
+                                      size: small, weight: .regular, matchWeight: .bold, monospaced: true)
+                        .lineLimit(1)
+                        .padding(.trailing, 10)
+                }
+                Text(pane.hint).font(.system(size: small, design: .monospaced)).foregroundColor(sub).lineLimit(1)
+                    .padding(.horizontal, 5)
+                Text(pane.place).font(.system(size: small)).foregroundColor(sub).lineLimit(1)
+                    .padding(.leading, 5)
+                Spacer(minLength: 0)
+                if let badge = entry.badge {
+                    Text(badge)
+                        .font(.system(size: UmiPaletteStyle.fontSize * 0.85, design: .monospaced))
+                        .foregroundColor(colors.main)
+                        .padding(.horizontal, 5)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(colors.background))
+                        .padding(.leading, 10)
+                        .padding(.trailing, 8)
+                }
+            }
+            .padding(.leading, 24)
+        }
+        .frame(height: UmiPaletteStyle.paneRowHeight)
+    }
+
+    private func chip(_ text: String, symbol: String, main: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol).font(.system(size: 9))
+            Text(text).font(.system(size: UmiPaletteStyle.fontSize - 2, design: .monospaced)).lineLimit(1).truncationMode(.head)
+        }
+        .foregroundColor(main.opacity(0.8))
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(RoundedRectangle(cornerRadius: 4).fill(colors.keycap))
+    }
+}
+
+/// A shortcut drawn as Warp draws it: each key in its own box.
+struct UmiKeycaps: View {
+    let symbols: [String]
+    let colors: UmiPaletteColors
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(symbols.enumerated()), id: \.offset) { _, symbol in
+                Text(symbol)
+                    .font(.system(size: 12))
+                    .foregroundColor(colors.sub)
+                    .frame(minWidth: 8)
+                    .padding(.horizontal, 6)
+                    .frame(height: 20)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(colors.keycap))
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(symbols.joined())
+    }
+}
+
+/// Text with the characters a query matched in another color and weight.
+enum UmiHighlight {
+    static func text(_ text: String, matching query: String, base: Color, match: Color, size: CGFloat,
+                     weight: Font.Weight, matchWeight: Font.Weight, monospaced: Bool = false) -> Text {
+        self.text(text, positions: UmiFuzzy.positions(query, text) ?? [], base: base, match: match, size: size,
+                  weight: weight, matchWeight: matchWeight, monospaced: monospaced)
+    }
+
+    static func text(_ text: String, positions: Set<Int>, base: Color, match: Color, size: CGFloat,
+                     weight: Font.Weight, matchWeight: Font.Weight, monospaced: Bool = false) -> Text {
+        let design: Font.Design = monospaced ? .monospaced : .default
+        guard !positions.isEmpty else {
+            return Text(text).font(.system(size: size, weight: weight, design: design)).foregroundColor(base)
+        }
+        var out = Text("")
+        var run = ""
+        var runMatched = false
+        func flush() {
+            guard !run.isEmpty else { return }
+            out = out + Text(run).font(.system(size: size, weight: runMatched ? matchWeight : weight, design: design))
+                .foregroundColor(runMatched ? match : base)
+            run = ""
+        }
+        for (index, character) in text.enumerated() {
+            let matched = positions.contains(index)
+            if matched != runMatched { flush(); runMatched = matched }
+            run.append(character)
+        }
+        flush()
+        return out
     }
 }
 

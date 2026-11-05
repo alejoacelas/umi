@@ -212,6 +212,7 @@ the menu.
   - ⌘O opens a file (quick search, L-16; File ▸ Open File… keeps the Open panel);
   - ⇧⌘M toggles the Markdown preview and source;
   - ⌘P opens the command palette (L-14); ⇧⌘P lists panes (L-15); ⌘, opens the config file (L-17);
+    ⌘/ opens the shortcuts page (L-17);
   - ⇧⌘[ goes back to the tab visited before; ⇧⌘] shows the next tab in sidebar order; ⌃Tab and
     ⌃⇧Tab cycle to the next and previous tab; ⌘1–⌘8 show that tab and ⌘9 the last one (L-11);
   - ⌃⇧← / ⌃⇧→ move the tab up or down (L-13);
@@ -262,16 +263,36 @@ the menu.
   runs as typed. The palette also lists the menu actions (with their shortcuts), the managed
   sessions, and Ghostty's actions on the focused terminal; each title appears once.
 
+  *Warp parity, 2026-11-05.* It is one palette, as Warp's: unfiltered it searches actions, managed
+  sessions (Warp's conversations), panes and the files of L-16 together, at most 250 results. A
+  query starting with `actions:`, `sessions:`, `files:`, `conversations:` or `tabs:` filters it to
+  that source; the prefix leaves the query and shows before it as an italic filter word, and
+  Backspace in the empty query removes the filter. ⇧⌘P and ⌘O open it filtered to sessions and
+  files. Empty and unfiltered it selects nothing and shows filter chips (files, actions, sessions,
+  conversations), Recent (the last three rows chosen from it) and Suggested (Keyboard Shortcuts,
+  Settings…, Show Project Explorer); ↓ selects the first. Its look is Warp's: 640 px wide, at most
+  464 tall, 117 px below the window's top, on Warp's `surface_2` (the background with 10% of the
+  foreground) with a 1 px border and radius 8; a magnifier (or the filter word) before the query in
+  13 pt; one-line 28 px rows with a bold title whose matched characters are brighter, shortcuts in
+  key boxes; the selected row in the accent at 90%, a hovered one at 20%; "No results found" when
+  nothing matches.
+
 - **L-15 [A+W]** ⇧⌘P lists every pane of every window, the most recently used first, each with its
   own title: its name, else its agent session's title, else what its program set as its title,
   else its folder; then its folder and branch, what it runs (or last ran) and its tab. The pane the
   palette was opened from is marked Current. Choosing a pane focuses it, its tab and its window.
+  *Warp parity, 2026-11-05:* rows as Warp's navigation palette, 70 px with two lines: the title
+  with folder and branch chips, then the command in monospace, "Running..." or "Completed", the
+  tab, and a monospace "Current" pill.
 
 - **L-16 [A+W]** ⌘O opens a quick file search over the focused pane's git repository: its tracked
   files and the untracked files git doesn't ignore (outside a repository: the files of that
   folder). Fuzzy matching on the path, the file name counting most; files opened recently first,
   then changed ones. `path:line` opens the file at that line. Enter opens the file in the tab's
-  editor; a "Browse…" entry opens the Open panel.
+  editor; a "Browse…" entry opens the Open panel. *Warp parity, 2026-11-05:* rows are one line: a
+  file-type icon, the name, then its folder cut at the start, matched characters bold. When no
+  file matches, a "Create a file named NAME…" entry makes that file (and its folders) in the
+  pane's folder and opens it.
 
 - **L-17 [A]** ⌘, (Settings…) opens the user's config file (`~/.config/<cli>/config`) in the app's
   editor, as Ghostty opens its own config file; a missing one is made, empty, first. `<cli>
@@ -280,6 +301,11 @@ the menu.
   the app's state directory (`shortcuts.json`, and `keybindings.conf` for Ghostty keybindings,
   loaded after the user's config file); it never changes the user's config files. A key
   given to one shortcut is taken from any other that had it, and the command says which.
+  *Warp parity, 2026-11-05:* ⌘/ (Help ▸ Keyboard Shortcuts) opens and closes a shortcuts page as
+  Warp's keybindings panel: 361 px at the window's right, read-only, listing what `<cli>
+  shortcuts` lists (every shortcut in effect), by menu and then "Terminal" for Ghostty's
+  keybindings, searchable by name or keys ("cmd p"); Esc closes it. With focus in the editor's
+  source, ⌘/ is the editor's key and the page stays closed.
 
 - **L-18 [A]** After a pane closes (⌘W, `pane close`, its program exiting), focus goes to the pane
   of that tab the user used most recently, as in Warp; tree order only when there's no history.

@@ -24,6 +24,9 @@ enum UmiShortcuts {
         let action: @MainActor () -> Void
         /// Whether the item applies right now.
         var enabled: @MainActor () -> Bool = { true }
+        /// While disabled, its key goes on to the focused view instead of beeping (⌘/ is the
+        /// shortcuts page, but the editor's own key in its source).
+        var passKeyWhenDisabled = false
 
         var defaultShortcut: UmiShortcut? {
             key.isEmpty ? nil : UmiShortcut(key: key, modifiers: modifiers)
@@ -149,6 +152,10 @@ enum UmiShortcuts {
                      UmiAgentUI.shared.toggleTerminal(pane)
                  },
                  enabled: { UmiTopology.currentPane.map { UmiAgentUI.shared.session(forPane: $0.id) != nil } ?? false }),
+            // Warp's keybindings page (⌘/); in the editor's source the key is the editor's.
+            Item(id: "help.shortcuts", title: "Keyboard Shortcuts", key: "/", modifiers: [.command], symbol: "keyboard",
+                 menu: "Help", action: { UmiShortcutsPageModel.toggle() },
+                 enabled: { !UmiShortcutsPageModel.editorSourceHasFocus }, passKeyWhenDisabled: true),
         ]
     }
 
@@ -158,8 +165,9 @@ enum UmiShortcuts {
 
     private static var handlers: [NSMenuItem: Item] = [:]
     private static var menuItems: [String: NSMenuItem] = [:]
-    /// Each shortcut in effect and its menu item, for the key monitor.
-    private static var byShortcut: [UmiShortcut: NSMenuItem] = [:]
+    /// Each shortcut in effect and its menu items, for the key monitor. Items can share a key
+    /// when at most one of them is enabled at a time (focus decides).
+    private static var byShortcut: [UmiShortcut: [NSMenuItem]] = [:]
     private static var monitor: Any?
 
     static func install() {
@@ -219,7 +227,7 @@ enum UmiShortcuts {
             menuItem.keyEquivalent = shortcut?.keyEquivalent ?? ""
             menuItem.keyEquivalentModifierMask = shortcut?.modifiers ?? []
             guard let shortcut else { continue }
-            byShortcut[shortcut] = menuItem
+            byShortcut[shortcut, default: []].append(menuItem)
             for existing in all where handlers[existing] == nil && UmiShortcut(menuItem: existing) == shortcut {
                 existing.keyEquivalent = ""
             }
@@ -282,13 +290,14 @@ enum UmiShortcuts {
         // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing.
         let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false
         guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey else { return false }
-        guard let pressed = UmiShortcut(event: event), let menuItem = byShortcut[pressed], let item = handlers[menuItem] else {
+        guard let pressed = UmiShortcut(event: event), let candidates = byShortcut[pressed], !candidates.isEmpty else {
             return false
         }
         // A modal panel or alert keeps its keys.
         if NSApp.modalWindow != nil { return false }
         if let sheetParent = NSApp.keyWindow, sheetParent.attachedSheet != nil { return false }
-        guard item.enabled() else {
+        guard let menuItem = candidates.first(where: { handlers[$0]?.enabled() ?? false }), let item = handlers[menuItem] else {
+            if candidates.allSatisfy({ handlers[$0]?.passKeyWhenDisabled ?? false }) { return false }
             NSSound.beep()
             return true
         }

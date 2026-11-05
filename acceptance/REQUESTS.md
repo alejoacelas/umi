@@ -258,3 +258,15 @@ Relayed by Alejo's agent, not his own words; Alejo approved: remove the Settings
 SPEC L-17), the copy of Tern's state on the first launch (both Macs already have Umi state), and
 `umi://open` links (documents from the server are read and edited on a web page the agent server
 serves).
+
+## 2026-11-05: the rest of Warp
+
+> Implement, test, and ship ... to match all the unchosen gaps against warp features except those
+> that would add actions on click ... I basically only use the warp features I can access from the
+> keyboard
+
+> go. let's add the warp right click options as well if that's not already included
+
+- Palettes and the shortcuts page: one palette with Warp's filters (`files:`, `sessions:` …) and its
+  empty state, Warp's look for the palette and its rows, "Create a file named …" in ⌘O, and ⌘/ for
+  a shortcuts page (SPEC L-14 to L-17). Warp's palette has no right-click menu.
