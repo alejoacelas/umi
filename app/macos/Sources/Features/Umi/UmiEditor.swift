@@ -616,6 +616,33 @@ enum UmiEditor {
 
     /// Run `body` on the focused file pane's source view. Find works on the text, so in a preview
     /// (rendered Markdown, JSON, CSV) ⌘F, ⌘G and ⇧⌘G switch the pane to its source first (E-22).
+    /// ⌘F, ⌘G and ⇧⌘G (Umi's Edit items): a rendered Markdown preview has its own find bar
+    /// (MD-4), which gets the key; any other file pane finds in its source (E-22).
+    static func find(previewAction: Selector, inSource body: @escaping (UmiCodeEditor) -> Void) {
+        if let doc = currentDocument, doc.isMarkdown, doc.mode == .preview, let web = focusedPreview {
+            NSApp.sendAction(previewAction, to: web, from: nil)
+            return
+        }
+        inSource(body)
+    }
+
+    /// The preview in the focused file pane, if it shows one.
+    static var focusedPreview: UmiPreviewWebView? {
+        guard let responder = NSApp.keyWindow?.firstResponder as? NSView else { return nil }
+        var view: NSView? = responder
+        while let current = view, !(current is UmiEditorContainerView) {
+            if let web = current as? UmiPreviewWebView { return web }
+            view = current.superview
+        }
+        guard let container = view else { return nil }
+        func search(_ view: NSView) -> UmiPreviewWebView? {
+            if let web = view as? UmiPreviewWebView { return web }
+            for sub in view.subviews { if let web = search(sub) { return web } }
+            return nil
+        }
+        return search(container)
+    }
+
     static func inSource(_ body: @escaping (UmiCodeEditor) -> Void) {
         guard let doc = currentDocument else { return }
         if doc.mode == .source, let code = doc.code { return body(code) }
@@ -751,16 +778,16 @@ enum UmiEditor {
 
 // MARK: - Views
 
-/// The visible preview/source control (E-2).
+/// The visible preview/source control (E-2), named as Warp names it: Rendered / Raw.
 struct UmiModeToggle: View {
     @ObservedObject var doc: UmiDocument
 
     var body: some View {
         HStack(spacing: 0) {
-            segment("Preview", .preview)
-            segment("Source", .source)
+            segment("Rendered", .preview)
+            segment("Raw", .source)
         }
-        .help("Toggle preview / source (⇧⌘M)")
+        .help("Toggle rendered / raw (⌘E or ⇧⌘M)")
     }
 
     private func segment(_ title: String, _ mode: UmiDocument.Mode) -> some View {
@@ -863,7 +890,11 @@ final class UmiEditorContainerView: NSView {
     @objc func findNext(_ sender: Any?) { if let code = document?.code { code.findStep(1) } else { NSSound.beep() } }
     @objc func findPrevious(_ sender: Any?) { if let code = document?.code { code.findStep(-1) } else { NSSound.beep() } }
     @objc func findHide(_ sender: Any?) { document?.code?.closeFind() }
+    /// ⌘E (Edit ▸ Find ▸ Use Selection for Find in a terminal) toggles Rendered / Raw in a file
+    /// that has both views, as Warp's ⌘E does (E-2); in a file with only a source view it puts
+    /// the selection in the find bar's query. Terminals keep theirs.
     @objc func selectionForFind(_ sender: Any?) {
+        if document?.hasPreview ?? false { document?.toggleMode(); return }
         guard let code = document?.code, let textView = code.textView else { return NSSound.beep() }
         let range = textView.selectedRange()
         guard range.length > 0 else { return NSSound.beep() }
@@ -908,6 +939,12 @@ final class UmiEditorContainerView: NSView {
             return NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self)
         case ([.command], "v"):
             return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
+        case ([.command], "e"):
+            // Warp's key for Rendered / Raw (Warp parity, 2026-11-05). Only a file with both views
+            // takes it; elsewhere ⌘E keeps its menu meaning.
+            guard document?.hasPreview ?? false else { return super.performKeyEquivalent(with: event) }
+            document?.toggleMode()
+            return true
         default:
             return super.performKeyEquivalent(with: event)
         }
@@ -1092,11 +1129,15 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         config.websiteDataStore = .nonPersistent()
         let scripts = config.userContentController
+        // Code blocks, diagrams and find (Warp parity); before the margin, so it lays out the
+        // page as these leave it.
+        UmiMarkdownScript.userScripts.forEach(scripts.addUserScript)
         scripts.addUserScript(WKUserScript(source: UmiCommentsScript.source, injectionTime: .atDocumentEnd,
                                            forMainFrameOnly: true, in: UmiCommentsUI.world))
         scripts.add(UmiScriptHandlerProxy(context.coordinator), contentWorld: UmiCommentsUI.world, name: "umi")
         let web = UmiPreviewWebView(frame: .zero, configuration: config)
         web.pageZoom = zoom.factor
+        web.coordinator = context.coordinator
         container.attach(to: group, focusTarget: web)
         web.navigationDelegate = context.coordinator
         web.setValue(false, forKey: "drawsBackground")
@@ -1143,7 +1184,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
 
         func render(force: Bool = false) {
             guard let web else { return }
-            let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight)"
+            let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight):\(UmiMarkdownStyle.fontSize)"
             guard force || lastKey != key else { return }
             if composing && !force {
                 renderPending = true
@@ -1168,8 +1209,46 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                 "waiting": doc.reviewWaiters, "showResolved": showResolved, "reveal": focus != nil,
             ]
             let head = UmiCommentsScript.head(data: data, light: UmiTheme.isLight)
-            web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight, head: head),
+            hasDiagrams = body.contains("umi-code umi-mermaid")
+            web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight, head: head,
+                                                markdown: true, fontSize: UmiMarkdownStyle.fontSize),
                                baseURL: nil)
+        }
+
+        /// The page on show has Mermaid blocks: mermaid.js is loaded into it once it has loaded.
+        private var hasDiagrams = false
+
+        private func renderDiagrams() {
+            guard hasDiagrams, let web else { return }
+            let light = UmiTheme.isLight
+            web.evaluateJavaScript(UmiMarkdownScript.mermaidJS, in: nil, in: UmiCommentsUI.world) { [weak web] _ in
+                web?.callAsyncJavaScript("return window.umiMarkdown && umiMarkdown.renderMermaid(light)",
+                                         arguments: ["light": light], in: nil, in: UmiCommentsUI.world) { _ in }
+            }
+        }
+
+        /// Run in terminal (shell blocks): the command goes to the input of the tab's terminal
+        /// used most recently, as Warp puts a notebook's command in its active session's input. It
+        /// isn't run: the user presses Return there.
+        private func runInTerminal(_ text: String) {
+            guard let pane = group?.pane, let location = UmiTopology.locate(pane) else { return NSSound.beep() }
+            let shown = location.window.tree(of: location.tab).root?.leaves() ?? []
+            let terminals = shown.filter {
+                $0 !== pane && UmiFilePanes.shared.document(of: $0) == nil && UmiAgentUI.shared.session(forPane: $0.id) == nil
+                    && !UmiWebPanes.shared.isWebPane($0.id)
+            }
+            guard let target = UmiFocusHistory.mostRecent(among: terminals) ?? terminals.first,
+                  let surface = target.surfaceModel else {
+                doc.error = "No terminal in this tab to run the command in."
+                return NSSound.beep()
+            }
+            surface.sendText(text)
+            UmiLayout.focusPane(target, activate: true)
+        }
+
+        private func copy(_ text: String) {
+            UmiMarkdownScript.pasteboard.clearContents()
+            UmiMarkdownScript.pasteboard.setString(text, forType: .string)
         }
 
         func showWaiters() {
@@ -1209,6 +1288,10 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                 if !composing && renderPending { render() }
             case "done":
                 call("umiComments.notice(\(jsString(UmiCommentsUI.reviewDone(doc))))")
+            case "copy":
+                copy(body["text"] as? String ?? "")
+            case "run":
+                runInTerminal(body["text"] as? String ?? "")
             case "add", "reply", "edit", "resolve", "delete":
                 perform(type, body)
             default:
@@ -1253,6 +1336,13 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             shownWaiters = doc.reviewWaiters
             call("window.umiComments && umiComments.setWaiting(\(doc.reviewWaiters))")
+            renderDiagrams()
+        }
+
+        // MARK: Find (⌘F, ⌘G, ⇧⌘G), as Warp's find bar in a Markdown file
+
+        func find(_ js: String) {
+            web?.evaluateJavaScript("window.umiMarkdown && umiMarkdown.\(js)", in: nil, in: UmiCommentsUI.world)
         }
 
         // MARK: Links
@@ -1327,11 +1417,107 @@ final class UmiEditorTextView: NSTextView {
     }
 }
 
-/// The preview's web view: tells its pane when it takes keyboard focus.
+/// The preview's web view: tells its pane when it takes keyboard focus. In a Markdown preview
+/// Edit ▸ Find's items (⌘F, ⌘G, ⇧⌘G) search the document, and its right-click menu has Warp's
+/// items (Warp parity, 2026-11-05).
 final class UmiPreviewWebView: WKWebView {
+    weak var coordinator: UmiMarkdownPreview.Coordinator?
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result { UmiEditorContainerView.focused(self) }
         return result
     }
+
+    private var isMarkdown: Bool { coordinator?.doc.isMarkdown ?? false }
+
+    @objc func find(_ sender: Any?) { coordinator?.find("openFind()") }
+    @objc func findNext(_ sender: Any?) { coordinator?.find("findNext()") }
+    @objc func findPrevious(_ sender: Any?) { coordinator?.find("findPrevious()") }
+    @objc func findHide(_ sender: Any?) { coordinator?.find("closeFind()") }
+
+    override func responds(to selector: Selector!) -> Bool {
+        let findActions: Set<Selector> = [#selector(find(_:)), #selector(findNext(_:)), #selector(findPrevious(_:)), #selector(findHide(_:))]
+        if let selector, findActions.contains(selector) { return isMarkdown }
+        return super.responds(to: selector)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case #selector(find(_:)), #selector(findNext(_:)), #selector(findPrevious(_:)), #selector(findHide(_:)):
+            return isMarkdown
+        default:
+            return super.validateUserInterfaceItem(item)
+        }
+    }
+
+    // MARK: The right-click menu
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        let hasSelection = menu.items.contains { $0.identifier?.rawValue == "WKMenuItemIdentifierCopy" }
+        let items = warpMenu(selection: hasSelection).items
+        menu.removeAllItems()
+        for item in items {
+            item.menu?.removeItem(item)
+            menu.addItem(item)
+        }
+        super.willOpenMenu(menu, with: event)
+    }
+
+    /// Warp's items for a Markdown file's right-click menu: Copy (with a selection), Copy file
+    /// path, the four splits, then Maximize (or Minimize) pane and Close pane in a split.
+    func warpMenu(selection: Bool) -> NSMenu {
+        let menu = NSMenu()
+        if selection {
+            let copy = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+            copy.target = self
+            menu.addItem(copy)
+        }
+        guard let coordinator, let pane = coordinator.group?.pane else { return menu }
+        let doc = coordinator.doc
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(UmiPreviewMenuItem("Copy file path") {
+            UmiMarkdownScript.pasteboard.clearContents()
+            UmiMarkdownScript.pasteboard.setString(doc.url.path, forType: .string)
+        })
+        menu.addItem(.separator())
+        let splits: [(String, SplitTree<Ghostty.SurfaceView>.NewDirection)] = [
+            ("Split pane right", .right), ("Split pane left", .left), ("Split pane down", .down), ("Split pane up", .up),
+        ]
+        for (title, direction) in splits {
+            menu.addItem(UmiPreviewMenuItem(title) { [weak pane] in
+                guard let pane else { return }
+                var options = UmiLayout.PaneOptions()
+                options.cwd = doc.url.deletingLastPathComponent().path
+                if (try? UmiLayout.split(pane, direction: direction, options: options, ratio: nil, focus: true)) == nil { NSSound.beep() }
+            })
+        }
+        if let location = UmiTopology.locate(pane), location.window.tree(of: location.tab).isSplit {
+            let zoomed = location.window.tree(of: location.tab).zoomed != nil
+            menu.addItem(UmiPreviewMenuItem(zoomed ? "Minimize pane" : "Maximize pane") { [weak pane] in
+                guard let pane else { return }
+                if (try? UmiLayout.toggleZoom(pane)) == nil { NSSound.beep() }
+            })
+            menu.addItem(UmiPreviewMenuItem("Close pane") { [weak self] in
+                guard let container = self?.superview as? UmiEditorContainerView else { return }
+                container.closeDocument?()
+            })
+        }
+        return menu
+    }
+}
+
+/// A menu item that runs a closure.
+final class UmiPreviewMenuItem: NSMenuItem {
+    private let handler: @MainActor () -> Void
+
+    init(_ title: String, handler: @escaping @MainActor () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run(_:)), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @MainActor @objc private func run(_ sender: Any?) { handler() }
 }

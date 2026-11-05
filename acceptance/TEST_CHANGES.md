@@ -947,3 +947,43 @@ L-32, L-33.
   confirmation, answered as its buttons do), `debug.ui.sheet` (a window's dialog, cancelled as its
   Cancel button does), and `debug.ui.zoom` with `window` (the editor's text sizes and the preview's
   page zoom there).
+## The Markdown preview as Warp's (MD-1 to MD-5, E-2; Warp parity, 2026-11-05)
+
+New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing test changed.
+
+- **New, `tests/test_markdown_warp.py`**: the look (computed styles: font, sizes, weights, colors,
+  borders, padding, full width; bare URLs linked), code blocks (labels, highlighting, Copy, Run in
+  terminal), Mermaid (drawn, Raw / Rendered, Open full screen, Esc, a broken diagram), find (Edit ▸
+  Find's items through the responder chain, Return / ⇧Return, Aa, `.*`, No matches, Esc), ⌘E's menu
+  action in a file pane and in a terminal, and the right-click menu's items and actions. UI tests
+  press the real keys (⌘F, ⌘G, ⇧⌘G, Return, Esc, ⌘E), check the Rendered / Raw buttons and open
+  the right-click menu through the accessibility tree.
+- **Test hook, `debug.ui.markdown`**: reads the preview's state and computed styles, clicks its
+  buttons, types into find, performs menu actions through the responder chain, and lists or chooses
+  the right-click menu's items. Once a test has used it, Copy and Copy file path write to a private
+  pasteboard (`action=pasteboard` reads it), never the test Mac's clipboard.
+
+### Review fixes (2026-11-05)
+
+- `test_a_broken_diagram_shows_its_source_and_error` also checks that the error is drawn (its box
+  is taller than its padding); before, it read only the message the script stored, which the page
+  never showed.
+- `test_code_blocks_are_highlighted_and_copy_or_run` checks Warp's highlight colors from its base16
+  theme (functions blue, strings green; comments, numbers and parameters in the text color), so the
+  Python block gained a comment and a number and the expected copied text changed with it.
+- New, `test_on_a_light_background_the_preview_uses_warps_light_theme`: with a light background the
+  preview's text, links and done checkboxes use Warp's Light theme (accent `#00c2ff`).
+- `test_mermaid_diagrams_render_and_open_larger` also checks the footer's layout (Raw / Rendered and
+  Open full screen beside the label, Copy at the right) and that Raw hides Open full screen, as in
+  Warp.
+- Written checks: new **MD-1** check in `CHECKS.md`, with a `run_checks.py` setup that screenshots a
+  test document on the default dark background and on a light one; E-2's check now names the
+  Rendered / Raw control.
+- `test_the_preview_looks_like_warps_markdown_view` checks that the page has Roboto's four bundled
+  faces and loaded one. Before, it used `document.fonts.check`, which is true when no face matches,
+  so a build without the fonts passed.
+- New, `test_the_text_follows_the_terminals_font_size`: with `font-size = 15` the preview's text,
+  headings and code scale to 15 px, as Warp's Markdown follows its terminal font size.
+- New Swift tests, `UmiMarkdownLinksTests`: bare URLs with trailing punctuation, unbalanced and
+  balanced brackets, `www.`, escaping, and URLs in links, inline code and fenced blocks left alone;
+  fenced blocks' language labels and kinds.

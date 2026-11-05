@@ -295,3 +295,6 @@ gestures are out.
   with the folder alone, cut at 40 characters (SPEC S-5, S-10 to S-12).
 - Panes, splits, the terminal's right-click menu, synchronized input and zoom (SPEC L-19, L-31,
   L-32, L-33).
+- The Markdown preview (SPEC MD-1 to MD-5, E-2): Warp's look, code blocks with highlighting, Copy
+  and Run in terminal, Mermaid diagrams, find (⌘F ⌘G ⇧⌘G), Rendered / Raw with ⌘E, and Warp's
+  right-click items in the preview.

@@ -138,8 +138,26 @@ fenced code block, links, a local image, a remote badge image, and inline HTML w
 - Everything renders as formatted text, not as Markdown source. Images show.
 - The editor sits beside the tab's terminals, and several files show as editor tabs.
 
-**E-2: the toggle control.** The editor shows a visible control that switches between preview and
-source.
+**E-2: the toggle control.** The editor shows a visible control that reads Rendered / Raw and
+switches between the rendered file and its source.
+
+**MD-1: Warp's Markdown look.** Setup: a Markdown file with six heading levels, inline code, a bare
+URL, a task list, a table wider than the pane, a rule, Python, shell and Mermaid code blocks; shown
+on Umi's default dark background and on a light one. Compare with Warp's Markdown view on its
+Dark and Light themes.
+- The text is Roboto, the same size as the terminal's text, with roomy lines (1.5), across the
+  whole pane with no narrow column.
+- Headings shrink from h1 to h6; h5 and h6 are smaller than the body text and not bold.
+- Inline code is red on a faint grey box. Code blocks have a thin rounded border and a footer with
+  the language (Python, Shell, Mermaid) on the left and Copy (and Run in terminal for shell) on the
+  right; the Mermaid block shows its diagram, with Raw / Rendered beside its label.
+- Code is colored as in Warp: keywords magenta, function names blue, strings green; comments and
+  numbers in the plain text color.
+- Table cells are padded generously, in a dimmer text color, with lines between rows only; the
+  wide table scrolls sideways instead of squeezing.
+- The rule is a thick (3 px) grey bar. The done task's box is filled with the accent (Warp Dark's
+  blue `#19aad8`; Warp Light's `#00c2ff` on the light background) with a check mark.
+- The bare URL is a link in the accent color.
 
 **E-3: closing with unsaved edits (by hand).**
 - Closing a file with unsaved edits asks first.

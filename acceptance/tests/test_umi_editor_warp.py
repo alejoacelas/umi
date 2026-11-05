@@ -534,10 +534,11 @@ def test_regex_replace_expands_templates_with_lookarounds(inst, win, tmp_path, u
 
 @pytest.mark.req("E-22")
 def test_cmd_f_in_a_preview_finds_in_the_source(inst, win, tmp_path, ui):
-    path = tmp_path / "find.md"
-    path.write_text("# Title\n\nsome words and more words\n")
+    # A JSON preview: a Markdown preview has its own find bar (MD-4, test_markdown_warp.py).
+    path = tmp_path / "find.json"
+    path.write_text('{"title": "some words and more words"}\n')
     pane = open_file(inst, win, path)
-    wait_until(lambda: ed(inst, pane)["mode"] == "preview", 5, message="Markdown opens in preview")
+    wait_until(lambda: ed(inst, pane)["mode"] == "preview", 5, message="JSON opens in preview")
     inst.cli("pane", "focus", pane)
     ui.activate()
     wait_until(lambda: inst.find_pane(pane)[2]["focused"], 5, message="the preview's pane focused")

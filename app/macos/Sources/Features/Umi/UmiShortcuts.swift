@@ -66,13 +66,13 @@ enum UmiShortcuts {
             // In a file pane, find acts on the file (Ghostty's Find items have no keys of their own); a
             // preview switches to its source first.
             Item(id: "edit.find", title: "Find in File…", key: "f", modifiers: [.command], symbol: "magnifyingglass",
-                 menu: "Edit", action: { UmiEditor.inSource { $0.openFind() } },
+                 menu: "Edit", action: { UmiEditor.find(previewAction: #selector(UmiPreviewWebView.find(_:)), inSource: { $0.openFind() }) },
                  enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
             Item(id: "edit.find_next", title: "Find Next in File", key: "g", modifiers: [.command], symbol: "chevron.down",
-                 menu: "Edit", action: { UmiEditor.inSource { $0.findStep(1) } },
+                 menu: "Edit", action: { UmiEditor.find(previewAction: #selector(UmiPreviewWebView.findNext(_:)), inSource: { $0.findStep(1) }) },
                  enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
             Item(id: "edit.find_previous", title: "Find Previous in File", key: "g", modifiers: [.command, .shift],
-                 symbol: "chevron.up", menu: "Edit", action: { UmiEditor.inSource { $0.findStep(-1) } },
+                 symbol: "chevron.up", menu: "Edit", action: { UmiEditor.find(previewAction: #selector(UmiPreviewWebView.findPrevious(_:)), inSource: { $0.findStep(-1) }) },
                  enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
             Item(id: "edit.find_replace", title: "Find and Replace…", key: "f", modifiers: [.command, .option],
                  symbol: "text.magnifyingglass", menu: "Edit", action: { UmiEditor.inSource { $0.openFind(replace: true) } },
