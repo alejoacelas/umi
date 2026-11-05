@@ -740,3 +740,6 @@ each window shows or hides its own sidebar. **Requirements:** S-2, S-3, S-4, S-8
   pane, and ⌃Tab not filtered in Files mode; real clicks on a group header (click folds, a
   double-click only renames), on a color dot in the open row menu, and outside an in-row rename.
 - **Test hooks**: `debug.ui.sidebar` also reports `key_pane`, the pane that has the keyboard.
+- **New, `tests/test_umi_sidebar_warp.py` `test_an_item_clicked_in_the_row_menu_runs_ui`**: a real
+  click on "Pin tab" in a real right-click menu. It failed before the fix: the menus' AppKit items
+  never ran their closures, which every earlier test called directly through `debug.ui.menu.perform`.
