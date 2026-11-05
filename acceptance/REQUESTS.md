@@ -258,3 +258,14 @@ Relayed by Alejo's agent, not his own words; Alejo approved: remove the Settings
 SPEC L-17), the copy of Tern's state on the first launch (both Macs already have Umi state), and
 `umi://open` links (documents from the server are read and edited on a web page the agent server
 serves).
+
+## 2026-11-05: the rest of Warp
+
+- Panes, splits, the terminal's right-click menu, synchronized input and zoom (SPEC L-19, L-31,
+  L-32, L-33):
+  > Implement, test, and ship ... to match all the unchosen gaps against warp features except those
+  > that would add actions on click ... I basically only use the warp features I can access from
+  > the keyboard
+
+  Then:
+  > go. let's add the warp right click options as well if that's not already included

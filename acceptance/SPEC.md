@@ -223,7 +223,9 @@ the menu.
   - ⌃⌘J goes to the next session that needs the user, and ⌃⌘K goes back (L-12);
   - ⇧⌘T reopens the last closed pane, tab or window (L-20);
   - ⌃⌘O takes over the focused pane's session, and ⌃⌘W removes the session from its pane, where
-    it keeps running (AG-6, AG-8).
+    it keeps running (AG-6, AG-8);
+  - (Warp parity, 2026-11-05) ⌥⌘I and ⌥⇧⌘I synchronize input and stop it (L-32); ⌘= ⌘- ⌘0 zoom
+    the interface and ⌥⇧> ⌥⇧< change the terminals' font size (L-33).
 
   Each is a menu item, and the command palette lists them. `<cli> shortcuts` changes them (L-17).
 
@@ -310,7 +312,13 @@ the menu.
     column) equal shares, leaves the rest of the tab alone, and forgets which of its dividers
     were placed by hand; ⌃⌘= and `tab equalize` equalize the whole tab and forget them all;
   - `split --ratio R` gives the new pane R of its row (or column); the others keep their
-    proportions.
+    proportions;
+  - (Warp parity, 2026-11-05) no pane gets smaller than 190 points along the axis a divider
+    moves, Warp's minimum: a dragged divider stops where the next step would take a pane below
+    it, and a keyboard resize or `pane resize` that would is refused (the CLI says so). A pane
+    already smaller (a small window) may grow;
+  - (Warp parity, 2026-11-05) dividers are Warp's: a 1-point line at the foreground's 15%
+    (`#262626` on Umi's dark theme) that can be grabbed 4 points either side (9 in all).
 
   `ls` and `pane info` report each pane's frame in its window's terminal area.
 
@@ -328,6 +336,30 @@ the menu.
   - closing a pane that shows an agent session never stops the session.
 
   ⇧⌘T is no longer a second Undo key. ⌘Z still undoes a close for Ghostty's `undo-timeout`.
+
+- **L-31 [A]** (Warp parity, 2026-11-05) The terminal's right-click menu has Warp's items, in Warp's
+  order, each showing its key: Copy (when text is selected), Paste (disabled with nothing to
+  paste), Clear (⌘K), Split Pane Right, Left, Down and Up, and, in a split, Maximize Pane (Minimize
+  Pane when it is maximized; ⇧⌘↩) and Close Pane (⌘W). They act on the pane right-clicked, focused
+  or not. Ghostty's Reset Terminal, Toggle Terminal Inspector, Terminal Read-only, Change Tab
+  Title… and Change Terminal Title… follow.
+- **L-32 [A]** (Warp parity, 2026-11-05) Synchronized input, as Warp's. ⌥⌘I (Window ▸ Synchronize
+  Input ▸ Toggle Synchronizing All Panes in Current Tab) syncs the current tab, or stops syncing
+  it; Toggle Synchronizing All Panes in All Tabs syncs every tab of the window, new ones included;
+  ⌥⇧⌘I (Stop Synchronizing Any Panes) stops all of it in the window. Each window keeps its own.
+  What is typed or pasted into a pane of a synced tab is typed into every terminal pane of every
+  synced tab in that window; ⌘ shortcuts and text still being composed by an input method stay
+  in the pane. Panes showing a file, a page or a session's read-only view don't take it. As in
+  Warp, ⌥⌘I in a window syncing every tab leaves the other tabs synced and this one not, and
+  syncing every tab one by one is the same as syncing all of them. A synced tab's sidebar row
+  shows Warp's link mark (#4A93FF). The terminal inspector moves from ⌥⌘I to ⌃⌥⌘I.
+- **L-33 [A]** (Warp parity, 2026-11-05) Zoom, as Warp's. ⌘= and ⌘- (View ▸ Zoom In, Zoom Out) step
+  through Warp's levels (50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300 and 350%),
+  and ⌘0 (Actual Size) goes back to 100%. The zoom scales the sidebar, the palette, the editor's
+  text, the Markdown preview and the terminals' text in every window. ⌥⇧> and ⌥⇧< (Increase and
+  Decrease Font Size) change the terminals' font size by a point, between 5 and 25, and Reset
+  Font Size goes back to the config's `font-size`; the terminals show that size times the zoom.
+  New panes get it too. Both are kept across restarts.
 
 ## M. Moving live sessions
 

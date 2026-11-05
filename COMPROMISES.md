@@ -98,3 +98,16 @@ it is guidance"). What this design gives up:
 | **`clear` clears**, and ⌘K clears scrollback; Warp's `clear` instead pushes the blocks up out of view, keeping them in scrollback. | `clear` is zsh's (and the program's) command; Tern doesn't replace it. The prompt stays at the bottom either way. | zsh unchanged. |
 | **Other shells keep the usual look**, and so does a zsh started inside a Tern pane unless it loads the integration. | The look needs Tern's prompt marks; only Tern's zsh integration prints them. | "The user's shell is zsh; other shells may keep the usual look." |
 | **On Linux (OpenGL) only the bottom alignment, colors, durations and bold apply**; the lines, tint, bar and box are a Metal pipeline. | Tern ships for macOS; the shared renderer must still build elsewhere. | Correct highlights where shapes aren't drawn (review round 2). |
+
+===================================================================================================
+
+# Compromises (Warp parity 2026-11-05: panes, the right-click menu, synchronized input, zoom)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **The right-click menu has no link items.** Warp adds Copy URL, Copy Path, Show in Finder and Open Link when the click is on a link. Umi's menu doesn't. | Ghostty only reports the link under the mouse while ⌘ is held, so a plain right-click doesn't know there is one. | L-31's other items, unchanged Ghostty link handling. |
+| **Clear is always in the right-click menu.** Warp shows Clear Blocks only when there are blocks. | ⌘K clears the screen and scrollback whatever is in them. | L-31. |
+| **The synchronized-input mark is on the tab's row only, and there is no toast.** Warp marks each pane's row and shows "You enabled synchronized inputs in this tab. Press ⌥⌘I to undo." | Umi's sidebar rows are tabs, not panes, and Umi has no toasts. | L-32. |
+| **The sidebar keeps the width you gave it when zoomed.** Its contents grow, so fewer characters fit; Warp's panel grows with the zoom. Session read-only views, a file pane's header, a stack's strip and alerts don't zoom. | The sidebar's width is dragged in points and limited to half the window; scaling it would fight that limit. The other views are AppKit views with their own sizes. | L-33 for what's read most: terminals, sidebar text, palette, editor, preview. |
+| **Ghostty's own font size menu items are hidden.** View ▸ Increase, Decrease and Reset Font Size are Umi's now and act on every pane. | Ghostty's act on one pane and would leave it out of step with the zoom. | L-33. |
+| **Nested rows count as one when checking the 190-point minimum.** The check measures each pane's frame in the tab's split tree, which can't tell a nested same-direction row from a flat one (see L-19's known limit). | The tree is Ghostty's binary split tree. | L-19. |
