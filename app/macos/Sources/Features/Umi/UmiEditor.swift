@@ -861,6 +861,24 @@ final class UmiEditorContainerView: NSView {
         case ([.command, .shift], "m"):
             document?.toggleMode()
             return true
+        // Ghostty leaves these menu items without keys (its terminals take them as bindings), so
+        // the editor's text and its find fields get them here.
+        // Undo is the text's own (the document's history), not the window's (pane closes and moves).
+        case ([.command], "z") where responder is UmiEditorTextView, ([.command, .shift], "z") where responder is UmiEditorTextView:
+            let undo = (responder as? NSTextView)?.undoManager
+            let redo = flags.contains(.shift)
+            if let undo, redo ? undo.canRedo : undo.canUndo {
+                if redo { undo.redo() } else { undo.undo() }
+            } else {
+                NSSound.beep()
+            }
+            return true
+        case ([.command], "c"):
+            return NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
+        case ([.command], "x"):
+            return NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self)
+        case ([.command], "v"):
+            return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
         default:
             return super.performKeyEquivalent(with: event)
         }
