@@ -274,13 +274,12 @@ final class UmiPaletteModel: ObservableObject {
         return scored.sorted { a, b in keepOrder || a.0 == b.0 ? a.1 < b.1 : a.0 > b.0 }.map(\.2)
     }
 
-    /// Recent (the last entries chosen, at most three) and Suggested.
+    /// Recent (the last entries chosen, at most three) and Suggested. An entry can be in both,
+    /// as in Warp; its rows differ by `rowID`.
     private func zeroStateEntries() -> [UmiPaletteEntry] {
         var byID: [String: UmiPaletteEntry] = [:]
         for entry in base where byID[entry.id] == nil { byID[entry.id] = entry }
-        var shown = Set<String>()
         let recent = Self.chosen.compactMap { byID[$0] }.prefix(Self.recentCount).map { entry -> UmiPaletteEntry in
-            shown.insert(entry.id)
             var entry = entry
             entry.section = "Recent"
             return entry
@@ -875,6 +874,8 @@ struct UmiPaletteEntry: Identifiable {
     let kind: Kind
     /// The empty palette's section ("Recent", "Suggested").
     var section: String?
+    /// The row's identity in the list: one entry can show under Recent and under Suggested.
+    var rowID: String { section.map { "\($0):\(id)" } ?? id }
     var paneRow: PaneRow?
     var perform: @MainActor () -> Void
 
@@ -895,7 +896,7 @@ struct UmiPaletteEntry: Identifiable {
     }
 
     var json: [String: Any] {
-        var out: [String: Any] = ["title": title, "kind": kind.rawValue]
+        var out: [String: Any] = ["title": title, "kind": kind.rawValue, "id": id, "row_id": rowID]
         if let subtitle { out["subtitle"] = subtitle }
         if let badge { out["badge"] = badge }
         if let value { out["value"] = value }
@@ -1644,7 +1645,7 @@ private struct UmiPalettePanel: View {
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                    ForEach(Array(entries.enumerated()), id: \.element.rowID) { index, entry in
                         if zero, let section = entry.section, index == 0 || entries[index - 1].section != section {
                             Text(section)
                                 .font(.system(size: 12))
@@ -1654,7 +1655,7 @@ private struct UmiPalettePanel: View {
                                 .accessibilityAddTraits(.isHeader)
                         }
                         row(entry, selected: index == model.selection)
-                            .id(entry.id)
+                            .id(entry.rowID)
                             .onTapGesture { model.selection = index; model.submit() }
                     }
                 }
@@ -1662,7 +1663,7 @@ private struct UmiPalettePanel: View {
             .frame(height: max(min(total, room), UmiPaletteStyle.rowHeight))
             .onChange(of: model.selection) { selection in
                 guard model.entries.indices.contains(selection) else { return }
-                proxy.scrollTo(model.entries[selection].id)
+                proxy.scrollTo(model.entries[selection].rowID)
             }
         }
     }
@@ -1718,10 +1719,10 @@ private struct UmiPalettePanel: View {
         .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: UmiPaletteStyle.rowRadius)
-                .fill(selected ? colors.selected : (hovered == entry.id ? colors.hovered : .clear))
+                .fill(selected ? colors.selected : (hovered == entry.rowID ? colors.hovered : .clear))
         )
         .padding(.horizontal, UmiPaletteStyle.rowGutter)
-        .onHover { hovered = $0 ? entry.id : (hovered == entry.id ? nil : hovered) }
+        .onHover { hovered = $0 ? entry.rowID : (hovered == entry.rowID ? nil : hovered) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(entry.title)
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)

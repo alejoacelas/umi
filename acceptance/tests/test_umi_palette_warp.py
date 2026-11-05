@@ -144,6 +144,26 @@ def test_the_empty_palette_shows_filter_chips_recent_and_suggested(inst, win):
         close(inst, win)
 
 
+@pytest.mark.req("L-14")
+def test_an_entry_under_recent_and_suggested_has_two_distinct_rows(inst, win):
+    try:
+        rpc(inst, "debug.palette", window=win["window"], mode="commands", query="keyboard shortcuts")
+        rpc(inst, "debug.palette.perform", window=win["window"], title="Keyboard Shortcuts")
+        wait_until(lambda: page(inst, win)["shown"], 5, message="the shortcuts page opened")
+        rows = rpc(inst, "debug.palette", window=win["window"], mode="commands")["entries"]
+        recent = [r for r in rows if r.get("section") == "Recent"]
+        suggested = [r for r in rows if r.get("section") == "Suggested"]
+        # As in Warp, the entry shows in both sections; each row is still its own.
+        assert recent[0]["id"] == "umi:Keyboard Shortcuts", recent
+        assert "umi:Keyboard Shortcuts" in [r["id"] for r in suggested], suggested
+        row_ids = [r["row_id"] for r in rows]
+        assert len(row_ids) == len(set(row_ids)), row_ids
+    finally:
+        close(inst, win)
+        if page(inst, win)["shown"]:
+            key(inst, win, "cmd+/")
+
+
 # ---- ⌘O --------------------------------------------------------------------------------------------
 
 @pytest.mark.req("L-16")
