@@ -154,8 +154,9 @@ enum UmiSidebarVisibility {
 
 // MARK: - ⌘ held: the tab-switch keys on the rows
 
-/// While ⌘ (the modifier of ⌘1–⌘9) is held for 750 ms, each row shows the key that selects
-/// it, as Warp does: ⌘1–⌘8 for the first eight tabs and ⌘9 for the last.
+/// While ⌘ (the modifier of ⌘1–⌘9) is held for 750 ms, with or without other modifiers, each
+/// row shows the key that selects it, as Warp does: ⌘1–⌘8 for the first eight tabs and ⌘9 for
+/// the last.
 @MainActor
 final class UmiTabHints: ObservableObject {
     static let shared = UmiTabHints()
@@ -163,6 +164,8 @@ final class UmiTabHints: ObservableObject {
     @Published private(set) var revealed = false
     private var monitor: Any?
     private var pending: DispatchWorkItem?
+    /// Whether ⌘ is down, as the last modifier change said.
+    private var commandDown = false
     static let delay: TimeInterval = 0.75
 
     func install() {
@@ -173,16 +176,23 @@ final class UmiTabHints: ObservableObject {
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil,
                                                queue: .main) { _ in
-            MainActor.assumeIsolated { UmiTabHints.shared.set(held: false) }
+            MainActor.assumeIsolated {
+                UmiTabHints.shared.commandDown = false
+                UmiTabHints.shared.set(held: false)
+            }
         }
     }
 
     private func handle(_ event: NSEvent) {
         switch event.type {
         case .flagsChanged:
-            // Only ⌘ on its own, the modifier the tab-switch keys use.
-            let flags = event.modifierFlags.intersection([.command, .shift, .control, .option])
-            set(held: flags == .command)
+            // ⌘, the modifier the tab-switch keys use, whatever else is held with it: its delay
+            // starts when it goes down and other modifiers neither hide the hints nor restart
+            // it (Warp's reveals_shortcut_hints).
+            let command = event.modifierFlags.contains(.command)
+            guard command != commandDown else { return }
+            commandDown = command
+            set(held: command)
         case .keyDown:
             // A shortcut pressed while ⌘ is down: Warp keeps the hints, so do we; nothing to do.
             break

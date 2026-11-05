@@ -726,6 +726,46 @@ def test_holding_cmd_shows_the_tab_keys_ui(inst, win, ui):
     wait_until(lambda: not sidebar(inst, win["window"])["hints"], 3, message="hints gone when ⌘ is let go")
 
 
+@pytest.mark.req("S-3")
+def test_the_tab_keys_stay_while_other_modifiers_join_cmd_ui(inst, win, ui):
+    """As Warp: the hints show while ⌘ is held whatever else is held with it; adding ⇧ or ⌥ keeps
+    them, and ⌘ pressed together with ⇧ shows them too."""
+    import Quartz
+    new_tab(inst, win)
+    front(inst, win, ui, win["pane"])
+
+    def flags(value, keycode=55):
+        event = Quartz.CGEventCreateKeyboardEvent(None, keycode, value != 0)
+        Quartz.CGEventSetType(event, Quartz.kCGEventFlagsChanged)
+        Quartz.CGEventSetFlags(event, value)
+        Quartz.CGEventPostToPid(ui.pid, event)
+
+    hints = lambda: sidebar(inst, win["window"])["hints"]  # noqa: E731
+    try:
+        flags(ui.CMD)
+        wait_until(hints, 3, message="hints while ⌘ is held")
+        flags(ui.CMD | ui.SHIFT, 56)
+        time.sleep(0.3)
+        assert hints(), "⇧ added to ⌘ kept the hints"
+        flags(ui.CMD | ui.SHIFT | ui.OPT, 58)
+        time.sleep(0.3)
+        assert hints(), "⌥ added too kept them"
+        flags(ui.CMD, 58)
+        flags(ui.CMD, 56)
+        time.sleep(0.3)
+        assert hints(), "letting go of the others kept them"
+        flags(0)
+        wait_until(lambda: not hints(), 3, message="gone when ⌘ is let go")
+        flags(ui.SHIFT, 56)
+        flags(ui.SHIFT | ui.CMD)
+        time.sleep(0.3)
+        assert not hints(), "not before 750 ms"
+        wait_until(hints, 3, message="⌘ held with ⇧ shows them")
+    finally:
+        flags(0)
+    wait_until(lambda: not hints(), 3, message="hints gone when ⌘ is let go")
+
+
 @pytest.mark.req("S-4")
 def test_the_row_menu_opens_with_warps_items_and_color_dots_ui(inst, win, ui):
     from test_umi_panes_ui import _frame, _right_click, _row_element
