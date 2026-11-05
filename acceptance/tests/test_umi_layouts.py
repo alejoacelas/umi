@@ -664,5 +664,7 @@ def test_save_new_launch_configuration_from_the_file_menu(clean, ui, tmp_path):
         return button is not None
     wait_until(find_button, 5, message="the Saved Successfully sheet")
     time.sleep(0.5)   # the sheet finishes sliding in
-    view.press(button)
+    # AXPress reports a failure here because the sheet (and the button) is gone by the time the
+    # action returns; the file opening in the editor is the check.
+    view.AX.AXUIElementPerformAction(button, "AXPress")
     wait_until(lambda: real(second) in open_documents(inst), 10, message="the file open in the editor")
