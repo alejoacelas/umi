@@ -382,10 +382,18 @@ final class UmiTabGroupMenu: NSObject, NSMenuDelegate {
         MainActor.assumeIsolated { rebuild() }
     }
 
+    /// What the submenu lists now (group ids and names), to leave it alone when nothing changed:
+    /// rebuilding it while it is open or being chosen from would take the item away.
+    private var listed: [String] = []
+
     func rebuild() {
         guard let menu else { return }
+        let targets = UmiTabGroups.moveTargets()?.2 ?? []
+        let wanted = targets.map { $0.idString + "\u{0}" + $0.displayName }
+        guard wanted != listed || menu.items.isEmpty else { return }
+        listed = wanted
         menu.removeAllItems()
-        guard let (_, _, targets) = UmiTabGroups.moveTargets(), !targets.isEmpty else {
+        guard !targets.isEmpty else {
             let empty = NSMenuItem(title: "No Other Groups", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
