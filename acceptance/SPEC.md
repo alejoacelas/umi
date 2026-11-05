@@ -50,7 +50,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-12.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-20, M-1 to M-6, T-1 to T-7, S-1 to S-12, E-1 to E-12, MD-1 to MD-5.
 
 ### Core: agent sessions
 These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
@@ -487,6 +487,9 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   as a table (row numbers, a header that stays in view, numbers right-aligned); other text opens as
   source.
 - **E-2 [A+W]** Preview and source can be toggled with ⇧⌘M, with a visible control, and from the CLI.
+  Warp parity (2026-11-05): the control says "Rendered / Raw", as Warp's does, and ⌘E (Warp's key)
+  toggles too while a file pane with both views has focus; in a terminal ⌘E stays Ghostty's "Use
+  Selection for Find".
 - **E-3 [A+W]** Edits can be saved with ⌘S. Closing a file with unsaved changes asks first. Closing a
   tab or quitting never silently loses edits: they are saved, or a recovery copy is kept.
 - **E-4 [A+W]** If the file changes on disk:
@@ -561,6 +564,36 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   open in the default browser. `<cli> edit` refuses a URL from an origin that isn't listed. A web
   pane counts as quiet for updates (I-4): the pages it is for keep unsaved drafts in their local
   storage, which survives the relaunch.
+
+### The Markdown preview as Warp's (Warp parity, 2026-11-05)
+
+Compared with Warp on macOS, default settings, default Dark theme. Front matter, comments (E-11)
+and links (E-7) work as before.
+
+- **MD-1 [A+W]** The preview looks like Warp's Markdown view: Roboto (bundled) at 13 px with a line
+  height of 1.5, across the full width of the pane; headings at 2.25, 1.8, 1.5, 1, 0.83 and 0.67
+  times the body size, h1–h4 semibold and h5–h6 regular; inline code in the terminal's red on
+  `surface_3` (the foreground at 15% over the background); tables with 12 px cell padding, text in
+  the secondary color (60%), lines between rows only, scrolling sideways when wider than the pane;
+  a 3 px rule; task checkboxes filled with the accent when done. Bare URLs (`https://…`, `www.…`)
+  in text are links.
+- **MD-2 [A]** Code blocks have a 1 px `surface_3` border and a footer naming the language as Warp
+  does (Python, Shell, Code…). Known languages are highlighted in Warp's colors (keywords magenta,
+  functions blue, strings and numbers green, types red, comments yellow, properties cyan). Copy
+  puts the block's text, trimmed, on the clipboard. Shell blocks (`sh`, `shell`, `bash`, `zsh`,
+  `fish`) also have Run in terminal: the command goes to the input of the tab's terminal used most
+  recently, which takes focus; it isn't run until the user presses Return, as Warp puts it in its
+  input.
+- **MD-3 [A]** Mermaid blocks show the diagram. Each has Raw / Rendered and Open full screen, which
+  shows the diagram larger over the page; Esc or a click outside closes it. A diagram that fails
+  to parse shows its source and the error.
+- **MD-4 [A]** ⌘F in the preview opens a find bar (Warp's: top right, up to 500 px). Matches are
+  highlighted as typed, case-insensitively unless Aa is on, as a regular expression when `.*` is
+  on; the bar says which match is current ("2/3") or "No matches". ⌘G and Return go to the next
+  match, ⇧⌘G and ⇧Return to the previous, scrolling it into view; Esc closes the bar.
+- **MD-5 [A]** Right-clicking the preview shows Warp's items: Copy (with a selection), Copy file
+  path, Split pane right / left / down / up, and in a split Maximize pane (Minimize pane when
+  maximized) and Close pane.
 
 ## AG. Agent sessions
 
