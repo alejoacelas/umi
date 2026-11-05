@@ -500,8 +500,18 @@ final class UmiFileTreeModel: ObservableObject {
 
     // MARK: Actions
 
+    /// Whether a file opens in Umi's editor (as in Warp, any file that isn't binary, within the
+    /// editor's size limit); others open with their default app.
+    static func isText(_ url: URL) -> Bool {
+        guard (try? UmiTextFile.checkOpenable(url)) != nil,
+              let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        let head = (try? handle.read(upToCount: 8192)) ?? Data()
+        return !head.contains(0)
+    }
+
     func open(_ url: URL) {
-        if UmiEditor.handles(url) || UmiEditor.isMarkdown(url) {
+        if Self.isText(url) {
             openInEditor(url)
         } else {
             NSWorkspace.shared.open(url)
@@ -637,7 +647,7 @@ final class UmiFileTreeModel: ObservableObject {
             node(at: folder)?.loadChildren(force: true)
             rebuild()
             select(url)
-            if UmiEditor.handles(url) || UmiEditor.isMarkdown(url) { openInEditor(url) }
+            if Self.isText(url) { openInEditor(url) }
         case .rename(let url):
             let target = url.deletingLastPathComponent().appendingPathComponent(name)
             guard target != url else { select(url); return }
@@ -681,7 +691,7 @@ final class UmiFileTreeModel: ObservableObject {
             items.append(.init(title: "cd to Directory", enabled: terminalPane != nil) { [weak self] in self?.cd(to: url) })
             items.append(.init(title: "Open in New Tab") { [weak self] in self?.openInNewTab(url, isDirectory: true) })
         } else {
-            let editable = UmiEditor.handles(url) || UmiEditor.isMarkdown(url)
+            let editable = Self.isText(url)
             items.append(.init(title: "Open in Editor", enabled: editable) { [weak self] in self?.openInEditor(url) })
             items.append(.init(title: "Open in New Tab", enabled: editable) { [weak self] in self?.openInNewTab(url, isDirectory: false) })
             items.append(.init(title: "Open with Default App") { NSWorkspace.shared.open(url) })
