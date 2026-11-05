@@ -431,10 +431,12 @@ A "live session" is a pane with a running program, its scrollback and its state.
     its background; text a program colors from the 256-color table or with RGB keeps its color;
   - font: Hack (bundled) at 13 points, rows 1.2× the font size, no ligatures;
   - padding: 16 points left and right, 20 below the last row, what's left over above the first row;
-    full-screen programs (the alternate screen) get the whole pane, without padding;
+    full-screen programs (the alternate screen) get the whole pane, without padding: their grid
+    starts at the pane's top left corner; a reset (`reset`, Reset Terminal) that leaves the alternate
+    screen gives the shell its padding back;
   - cursor: a bar 3 points wide with fully rounded ends, a row tall, blinking every 500 ms;
-  - scrollbar: a thumb 8 points wide with round ends and no track, the text color at 40%, 90% while
-    the pointer is on it or it is dragged;
+  - scrollbar: a thumb 8 points wide with round ends and no track, 2 points in from the pane's
+    right edge, the text color at 40%, 90% while the pointer is on it or it is dragged;
   - bell: silent: no sound, no Dock bounce or badge, no mark in the title.
 - **S-6 [W]** The "running/last command" line updates for commands that finish instantly.
 - **S-7 [A+W]** The sidebar's order, in the user's words (2026-10-27): "the standard behavior from warp
@@ -477,7 +479,8 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
     `(1m 8.92s)`, `(3h 4m 12s)`; while it runs, the whole seconds so far, nothing in its first
     second). Warp parity, 2026-11-05: the header is Warp's whole line: the conda and Python
     environments (`(base) (venv) `), `user@host:` over SSH, the folder (in full when it fits) and
-    ` git:(branch)` (the commit when no branch is checked out);
+    ` git:(branch)` (the commit when no branch is checked out). These names are shown as text and
+    never run as shell code, also with zsh's `prompt_subst` on;
   - the command, in bold;
   - its output;
   - a thin line and some space between blocks.

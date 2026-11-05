@@ -9,6 +9,7 @@ Read through the app's `debug.terminal` (the renderer's report: font, cells, cur
 the scrollbar and the bell's effects), `debug.blocks`, and screenshots (`umi screenshot`).
 """
 
+import os
 import re
 import subprocess
 import time
@@ -17,7 +18,7 @@ import uuid
 import pytest
 
 from harness import wait_until
-from test_umi_blocks import Shot, active, blocks, run, shell_folder
+from test_umi_blocks import Shot, active, blocks, load_png, run, shell_folder
 
 pytestmark = pytest.mark.layout
 
@@ -99,11 +100,12 @@ def test_selection_is_warps_blue_over_the_text_which_keeps_its_colors(inst, win,
 @pytest.mark.req("S-5")
 def test_minimum_contrast_raises_named_colors_only(inst, win, tmp_path):
     """Warp's default: text in a named color (here palette 0, #616161, about 3.3:1 on #050505) is moved
-    toward white just enough for 4.5:1 (about #767676, not white); the same gray given as RGB keeps its
-    color."""
+    toward white just enough for 4.5:1 (about #767676, not white); the same gray given as RGB, and a
+    like gray from the 256-color table (index 59, #5F5F5F), keep their colors."""
     pane = win["pane"]
     active(inst, pane)
-    line = b"\x1b[30m" + b"N" * 20 + b"\x1b[0m" + b" " * 10 + b"\x1b[38;2;97;97;97m" + b"N" * 20 + b"\x1b[0m\n"
+    line = (b"\x1b[30m" + b"N" * 20 + b"\x1b[0m" + b" " * 10 + b"\x1b[38;2;97;97;97m" + b"N" * 20 + b"\x1b[0m"
+            + b" " * 10 + b"\x1b[38;5;59m" + b"N" * 20 + b"\x1b[0m\n")
     cat_file(inst, pane, tmp_path, "gray", line)
     time.sleep(0.5)
     shot = Shot(inst, win, tmp_path / "contrast.png")
@@ -115,10 +117,11 @@ def test_minimum_contrast_raises_named_colors_only(inst, win, tmp_path):
     def brightest(c0, c1):
         return max(max(shot.px(int(shot.left + pad + cell_w * c0 + dx), yy))
                    for dx in range(0, int(cell_w * (c1 - c0))) for yy in range(y - 6, y + 7))
-    named, rgb = brightest(1, 19), brightest(31, 49)
+    named, rgb, table = brightest(1, 19), brightest(31, 49), brightest(61, 79)
     assert rgb > 40, f"the RGB gray is drawn ({rgb})"
     assert named > rgb + 12, f"the named gray is raised ({named}) and the RGB one isn't ({rgb})"
     assert named < 170, f"only as far as 4.5:1 needs, not to white ({named})"
+    assert 40 < table < rgb + 8, f"the 256-color gray #5F5F5F keeps its color ({table}; RGB #616161: {rgb})"
 
 
 # ---- S-5: font, rows and padding --------------------------------------------------------------------
@@ -166,12 +169,67 @@ def test_full_screen_programs_get_the_pane_without_padding(inst, win):
     inst.cli("send", "--pane", pane, "-e", "printf '\\033[?1049h'; sleep 5; printf '\\033[?1049l'")
     full = wait_until(lambda: (lambda t: t if t["screen"] == "alternate" and t["padding_pt"]["left"] < 0.6 else None)(
         terminal(inst, pane)), 10, message="the full-screen program without padding")
-    assert full["padding_pt"]["bottom"] < 0.6, full["padding_pt"]
-    assert full["padding_pt"]["top"] < full["cell_pt"][1], full["padding_pt"]
+    # As in Warp, the grid starts at the pane's top left corner; what doesn't divide into rows and
+    # columns stays below and right of it.
+    assert full["padding_pt"]["top"] < 0.6, full["padding_pt"]
+    assert full["padding_pt"]["bottom"] < full["cell_pt"][1], full["padding_pt"]
+    assert full["padding_pt"]["right"] < full["cell_pt"][0], full["padding_pt"]
     assert full["cols"] >= before["cols"] + 3 and full["rows"] >= before["rows"] + 1, (before["cols"], full["cols"])
     back = wait_until(lambda: (lambda t: t if t["screen"] == "primary" and abs(t["padding_pt"]["left"] - 16) < 0.6 else None)(
         terminal(inst, pane)), 15, message="the padding back after the program")
     assert back["cols"] == before["cols"] and back["rows"] == before["rows"], (before["cols"], back["cols"])
+
+
+def _unpadded(inst, pane):
+    t = terminal(inst, pane)
+    return t if t["screen"] == "alternate" and t["padding_pt"]["left"] < 0.6 else None
+
+
+def _padded(inst, pane):
+    t = terminal(inst, pane)
+    return t if t["screen"] == "primary" and abs(t["padding_pt"]["left"] - 16) < 0.6 else None
+
+
+@pytest.mark.req("S-5", "S-12")
+@pytest.mark.parametrize("how", ["ris", "reset_action"])
+def test_a_reset_on_the_alternate_screen_brings_the_padding_back(inst, win, how):
+    """A full-screen program that crashed leaves the alternate screen on; `reset` (RIS, `\\ec`) or
+    Reset Terminal returns to the shell's screen, and its padding."""
+    pane = win["pane"]
+    active(inst, pane)
+    before = terminal(inst, pane)
+    if how == "ris":
+        inst.cli("send", "--pane", pane, "-e", "printf '\\033[?1049h'; sleep 2; printf '\\033c'")
+        wait_until(lambda: _unpadded(inst, pane), 10, message="the full-screen program without padding")
+    else:
+        inst.cli("send", "--pane", pane, "-e", "printf '\\033[?1049h'; sleep 60")
+        wait_until(lambda: _unpadded(inst, pane), 10, message="the full-screen program without padding")
+        assert inst.rpc("debug.terminal.action", pane=pane, action="reset")["ok"]
+    back = wait_until(lambda: _padded(inst, pane), 10, message="the padding back after the reset")
+    assert abs(back["padding_pt"]["bottom"] - 20) < 0.6, back["padding_pt"]
+    assert back["cols"] == before["cols"] and back["rows"] == before["rows"], (before["cols"], back["cols"])
+    if how == "reset_action":
+        inst.cli("keys", "--pane", pane, "ctrl+c")
+
+
+@pytest.mark.req("S-5", "S-12")
+def test_turning_the_option_on_while_a_full_screen_program_runs_brings_the_padding_back(fresh, tmp_path):
+    """window-padding-alternate-screen = true, set in the config and reloaded while the program runs,
+    takes effect at once."""
+    config = tmp_path / "xdg" / "umi"
+    config.mkdir(parents=True)
+    (config / "config").write_text("window-padding-alternate-screen = false\n")
+    other = fresh(prefix="acc-altpad-", env={"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
+    pane = other.json("window", "new", "--name", "altpad")["pane"]
+    active(other, pane)
+    other.cli("send", "--pane", pane, "-e", "printf '\\033[?1049h'; sleep 60")
+    wait_until(lambda: _unpadded(other, pane), 10, message="the full-screen program without padding")
+    (config / "config").write_text("window-padding-alternate-screen = true\n")
+    assert other.rpc("debug.terminal.action", pane=pane, action="reload_config")["ok"]
+    padded = wait_until(lambda: (lambda t: t if t["screen"] == "alternate" and abs(t["padding_pt"]["left"] - 16) < 0.6
+                                 else None)(terminal(other, pane)), 10, message="the padding back on the alternate screen")
+    assert padded["padding_pt"]["top"] >= 0.6, padded["padding_pt"]
+    other.cli("keys", "--pane", pane, "ctrl+c")
 
 
 # ---- S-5: the cursor --------------------------------------------------------------------------------
@@ -222,14 +280,51 @@ def test_the_cursor_is_cyan_with_round_ends_ui(inst, win, ui, tmp_path):
 # ---- S-5: scrollbar and bell ---------------------------------------------------------------------------
 
 @pytest.mark.req("S-5")
-def test_the_scrollbar_is_warps_thumb_without_a_track(inst, win):
+def test_the_scrollbar_is_warps_thumb_without_a_track(inst, win, tmp_path):
+    """With scrollback, scrolled up a page: the scrollbar as AppKit draws it (`debug.terminal.scroller`;
+    the window's screenshot draws the terminal over it) is an overlay scroller showing one rounded
+    thumb 8 points wide, 2 points in from the pane's right edge, white at 40% over #050505 (#696969),
+    and nothing above or below it (no track)."""
     pane = win["pane"]
     active(inst, pane)
-    s = terminal(inst, pane)["scroller"]
+    run(inst, pane, "seq 1 400")
+    assert inst.rpc("debug.terminal.action", pane=pane, action="scroll_page_up")["ok"]
+    s = wait_until(lambda: (lambda x: x if x["value"] < 0.99 else None)(terminal(inst, pane)["scroller"]), 5,
+                   message="the view scrolled up")
     assert s["class"] == "UmiScroller", s
-    assert s["track"] is False and s["thumb_width"] == 8, s
-    assert s["idle_alpha"] == 0.4 and s["active_alpha"] == 0.9, s
+    assert s["style"] == "overlay" and s["hidden"] is False, s
+    assert 0 < s["knob_proportion"] < 1, s
     assert s["ink"] == [1, 1, 1], "the text color on the dark background"
+    time.sleep(0.3)
+    info = inst.rpc("debug.terminal.scroller", pane=pane, path=str(tmp_path / "scroller.png"))
+    w, h, buf = load_png(tmp_path / "scroller.png")
+    scale = w / info["width_pt"]
+
+    def px(x, y):
+        i = (y * w + x) * 4
+        return tuple(buf[i:i + 3])
+    thumb = (0x69, 0x69, 0x69)
+    bg = (5, 5, 5)
+    # The thumb's column: its middle, 6 points in from the right edge.
+    cx = w - int(6 * scale)
+    lit = [y for y in range(h) if near(px(cx, y), thumb, 12)]
+    assert lit, f"a #696969 thumb: column {[px(cx, y) for y in range(0, h, max(1, h // 8))]}"
+    top, bottom = min(lit), max(lit)
+    assert len(lit) == bottom - top + 1, "one thumb"
+    assert bottom - top + 1 >= 20 * scale, f"a thumb, not a speck: {bottom - top + 1} px"
+    # No track: the column above and below the thumb is the background.
+    outside = [y for y in range(h) if y < top - 2 * scale or y > bottom + 2 * scale]
+    assert outside, "the thumb doesn't fill the scrollbar"
+    assert all(near(px(cx, y), bg, 3) for y in outside), "no track above or below the thumb"
+    # 8 points wide, 2 points from the right edge.
+    mid = (top + bottom) // 2
+    row = [x for x in range(w) if near(px(x, mid), thumb, 12)]
+    assert abs(len(row) - 8 * scale) <= 1, f"8 points wide: {len(row)} px at {scale}x"
+    assert abs((w - 1 - max(row)) - 2 * scale) <= 1, f"2 points from the edge: {w - 1 - max(row)} px"
+    assert all(near(px(x, mid), bg, 3) for x in range(max(row) + 1, w)), "nothing right of the thumb"
+    # Round ends: the thumb's first pixel row is narrower than its middle.
+    end = [x for x in range(w) if not near(px(x, top), bg, 8)]
+    assert len(end) < len(row), f"round ends: {len(end)} px at the top, {len(row)} in the middle"
 
 
 @pytest.mark.req("S-5")
@@ -310,6 +405,28 @@ def test_the_header_adds_the_git_branch_as_warp(inst, win, tmp_path):
 
 
 @pytest.mark.req("S-10")
+def test_a_branch_name_is_shown_and_never_run_with_prompt_subst(inst, win, tmp_path):
+    """oh-my-zsh and powerlevel10k turn on prompt_subst, which runs `$(...)` in the prompt each time zsh
+    draws it: a branch named `$(touch${IFS}pwned)` is shown as it is and runs nothing."""
+    pane = win["pane"]
+    active(inst, pane)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    branch = "$(touch${IFS}pwned)`touch${IFS}tick`"
+    _git("init", "-q", "-b", branch, cwd=repo)
+    run(inst, pane, "setopt prompt_subst")
+    run(inst, pane, f"cd '{repo}'")
+    block = run(inst, pane, ": subst")
+    after = run(inst, pane, ": again")
+    assert not (repo / "pwned").exists() and not (repo / "tick").exists(), "the branch's name ran"
+    for x in (block, after):
+        assert x["header_line"] == x["header"] + f" git:({branch})", x
+    run(inst, pane, "unsetopt prompt_subst")
+    plain = run(inst, pane, ": plain")
+    assert plain["header_line"] == plain["header"] + f" git:({branch})", plain
+
+
+@pytest.mark.req("S-10")
 def test_the_header_adds_conda_venv_and_user_at_host_over_ssh(inst, win):
     pane = win["pane"]
     active(inst, pane)
@@ -352,3 +469,34 @@ def test_the_box_shows_the_folder_alone_cut_at_40_characters(inst, win, tmp_path
     right = (max(ink) - shot.left - pad) / cell_w
     # The box: border, padding, icon (1.5 cells) and gap, then 40 characters.
     assert 38 < right < 46, f"the box's text ends after 40 characters ({right:.1f} cells), not after the whole line"
+
+
+@pytest.mark.req("S-11")
+def test_the_box_text_is_bold(inst, win, tmp_path):
+    """The folder in the box is drawn heavier than the same folder in a block's header once the
+    command ran (regular weight): more of its pixels are over half the row's brightest."""
+    pane = win["pane"]
+    active(inst, pane)
+    folder = "/tmp/" + "W" * 30
+    os.makedirs(folder, exist_ok=True)
+    run(inst, pane, f"cd {folder}")
+    ran = run(inst, pane, ": weight")
+    b = active(inst, pane)
+    prompt = b["blocks"][-1]
+    assert prompt["header"] == folder and ran["header"] == folder, (prompt, ran)
+    time.sleep(0.5)
+    shot = Shot(inst, win, tmp_path / "weight.png")
+    cell_w = b["cell_pt"][0] * shot.scale
+    pad = b["padding_pt"]["left"] * shot.scale
+    dx = b["box_text_dx_pt"] * shot.scale
+
+    def heavy(row, shift):
+        """Pixels over half the brightest of the W's (columns 6 to 34) on viewport row `row`."""
+        y = row_y(shot, inst, win, b, row)
+        x0, x1 = int(shot.left + pad + shift + cell_w * 6), int(shot.left + pad + shift + cell_w * 34)
+        pixels = [max(shot.px(x, yy)) for x in range(x0, x1) for yy in range(y - 6, y + 7)]
+        top = max(pixels)
+        assert top > 60, f"text on row {row}"
+        return sum(1 for v in pixels if v > (top + 5) / 2)
+    box, header = heavy(prompt["first"] + 2, dx), heavy(ran["first"] + 2, 0)
+    assert box > header * 1.1, f"the box's text drawn bold: {box} heavy pixels against {header} in the header"

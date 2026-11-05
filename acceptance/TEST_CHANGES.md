@@ -713,3 +713,23 @@ S-12.
   bell's effects (`bell`); `debug.terminal.action` runs a Ghostty binding action (`select_all`) on a pane. `debug.blocks` now also reports each block's `header_line` (the whole
   header; `header` stays the folder alone), the padding's four sides, the font's name and size, the
   cursor's size in points and the active screen.
+
+### Review fixes (2026-11-05)
+
+- **New, `tests/test_umi_warp_terminal.py`**: `test_a_branch_name_is_shown_and_never_run_with_prompt_subst`
+  (a branch named `$(touch${IFS}pwned)` plus backticks, with `prompt_subst` on and off: no file
+  made, the name shown as it is); `test_a_reset_on_the_alternate_screen_brings_the_padding_back`
+  (RIS and the `reset` action); `test_turning_the_option_on_while_a_full_screen_program_runs_brings_the_padding_back`
+  (config reload); `test_the_box_text_is_bold` (the box's folder has more heavy pixels than the same
+  folder in a block's header).
+- **Stricter**: `test_full_screen_programs_get_the_pane_without_padding` now requires no padding
+  above the first row (was: less than a row) and less than a cell below and right.
+  `test_minimum_contrast_raises_named_colors_only` adds a 256-color gray (index 59) that must keep
+  its color. `test_the_scrollbar_is_warps_thumb_without_a_track` now checks what is drawn: after
+  `seq 1 400` and a page up, the scroller is in the overlay style and visible, and its image shows
+  one rounded `#696969` thumb 8 points wide, 2 points from the edge, with background above, below
+  and right of it (it read back the class's constants before).
+- **Test hook, `debug.terminal.scroller`**: writes an image of a pane's scrollbar as AppKit draws it,
+  over the pane's background (the window's screenshot draws the terminal's image over the
+  scrollbar). `debug.terminal`'s `scroller` adds `style`, `hidden`, `knob_proportion`, `value`,
+  `width_pt` and `edge_inset`.
