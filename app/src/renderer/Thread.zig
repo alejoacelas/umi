@@ -17,7 +17,8 @@ const BlockingQueue = @import("../datastruct/main.zig").BlockingQueue;
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.renderer_thread);
 
-const CURSOR_BLINK_INTERVAL = 600;
+// Umi: Warp's 500 ms blink (Ghostty's is 600 ms).
+const CURSOR_BLINK_INTERVAL = 500;
 
 /// Whether calls to `drawFrame` must be done from the app thread.
 ///

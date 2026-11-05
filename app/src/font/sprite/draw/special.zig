@@ -314,11 +314,14 @@ pub fn cursor_hollow_rect(
         .width = @intCast(width),
         .height = @intCast(height),
     }, .on);
+    // Umi: the outline keeps Ghostty's thin line; the bar cursor's
+    // thickness is Warp's 3 points (Collection.updateMetrics).
+    const line = @max(1, @min(metrics.cursor_thickness, metrics.box_thickness));
     canvas.rect(.{
-        .x = @intCast(metrics.cursor_thickness),
-        .y = @intCast(metrics.cursor_thickness),
-        .width = @intCast(width -| metrics.cursor_thickness * 2),
-        .height = @intCast(height -| metrics.cursor_thickness * 2),
+        .x = @intCast(line),
+        .y = @intCast(line),
+        .width = @intCast(width -| line * 2),
+        .height = @intCast(height -| line * 2),
     }, .off);
 }
 
@@ -337,8 +340,26 @@ pub fn cursor_bar(
     //
     // We round up (add 1 before dividing by 2) because, empirically, having a
     // 1px cursor shifted left a pixel looks better than having it not shifted.
+    const x = -@as(i32, @intCast((metrics.cursor_thickness + 1) / 2));
+
+    // Umi: Warp's bar has fully rounded ends: a line with round caps, its
+    // caps inside the cursor's height.
+    const thick: f64 = @floatFromInt(metrics.cursor_thickness);
+    const h: f64 = @floatFromInt(height);
+    if (metrics.cursor_thickness >= 3 and h > thick) {
+        const cx = @as(f64, @floatFromInt(x)) + thick / 2;
+        var path = canvas.staticPath(2);
+        path.moveTo(cx, thick / 2);
+        path.lineTo(cx, h - thick / 2);
+        try canvas.strokePath(path.wrapped_path, .{
+            .line_cap_mode = .round,
+            .line_width = thick,
+        }, .on);
+        return;
+    }
+
     canvas.rect(.{
-        .x = -@as(i32, @intCast((metrics.cursor_thickness + 1) / 2)),
+        .x = x,
         .y = 0,
         .width = @intCast(metrics.cursor_thickness),
         .height = @intCast(height),

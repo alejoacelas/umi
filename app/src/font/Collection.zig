@@ -678,6 +678,13 @@ pub fn updateMetrics(self: *Collection) UpdateMetricsError!void {
 
     var metrics = Metrics.calc(self.primary_face_metrics.?);
 
+    // Umi: Warp's bar cursor is 3 points wide (Ghostty's is 1 pixel).
+    // `adjust-cursor-thickness` still changes it.
+    if (self.load_options) |opts| {
+        const px_per_pt = @as(f64, @floatFromInt(opts.size.ydpi)) / 72.0;
+        metrics.cursor_thickness = @max(1, @as(u32, @intFromFloat(@round(3.0 * px_per_pt))));
+    }
+
     metrics.apply(self.metric_modifiers);
 
     self.metrics = metrics;
