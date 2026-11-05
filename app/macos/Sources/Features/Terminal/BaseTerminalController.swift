@@ -829,6 +829,8 @@ class BaseTerminalController: NSWindowController,
         // Perform the resize using the new SplitTree resize method
         do {
             surfaceTree = try surfaceTree.resizing(node: targetNode, by: amount, in: spatialDirection, with: bounds)
+        } catch SplitTree<Ghostty.SurfaceView>.SplitError.paneTooSmall {
+            // Umi: refused, as in Warp: a pane would get smaller than the minimum.
         } catch {
             Ghostty.logger.warning("failed to resize split: \(error, privacy: .public)")
         }
@@ -1006,9 +1008,10 @@ class BaseTerminalController: NSWindowController,
 
     private func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
         // Umi: the divider stays where it's dropped and the panes on each side of it in its
-        // row (or column) share that side equally (L-19).
+        // row (or column) share that side equally (L-19); it stops before a pane would get
+        // smaller than Warp's minimum (190 points).
         do {
-            surfaceTree = try surfaceTree.movingDivider(of: node, to: newRatio)
+            surfaceTree = try surfaceTree.movingDivider(of: node, to: newRatio, keepingMinimumIn: surfaceTree.viewBounds())
         } catch {
             Ghostty.logger.warning("failed to replace node during split resize: \(error, privacy: .public)")
         }
