@@ -402,10 +402,15 @@ extension UmiAgentUI {
             // A new turn clears the mark (Warp clears it when the agent starts again).
             mark = .none
         }
+        let detail: String? = switch snapshot.status {
+        case "error": snapshot.error
+        case "needs_input": snapshot.requests.first?.title
+        default: nil
+        }
         if let paneSurface {
             attention.set(.init(session: snapshot.id, kind: kind, title: snapshot.title, status: snapshot.status,
                                 live: shared.livePanes.contains(paneSurface.id), mark: mark,
-                                lastStop: snapshot.lastStopAt), forPane: paneSurface.id)
+                                lastStop: snapshot.lastStopAt, detail: detail), forPane: paneSurface.id)
         }
         // Background sessions (no pane) count only while they need input.
         var background = attention.background.filter { $0.session != snapshot.id }

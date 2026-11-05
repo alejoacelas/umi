@@ -698,7 +698,11 @@ runs, it is the same session: same id, conversation, folder and settings.
   - an agent shown in a pane that finishes its turn, asks for the user or fails adds an item to an
     inbox, newest first, at most 100; a pane keeps only its newest item, and the agent starting a
     new turn takes it away. An item is read once the user looks at its pane, or if it happened
-    while they looked;
+    while they looked at its tab. Items use Warp's words: the session's title, or "Claude
+    completed" ("Task completed."; Codex: "Notification from Codex"), "Claude needs attention"
+    (what the agent asks, or "Waiting for input."), "Claude failed" (the agent's error, or "The
+    agent encountered an error.") and "Claude cancelled" ("Cancelled by user.") for a turn that
+    was stopped;
   - ⇧⌘U opens the inbox over the window's top right: filters All tabs, Unread and Errors (the last
     two only while they have items), each item with the agent's icon and badge, title, message and
     age. ↑ ↓ choose, Return goes to the session's pane (the item is read), Tab or Shift-Tab change

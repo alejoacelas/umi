@@ -107,34 +107,35 @@ final class UmiInbox: ObservableObject {
             if !Self.busy(old?.status) { remove(pane: pane) }
             return
         }
+        // Warp's titles and messages for CLI agents (agent_management_model.rs).
         let name = new.kind == .claude ? "Claude" : "Codex"
+        let detail = new.detail.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        let wasRunning = Self.busy(old?.status) || old?.status == "needs_input"
         let category: Category
-        let read: Bool
+        let fallback: String
         let message: String
         if (new.status == "needs_input" && old?.status != "needs_input") || (new.mark == .needsYou && old?.mark != .needsYou) {
             category = .request
-            read = new.mark != .needsYou
-            message = "Needs your input."
+            fallback = "\(name) needs attention"
+            message = detail ?? "Waiting for input."
         } else if new.status == "error" && old?.status != "error" {
             category = .error
-            read = UmiLooking.isLookingAtTab(of: pane)
-            message = "The agent encountered an error."
-        } else if (new.status == "idle" && (Self.busy(old?.status) || old?.status == "needs_input"))
-                    || (new.mark == .finished && old?.mark != .finished) {
+            fallback = "\(name) failed"
+            message = detail ?? "The agent encountered an error."
+        } else if new.status == "stopped" && old?.status != "stopped" && wasRunning {
             category = .complete
-            read = new.mark != .finished
-            message = "Task completed."
+            fallback = "\(name) cancelled"
+            message = "Cancelled by user."
+        } else if (new.status == "idle" && wasRunning) || (new.mark == .finished && old?.mark != .finished) {
+            category = .complete
+            fallback = "\(name) completed"
+            message = new.kind == .codex ? "Notification from Codex" : "Task completed."
         } else {
             return
         }
-        let fallback: String
-        switch category {
-        case .complete: fallback = "\(name) completed"
-        case .request: fallback = "\(name) needs you"
-        case .error: fallback = "\(name) failed"
-        }
+        // Read if the user looks at its tab as it happens (Warp's is_terminal_view_visible).
         add(Item(pane: pane, session: new.session, kind: new.kind, title: new.title.isEmpty ? fallback : new.title,
-                 message: message, category: category, read: read, at: Date()))
+                 message: message, category: category, read: UmiLooking.isLookingAtTab(of: pane), at: Date()))
     }
 
     private func add(_ item: Item) {

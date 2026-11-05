@@ -728,3 +728,7 @@ New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24
   outside the panel, then real typing). `debug.ui.inbox.toggle` now takes `window`.
 - **Extended, `test_the_agents_mark_wears_warps_status_badge`**: a session still waiting after the
   user looked (`needs_input`, no mark) keeps the "needs you" badge.
+- **New**: `test_inbox_items_use_warps_words_and_read_rule` (Warp's titles and messages for each
+  category, the agent's own error and question, cancelled, Codex; a request in a sibling pane of
+  the looked-at tab is read and doesn't toast). `debug.ui.attention.set` takes `detail` (what the
+  engine passes: the error or the question).

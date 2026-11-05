@@ -34,6 +34,9 @@ final class UmiAttention: ObservableObject {
         var mark: Mark
         /// When its turn last ended or it last asked for input.
         var lastStop: Date?
+        /// What it says about its state: its error while `error`, what it asks while
+        /// `needs_input` (the inbox's message, as Warp's).
+        var detail: String? = nil
 
         /// The status badge on its mark, as Warp badges its agent icons.
         var badge: Badge {

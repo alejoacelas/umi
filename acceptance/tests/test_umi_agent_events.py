@@ -329,6 +329,49 @@ def test_inbox_and_toast_keys_ui(fresh, ui):
 
 
 @pytest.mark.req("AG-24")
+def test_inbox_items_use_warps_words_and_read_rule(fresh):
+    """Warp's titles and messages for CLI agents; an event in the tab being looked at is read (no
+    toast), whatever its category."""
+    inst = fresh(prefix="acc-inbox-words-")
+    win = window_for(inst, "inbox-words")
+    a, _ = new_tab(inst, win)
+    b, _ = new_tab(inst, win)
+    c, _ = new_tab(inst, win)
+    d, _ = new_tab(inst, win)
+    set_agent(inst, a, "claude", status="working")
+    set_agent(inst, a, "claude", status="needs_input", mark="needs_you")
+    set_agent(inst, b, "claude", status="working")
+    rpc(inst, "debug.ui.attention.set", pane=b, kind="claude", title="", status="error", mark="finished",
+        detail="overloaded: try again later")
+    set_agent(inst, c, "claude", status="working")
+    set_agent(inst, c, "claude", status="stopped", mark="finished")
+    finish(inst, d, kind="codex")
+    got = {i["pane"]: (i["title"], i["message"], i["category"]) for i in inbox(inst)["items"]}
+    assert got[a] == ("Claude needs attention", "Waiting for input.", "request")
+    assert got[b] == ("Claude failed", "overloaded: try again later", "error")
+    assert got[c] == ("Claude cancelled", "Cancelled by user.", "complete")
+    assert got[d] == ("Codex completed", "Notification from Codex", "complete")
+    rpc(inst, "debug.ui.attention.set", pane=a, kind="claude", title="", status="working")
+    rpc(inst, "debug.ui.attention.set", pane=a, kind="claude", title="", status="needs_input", mark="needs_you",
+        detail="Claude needs your permission to use Bash")
+    assert next(i for i in inbox(inst)["items"] if i["pane"] == a)["message"] == "Claude needs your permission to use Bash"
+
+    # A sibling of the pane being looked at asks for the user: read, no toast (Warp's rule).
+    rpc(inst, "debug.ui.assume_active", on=True)
+    try:
+        inst.cli("pane", "focus", win["pane"])
+        sibling = split(inst, "right", win["pane"], "--no-focus")
+        wait_until(lambda: rpc(inst, "debug.ui.attention")["looked_at"] == win["pane"], 5, message="looking at the pane")
+        set_agent(inst, sibling, "claude", title="Beside", status="working")
+        set_agent(inst, sibling, "claude", title="Beside", status="needs_input", mark="needs_you")
+        item = next(i for i in inbox(inst)["items"] if i["pane"] == sibling)
+        assert item["read"] and item["category"] == "request", item
+        assert inbox(inst, window=win["window"])["window_toasts"] == []
+    finally:
+        rpc(inst, "debug.ui.assume_active", on=False)
+
+
+@pytest.mark.req("AG-24")
 def test_the_inbox_belongs_to_one_window_and_goes_with_it(fresh):
     """⇧⌘U in another window opens the inbox there; closing its window closes it, and toasts show
     again."""
