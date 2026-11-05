@@ -298,9 +298,12 @@ private struct UmiFilePaneContent: View {
     }
 }
 
-/// What the header's ⋯ button and its right-click menu offer, as Warp's file pane header menu
-/// does (W: `code/view.rs` `overflow_menu_items`, `notebooks/file/mod.rs`): Maximize pane (Minimize
-/// pane when it is), Reload file, Copy file path, Reveal in Finder.
+/// What the header's ⋯ button and its right-click menu offer, as Warp's ⋯ menus do. The source
+/// view's is the code view's (W: `code/view.rs` `overflow_menu_items`): Maximize pane (Minimize
+/// pane when it is), Copy file path, Reveal in Finder, and View Markdown preview for Markdown. A
+/// preview's is the rendered Markdown pane's (W: `notebooks/file/mod.rs`): Maximize pane, Refresh
+/// file, Open in editor (the source view), Copy file path. The header's right-click menu is an Umi
+/// addition: Warp's header has none.
 @MainActor
 enum UmiFilePaneMenu {
     struct Item {
@@ -316,20 +319,34 @@ enum UmiFilePaneMenu {
         let tree = location.map { $0.window.tree(of: $0.tab) }
         let node = tree?.root?.node(view: pane)
         let maximized = node != nil && tree?.zoomed == node
-        let split = tree?.isSplit ?? false
-        return [
-            Item(title: maximized ? "Minimize pane" : "Maximize pane", enabled: maximized || split) {
-                if (try? UmiLayout.toggleZoom(pane)) == nil { NSSound.beep() }
-            },
-            Item(title: "Reload file", enabled: true, action: { reload(doc, window: pane.window) }, separated: true),
-            Item(title: "Copy file path", enabled: true, action: {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(doc.url.path, forType: .string)
-            }, separated: true),
+        // Warp never disables it; outside a split there is nothing to maximize, so it does nothing.
+        let toggle = Item(title: maximized ? "Minimize pane" : "Maximize pane", enabled: true) {
+            guard maximized || (tree?.isSplit ?? false) else { return }
+            if (try? UmiLayout.toggleZoom(pane)) == nil { NSSound.beep() }
+        }
+        let copyPath = Item(title: "Copy file path", enabled: true, action: {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(doc.url.path, forType: .string)
+        }, separated: true)
+        if doc.mode == .preview {
+            return [
+                toggle,
+                Item(title: "Refresh file", enabled: true, action: { reload(doc, window: pane.window) }, separated: true),
+                Item(title: "Open in editor", enabled: true) { doc.mode = .source },
+                copyPath,
+            ]
+        }
+        var items = [
+            toggle,
+            copyPath,
             Item(title: "Reveal in Finder", enabled: true) {
                 NSWorkspace.shared.activateFileViewerSelecting([doc.url])
             },
         ]
+        if doc.isMarkdown {
+            items.append(Item(title: "View Markdown preview", enabled: true) { doc.mode = .preview })
+        }
+        return items
     }
 
     /// Read the file again; unsaved edits are dropped only after asking (E-3).
