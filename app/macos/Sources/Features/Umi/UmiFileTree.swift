@@ -229,9 +229,17 @@ final class UmiFileTreeModel: ObservableObject {
         refreshIgnored()
     }
 
+    /// A path with symlinks resolved as the file system does (realpath). Foundation's
+    /// `resolvingSymlinksInPath` strips `/private`, but FSEvents reports `/private/var/…`.
+    nonisolated static func realURL(_ url: URL) -> URL {
+        guard let resolved = realpath(url.path, nil) else { return url.standardizedFileURL }
+        defer { free(resolved) }
+        return URL(fileURLWithPath: String(cString: resolved), isDirectory: url.hasDirectoryPath)
+    }
+
     /// The git root of a folder, else the folder; symlinks resolved (FSEvents reports real paths).
     static func projectRoot(for url: URL) -> URL {
-        let url = url.resolvingSymlinksInPath().standardizedFileURL
+        let url = realURL(url)
         var current = url
         while current.path != "/" {
             if FileManager.default.fileExists(atPath: current.appendingPathComponent(".git").path) {
@@ -360,7 +368,7 @@ final class UmiFileTreeModel: ObservableObject {
 
     func node(at url: URL) -> UmiFileNode? {
         guard let root else { return nil }
-        if root.url == url { return root }
+        if root.url.path == url.path { return root }
         let rootPath = root.url.path
         guard url.path.hasPrefix(rootPath + "/") else { return nil }
         var node = root
@@ -377,7 +385,7 @@ final class UmiFileTreeModel: ObservableObject {
     // MARK: Selection and keys
 
     func select(_ url: URL?, scroll: Bool = true) {
-        selected = url
+        selected = url.map { u in rows.first { $0.url.path == u.path && $0.kind == .item }?.url ?? u }
         if scroll { scrollTick &+= 1 }
     }
 
@@ -410,7 +418,7 @@ final class UmiFileTreeModel: ObservableObject {
         guard let row = selectedRow else { return }
         if row.isDirectory && row.expanded {
             setExpanded(row.url, false)
-        } else if let root, row.url != root.url {
+        } else if let root, row.url.path != root.url.path {
             select(row.url.deletingLastPathComponent())
         }
     }
@@ -447,8 +455,8 @@ final class UmiFileTreeModel: ObservableObject {
     /// Show `url` in the tree: open its folders, select it and scroll to it.
     func reveal(_ url: URL) {
         guard let root else { return }
-        let target = url.standardizedFileURL.resolvingSymlinksInPath()
-        let rootURL = root.url.standardizedFileURL.resolvingSymlinksInPath()
+        let target = Self.realURL(url)
+        let rootURL = Self.realURL(root.url)
         guard target.path.hasPrefix(rootURL.path + "/") else { return }
         let relative = target.path.dropFirst(rootURL.path.count + 1).split(separator: "/")
         var node = root
@@ -579,7 +587,7 @@ final class UmiFileTreeModel: ObservableObject {
             alert("Can't move \(url.lastPathComponent) to the Trash", error.localizedDescription)
             return
         }
-        if selected == url { selected = nil }
+        if selected?.path == url.path { selected = nil }
         node(at: url.deletingLastPathComponent())?.loadChildren(force: true)
         rebuild()
     }
@@ -595,7 +603,7 @@ final class UmiFileTreeModel: ObservableObject {
     }
 
     func startRename(_ url: URL) {
-        guard url != root?.url else { return }
+        guard url.path != root?.url.path else { return }
         editText = url.lastPathComponent
         edit = .rename(url)
         select(url)
@@ -679,7 +687,7 @@ final class UmiFileTreeModel: ObservableObject {
             items.append(.init(title: "Open with Default App") { NSWorkspace.shared.open(url) })
         }
         items.append(.init(title: "Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) })
-        if url != root?.url {
+        if url.path != root?.url.path {
             items.append(.init(title: "Rename") { [weak self] in self?.startRename(url) })
             items.append(.init(title: "Delete") { [weak self] in self?.delete(url) })
         }
@@ -1068,7 +1076,7 @@ enum UmiFileTreeDebug {
         case "debug.ui.files.menu", "debug.ui.files.menu.perform":
             let model = UmiFileTreeModel.model(for: window)
             guard let path = params.string("path") else { throw UmiError.badRequest("give the item's path") }
-            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            let url = UmiFileTreeModel.realURL(URL(fileURLWithPath: path))
             guard let row = model.rows.first(where: { $0.url.path == url.path && $0.kind == .item }) else {
                 throw UmiError.notFound("the explorer shows no \(path)")
             }
