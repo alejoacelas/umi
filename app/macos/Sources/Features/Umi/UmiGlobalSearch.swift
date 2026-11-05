@@ -95,15 +95,20 @@ final class UmiGlobalSearchModel: ObservableObject {
         return controller.focusedSurface ?? controller.selectedTab.effectiveFocusedSurface
     }
 
+    /// Follow the focused pane's repository; a search shown for another one runs again.
     func updateRoot() {
-        guard let pane = focusedPane else { return }
+        if resolveRoot(), !query.isEmpty { search() }
+    }
+
+    /// Set `root` from the focused pane. True when it changed.
+    private func resolveRoot() -> Bool {
+        guard let pane = focusedPane else { return false }
         let pwd = UmiTopology.cwd(of: pane)
-        guard !pwd.isEmpty else { return }
+        guard !pwd.isEmpty else { return false }
         let path = UmiFileTreeModel.projectRoot(for: URL(fileURLWithPath: pwd)).path
-        if path != root {
-            root = path
-            if !query.isEmpty { search() }
-        }
+        guard path != root else { return false }
+        root = path
+        return true
     }
 
     // MARK: Searching
@@ -122,7 +127,7 @@ final class UmiGlobalSearchModel: ObservableObject {
         process = nil
         generation &+= 1
         let generation = generation
-        updateRoot()
+        _ = resolveRoot()
         let pattern = query
         guard !pattern.isEmpty, let root else {
             files = []
