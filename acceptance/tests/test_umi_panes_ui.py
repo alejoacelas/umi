@@ -666,7 +666,7 @@ def test_close_other_tabs_and_tabs_below(inst, win):
     assert tab_ids(inst, win["window"]) == [win["tab"], t2]
     p5, t5 = new_tab(inst, win)
     ready(inst, p5)
-    rpc(inst, "debug.ui.menu.perform", tab=t5, title="Close Other Tabs")
+    rpc(inst, "debug.ui.menu.perform", tab=t5, title="Close other tabs")
     assert tab_ids(inst, win["window"]) == [t5]
     # Each closed tab can be reopened.
     assert inst.json("reopen")["kind"] == "tab"

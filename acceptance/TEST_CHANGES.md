@@ -704,6 +704,8 @@ each window shows or hides its own sidebar. **Requirements:** S-2, S-3, S-4, S-8
 - **Changed, `tests/test_umi_panes_ui.py` `test_move_tab_up_and_down_stay_in_their_pin_group`**: a
   move that can't apply is checked to be absent from the menu instead of disabled. The moves and the
   pin-group boundaries it checks are the same.
+- **Changed, `tests/test_umi_panes_ui.py` `test_close_other_tabs_and_tabs_below`**: performs "Close
+  other tabs" (Warp's label) instead of "Close Other Tabs"; nothing else changed.
 - **Changed, `tests/test_umi_panes_ui.py` `test_dragging_a_tab_row_reorders_and_the_row_menu_opens_ui`**:
   the right-click goes to the middle row (where every move and close item applies; on the last row
   Warp leaves out Close Tabs Below) and looks for Warp's titles and the "Default (no color)" dot.
