@@ -115,7 +115,7 @@ enum UmiTheme {
         window-padding-y = 10
         window-padding-balance = true
         window-padding-color = extend
-        unfocused-split-opacity = 0.8
+        unfocused-split-opacity = 1
         mouse-hide-while-typing = true
 
         # ⌃⌘← / ⌃⌘→ move the pane into the previous or next tab.
