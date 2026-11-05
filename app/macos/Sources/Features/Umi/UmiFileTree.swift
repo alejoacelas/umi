@@ -229,8 +229,10 @@ final class UmiFileTreeModel: ObservableObject {
         refreshIgnored()
     }
 
+    /// The git root of a folder, else the folder; symlinks resolved (FSEvents reports real paths).
     static func projectRoot(for url: URL) -> URL {
-        var current = url.standardizedFileURL
+        let url = url.resolvingSymlinksInPath().standardizedFileURL
+        var current = url
         while current.path != "/" {
             if FileManager.default.fileExists(atPath: current.appendingPathComponent(".git").path) {
                 return current
@@ -1066,7 +1068,7 @@ enum UmiFileTreeDebug {
         case "debug.ui.files.menu", "debug.ui.files.menu.perform":
             let model = UmiFileTreeModel.model(for: window)
             guard let path = params.string("path") else { throw UmiError.badRequest("give the item's path") }
-            let url = URL(fileURLWithPath: path)
+            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
             guard let row = model.rows.first(where: { $0.url.path == url.path && $0.kind == .item }) else {
                 throw UmiError.notFound("the explorer shows no \(path)")
             }

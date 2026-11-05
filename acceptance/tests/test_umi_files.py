@@ -145,6 +145,8 @@ def test_explorer_shows_the_git_root_as_warp_does(inst, win, tmp_path):
     top = [name for depth, name in rows if depth == 1]
     assert top == ["build", "src", ".env.example", ".gitignore", "debug.log", "notes.txt", "README.md"], top
     assert ".git" not in top
+    wait_until(lambda: row(files(inst, win), os.path.join(repo, "build"))["ignored"], 5, message="ignored entries marked")
+    state = files(inst, win)
     assert row(state, os.path.join(repo, "build"))["ignored"] is True
     assert row(state, os.path.join(repo, "debug.log"))["ignored"] is True
     assert row(state, os.path.join(repo, "src"))["ignored"] is False
