@@ -389,8 +389,9 @@ def test_explorer_keys(inst, win, tmp_path):
     wait_until(lambda: files(inst, win)["focused"], 5, message="⌃1 shows it with focus in the tree")
     press(inst, win, "ctrl+1")
     wait_until(lambda: inst.json("sidebar", "status")["mode"] == "tabs", 5, message="⌃1 again: Tabs")
+    # The focused pane shows main.rs (opened above), so focus is in its editor.
     responder = rpc(inst, "debug.key", window=win["window"], keys="left", focus="none")["focus"]
-    assert "SurfaceView" in responder, f"focus is back in the pane, not {responder}"
+    assert responder == "UmiEditorTextView", f"focus is back in the pane, not {responder}"
     inst.cli("sidebar", "tabs")
 
 
@@ -415,13 +416,15 @@ def test_explorer_opens_binary_files_with_their_default_app(fresh, tmp_path):
     perform(other, w, readme, "Open with Default App")
     wait_until(lambda: log.exists() and log.read_text().splitlines() == [readme], 5, message="handed to its app")
 
-    # Enter on blob.bin (rows: root, build, src, .env.example, .gitignore, blob.bin).
+    # Enter on blob.bin. The menu selected README.md (the last row); blob.bin is three rows up
+    # (blob.bin, debug.log, notes.txt, README.md).
     other.cli("sidebar", "tabs")
     other.cli("pane", "focus", term["pane"])
     press(other, w, "ctrl+1", focus="terminal")
     wait_until(lambda: files(other, w)["focused"], 5, message="the tree has keyboard focus")
-    for _ in range(6):
-        press(other, w, "down")
+    assert os.path.realpath(files(other, w)["selected"]) == readme
+    for _ in range(3):
+        press(other, w, "up")
     assert os.path.realpath(files(other, w)["selected"]) == blob
     press(other, w, "return")
     wait_until(lambda: log.read_text().splitlines() == [readme, blob], 5, message="Enter hands it to its app")
