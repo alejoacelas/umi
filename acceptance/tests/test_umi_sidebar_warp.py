@@ -392,6 +392,44 @@ def test_the_group_header_menu(inst, win):
     assert t3 in tab_ids(inst, win["window"])
 
 
+@pytest.mark.req("S-14", "L-13")
+def test_moving_a_tab_up_or_down_keeps_groups_whole(inst, win):
+    """As Warp's can_move_tab and move_tab: a grouped tab moves only within its group, and an
+    ungrouped tab next to a group hops over the whole group in one step (one undo step)."""
+    t1 = win["tab"]
+    _, t2 = new_tab(inst, win)
+    _, t3 = new_tab(inst, win)
+    _, t4 = new_tab(inst, win)
+    perform(inst, t2, "New group with tab")
+    sidebar(inst, win["window"], rename_text="Fence")
+    perform(inst, t3, "Move to group > Fence")
+    order = lambda: tab_ids(inst, win["window"])  # noqa: E731
+    assert order() == [t1, t2, t3, t4]
+    # A group's last tab can't leave it downwards, its first can't leave it upwards.
+    assert "Move Tab Down" not in titles(inst, t3) and "Move Tab Up" in titles(inst, t3)
+    assert "Move Tab Up" not in titles(inst, t2) and "Move Tab Down" in titles(inst, t2)
+    assert inst.cli("tab", "move", t3, "--down", "--no-focus", check=False).returncode != 0
+    # The tabs around the group hop over all of it.
+    assert "Move Tab Up" in titles(inst, t4) and "Move Tab Down" in titles(inst, t1)
+    perform(inst, t4, "Move Tab Up")
+    assert order() == [t1, t4, t2, t3]
+    assert inst.rpc("debug.undo")["undo"] == "Move Tab Up"
+    time.sleep(0.5)
+    assert order() == [t1, t4, t2, t3], "the group's normalizing didn't move anything back"
+    assert [g["tabs"] for g in groups(inst, win["window"])["groups"]] == [[t2, t3]]
+    perform(inst, t4, "Move Tab Down")
+    assert order() == [t1, t2, t3, t4]
+    inst.cli("tab", "move", t1, "--down", "--no-focus")
+    assert order() == [t2, t3, t1, t4]
+    inst.rpc("debug.menu.perform", title="Undo")
+    wait_until(lambda: order() == [t1, t2, t3, t4], 5, message="undo put the tab back above the group")
+    # Inside the group: an ordinary swap that stays.
+    perform(inst, t2, "Move Tab Down")
+    time.sleep(0.5)
+    assert order() == [t1, t3, t2, t4]
+    assert groups(inst, win["window"])["groups"][0]["tabs"] == [t3, t2]
+
+
 @pytest.mark.req("S-14", "R-3")
 def test_groups_are_restored_with_the_layout(target, fresh):
     if not target.restoration_safe:

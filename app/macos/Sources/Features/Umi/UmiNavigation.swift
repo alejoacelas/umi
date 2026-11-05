@@ -50,24 +50,39 @@ enum UmiNavigation {
 
     // MARK: Moving tabs
 
-    /// Whether a tab can move up (-1) or down (1): not past the end of its pin group.
+    /// Whether a tab can move up (-1) or down (1), as Warp's `can_move_tab`: a tab in a group
+    /// only within its group; any other tab not past the end of its pin group.
     static func canMoveTab(_ tab: UmiTab, by delta: Int, in window: TerminalController) -> Bool {
         guard let index = window.index(of: tab) else { return false }
         let target = index + delta
-        return window.tabs.indices.contains(target) && window.tabs[target].pinned == tab.pinned
+        guard window.tabs.indices.contains(target) else { return false }
+        let neighbor = window.tabs[target]
+        if let group = tab.groupID { return neighbor.groupID == group }
+        return neighbor.pinned == tab.pinned
+    }
+
+    /// Where a move up or down puts the tab: the next slot, or past the whole of another group
+    /// next to it, so it never lands inside that group (Warp's `move_tab`).
+    private static func moveTarget(_ tab: UmiTab, by delta: Int, in window: TerminalController) -> Int? {
+        guard let index = window.index(of: tab) else { return nil }
+        let target = index + delta
+        guard window.tabs.indices.contains(target) else { return nil }
+        guard let group = window.tabs[target].groupID, group != tab.groupID else { return target }
+        let members = window.tabs.indices.filter { window.tabs[$0].groupID == group }
+        return (delta < 0 ? members.first : members.last) ?? target
     }
 
     /// ⌃⇧← / ⌃⇧→ (and the sidebar row menu): move a tab up (-1) or down (1) the sidebar,
-    /// within its pin group. Returns false at the end of its group.
+    /// within its pin group and its tab group, hopping over other groups whole. Returns false
+    /// when it can't move that way.
     @discardableResult
     static func moveTab(_ tab: UmiTab, by delta: Int, in window: TerminalController) -> Bool {
-        guard canMoveTab(tab, by: delta, in: window), let index = window.index(of: tab) else { return false }
-        let target = index + delta
+        guard canMoveTab(tab, by: delta, in: window), let target = moveTarget(tab, by: delta, in: window) else { return false }
         UmiLayout.undoable(delta < 0 ? "Move Tab Up" : "Move Tab Down", windows: [window]) {
             window.moveTab(tab, to: target)
         }
         UmiEvents.shared.emit("tab.moved", ["tab": tab.idString, "from_window": window.umiIDString,
-                                             "window": window.umiIDString, "index": target + 1])
+                                             "window": window.umiIDString, "index": (window.index(of: tab) ?? target) + 1])
         return true
     }
 
