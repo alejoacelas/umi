@@ -689,3 +689,29 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## Warp's panes, right-click menu, synchronized input and zoom (L-19, L-31–L-33, 2026-11-05)
+
+L-19 gained Warp's 190-point minimum pane size: a dragged divider stops before a pane gets smaller,
+and a keyboard resize or `pane resize` that would is refused. **Requirement:** L-19.
+
+- **Changed, `tests/test_umi_panes_ui.py`**: three drag tests used shares that put a pane at 10–20%
+  of the suite's window (its panes' area is about 928 points wide, so 20% is 186 points). Their
+  numbers now keep every pane above 190 points; what each checks is unchanged:
+  - `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row`: the b|c
+    divider goes to 78% of the row (50/28/22) instead of 80% (50/30/20);
+  - `test_panes_sized_by_hand_keep_their_size_and_the_others_share`: the first divider goes to 28%
+    and the last to 78% (28/25/25/22 instead of 40/25/25/10). The row then never holds five panes
+    (five can't all be 190 points wide there): c is closed before the split that tests a placed
+    divider surviving a split, so the drag after it still shows a keeping its share while b and e
+    share the stretch; the double-click and the last drag use four panes (25/26/26/23 instead of
+    20/23.3/23.3/23.3/10);
+  - `test_a_dragged_middle_divider_shares_both_sides`: the middle divider goes to 56% (28/28/22/22)
+    instead of 75% (37.5/37.5/12.5/12.5).
+- **New, `tests/test_umi_warp_panes.py`**: the minimum (a drag stops at 190 points on either side; a
+  keyboard resize below it is refused and says so), the divider's color and 9-point grab area, the
+  right-click menu's items and order, and Maximize/Minimize, Close and Split from it (L-31), ⌥⌘I,
+  ⌥⇧⌘I and the all-tabs toggle typing into the synced panes only, with the sidebar's mark and the
+  inspector's new key (L-32), and ⌘= ⌘- ⌘0 and ⌥⇧> ⌥⇧< with the terminal's and the sidebar's sizes
+  and the saved level (L-33). The divider grab area, the real right-click, and the key tests are
+  `ui` tests.
