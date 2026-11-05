@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// How the Markdown preview looks: as Warp draws a Markdown file (Warp parity, 2026-11-05).
 /// Warp's numbers, from its notebook editor's styles: Roboto (bundled, OFL) at 13 px with a line
@@ -19,12 +20,27 @@ enum UmiMarkdownStyle {
             ("umi-roboto-latin-ext-wght-italic", "italic", latinExt),
         ]
         return faces.compactMap { face -> String? in
-            guard let url = Bundle.main.url(forResource: face.file, withExtension: "woff2"),
-                  let data = try? Data(contentsOf: url) else { return nil }
+            guard let data = bundled(face.file, "woff2").flatMap({ try? Data(contentsOf: $0) }) else {
+                missing("\(face.file).woff2")
+                return nil
+            }
             return "@font-face { font-family: 'Umi Roboto'; font-style: \(face.style); font-weight: 100 900; "
                 + "src: url(data:font/woff2;base64,\(data.base64EncodedString())) format('woff2'); unicode-range: \(face.range); }"
         }.joined(separator: "\n")
     }()
+
+    /// A file bundled for the preview (MarkdownAssets).
+    static func bundled(_ name: String, _ ext: String) -> URL? {
+        Bundle.main.url(forResource: name, withExtension: ext)
+    }
+
+    /// A bundled file the preview needs is missing or unreadable: the build is broken. Debug
+    /// builds stop here; release builds log it, and the preview shows without that file (the
+    /// system font for Roboto, no highlighting or diagrams for the scripts).
+    static func missing(_ file: String) {
+        Logger(subsystem: Bundle.main.bundleIdentifier ?? "dev.umi.app", category: "markdown").error("Markdown preview: bundled \(file, privacy: .public) is missing")
+        assertionFailure("Markdown preview: bundled \(file) is missing")
+    }
 
     private static let latin = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
     private static let latinExt = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"

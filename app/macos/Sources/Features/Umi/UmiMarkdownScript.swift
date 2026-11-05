@@ -20,8 +20,11 @@ enum UmiMarkdownScript {
     }
 
     private static func resource(_ name: String) -> String {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "js"),
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        guard let url = UmiMarkdownStyle.bundled(name, "js"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            UmiMarkdownStyle.missing("\(name).js")
+            return ""
+        }
         return text
     }
 
@@ -285,7 +288,10 @@ enum UmiMarkdownScript {
         out.rect = { x: r.x, y: r.y, width: r.width, height: r.height };
         out.window_width = window.innerWidth;
         out.page_width = document.documentElement.clientWidth;
-        if (document.fonts) out.roboto_loaded = document.fonts.check("13px 'Umi Roboto'");
+        // Roboto's faces as the page loaded them (four: Latin and Latin Extended, upright and italic).
+        const roboto = [...(document.fonts || [])].filter(f => f.family.replace(/['"]/g, '') === 'Umi Roboto');
+        out.roboto_faces = roboto.length;
+        out.roboto_loaded = roboto.some(f => f.status === 'loaded' && f.style === 'normal');
         return out;
       }
       function click(selector, nth) {

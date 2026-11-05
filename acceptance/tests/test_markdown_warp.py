@@ -119,8 +119,9 @@ def panes_of(inst, tab):
 @pytest.mark.req("MD-1")
 def test_the_preview_looks_like_warps_markdown_view(inst, win, doc):
     shown(inst, win, doc)
+    wait_until(lambda: style(inst, doc, "body")["roboto_loaded"], 5, message="the bundled Roboto loaded")
     body = style(inst, doc, "body", "font-family", "font-size", "line-height", "max-width")
-    assert "Umi Roboto" in body["font-family"] and body["roboto_loaded"], body
+    assert "Umi Roboto" in body["font-family"] and body["roboto_faces"] == 4, body
     assert body["font-size"] == "13px" and body["line-height"] == "19.5px", body
     assert body["max-width"] == "none" and abs(body["rect"]["width"] - body["page_width"]) < 1, "the full width of the pane"
 

@@ -722,3 +722,6 @@ New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing tes
 - Written checks: new **MD-1** check in `CHECKS.md`, with a `run_checks.py` setup that screenshots a
   test document on the default dark background and on a light one; E-2's check now names the
   Rendered / Raw control.
+- `test_the_preview_looks_like_warps_markdown_view` checks that the page has Roboto's four bundled
+  faces and loaded one. Before, it used `document.fonts.check`, which is true when no face matches,
+  so a build without the fonts passed.
