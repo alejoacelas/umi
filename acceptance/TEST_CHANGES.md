@@ -1111,3 +1111,7 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   mac-air-2 the screen locked partway through a full run, and the next UI test walked the menu bar
   for over 30 minutes, which a locked screen makes endless (see `screen_locked`). UI tests that
   start after a lock are now skipped, with the same reason as before. No assertion changed.
+- **Changed, `tests/test_umi_web.py` `test_cmd_click_on_a_link_opens_a_web_pane_ui`**: it now takes
+  the `ui` fixture, as the other UI tests that drive their own instance do, so a locked screen skips
+  it. It built its own `UI` without that check and, with the screen locked, searched the
+  accessibility tree forever. No assertion changed. **Requirements:** E-12.
