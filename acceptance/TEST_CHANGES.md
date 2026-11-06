@@ -1103,3 +1103,11 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   and `test_command_palette_finds_launch_configurations_by_name`**: the full list is read with the
   `actions` mode, because the empty unfiltered palette is Warp's empty state (L-14). Assertions
   unchanged. **Requirements:** L-21.
+
+## Testing warp/parity (2026-11-06)
+
+- **Changed, `conftest.py` fixture `ui`**: it checks for a locked screen before every UI test
+  instead of once per run (the Accessibility check stays once per run, in the new `ui_session`). On
+  mac-air-2 the screen locked partway through a full run, and the next UI test walked the menu bar
+  for over 30 minutes, which a locked screen makes endless (see `screen_locked`). UI tests that
+  start after a lock are now skipped, with the same reason as before. No assertion changed.
