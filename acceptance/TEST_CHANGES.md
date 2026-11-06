@@ -1089,3 +1089,17 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   the item before "Save as New Config" is "Close tab", not "Close Tabs Below": the tab is its
   window's only tab, and Warp's menu (S-4) leaves out close items that can't apply. It still checks
   the item comes after the close items and before the colors. **Requirements:** L-21, S-4.
+- **Changed, `tests/test_umi_sidebar_warp.py` `test_the_row_menu_has_warps_labels_in_warps_order`**:
+  the expected list gains "Save as New Config" before "Tab Color" (L-21 put it there).
+  **Requirements:** S-4.
+- **Changed, `tests/test_umi_blocks.py` `test_the_folder_is_shortened_again_when_the_pane_narrows`**:
+  narrows the pane in 5-column steps until the 190-point minimum (L-19) refuses one, instead of
+  four 10-column steps the minimum refused. It still requires the pane at least 10 columns
+  narrower and the folder shortened to fit. **Requirements:** S-10.
+- **Changed, `tests/test_umi_palette_warp.py` (the ⌘/ shortcuts page test)**: in a Python file's
+  source ⌘/ is the editor's Toggle Comment, an Umi item, so the key counts as handled; the test now
+  checks the line was commented, and still that the page stayed closed. **Requirements:** L-17, E-23.
+- **Changed, `tests/test_umi_layouts.py` `test_palette_lists_configurations_and_opens_the_chosen_one`
+  and `test_command_palette_finds_launch_configurations_by_name`**: the full list is read with the
+  `actions` mode, because the empty unfiltered palette is Warp's empty state (L-14). Assertions
+  unchanged. **Requirements:** L-21.
