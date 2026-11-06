@@ -177,7 +177,10 @@ def test_full_screen_programs_get_the_pane_without_padding(inst, win):
     assert full["cols"] >= before["cols"] + 3 and full["rows"] >= before["rows"] + 1, (before["cols"], full["cols"])
     back = wait_until(lambda: (lambda t: t if t["screen"] == "primary" and abs(t["padding_pt"]["left"] - 16) < 0.6 else None)(
         terminal(inst, pane)), 15, message="the padding back after the program")
-    assert back["cols"] == before["cols"] and back["rows"] == before["rows"], (before["cols"], back["cols"])
+    # The terminal takes its new size on its own thread, a moment after the padding changes.
+    size = lambda t: (t["cols"], t["rows"])  # noqa: E731
+    wait_until(lambda: size(terminal(inst, pane)) == size(before), 5,
+               message=f"the size back after the program: {size(before)}, was {size(back)}")
 
 
 def _unpadded(inst, pane):

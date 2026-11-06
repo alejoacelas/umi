@@ -1115,3 +1115,8 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   the `ui` fixture, as the other UI tests that drive their own instance do, so a locked screen skips
   it. It built its own `UI` without that check and, with the screen locked, searched the
   accessibility tree forever. No assertion changed. **Requirements:** E-12.
+- **Changed, `tests/test_umi_warp_terminal.py` `test_full_screen_programs_get_the_pane_without_padding`**:
+  after the program ends it waits up to 5 s for the columns and rows to be what they were, instead
+  of reading them once at the moment the padding comes back. The terminal takes its new size on its
+  own thread, so on mac-air-2 the read saw the full-screen column count (72 for 68). The required
+  size is unchanged. **Requirements:** S-5, S-12.
