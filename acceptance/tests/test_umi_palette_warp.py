@@ -10,6 +10,7 @@ What the palette shows is read through the internal `debug.palette*` and `debug.
 methods; the `ui` tests press real keys and need the Accessibility permission.
 """
 
+import json
 import os
 import subprocess
 import time
@@ -356,9 +357,12 @@ def test_cmd_slash_toggles_the_shortcuts_page_but_not_in_the_editor_source(inst,
         doc.write_text("x = 1\n")
         inst.cli("edit", str(doc), "--tab", win["tab"])
         inst.cli("editor", "mode", "source", "--tab", win["tab"])
-        result = key(inst, win, "cmd+/", focus="editor")
-        assert not result["handled"], result
-        time.sleep(0.3)
+        key(inst, win, "cmd+/", focus="editor")
+        # The key is the editor's Toggle Comment there (E-23): the line is commented.
+        docs = json.loads(inst.cli("editor", "ls", "--tab", win["tab"]).stdout)["documents"]
+        pane = next(d["pane"] for d in docs if d["path"].endswith("slash.py"))
+        wait_until(lambda: inst.rpc("debug.editor.type", pane=pane, path=str(doc))["text"].startswith("# x = 1"), 5,
+                   message="⌘/ commented the line in the editor")
         assert not page(inst, win)["shown"], "the page stays closed in the editor's source"
     finally:
         if page(inst, win)["shown"]:

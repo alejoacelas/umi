@@ -614,8 +614,6 @@ enum UmiEditor {
         return doc.code
     }
 
-    /// Run `body` on the focused file pane's source view. Find works on the text, so in a preview
-    /// (rendered Markdown, JSON, CSV) ⌘F, ⌘G and ⇧⌘G switch the pane to its source first (E-22).
     /// ⌘F, ⌘G and ⇧⌘G (Umi's Edit items): a rendered Markdown preview has its own find bar
     /// (MD-4), which gets the key; any other file pane finds in its source (E-22).
     static func find(previewAction: Selector, inSource body: @escaping (UmiCodeEditor) -> Void) {
@@ -643,6 +641,8 @@ enum UmiEditor {
         return search(container)
     }
 
+    /// Run `body` on the focused file pane's source view, switching a preview (JSON, CSV, or
+    /// Markdown for ⌥⌘F) to its source first (E-22).
     static func inSource(_ body: @escaping (UmiCodeEditor) -> Void) {
         guard let doc = currentDocument else { return }
         if doc.mode == .source, let code = doc.code { return body(code) }

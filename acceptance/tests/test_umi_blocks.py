@@ -406,8 +406,10 @@ def test_the_folder_is_shortened_again_when_the_pane_narrows(inst, win, tmp_path
     run(inst, pane, f"cd '{deep}'")
     before = active(inst, pane)
     assert len(before["blocks"][-1]["header"]) > before["cols"] - 30, before["blocks"][-1]
-    for _ in range(4):
-        inst.cli("pane", "resize", pane, "left", "10")
+    # Narrower in steps, until the 190-point minimum (L-19) refuses the next one.
+    for _ in range(8):
+        if inst.cli("pane", "resize", pane, "left", "5", check=False).returncode != 0:
+            break
     wait_until(lambda: blocks(inst, pane)["cols"] < before["cols"] - 10, 10, message="the narrower pane")
 
     def fits():

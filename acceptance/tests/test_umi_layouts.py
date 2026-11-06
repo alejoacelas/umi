@@ -519,8 +519,9 @@ def test_palette_lists_configurations_and_opens_the_chosen_one(clean, tmp_path):
     wait_until(lambda: any(t.get("name") == "from-alpha" for w in inst.tree()["windows"] for t in w["tabs"]), 10,
                message="the configuration opened")
     assert len(inst.tree()["windows"]) == 2, "in a new window"
-    # The command palette offers the File menu items and the CLI's actions.
-    titles = [e["title"] for e in rpc(inst, "debug.palette", window=win["window"], mode="commands")["entries"]]
+    # The command palette offers the File menu items and the CLI's actions (its actions: list; the
+    # empty unfiltered palette shows Warp's empty state, L-14).
+    titles = [e["title"] for e in rpc(inst, "debug.palette", window=win["window"], mode="actions")["entries"]]
     assert "Open Launch Configuration…" in titles and "Save New Launch Configuration…" in titles
     assert "List Launch Configurations" in titles
     rpc(inst, "debug.palette.close", window=win["window"])
@@ -537,7 +538,8 @@ def test_command_palette_finds_launch_configurations_by_name(clean, tmp_path):
     entries = rpc(inst, "debug.palette", window=win["window"], mode="commands", query="gamma stack")["entries"]
     assert entries and entries[0]["title"] == "Gamma Stack", [e["title"] for e in entries]
     assert entries[0]["subtitle"].startswith("Launch configuration"), entries[0]
-    everything = [e["title"] for e in rpc(inst, "debug.palette", window=win["window"], mode="commands")["entries"]]
+    # The whole list, as the actions: filter shows it (the empty unfiltered palette is Warp's empty state).
+    everything = [e["title"] for e in rpc(inst, "debug.palette", window=win["window"], mode="actions")["entries"]]
     assert "Gamma Stack" in everything and "broken_one.yaml" not in everything, "files that can't be read stay in ⌃⌘L's list"
     rpc(inst, "debug.palette", window=win["window"], mode="commands", query="gamma stack")
     rpc(inst, "debug.palette.perform", window=win["window"], title="Gamma Stack")

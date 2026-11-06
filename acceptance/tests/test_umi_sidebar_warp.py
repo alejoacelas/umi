@@ -207,6 +207,7 @@ def test_the_row_menu_has_warps_labels_in_warps_order(inst, win, tmp_path):
                 "Rename tab", "Reset tab name", "Rename active pane", "Reset active pane name",
                 "Move Tab Down", "Move Tab Up",
                 "Close tab", "Close other tabs", "Close Tabs Below",
+                "Save as New Config",
                 "Tab Color",
                 "Move Tab to New Window"]
     # "Move Tab to Window" follows when the instance has other windows.
