@@ -265,6 +265,10 @@ enum UmiScreenshot {
         }
         for (webImage, frame) in webImages { webImage.draw(in: frame) }
         // Overlays drawn above the terminals (the palettes) go on top again.
+        if let ghostty = UmiLayout.ghostty,
+           let note = UmiUpdateNote.shared.capturedImage(in: content, background: ghostty.config.backgroundColor) {
+            note.image.draw(in: note.frame)
+        }
         if controller.palette.isPresented, let overlay = controller.palette.capturedImage(in: content) {
             overlay.image.draw(in: overlay.frame)
         }

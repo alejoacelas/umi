@@ -30,6 +30,23 @@ final class UmiUpdateNote: ObservableObject {
         UmiEvents.shared.emit("update.note_dismissed", [:])
     }
 
+    /// The note drawn on its own, for `umi screenshot` (the terminals draw with Metal, so the
+    /// window's cached image has them over the note: it goes on top again, as the palette does).
+    func capturedImage(in content: NSView, background: Color) -> (image: NSImage, frame: NSRect)? {
+        guard note != nil else { return nil }
+        let bounds = content.bounds
+        let host = NSHostingView(rootView: UmiUpdateNoteOverlay(background: background)
+            .frame(width: bounds.width, height: bounds.height))
+        host.frame = NSRect(origin: .zero, size: bounds.size)
+        host.appearance = content.window?.effectiveAppearance
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        return (image, bounds)
+    }
+
     /// `debug.ui.update_note`: what it shows.
     var report: [String: Any] {
         ["update_note": note.map { ["version": $0.version, "notes": $0.notes] as [String: Any] } ?? NSNull()]
