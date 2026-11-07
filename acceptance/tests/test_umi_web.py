@@ -336,3 +336,41 @@ def test_a_hosted_pages_switch_in_umis_header_ui(web, ui):
     assert ui.find(lambda e: ui.role(e) == "AXStaticText" and "AGENTS.md" in (ui.label(e), ui.value(e)), area) is not None
     ui.press(source)
     titled(inst, page, "Hosted source in umi")
+
+
+@pytest.mark.req("E-12", "E-24", "M-7")
+@pytest.mark.ui
+def test_a_stacked_web_pane_shows_its_controls_in_the_stacks_row_ui(web):
+    """In a stack (2026-11-07, "S1") a web pane draws no header of its own: the stack's row holds the
+    chips (the page's tooltip is its address) and the page's switch, GitHub, Reload, Open in
+    Browser and ✕, whose ✕ closes the page."""
+    from harness import UI
+    from test_umi_editor_warp import frame
+    if not UI.available():
+        pytest.skip("this process has no Accessibility permission")
+    inst, site, a = web["inst"], web["site"], web["pane"]
+    ui = UI(inst.app_pid)
+    page = inst.json("edit", site + "/hosted", "--pane", a)["pages"][0]["pane"]
+    titled(inst, page, "Hosted preview in umi")
+    wait_until(lambda: web_header(inst, page)["hosted"], 10, message="the page's state reached Umi")
+    rpc(inst, "debug.ui.split.drop", pane=page, target=a, zone="center")
+    wait_until(lambda: pane(inst, page).get("shown", True) and pane(inst, a).get("shown") is False, 5,
+               message="the page on show in a's place")
+    inst.cli("window", "focus", web["window"])
+    strip = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Stacked panes"), 5, message="the stack's row")
+    area = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Web page"), 5, message="the web pane")
+    sx, sy, sw, sh = frame(ui, strip)
+    assert sh == pytest.approx(30, abs=1), f"one 30-point row: {sh}"
+    assert frame(ui, area)[1] - (sy + sh) == pytest.approx(0, abs=1), "the page starts right under the row"
+    for label in ("Reload", "Open in Browser", "GitHub", "Preview", "Source"):
+        assert ui.button(label, area) is None, f"no {label} in the page's own area"
+        assert ui.button(label, strip) is not None, f"{label} in the row: {ui.texts(strip)}"
+    title = pane(inst, page)["title"]
+    chip = ui.find(lambda e: ui.label(e) == title and ui.role(e) != "AXStaticText", strip)
+    assert chip is not None, ui.texts(strip)
+    assert ui.attr(chip, "AXHelp") == site + "/hosted", ui.attr(chip, "AXHelp")
+    assert frame(ui, ui.button("Reload", strip))[0] > frame(ui, chip)[0] + frame(ui, chip)[2], "controls right of the chips"
+    closes = ui.find_all(lambda e: ui.label(e) == f"Close {title}", strip)
+    ui.press(max(closes, key=lambda e: frame(ui, e)[0]))
+    wait_until(lambda: pane(inst, page) is None, 5, message="the row's ✕ closed the page")
+    assert pane(inst, a).get("shown", True) and not pane(inst, a).get("stack")

@@ -1216,3 +1216,19 @@ anyway (CLI.md).
 - **Added, Swift unit tests `UmiHostedPageTests`**: which hosted-page messages are kept (shape,
   JavaScript booleans, modes, only https://github.com links) and how a path splits into folder and
   name. **Requirements:** E-12, E-24.
+
+## A stack's chips in the pane's header row (2026-11-07)
+
+- **Added, `tests/test_umi_stacks.py`**
+  `test_a_stack_shows_one_row_with_its_chips_and_the_shown_files_controls_ui` (a file stacked on a
+  terminal: one 30-point row with the editor right under it, no header inside the editor, the
+  file's chip with its path as tooltip, Preview / Source, ⋯ and ✕ right of the chips with ✕ at the
+  right end, a right-click on the row opens the preview's pane menu, Source pressed in the row
+  switches the file, and the header comes back when the stack dissolves) and
+  `test_the_rows_close_closes_the_shown_member_and_a_terminal_adds_no_controls_ui` (a terminal on
+  show adds no controls to the row; the file on show adds its ⋯, and the row's ✕ closes the file
+  and leaves the terminal). **Requirements:** M-7, E-24.
+- **Added, `tests/test_umi_web.py`** `test_a_stacked_web_pane_shows_its_controls_in_the_stacks_row_ui`
+  (a hosted page stacked on a terminal: Preview, Source, GitHub, Reload and Open in Browser are in
+  the row and not over the page, the page starts right under the 30-point row, the chip's tooltip
+  is the page's address, and the row's ✕ closes the page). **Requirements:** E-12, E-24, M-7.

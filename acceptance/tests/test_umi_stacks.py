@@ -238,3 +238,109 @@ def test_a_stacked_fourth_pane_survives_a_restart(target, fresh):
     assert [p.get("shown", True) for p in panes] == [True, True, True, False]
     stacks = [p["stack"] for p in panes if p.get("stack")]
     assert stacks and all(len(s) == 2 for s in stacks), panes
+
+
+# ---- One header row (2026-11-07, "S1"): the chips take the place of the shown member's name ----
+
+def strip_of(ui):
+    return wait_until(lambda: ui.find(lambda e: ui.label(e) == "Stacked panes"), 5, message="the stack's row")
+
+
+def rightmost(ui, label, root):
+    """The element with this label farthest right in root (a chip's ✕ shares the header ✕'s label)."""
+    from test_umi_editor_warp import frame
+    found = ui.find_all(lambda e: ui.label(e) == label, root)
+    return max(found, key=lambda e: frame(ui, e)[0]) if found else None
+
+
+@pytest.mark.req("M-7", "E-24")
+def test_a_stack_shows_one_row_with_its_chips_and_the_shown_files_controls_ui(inst, win, tmp_path, ui):
+    """A stacked file pane draws no header of its own: the stack's 30-point row holds the grip, the
+    chips (the shown file's tooltip is its path) and the file's Preview / Source, ⋯ and ✕; a
+    right-click on the row opens the file's pane menu. Leaving the stack gives the header back."""
+    import os
+
+    from test_umi_editor_warp import ed, frame, open_file, open_menu_titles, right_click, K_ESC
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    path = folder / "plan.md"
+    path.write_text("# Plan\n\nShip it.\n")
+    a = win["pane"]
+    f = open_file(inst, win, path)
+    ready(inst, a)
+    rpc(inst, "debug.ui.split.drop", pane=f, target=a, zone="center")
+    assert shown(inst, win["tab"]) == [f] and stack_of(inst, win["tab"], a) == [a, f]
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+    strip = strip_of(ui)
+    group = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Editor"), 5, message="the file pane")
+    sx, sy, sw, sh = frame(ui, strip)
+    gx, gy, gw, gh = frame(ui, group)
+    assert sh == pytest.approx(30, abs=1), f"one 30-point row: {sh}"
+    assert gy - (sy + sh) == pytest.approx(0, abs=1), f"the editor starts right under the row: {gy - (sy + sh)}"
+    # The file's own header isn't drawn.
+    assert ui.find(lambda e: ui.label(e) == "More actions", group) is None, "no ⋯ in the editor"
+    assert ui.button("Preview", group) is None and ui.button("Source", group) is None, "no switch in the editor"
+    assert not any(t.startswith("notes") for t in ui.texts(group)), "no folder / name in the editor"
+    # The row: the chips, then the file's controls on the right.
+    chip = wait_until(lambda: ui.find(lambda e: ui.label(e) == "plan.md" and ui.role(e) != "AXStaticText", strip),
+                      5, message="the file's chip")
+    terminal_chip = [e for e in ui.find_all(lambda e: ui.role(e) == "AXButton" and ui.label(e), strip)
+                     if not ui.label(e).startswith("Close")
+                     and ui.label(e) not in ("plan.md", "Preview", "Source", "More actions")]
+    assert terminal_chip, "a chip for the terminal too"
+    help_text = ui.attr(chip, "AXHelp") or ""
+    assert os.path.realpath(help_text) == os.path.realpath(path), f"the chip's tooltip is the path: {help_text!r}"
+    more = ui.find(lambda e: ui.label(e) == "More actions", strip)
+    preview, source = ui.button("Preview", strip), ui.button("Source", strip)
+    close = rightmost(ui, "Close plan.md", strip)
+    assert more is not None and preview is not None and source is not None and close is not None, ui.texts(strip)
+    cx, _, cw, _ = frame(ui, chip)
+    assert frame(ui, preview)[0] > cx + cw, "the switch is right of the chips"
+    assert frame(ui, preview)[0] < frame(ui, more)[0] < frame(ui, close)[0], "Preview / Source, ⋯, ✕"
+    assert sx + sw - (frame(ui, close)[0] + frame(ui, close)[2]) < 16, "✕ at the row's right end"
+    # A right-click on the row (between the chips and the switch) opens the file's pane menu.
+    gap_left = max(frame(ui, e)[0] + frame(ui, e)[2] for e in [chip] + terminal_chip)
+    gap_right = frame(ui, preview)[0]
+    assert gap_right - gap_left > 20, "room between the chips and the controls"
+    right_click((gap_left, sy, gap_right - gap_left, sh))
+    titles = wait_until(lambda: open_menu_titles(ui), 3, message="the row's right-click menu")
+    ui.key(K_ESC)
+    wait_until(lambda: not open_menu_titles(ui), 3, message="Esc closes the menu")
+    assert titles == ["Maximize pane", "Refresh file", "Open in editor", "Copy file path"], titles
+    # The switch works from the row.
+    ui.press(source)
+    wait_until(lambda: ed(inst, f)["mode"] == "source", 5, message="Source from the row")
+    # The terminal leaves: the stack of one dissolves and the file's own header comes back.
+    inst.cli("pane", "close", a)
+    wait_until(lambda: ui.find(lambda e: ui.label(e) == "Stacked panes") is None, 5, message="the row gone")
+    group = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Editor"), 5, message="the file pane")
+    wait_until(lambda: ui.find(lambda e: ui.label(e) == "More actions", group), 5, message="the header back")
+    assert ui.button("Preview", group) is not None
+
+
+@pytest.mark.req("M-7", "E-24")
+def test_the_rows_close_closes_the_shown_member_and_a_terminal_adds_no_controls_ui(inst, win, tmp_path, ui):
+    from test_umi_editor_warp import open_file
+    path = tmp_path / "todo.py"
+    path.write_text("x = 1\n")
+    f = open_file(inst, win, path)
+    b = split(inst, "right", f)
+    ready(inst, b)
+    rpc(inst, "debug.ui.split.drop", pane=b, target=f, zone="center")
+    assert shown(inst, win["tab"]) == [win["pane"], b] and stack_of(inst, win["tab"], f) == [f, b]
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+    strip = strip_of(ui)
+    # A terminal on show: the row has its chips and nothing else, as the strip had.
+    wait_until(lambda: ui.find(lambda e: ui.label(e) == "todo.py", strip), 5, message="the file's chip")
+    assert ui.find(lambda e: ui.label(e) in ("More actions", "Reload", "Preview", "Source"), strip) is None, \
+        ui.texts(strip)
+    # The file on show: its controls join the row; the row's ✕ closes it (the terminal stays).
+    inst.cli("pane", "focus", f)
+    more = wait_until(lambda: ui.find(lambda e: ui.label(e) == "More actions", strip_of(ui)), 5,
+                      message="the file's ⋯ in the row")
+    assert more is not None
+    ui.press(rightmost(ui, "Close todo.py", strip_of(ui)))
+    wait_until(lambda: f not in [p["id"] for p in tab_of(inst, win["tab"])["panes"]], 5, message="the file closed")
+    assert shown(inst, win["tab"]) == [win["pane"], b] and not stack_of(inst, win["tab"], b)
