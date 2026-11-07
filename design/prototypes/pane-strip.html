@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Pane Strip</title>
+<style>
+  :root {
+    --bg: #000;
+    --page: #0a0a0a;
+    --side: #0d0d0d;
+    --ink: #e6e6e6;
+    --dim: #8a8a8a;
+    --faint: #5a5a5a;
+    --line: #1c1c1c;
+    --line2: #262626;
+    --cyan: #19aad8;
+    --amber: #e0b04a;
+    --green: #6cc28a;
+    --chrome: rgba(255,255,255,.035);
+    --selfill: rgba(255,255,255,.085);
+    --hover: rgba(255,255,255,.06);
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 52px 0 6px; }
+  p.lead, p.sub { color: var(--dim); margin: 0 0 14px; max-width: 800px; }
+  a { color: var(--cyan); }
+  code, pre { font-family: var(--mono); font-size: 12px; }
+  pre { margin: 0; white-space: pre-wrap; color: #cfcfcf; }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; color: var(--dim); }
+  .held { font-size: 12px; color: var(--faint); margin: 0 0 12px; }
+  .held b { color: var(--dim); font-weight: 500; }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; align-items: center; }
+  .bar .spacer { flex: 1; }
+  button.act, button.opt { background: #141414; color: var(--ink); border: 1px solid var(--line2); border-radius: 6px; padding: 6px 10px; font: 13px var(--sans); cursor: pointer; }
+  button.opt { background: transparent; color: var(--dim); }
+  button.opt[aria-pressed="true"] { color: var(--ink); border-color: #555; background: #141414; }
+  button.act:hover, button.opt:hover { border-color: #555; }
+  button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+  .caption { font-size: 12.5px; color: var(--dim); min-height: 20px; }
+  .caption b { color: var(--ink); font-weight: 500; }
+
+  /* ---------- grid of option windows ---------- */
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .grid.one { grid-template-columns: minmax(0, 1fr); }
+  .grid.one .win.mid { height: 260px; }
+  .cell h3 { margin: 0 0 2px; font-size: 13.5px; font-weight: 600; }
+  .cell .one { color: var(--dim); font-size: 12.5px; margin: 0 0 8px; min-height: 36px; }
+  .cell details { margin-top: 8px; font-size: 12.5px; }
+  .cell summary { cursor: pointer; color: var(--dim); }
+  .cell details pre { background: #0d0d0d; border-radius: 4px; padding: 8px; font-size: 11px; margin: 6px 0; }
+  .cell ul { margin: 4px 0; padding-left: 16px; }
+  .cell li { margin: 1px 0; }
+  .cell .pc { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cell .pc h4, .notes h4 { margin: 8px 0 2px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; }
+
+  /* ---------- mock window ---------- */
+  .win { position: relative; background: var(--bg); border: 1px solid #222; border-radius: 10px; overflow: hidden; display: flex; box-shadow: 0 10px 40px rgba(0,0,0,.5); transition: width .3s; max-width: 100%; }
+  .win.small { height: 210px; }
+  .win.mid { height: 300px; }
+  .win.big { height: 420px; }
+  .side { width: 150px; background: var(--side); flex: none; display: flex; flex-direction: column; padding: 0 0 8px; }
+  .lights { height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 12px; flex: none; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; background: #2a2a2a; }
+  .row { display: flex; gap: 8px; padding: 7px 10px; margin: 1px 6px; border-radius: 6px; }
+  .row.sel { background: rgba(255,255,255,.07); }
+  .row .ic { width: 14px; flex: none; font: 11px var(--mono); color: var(--dim); text-align: center; padding-top: 1px; }
+  .row .ic.needs { color: var(--amber); }
+  .row .tx { min-width: 0; flex: 1; }
+  .row .l1 { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .l2 { font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+  .band { height: 30px; flex: none; display: flex; align-items: center; padding: 0 8px; gap: 2px; position: relative; }
+  .band.empty::after { content: "title bar (drag area)"; font-size: 10px; color: #262626; padding-left: 4px; }
+  .tabstrip { height: 30px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px; background: var(--chrome); overflow: hidden; }
+  .places { flex: 1; display: flex; min-height: 0; }
+  .place { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; border-left: 1px solid #1a1a1a; transition: flex .3s; }
+  .place:first-child { border-left: none; }
+  .place.focus::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--cyan); z-index: 3; }
+  .place.arrive { animation: arrive .35s ease-out; }
+  @keyframes arrive { from { opacity: 0; } }
+  .hdr { height: 30px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--chrome); font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; }
+  .hdr .grip { color: var(--faint); font-size: 10px; }
+  .hdr .fold { color: var(--dim); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .hdr .nm { color: var(--ink); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .hdr .grow { flex: 1; min-width: 4px; }
+  .hdr .mode { display: flex; border: 1px solid #2a2a2a; border-radius: 5px; font-size: 11px; flex: none; }
+  .hdr .mode span { padding: 1px 6px; color: var(--faint); }
+  .hdr .mode span.on { color: var(--ink); background: var(--selfill); }
+  .hdr .x { color: var(--faint); font-size: 10px; flex: none; }
+  .txt { flex: 1; padding: 10px 12px; font: 11px/1.6 var(--mono); color: #d0d0d0; overflow: hidden; min-height: 0; }
+  .txt .d { color: var(--faint); }
+  .txt .a { color: var(--amber); }
+  .txt .h { font: 600 13px var(--sans); color: #fff; }
+  .txt .m { font: 12px/1.55 var(--sans); color: #bbb; }
+
+  /* chips (Umi's stack strip: 22 px chips, 12 pt medium, selected fill) */
+  .chip { height: 22px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 500; color: rgba(255,255,255,.42); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; flex: none; cursor: default; position: relative; }
+  .chip .g { font: 10px var(--mono); opacity: .9; }
+  .chip.vis { color: rgba(255,255,255,.80); }
+  .chip.foc { color: rgba(255,255,255,.95); background: var(--selfill); }
+  .chip.hid { color: rgba(255,255,255,.34); }
+  .chip.hid .nm { font-style: italic; }
+  .chip.cur { box-shadow: inset 0 0 0 1px var(--cyan); }
+  .chip .sd { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); flex: none; }
+  .chip .sw { width: 6px; height: 6px; border-radius: 50%; border: 1px solid rgba(255,255,255,.5); flex: none; }
+  .sep { width: 1px; height: 14px; background: #2a2a2a; margin: 0 4px; flex: none; }
+  .more .sd { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-right: 4px; vertical-align: 1px; }
+  .more { font-size: 11.5px; color: rgba(255,255,255,.42); padding: 0 6px; white-space: nowrap; flex: none; }
+
+  /* option D (on demand) */
+  .handle { position: absolute; right: 8px; top: 5px; height: 20px; font-size: 11px; color: var(--dim); border: 1px solid #2a2a2a; border-radius: 10px; padding: 0 8px; display: flex; align-items: center; gap: 5px; background: #0b0b0b; cursor: pointer; z-index: 4; }
+  .handle .sd { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+  .drop { overflow: hidden; position: absolute; left: 0; right: 92px; top: 0; height: 30px; display: flex; align-items: center; gap: 2px; padding: 0 8px; background: #111; border-bottom: 1px solid #222; box-shadow: 0 6px 18px rgba(0,0,0,.6); z-index: 5; transform: translateY(-100%); opacity: 0; transition: transform .2s ease-out, opacity .2s; pointer-events: none; }
+  .drop.on { transform: none; opacity: 1; pointer-events: auto; }
+
+  .meter { position: absolute; right: 8px; bottom: 6px; font: 10px var(--mono); color: var(--faint); background: #0b0b0b; padding: 1px 6px; border-radius: 4px; border: 1px solid #1c1c1c; z-index: 4; }
+
+  /* section 3 */
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  .notes { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px; font-size: 12.5px; }
+  .notes h3 { margin: 0 0 4px; font-size: 14px; }
+  .notes .one { color: var(--dim); margin: 0 0 8px; }
+  .notes ul { margin: 0; padding-left: 16px; }
+  .notes pre { background: #0d0d0d; border-radius: 4px; padding: 8px; font-size: 11px; }
+  .legend { font-size: 12px; color: var(--faint); margin: 0 0 10px; line-height: 1.9; }
+  .legend .map { color: var(--dim); }
+  .klog { margin-top: 10px; font-size: 12px; color: var(--dim); min-height: 36px; }
+  .peek { position: absolute; inset: 0; background: rgba(8,8,8,.92); z-index: 4; display: flex; flex-direction: column; border: 1px solid #2d4b4f; }
+  .peek .ph { height: 30px; display: flex; align-items: center; padding: 0 10px; font-size: 11.5px; color: var(--dim); gap: 8px; border-bottom: 1px solid #1e1e1e; }
+  .peek .ph { white-space: nowrap; overflow: hidden; }
+  .peek .ph b { color: var(--ink); font-weight: 500; flex: none; }
+  .peek .ph .rp { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .peek .ph .kk { flex: none; }
+  .switcher { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #141414; border: 1px solid #2c2c2c; border-radius: 10px; padding: 10px; z-index: 6; display: flex; gap: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.7); }
+  .switcher .it { width: 112px; height: 86px; border: 1px solid #262626; border-radius: 6px; padding: 6px; font: 9px/1.4 var(--mono); color: #999; overflow: hidden; background: #050505; position: relative; }
+  .switcher .it .t { font: 500 11px var(--sans); color: var(--ink); margin-bottom: 4px; display: flex; gap: 4px; align-items: center; white-space: nowrap; overflow: hidden; }
+  .switcher .it.hid { border-style: dashed; opacity: .7; }
+  .switcher .it.on { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); opacity: 1; }
+  .switcher .it .tag { position: absolute; right: 6px; bottom: 4px; font: 9px var(--sans); color: var(--faint); }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .stage { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>The pane strip</h1>
+  <p class="lead">Option C from <a href="where-panes-live.html">Where panes live</a>, chosen for showing hidden panes and for bringing them back: every pane of a tab gets a chip in a strip, bright when on show, dim when hidden. Three questions, one per section. In each section only that question changes; everything else stays at the stated default. Content is made up; syntax is illustrative. Focus and "needs you" are drawn as Umi draws them today (the cyan line, an amber dot); the single per-pane indicator that may replace them is explored in <a href="pane-indicator.html">The pane indicator</a>. Also: <a href="resurfacing.html">Resurfacing</a> · <a href="drawer.html">The drawer</a> · <a href="keyboard-move.html">Moving panes from the keyboard</a>.</p>
+
+  <!-- ===================== 1. ORDER ===================== -->
+  <h2>1. The order of the chips</h2>
+  <p class="sub">The same five steps play in all four windows at once. Watch which chips move, and whether you could find a pane by its position.</p>
+  <p class="held">Held: <b>one strip across the tab</b> · <b>a returning pane takes a free place</b> · tab <b>website</b> with five panes, three on show.</p>
+  <div class="bar">
+    <button class="act" id="o-play">Play the five steps</button>
+    <button class="act" id="o-step">One step</button>
+    <button class="act" id="o-reset">Reset</button>
+    <span class="spacer"></span>
+  </div>
+  <div class="caption" id="o-cap">Start: redesign, projects.md and dev server on show; image-resize and deploy-check hidden. Focus in redesign.</div>
+  <div class="grid" id="o-grid"></div>
+
+  <!-- ===================== 2. PLACEMENT ===================== -->
+  <h2>2. Where the strip sits</h2>
+  <p class="sub">The same tab in each: a Claude pane, a Markdown file with its header, and a place holding a stack of two notes, with the cyan line on the focused file. Three panes are hidden; deploy-check needs you. The grey number in each window's corner is how much chrome sits above the first line of text in the file pane.</p>
+  <p class="held">Held: <b>spatial order</b> (on-show panes left to right, then hidden ones) · <b>⌘[ ⌘] unchanged</b>.</p>
+  <div class="bar">
+    <button class="opt" id="p-narrow" aria-pressed="false">Narrowest window (640 px, Umi's minimum)</button>
+    <span class="spacer"></span>
+  </div>
+  <div class="grid one" id="p-grid"></div>
+
+  <!-- ===================== 3. KEYS ===================== -->
+  <h2>3. ⌘[ and ⌘] with hidden panes</h2>
+  <p class="sub">Use the real keys on this page. The browser takes ⌘[, so plain <kbd>[</kbd> and <kbd>]</kbd> stand in for it. Today ⌘[ ⌘] walk a stack's members, or the tab's panes when the pane isn't stacked.</p>
+  <p class="held">Held: <b>spatial order</b> · <b>one strip across the tab</b> · a tab shows at most <b>three panes</b>; bringing one in hides the pane used least recently.</p>
+  <div class="bar" id="k-bar"></div>
+  <div class="legend" id="k-legend"></div>
+  <div class="stage">
+    <div class="win big" id="k-win"></div>
+    <aside class="notes" id="k-notes"></aside>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const G = { claude: '✻', term: '›_', file: '¶' };
+
+  // ---------- shared pane content ----------
+  const BODY = {
+    redesign: [['', '● Rebuilt the projects page with the new card grid.'], ['d', '✻ Cooked for 2m 10s'], ['', '● Lighthouse: performance 97.']],
+    'projects.md': [['h', 'Projects'], ['m', 'Things I have built and still use, newest first.'], ['m', '<b>Umi</b>, a terminal for agents.']],
+    'dev server': [['d', '~/site'], ['', '$ npm run dev'], ['d', '  ready on localhost:4321']],
+    'deploy-check': [['', '● Preview deploy is up. The apex domain still points at the old host.'], ['a', 'Status: waiting on you: approve the DNS change']],
+    'image-resize': [['', '● Resized 48 images to AVIF.'], ['', 'Status: done']],
+    'notes.md': [['h', 'Notes'], ['m', 'Card grid: 3 columns from 900 px.']],
+    'todo.md': [['h', 'Todo'], ['m', 'Redirects for /work.']],
+  };
+  const txt = (name, n = 3) => (BODY[name] || []).slice(0, n).map(([c, t]) => `<div class="${c}">${t}</div>`).join('');
+
+  function chip(p, { vis, foc, cur, needs, working } = {}) {
+    const cls = ['chip', vis ? 'vis' : 'hid'];
+    if (foc) cls.push('foc');
+    if (cur) cls.push('cur');
+    const dot = needs ? '<span class="sd"></span>' : (working ? '<span class="sw"></span>' : '');
+    return `<span class="${cls.join(' ')}" data-cid="${p.id}"><span class="g">${G[p.kind]}</span>${dot}<span class="nm">${esc(p.name)}</span></span>`;
+  }
+
+  // FLIP: animate chips of a container from their old positions
+  function flip(container, renderFn) {
+    const before = {};
+    container.querySelectorAll('[data-cid]').forEach((el) => { before[el.closest('[data-win]').dataset.win + el.dataset.cid] = el.getBoundingClientRect(); });
+    renderFn();
+    container.querySelectorAll('[data-cid]').forEach((el) => {
+      const key = el.closest('[data-win]').dataset.win + el.dataset.cid;
+      const b = before[key];
+      if (!b) { el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250 }); return; }
+      const a = el.getBoundingClientRect();
+      const dx = b.left - a.left, dy = b.top - a.top;
+      if (dx || dy) el.animate([{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }], { duration: 280, easing: 'ease-out' });
+    });
+  }
+
+  // Chips that don't fit collapse into "+N" from the end: hidden ones first, then others
+  // (never the focused one), the way the stack strip names only what fits.
+  function collapse(el) {
+    const over = () => el.scrollWidth > el.clientWidth + 1;
+    if (!over() || !el.querySelector('.chip')) return;
+    const more = document.createElement('span');
+    more.className = 'more';
+    let n = 0, needs = false;
+    while (over()) {
+      const hid = [...el.querySelectorAll('.chip.hid')];
+      const any = [...el.querySelectorAll('.chip:not(.foc)')];
+      const pick = hid.pop() || any.pop();
+      if (!pick) break;
+      if (pick.querySelector('.sd')) needs = true;
+      pick.remove(); n++;
+      const chips = el.querySelectorAll('.chip');
+      const last = chips[chips.length - 1];
+      el.querySelectorAll('.sep').forEach((sp) => { if (!sp.nextElementSibling || !sp.nextElementSibling.classList.contains('chip')) sp.remove(); });
+      more.innerHTML = (needs ? '<span class="sd"></span>' : '') + `+${n}`;
+      more.title = needs ? 'one of these needs you' : `${n} more`;
+      if (last) last.after(more); else el.prepend(more);
+    }
+  }
+  function collapseAll(root) { root.querySelectorAll('.tabstrip, .band, .hdr, .drop').forEach(collapse); }
+
+  // =====================================================================
+  // 1. ORDER
+  // =====================================================================
+  const ORDERS = [
+    { id: 'spatial', title: 'A. Spatial', one: 'On-show panes left to right as they sit on screen, a thin divider, then hidden ones, most recently hidden first.',
+      expr: 'tab.strip.order = spatial', pros: ['A chip\'s position matches the pane\'s position', 'Hidden ones are always together on the right'],
+      cons: ['Chips move whenever panes move, hide or come back'] },
+    { id: 'created', title: 'B. Creation order, fixed', one: 'Each pane keeps the slot it got when it was made. On show or hidden only changes how bright it is.',
+      expr: 'tab.strip.order = created', pros: ['Nothing ever moves: muscle memory works', 'Like browser tabs'],
+      cons: ['Bright and dim chips interleave', 'Strip order and screen order disagree after a move'] },
+    { id: 'recent', title: 'C. Most recently used', one: 'The pane you used last is first. Hidden ones fall to the right as they go unused.',
+      expr: 'tab.strip.order = recent', pros: ['What you were just doing is always at the left', 'Pairs with a hold-and-tap switcher'],
+      cons: ['Reorders on every focus change', 'Hard to find a pane by position'] },
+    { id: 'needs', title: 'D. Needs you first', one: 'Panes waiting on you go first, then spatial order for the rest.',
+      expr: 'tab.strip.order = needs-you, spatial\n# any named list works:\ntab.strip.order = list:important', pros: ['The strip doubles as a to-do for the tab', 'Stable otherwise'],
+      cons: ['A pane jumps to the front when it needs you, then back'] },
+  ];
+
+  function orderFresh() {
+    return {
+      step: 0,
+      panes: [
+        { id: 'r', name: 'redesign', kind: 'claude', created: 0 },
+        { id: 'p', name: 'projects.md', kind: 'file', created: 1 },
+        { id: 'i', name: 'image-resize', kind: 'claude', created: 2 },
+        { id: 'v', name: 'dev server', kind: 'term', created: 3 },
+        { id: 'd', name: 'deploy-check', kind: 'claude', created: 4 },
+      ],
+      layout: ['r', 'p', 'v'],          // on show, left to right
+      hidden: ['d', 'i'],               // most recently hidden first
+      recent: ['r', 'v', 'p', 'd', 'i'],// most recent first
+      focus: 'r',
+      needs: [],
+      working: ['d'],
+    };
+  }
+  let os = orderFresh();
+  const STEPS = [
+    ['You focus <b>dev server</b>.', (s) => { s.focus = 'v'; s.recent = ['v', ...s.recent.filter((x) => x !== 'v')]; }],
+    ['You hide <b>projects.md</b>.', (s) => { s.layout = s.layout.filter((x) => x !== 'p'); s.hidden = ['p', ...s.hidden]; }],
+    ['<b>deploy-check</b> ends its turn not done, and comes back into the free place.', (s) => { s.hidden = s.hidden.filter((x) => x !== 'd'); s.layout.push('d'); s.needs = ['d']; s.working = []; }],
+    ['You move <b>dev server</b> to the far left.', (s) => { s.layout = ['v', ...s.layout.filter((x) => x !== 'v')]; }],
+    ['You look at <b>deploy-check</b>; its mark clears.', (s) => { s.focus = 'd'; s.needs = []; s.recent = ['d', ...s.recent.filter((x) => x !== 'd')]; }],
+  ];
+
+  function orderedChips(s, mode) {
+    const pane = (id) => s.panes.find((p) => p.id === id);
+    const spatial = [...s.layout, '|', ...s.hidden];
+    if (mode === 'spatial') return spatial;
+    if (mode === 'created') return [...s.panes].sort((a, b) => a.created - b.created).map((p) => p.id);
+    if (mode === 'recent') return s.recent.slice();
+    if (mode === 'needs') { const n = s.needs.slice(); return [...n, ...spatial.filter((x) => !n.includes(x))]; }
+    return spatial;
+  }
+
+  function orderWin(mode) {
+    const s = os;
+    const pane = (id) => s.panes.find((p) => p.id === id);
+    const strip = orderedChips(s, mode).map((id) => id === '|' ? '<span class="sep"></span>' :
+      chip(pane(id), { vis: s.layout.includes(id), foc: id === s.focus, needs: s.needs.includes(id), working: s.working.includes(id) })).join('');
+    const places = s.layout.map((id) => `<div class="place${id === s.focus ? ' focus' : ''}"><div class="txt">${txt(pane(id).name, 2)}</div></div>`).join('');
+    return `<div class="content" data-win="o-${mode}"><div class="band empty"></div><div class="tabstrip">${strip}</div><div class="places">${places}</div></div>`;
+  }
+
+  function renderOrder(animate) {
+    const grid = $('#o-grid');
+    const draw = () => {
+      if (!grid.children.length) {
+        grid.innerHTML = ORDERS.map((o) => `<div class="cell"><h3>${o.title}</h3><p class="one">${o.one}</p>
+          <div class="win small" id="ow-${o.id}"></div>
+          <details><summary>Expressed as · for · against</summary><pre>${esc(o.expr)}</pre>
+          <div class="pc"><div><h4>For</h4><ul>${o.pros.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+          <div><h4>Against</h4><ul>${o.cons.map((x) => `<li>${x}</li>`).join('')}</ul></div></div></details></div>`).join('');
+      }
+      ORDERS.forEach((o) => { const w = $('#ow-' + o.id); w.innerHTML = orderWin(o.id); collapseAll(w); });
+    };
+    if (animate) flip(grid, draw); else draw();
+  }
+
+  let playTimer = null;
+  function oStep() {
+    if (os.step >= STEPS.length) { $('#o-cap').innerHTML = 'All five steps done. Reset to play again.'; return false; }
+    const [cap, fn] = STEPS[os.step];
+    fn(os); os.step++;
+    $('#o-cap').innerHTML = `Step ${os.step} of ${STEPS.length}: ${cap}`;
+    renderOrder(true);
+    return os.step < STEPS.length;
+  }
+  function oStop() { clearInterval(playTimer); playTimer = null; }
+  $('#o-play').addEventListener('click', () => {
+    oStop();
+    if (os.step >= STEPS.length) oReset();
+    oStep();
+    playTimer = setInterval(() => { if (!oStep()) oStop(); }, 1700);
+  });
+  $('#o-step').addEventListener('click', () => { oStop(); oStep(); });
+  function oReset() { oStop(); os = orderFresh(); $('#o-cap').innerHTML = 'Start: redesign, projects.md and dev server on show; image-resize and deploy-check hidden. Focus in redesign.'; renderOrder(false); }
+  $('#o-reset').addEventListener('click', oReset);
+  renderOrder(false);
+
+  // =====================================================================
+  // 2. PLACEMENT
+  // =====================================================================
+  const PLACES = [
+    { id: 'tab', title: 'A. A strip across the tab', one: 'One row under the title bar, above every place. Each place keeps its own header below it.',
+      expr: 'tab.strip.place = top', chrome: 90,
+      pros: ['One place to look for every pane in the tab', 'Clear "this is the tab" level'],
+      cons: ['Two rows of chrome above a file (strip + header), three with a stack', 'Duplicates the stack strip\'s chips'] },
+    { id: 'place', title: 'B. On each place\'s top edge', one: 'No tab-wide row. Hidden panes join the strip of the place they would come back to; the file header and the stack strip host the chips.',
+      expr: 'tab.strip.place = per-place\n# a hidden pane returns where it was hidden from', chrome: 60,
+      pros: ['No new row: hidden panes look like stack members', 'One concept: hiding = stacking out of sight'],
+      cons: ['A place with no header grows one when it gets hidden members', 'Harder to see the whole tab at once'] },
+    { id: 'band', title: 'C. In the title bar', one: 'The strip lives in the empty title-bar band above the panes, which is drag area today.',
+      expr: 'tab.strip.place = titlebar', chrome: 60,
+      pros: ['Costs no height at all', 'Reads like a browser\'s tabs, at the window\'s top'],
+      cons: ['Less room to drag the window', 'Narrow windows collapse chips into "+N" quickly'] },
+    { id: 'demand', title: 'D. Only on demand', one: 'Nothing while every pane is on show. With hidden panes, a small handle in the title bar; hovering it (or a key) drops the strip over the band.',
+      expr: 'tab.strip.place = on-demand\nkey.cmd+shift+\\ = tab strip', chrome: 60,
+      pros: ['The calmest: no chips most of the time', 'The handle still says "3 hidden, one needs you"'],
+      cons: ['Hidden panes are one hover away, not one glance', 'The drop-down covers the title bar while open'] },
+  ];
+  const P_PANES = [
+    { id: 'r', name: 'redesign', kind: 'claude', vis: true },
+    { id: 'p', name: 'projects.md', kind: 'file', vis: true, foc: true },
+    { id: 'n', name: 'notes.md', kind: 'file', vis: true },
+    { id: 't', name: 'todo.md', kind: 'file', vis: false, stacked: true },
+    { id: 'd', name: 'deploy-check', kind: 'claude', vis: false, needs: true, home: 'r' },
+    { id: 'i', name: 'image-resize', kind: 'claude', vis: false, home: 'p' },
+    { id: 'v', name: 'dev server', kind: 'term', vis: false, home: 'r' },
+  ];
+  let narrow = false;
+  let dropOpen = {};
+
+  function fileHdr(name, folder, extraLeft = '') {
+    return `<div class="hdr">${extraLeft || `<span class="grip">≡</span><span class="g" style="font:10px var(--mono);color:var(--dim)">¶</span><span class="fold">${folder} /</span><span class="nm">${name}</span>`}<span class="grow"></span><span class="mode"><span class="on">Preview</span><span>Source</span></span><span class="x">✕</span></div>`;
+  }
+  function stackStrip(chips) { return `<div class="hdr" style="gap:2px">${chips}</div>`; }
+  const pc = (id, extra = {}) => { const p = P_PANES.find((x) => x.id === id); return chip(p, { vis: extra.vis ?? p.vis, foc: extra.foc, needs: p.needs }); };
+
+  function placeWin(mode) {
+    const allChips = () => {
+      const vis = ['r', 'p', 'n', 't'].map((id) => pc(id, { foc: id === 'p', vis: id !== 't' ? true : false }));
+      const hid = ['d', 'i', 'v'].map((id) => pc(id));
+      return [...vis.slice(0, 3), pc('t', { vis: false }), '<span class="sep"></span>', ...hid].join('');
+    };
+    const side = `<div class="side"><div class="lights"><i></i><i></i><i></i></div>
+      <div class="row"><div class="ic">✻</div><div class="tx"><div class="l1">umi</div><div class="l2">Shared header</div></div></div>
+      <div class="row sel"><div class="ic needs">✻</div><div class="tx"><div class="l1">website</div><div class="l2">deploy-check: approve DNS</div></div></div>
+      <div class="row"><div class="ic">›_</div><div class="tx"><div class="l1">~/best/desk</div><div class="l2">git pull</div></div></div></div>`;
+    let band = '<div class="band empty"></div>', tabstrip = '', ph = {};
+    // per-place headers, default (as Umi has them today)
+    ph.r = '';
+    ph.p = fileHdr('projects.md', 'src');
+    ph.n = stackStrip(pc('n', { foc: false }) + pc('t', { vis: false }));
+    if (mode === 'tab') {
+      tabstrip = `<div class="tabstrip">${allChips()}</div>`;
+    } else if (mode === 'place') {
+      ph.r = stackStrip(chip({ id: 'r', name: 'redesign', kind: 'claude' }, { vis: true }) + pc('d') + pc('v'));
+      ph.p = fileHdr('projects.md', 'src', `<span class="grip">≡</span>${chip({ id: 'p', name: 'projects.md', kind: 'file' }, { vis: true, foc: true })}${pc('i')}`);
+    } else if (mode === 'band') {
+      band = `<div class="band" style="overflow:hidden">${allChips()}</div>`;
+    } else if (mode === 'demand') {
+      const open = !!dropOpen.demand;
+      band = `<div class="band empty"><span class="handle" data-handle="demand"><span class="sd"></span>3 hidden</span>
+        <div class="drop${open ? ' on' : ''}" data-dropzone="demand">${allChips()}</div></div>`;
+    }
+    const places = ['r', 'p', 'n'].map((id) => {
+      const name = P_PANES.find((x) => x.id === id).name;
+      return `<div class="place${id === 'p' ? ' focus' : ''}">${ph[id]}<div class="txt">${txt(name, 3)}</div></div>`;
+    }).join('');
+    const PL = PLACES.find((x) => x.id === mode);
+    return `${side}<div class="content" data-win="p-${mode}">${band}${tabstrip}<div class="places">${places}</div><span class="meter">${PL.chrome} px above the text</span></div>`;
+  }
+
+  function renderPlace() {
+    const grid = $('#p-grid');
+    if (!grid.children.length) {
+      grid.innerHTML = PLACES.map((o) => `<div class="cell"><h3>${o.title}</h3><p class="one">${o.one}</p>
+        <div class="win mid" id="pw-${o.id}"></div>
+        ${o.id === 'demand' ? '<div class="bar" style="margin:6px 0 0"><button class="act" data-toggle-drop="demand">Show the strip (as on hover)</button></div>' : ''}
+        <details><summary>Expressed as · for · against</summary><pre>${esc(o.expr)}</pre>
+        <div class="pc"><div><h4>For</h4><ul>${o.pros.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+        <div><h4>Against</h4><ul>${o.cons.map((x) => `<li>${x}</li>`).join('')}</ul></div></div></details></div>`).join('');
+    }
+    PLACES.forEach((o) => {
+      const w = $('#pw-' + o.id);
+      w.innerHTML = placeWin(o.id);
+      w.style.width = narrow ? '640px' : '';
+      collapseAll(w);
+    });
+  }
+  $('#p-narrow').addEventListener('click', (e) => { narrow = !narrow; e.currentTarget.setAttribute('aria-pressed', narrow); renderPlace(); });
+  // Open and close the drop-down in place, so its slide plays (a re-render would skip it).
+  function setDrop(k, v) {
+    dropOpen[k] = v;
+    const d = document.querySelector(`#pw-${k} .drop`);
+    if (d) d.classList.toggle('on', !!v);
+    const b = document.querySelector(`[data-toggle-drop="${k}"]`);
+    if (b) b.textContent = v === true ? 'Hide the strip' : 'Show the strip (as on hover)';
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-toggle-drop]');
+    if (b) { const k = b.dataset.toggleDrop; setDrop(k, dropOpen[k] === true ? false : true); return; }
+    const h = e.target.closest('[data-handle]');
+    if (h) { const k = h.dataset.handle; setDrop(k, dropOpen[k] === true ? false : true); }
+  });
+  document.addEventListener('mouseover', (e) => {
+    const h = e.target.closest('[data-handle]');
+    if (h && !dropOpen[h.dataset.handle]) setDrop(h.dataset.handle, 'hover');
+  });
+  document.addEventListener('mouseout', (e) => {
+    const z = e.target.closest('[data-dropzone],[data-handle]');
+    if (!z) return;
+    const k = z.dataset.dropzone || z.dataset.handle;
+    const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-dropzone],[data-handle]');
+    if (dropOpen[k] === 'hover' && !to) setDrop(k, false);
+  });
+  renderPlace();
+
+  // =====================================================================
+  // 3. KEYS
+  // =====================================================================
+  const NAV = [
+    { id: 'visible', title: 'A. On-show panes only', one: '⌘[ ⌘] walk the panes on show. Hidden ones have keys of their own, ⌃⌘[ ⌃⌘], which bring the previous or next hidden pane in.',
+      keys: [['[', '⌘[', 'previous pane on show'], [']', '⌘]', 'next pane on show'], ['{', '⌃⌘[', 'bring in the previous hidden pane'], ['}', '⌃⌘]', 'bring in the next hidden pane']],
+      expr: 'key.cmd+[ = pane prev --shown\nkey.cmd+ctrl+] = pane show --next-hidden',
+      pros: ['⌘[ ⌘] never change the layout', 'Two keys, two clear meanings'],
+      cons: ['Two pairs of keys to learn', 'Can\'t see a hidden pane before bringing it in'] },
+    { id: 'all', title: 'B. Every pane, in strip order', one: '⌘[ ⌘] walk every chip. Stepping onto a hidden one brings it in, hiding the pane used least recently (never the one you just left).',
+      keys: [['[', '⌘[', 'previous pane'], [']', '⌘]', 'next pane, bringing hidden ones in']],
+      expr: 'key.cmd+] = pane next --all',
+      pros: ['One pair of keys reaches everything', 'The strip is the map of where you\'ll go'],
+      cons: ['Walking past a hidden pane rearranges the tab', 'Order shifts as panes swap in and out'] },
+    { id: 'peek', title: 'C. Walk on, peek, then commit', one: '⌘[ ⌘] walk the panes on show, then continue onto hidden chips. A hidden pane is only previewed over the place it would take; Enter brings it in, any other move leaves the layout as it was.',
+      keys: [['[', '⌘[', 'previous'], [']', '⌘]', 'next; past the last pane on show, peek at hidden ones'], ['Enter', '↩', 'bring the peeked pane in'], ['Esc', 'esc', 'stop peeking']],
+      expr: 'key.cmd+] = pane next --peek-hidden',
+      pros: ['Reaches everything with one pair', 'Nothing changes until you press Enter', 'You see the hidden pane before choosing'],
+      cons: ['A mode: the preview needs Enter or Esc', 'Typing while peeking goes nowhere'] },
+    { id: 'hold', title: 'D. Hold and tap for all panes', one: '⌘[ ⌘] stay on panes on show. Holding a modifier and tapping a key opens a switcher of every pane, most recent first; releasing picks.',
+      keys: [['[', '⌘[', 'previous pane on show'], [']', '⌘]', 'next pane on show'], ['⌥ hold + Tab', '⌃` held', 'switcher; tap again to move, release ⌥ to pick, Esc to cancel']],
+      expr: 'key.ctrl+` = pane switch --all --recent',
+      pros: ['Like ⌘Tab: fast for going back and forth', 'Shows previews of hidden panes'],
+      cons: ['A third pattern to learn', 'Most-recent order differs from the strip\'s'] },
+  ];
+  let nav = 0;
+  function navFresh() {
+    return {
+      panes: [
+        { id: 'r', name: 'redesign', kind: 'claude' },
+        { id: 'p', name: 'projects.md', kind: 'file' },
+        { id: 'v', name: 'dev server', kind: 'term' },
+        { id: 'd', name: 'deploy-check', kind: 'claude' },
+        { id: 'i', name: 'image-resize', kind: 'claude' },
+      ],
+      layout: ['r', 'p', 'v'],
+      hidden: ['d', 'i'],
+      focus: 'r',
+      used: ['v', 'p', 'r'], // least recent first
+      recent: ['r', 'p', 'v', 'd', 'i'],
+      cursor: null,  // peek target id
+      sw: null,      // switcher {list, idx}
+      log: 'Focus in redesign. Try ] a few times.',
+      arrived: null,
+    };
+  }
+  let ks = navFresh();
+  const kp = (id) => ks.panes.find((p) => p.id === id);
+  function strip() { return [...ks.layout, '|', ...ks.hidden]; }
+  function touch(id) { ks.used = [...ks.used.filter((x) => x !== id), id]; ks.recent = [id, ...ks.recent.filter((x) => x !== id)]; }
+  function focusPane(id) { ks.focus = id; touch(id); }
+  function bringIn(id, from) {
+    // replace the least recently used pane on show, never `from` (the one just left)
+    const victim = ks.used.find((x) => ks.layout.includes(x) && x !== from && x !== id) || ks.layout.find((x) => x !== from);
+    const at = ks.layout.indexOf(victim);
+    ks.layout[at] = id;
+    ks.hidden = [victim, ...ks.hidden.filter((x) => x !== id)];
+    ks.arrived = id;
+    focusPane(id);
+    return victim;
+  }
+  function stepShown(d) {
+    const i = ks.layout.indexOf(ks.focus);
+    const n = ks.layout[(i + d + ks.layout.length) % ks.layout.length];
+    focusPane(n); ks.log = `Focus → ${kp(n).name}`;
+  }
+
+  function onKey(k, e) {
+    const N = NAV[nav].id;
+    if (ks.sw) {
+      if (k === 'Escape') { ks.sw = null; ks.log = 'Switcher cancelled; nothing changed.'; return true; }
+      return false;
+    }
+    if (N === 'visible') {
+      if (k === '[' || k === ']') { stepShown(k === ']' ? 1 : -1); return true; }
+      if (k === '{' || k === '}') {
+        if (!ks.hidden.length) return true;
+        const id = k === '}' ? ks.hidden[0] : ks.hidden[ks.hidden.length - 1];
+        const from = ks.focus, v = bringIn(id, from);
+        ks.log = `${kp(id).name} brought in; ${kp(v).name} (used least recently) hidden.`;
+        return true;
+      }
+    }
+    if (N === 'all') {
+      if (k === '[' || k === ']') {
+        const s = strip().filter((x) => x !== '|');
+        const i = s.indexOf(ks.focus);
+        const n = s[(i + (k === ']' ? 1 : -1) + s.length) % s.length];
+        if (ks.layout.includes(n)) { focusPane(n); ks.log = `Focus → ${kp(n).name}`; }
+        else { const v = bringIn(n, ks.focus); ks.log = `${kp(n).name} was hidden: brought in, ${kp(v).name} hidden.`; }
+        return true;
+      }
+    }
+    if (N === 'peek') {
+      if (k === '[' || k === ']') {
+        const s = strip().filter((x) => x !== '|');
+        const curId = ks.cursor || ks.focus;
+        const i = s.indexOf(curId);
+        const n = s[(i + (k === ']' ? 1 : -1) + s.length) % s.length];
+        if (ks.layout.includes(n)) { ks.cursor = null; focusPane(n); ks.log = `Focus → ${kp(n).name}`; }
+        else { ks.cursor = n; ks.log = `Peeking at ${kp(n).name}. Enter brings it in; ] or [ moves on; Esc stops.`; }
+        return true;
+      }
+      if (k === 'Enter' && ks.cursor) { const id = ks.cursor; ks.cursor = null; const v = bringIn(id, ks.focus); ks.log = `${kp(id).name} brought in; ${kp(v).name} hidden.`; return true; }
+      if (k === 'Escape' && ks.cursor) { ks.cursor = null; ks.log = 'Stopped peeking; nothing changed.'; return true; }
+    }
+    if (N === 'hold') {
+      if (k === '[' || k === ']') { stepShown(k === ']' ? 1 : -1); return true; }
+    }
+    return false;
+  }
+
+  function victimFor(id) { return ks.used.find((x) => ks.layout.includes(x) && x !== ks.focus && x !== id); }
+
+  function renderKeys() {
+    const N = NAV[nav];
+    $('#k-bar').innerHTML = NAV.map((o, i) => `<button class="opt" data-nav="${i}" aria-pressed="${i === nav}">${o.title}</button>`).join('') +
+      '<span class="spacer"></span><button class="act" id="k-reset">Reset</button>';
+    $('#k-legend').innerHTML = N.keys.map(([page, real, what]) => `<kbd>${page}</kbd> <span class="map">= ${real}</span> ${what}`).join(' &nbsp;·&nbsp; ') +
+      ' &nbsp;·&nbsp; click a chip to show or focus it';
+    const s = strip();
+    const stripHTML = s.map((id) => id === '|' ? '<span class="sep"></span>' :
+      chip(kp(id), { vis: ks.layout.includes(id), foc: id === ks.focus, cur: id === ks.cursor || (ks.sw && ks.sw.list[ks.sw.idx] === id) })).join('');
+    const peekOver = ks.cursor ? victimFor(ks.cursor) : null;
+    const places = ks.layout.map((id) => {
+      let peek = '';
+      if (peekOver === id) peek = `<div class="peek"><div class="ph"><b>${esc(kp(ks.cursor).name)}</b><span class="rp">in place of ${esc(kp(id).name)}</span><span class="kk"><kbd>↩</kbd> <kbd>esc</kbd></span></div><div class="txt">${txt(kp(ks.cursor).name, 3)}</div></div>`;
+      return `<div class="place${id === ks.focus ? ' focus' : ''}${id === ks.arrived ? ' arrive' : ''}" data-kfocus="${id}"><div class="txt">${txt(kp(id).name, 3)}</div>${peek}</div>`;
+    }).join('');
+    let sw = '';
+    if (ks.sw) {
+      sw = `<div class="switcher">` + ks.sw.list.map((id, i) => `<div class="it${ks.layout.includes(id) ? '' : ' hid'}${i === ks.sw.idx ? ' on' : ''}"><div class="t"><span style="font:10px var(--mono);color:var(--dim)">${G[kp(id).kind]}</span>${esc(kp(id).name)}</div>${txt(kp(id).name, 2)}<span class="tag">${ks.layout.includes(id) ? 'on show' : 'hidden'}</span></div>`).join('') + `</div>`;
+    }
+    const side = `<div class="side"><div class="lights"><i></i><i></i><i></i></div>
+      <div class="row sel"><div class="ic">✻</div><div class="tx"><div class="l1">website</div><div class="l2">${esc(kp(ks.focus).name)}</div></div></div>
+      <div class="row"><div class="ic">›_</div><div class="tx"><div class="l1">~/best/desk</div><div class="l2">git pull</div></div></div></div>`;
+    const draw = () => {
+      $('#k-win').innerHTML = `${side}<div class="content" data-win="k"><div class="band empty"></div><div class="tabstrip">${stripHTML}</div><div class="places">${places}</div>${sw}</div>`;
+      collapseAll($('#k-win'));
+    };
+    flip($('#k-win'), draw);
+    ks.arrived = null;
+    $('#k-notes').innerHTML = `<h3>${N.title}</h3><p class="one">${N.one}</p>
+      <h4>Expressed as</h4><pre>${esc(N.expr)}</pre>
+      <h4>For</h4><ul>${N.pros.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <h4>Against</h4><ul>${N.cons.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <div class="klog" id="k-log">${esc(ks.log)}</div>`;
+  }
+
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-nav]');
+    if (b) { nav = +b.dataset.nav; ks = navFresh(); renderKeys(); return; }
+    if (e.target.closest('#k-reset')) { ks = navFresh(); renderKeys(); return; }
+    const c = e.target.closest('#k-win [data-cid]');
+    if (c) {
+      const id = c.dataset.cid;
+      ks.cursor = null;
+      if (ks.layout.includes(id)) { focusPane(id); ks.log = `Focus → ${kp(id).name}`; }
+      else { const v = bringIn(id, ks.focus); ks.log = `${kp(id).name} brought in; ${kp(v).name} hidden.`; }
+      renderKeys(); return;
+    }
+    const pl = e.target.closest('#k-win [data-kfocus]');
+    if (pl && !ks.cursor) { focusPane(pl.dataset.kfocus); ks.log = `Focus → ${kp(pl.dataset.kfocus).name}`; renderKeys(); }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey) return;
+    // hold-and-tap switcher: ⌥ held + Tab
+    if (NAV[nav].id === 'hold' && e.altKey && e.code === 'Tab') {
+      e.preventDefault();
+      if (!ks.sw) ks.sw = { list: ks.recent.slice(), idx: 1 };
+      else ks.sw.idx = (ks.sw.idx + (e.shiftKey ? -1 : 1) + ks.sw.list.length) % ks.sw.list.length;
+      ks.log = `Switcher: ${kp(ks.sw.list[ks.sw.idx]).name}. Release ⌥ to pick, Esc to cancel.`;
+      renderKeys(); return;
+    }
+    if (e.altKey) return;
+    let k = e.key;
+    if (e.shiftKey && k === ']') k = '}';
+    if (e.shiftKey && k === '[') k = '{';
+    if (onKey(k, e)) { e.preventDefault(); renderKeys(); }
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Alt' && ks.sw) {
+      const id = ks.sw.list[ks.sw.idx];
+      ks.sw = null;
+      if (ks.layout.includes(id)) { focusPane(id); ks.log = `Picked ${kp(id).name}.`; }
+      else { const v = bringIn(id, ks.focus); ks.log = `Picked ${kp(id).name}: brought in, ${kp(v).name} hidden.`; }
+      renderKeys();
+    }
+  });
+  window.addEventListener('blur', () => { if (ks.sw) { ks.sw = null; renderKeys(); } });
+  renderKeys();
+})();
+</script>
+</body>
+</html>
