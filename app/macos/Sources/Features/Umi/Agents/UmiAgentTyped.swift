@@ -67,7 +67,7 @@ enum UmiTypedCommand {
     /// A one-off run (`claude -p`), not an interface in the pane: its hooks don't make the pane's
     /// agent.
     static func isOneOff(_ args: [String], kind: UmiAgentKind) -> Bool {
-        guard kind == .claude else { return args.first == "exec" || args.first == "e" }
+        guard kind == .claude else { return ["exec", "e"].contains(codexSubcommand(args)) }
         return args.prefix { $0 != "--" }.contains { $0 == "-p" || $0 == "--print" }
     }
 
@@ -97,12 +97,29 @@ enum UmiTypedCommand {
         }
     }
 
+    private static let codexValued: Set<String> = ["-m", "--model", "-a", "--ask-for-approval", "-p", "--profile",
+                                                   "-c", "--config", "-s", "--sandbox", "-C", "--cd", "--add-dir",
+                                                   "--local-provider", "--enable", "--disable"]
+    private static let codexDropped: Set<String> = ["-i", "--image", "--remote"]
+
+    /// Codex's first word that isn't an option or an option's value (`codex -m o3 exec …`: `exec`).
+    static func codexSubcommand(_ args: [String]) -> String? {
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            if arg == "--" { return nil }
+            if !arg.hasPrefix("-") { return arg }
+            if !arg.contains("="), codexValued.contains(arg) || codexDropped.contains(arg) { i += 1 }
+            i += 1
+        }
+        return nil
+    }
+
     /// Codex's options as typed, for a restart: every option and its value, without the
     /// subcommand and its words (`resume ID`, `--last`), the first prompt, images and `--remote`.
     static func codexKept(_ args: [String]) -> [String] {
-        let valued: Set<String> = ["-m", "--model", "-a", "--ask-for-approval", "-p", "--profile", "-c", "--config",
-                                   "-s", "--sandbox", "-C", "--cd", "--add-dir", "--local-provider", "--enable", "--disable"]
-        let dropped: Set<String> = ["-i", "--image", "--remote"]
+        let valued = codexValued
+        let dropped = codexDropped
         var out: [String] = []
         var i = 0
         while i < args.count {

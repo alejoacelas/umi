@@ -138,6 +138,9 @@ struct UmiQuietTests {
         #expect(UmiTypedCommand.isOneOff(["-p", "hi"], kind: .claude))
         #expect(!UmiTypedCommand.isOneOff(["--", "-p"], kind: .claude))
         #expect(UmiTypedCommand.isOneOff(["exec", "hi"], kind: .codex))
+        #expect(UmiTypedCommand.isOneOff(["-m", "o3", "exec", "hi"], kind: .codex))
+        #expect(UmiTypedCommand.isOneOff(["--model=o3", "e", "hi"], kind: .codex))
+        #expect(!UmiTypedCommand.isOneOff(["-m", "o3", "fix the bug"], kind: .codex))
     }
 
     @MainActor @Test func doneCheckReadsTheReplysLastLine() {
