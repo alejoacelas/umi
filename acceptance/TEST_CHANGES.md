@@ -1144,3 +1144,14 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   `debug.ui.pane.tabdrop` hook they drove: Alejo asked for the targets to go (REQUESTS.md,
   2026-11-07), and SPEC M-4 no longer has them. Dropping a pane on the sidebar keeps its tests.
   **Requirements:** M-4.
+
+## Collapsed front matter (2026-11-07)
+
+- **Changed, Swift unit tests `UmiMarkdownTests`**: `frontMatterShowsAsATableOfKeys` became
+  `frontMatterIsCollapsedToOneLine`: the front matter is a closed `<details>` whose summary shows
+  the title and date and "· 4 more", and whose table joins a flow list, a block list and a folded
+  string into one line each and shows a nested map as written. `frontMatterThatIsNotAMapShowsAsCode`
+  expects the code block inside the same closed `<details>`; `bodyKeepsItsOffsetsAndFrontMatterHasNone`
+  reads the new row. **Added** `frontMatterSummaryFallsBackToShortValues`: without `title` or
+  `date` the summary shows the first values of up to 60 characters, escaped, and "Front matter"
+  when none is short. **Requirements:** MD-6.

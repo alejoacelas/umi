@@ -308,3 +308,10 @@ gestures are out.
 
 > let's remove the drag and drop to the center top or bottom to put on next or previous tab but keep
 > the drop on sidebar
+
+## 2026-11-07: front matter collapsed
+
+> frontmatter takes too much vertical space
+
+Of the prototypes shown, Alejo picked "collapsed to one line": the front matter shows as one muted
+line with the title, the date and how many keys are left, and opens to a compact table.

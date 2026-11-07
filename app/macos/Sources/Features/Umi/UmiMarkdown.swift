@@ -119,10 +119,13 @@ enum UmiMarkdown {
         return nil
     }
 
-    /// Front matter as a table of its top-level keys. A value spread over several lines (a
-    /// list, a nested map, a block string) shows as written. YAML whose top level isn't a map
-    /// shows as a code block. Its text carries no file offsets, so comments can't anchor in it:
-    /// review markup there would break the YAML for other tools.
+    /// Front matter collapsed to one line (REQUESTS.md, 2026-11-07): a closed `<details>` whose
+    /// summary shows one or two short values (`title` and `date` first) and how many keys are
+    /// left; opened, a table of the top-level keys. Lists join into one comma-separated line,
+    /// block strings into one line of prose, and a nested map shows as written. YAML whose top
+    /// level isn't a map shows as a code block inside the same closed `<details>`. Its text
+    /// carries no file offsets, so comments can't anchor in it: review markup there would break
+    /// the YAML for other tools.
     private static func frontMatterHTML(_ markdown: String, yaml: NSRange) -> String {
         let ns = markdown as NSString
         func marked(_ range: NSRange) -> String { escape(ns.substring(with: range)) }
@@ -156,16 +159,36 @@ enum UmiMarkdown {
             let valueStart = line.location + colon.location + 1
             entries.append((key, trimmed(NSRange(location: valueStart, length: NSMaxRange(line) - valueStart)), nil))
         }
+        func collapsed(_ summary: String, _ body: String) -> String {
+            "<details class=\"front-matter\"><summary><span class=\"arr\">\u{25B6}</span>\(summary)</summary>"
+                + "<div class=\"body\">\(body)</div></details>"
+        }
         guard isMap else {
-            return "<pre class=\"front-matter\"><code>\(marked(yaml))</code></pre>"
+            return collapsed("<span>Front matter</span>", "<pre><code>\(marked(yaml))</code></pre>")
         }
         guard !entries.isEmpty else { return "" }
+
+        /// A scalar without its quotes.
+        func unquoted(_ text: String) -> String {
+            for quote in ["\"", "'"] where text.count >= 2 && text.hasPrefix(quote) && text.hasSuffix(quote) {
+                return String(text.dropFirst().dropLast())
+            }
+            return text
+        }
+        // Each entry's value as one line of text (`text`), or, for a nested map, its lines as
+        // written (`pre`). `scalar` marks a plain value on the key's line, which the summary may show.
         var rows = ""
+        var values: [(key: String, text: String, scalar: Bool)] = []
         for entry in entries {
-            var value = entry.inline.length > 0 ? marked(entry.inline) : ""
+            let key = ns.substring(with: trimmed(entry.key))
+            var inline = entry.inline.length > 0 ? ns.substring(with: entry.inline) : ""
+            var text = ""
+            var pre: String?
+            var scalar = false
             if let block = entry.block {
                 // A block string's `|` or `>` marker says how to read the lines under it.
-                if value.range(of: "^[|>][-+0-9]*$", options: .regularExpression) != nil { value = "" }
+                let blockString = inline.range(of: "^[|>][-+0-9]*$", options: .regularExpression) != nil
+                if blockString { inline = "" }
                 // Trailing blank lines belong to the gap before the next key.
                 var end = NSMaxRange(block)
                 while end > block.location, let s = UnicodeScalar(ns.character(at: end - 1)),
@@ -174,11 +197,37 @@ enum UmiMarkdown {
                     .components(separatedBy: "\n").map { $0.hasSuffix("\r") ? String($0.dropLast()) : $0 }
                 let indent = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
                     .map { $0.prefix { $0 == " " }.count }.min() ?? 0
-                value += "<pre>\(escape(lines.map { String($0.dropFirst(min(indent, $0.prefix { $0 == " " }.count))) }.joined(separator: "\n")))</pre>"
+                let dedented = lines.map { String($0.dropFirst(min(indent, $0.prefix { $0 == " " }.count))) }
+                let filled = dedented.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                if blockString {
+                    text = filled.map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+                } else if inline.isEmpty, filled.allSatisfy({ $0 == "-" || $0.hasPrefix("- ") }) {
+                    text = filled.map { unquoted(String($0.dropFirst()).trimmingCharacters(in: .whitespaces)) }
+                        .joined(separator: ", ")
+                } else {
+                    pre = dedented.joined(separator: "\n")
+                }
+            } else if inline.hasPrefix("["), inline.hasSuffix("]") {
+                text = inline.dropFirst().dropLast().split(separator: ",")
+                    .map { unquoted($0.trimmingCharacters(in: .whitespaces)) }.joined(separator: ", ")
+            } else {
+                text = unquoted(inline)
+                scalar = !inline.isEmpty && !inline.hasPrefix("{")
             }
-            rows += "<tr><th>\(marked(trimmed(entry.key)))</th><td>\(value)</td></tr>"
+            let cell = pre.map { (inline.isEmpty ? "" : escape(inline)) + "<pre>\(escape($0))</pre>" } ?? escape(text)
+            rows += "<tr><th>\(escape(key))</th><td>\(cell)</td></tr>"
+            values.append((key, text, scalar))
         }
-        return "<table class=\"front-matter\">\(rows)</table>"
+
+        // The summary: `title` and `date` first, then the first other short values; two at most.
+        let short = values.indices.filter { values[$0].scalar && values[$0].text.count <= 60 }
+        let preferred = ["title", "date"].compactMap { name in short.first { values[$0].key == name } }
+        let shown = Array((preferred + short.filter { !preferred.contains($0) }).prefix(2))
+        var summary = shown.map { "<span>\(escape(values[$0].text))</span>" }.joined()
+        if summary.isEmpty { summary = "<span>Front matter</span>" }
+        let more = values.count - shown.count
+        if more > 0, !shown.isEmpty { summary += "<span class=\"k\">\u{00B7} \(more) more</span>" }
+        return collapsed(summary, "<table class=\"dense\">\(rows)</table>")
     }
 
     /// Give headings GitHub-style ids (`-1`, `-2` for repeats) so
@@ -566,12 +615,6 @@ enum UmiMarkdown {
         table { border-collapse: collapse; } th, td { padding: 6px 12px; border-bottom: 1px solid rgba(\(tint),0.08); }
         th { text-align: left; color: \(heading); font-weight: 600; }
         img { max-width: 100%; }
-        .front-matter { font-size: 12.5px; color: \(muted); margin: 0 0 1.6em; }
-        table.front-matter { width: 100%; border-top: 1px solid rgba(\(tint),0.08); }
-        table.front-matter th, table.front-matter td { padding: 4px 12px 4px 0; vertical-align: top; font-weight: 400; }
-        table.front-matter th { color: \(muted); width: 1%; white-space: nowrap; font: 12px/1.6 "SF Mono", Menlo, monospace; }
-        table.front-matter td { color: \(fg); }
-        table.front-matter pre { margin: 0; padding: 0; background: none; font: 12px/1.6 "SF Mono", Menlo, monospace; white-space: pre-wrap; }
         </style>\(head)</head><body>\(body)</body></html>
         """
     }

@@ -870,6 +870,14 @@ and links (E-7) work as before.
 - **MD-5 [A]** Right-clicking the preview shows Warp's items: Copy (with a selection), Copy file
   path, Split pane right / left / down / up, and in a split Maximize pane (Minimize pane when
   maximized) and Close pane.
+- **MD-6 [A]** YAML front matter at the top of a Markdown file shows collapsed to one 12 px line in
+  the secondary color (REQUESTS.md, 2026-11-07): a ▶ arrow, the first one or two short values
+  (`title`, then `date`, then the first other values of up to 60 characters) and "· N more" for the
+  remaining keys, or "Front matter" when no value is short. Clicking it opens a compact table of the
+  top-level keys, the arrow turned down: lists show as one comma-separated line, block strings as
+  one line of prose, nested maps as written. Front matter whose top level isn't a map opens to its
+  YAML as code. It starts closed every time the file is shown, has no rule around it, and carries
+  no comments (E-11).
 
 ## AG. Agent sessions
 
