@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hidden Panes in Umi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a spec sheet. A narrow prose column states each idea; the live Umi mock runs wide beneath it with its notes beside it. */
+:root {
+  --paper: #f5f7f8;
+  --surface: #ffffff;
+  --ink: #141a1d;
+  --muted: #5a676e;
+  --rule: #d8dfe2;
+  --accent: #0b8aa3;
+  --amber: #a86d12;
+  --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  /* Umi's own look (Warp Dark). Fixed in both page themes: it is the thing being shown. */
+  --u-bg: #000000;
+  --u-side: #0d0d0d;
+  --u-row: #1b1e20;
+  --u-fg: #e6e6e6;
+  --u-dim: #8a9094;
+  --u-faint: #4a5054;
+  --u-rule: #1d2022;
+  --u-cyan: #2bd2ea;
+  --u-amber: #e9a33c;
+  --u-green: #4cc38a;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0b0f11; --surface: #12181b; --ink: #e2e8eb; --muted: #94a2a9;
+    --rule: #243034; --accent: #3cc4dc; --amber: #e0a246; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0b0f11; --surface: #12181b; --ink: #e2e8eb; --muted: #94a2a9;
+  --rule: #243034; --accent: #3cc4dc; --amber: #e0a246; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--paper); }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 15px/1.6 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 34px; line-height: 1.15; font-weight: 650; }
+h2 { font-size: 23px; font-weight: 650; }
+h3 { font-size: 16px; font-weight: 650; }
+p { margin: 0; max-width: 66ch; }
+.lede { color: var(--muted); font-size: 16px; }
+.eyebrow { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+section { display: flex; flex-direction: column; gap: 18px; }
+header { display: flex; flex-direction: column; gap: 12px; }
+kbd {
+  font: 500 11.5px/1 var(--mono); padding: 3px 6px; border-radius: 4px;
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink);
+}
+
+/* Places */
+.places { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.place { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.place .diagram { height: 92px; background: var(--u-bg); border-radius: 6px; padding: 10px; display: flex; gap: 4px; position: relative; overflow: hidden; }
+.dg { flex: 1; border: 1px solid var(--u-rule); border-radius: 2px; background: #050606; position: relative; }
+.dg.focus { box-shadow: inset 0 2px 0 var(--u-cyan); }
+.dg.ghost { border-style: dashed; border-color: var(--u-faint); background: transparent; }
+.dg.behind { position: absolute; inset: 16px 30px 6px 16px; flex: none; opacity: .5; }
+.dg.front { position: absolute; inset: 22px 22px 12px 24px; flex: none; }
+.dg.gone { opacity: .35; }
+.dg .lbl { position: absolute; left: 6px; bottom: 4px; font: 10px/1 var(--mono); color: var(--u-dim); }
+.place .what { font-size: 13.5px; color: var(--muted); }
+pre {
+  margin: 0; font: 12px/1.55 var(--mono); background: var(--surface); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 10px 12px; overflow-x: auto; color: var(--ink);
+}
+pre .k { color: var(--accent); }
+pre .c { color: var(--muted); }
+
+/* Option switcher */
+.switch { display: flex; flex-wrap: wrap; gap: 6px; }
+.switch button {
+  font: 500 13px/1 var(--body); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--rule); border-radius: 999px; padding: 8px 13px; cursor: pointer;
+  display: inline-flex; gap: 8px; align-items: center;
+}
+.switch button .n { font: 500 11px/1 var(--mono); color: var(--muted); }
+.switch button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.switch button[aria-pressed="true"] .n { color: var(--paper); opacity: .7; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 24px; align-items: start; }
+.stage-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+  font: 500 13px/1 var(--body); padding: 9px 13px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink);
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:disabled { opacity: .45; cursor: default; }
+.readout { font: 12px/1.4 var(--mono); color: var(--muted); }
+.readout b { color: var(--ink); font-weight: 500; }
+.log { font: 12px/1.6 var(--mono); color: var(--muted); min-height: 4.8em; }
+.log .amber { color: var(--amber); }
+
+/* The Umi mock window */
+.mock-scroll { overflow-x: auto; border-radius: 10px; }
+.win {
+  min-width: 760px; height: 400px; background: var(--u-bg); color: var(--u-fg);
+  border-radius: 10px; display: grid; grid-template-columns: 210px minmax(0, 1fr);
+  font: 12px/1.5 var(--mono); position: relative; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.25), 0 14px 40px -18px rgba(0,0,0,.45);
+}
+.side { background: var(--u-side); padding: 30px 8px 10px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.lights { position: absolute; top: 10px; left: 12px; display: flex; gap: 6px; }
+.lights i { width: 11px; height: 11px; border-radius: 50%; background: #2c2f31; display: block; }
+.tabrow {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 8px; align-items: start;
+  padding: 7px 8px; border-radius: 6px; cursor: pointer; position: relative;
+}
+.tabrow:hover { background: #141618; }
+.tabrow.sel { background: var(--u-row); }
+.tabrow .ico { width: 14px; height: 14px; margin-top: 2px; color: var(--u-dim); }
+.tabrow .ico.amber { color: var(--u-amber); }
+.tabrow .l1 { color: var(--u-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--body); font-size: 12.5px; font-weight: 500; }
+.tabrow .l1 .br { color: var(--u-faint); font-family: var(--mono); font-size: 11px; font-weight: 400; margin-left: 6px; }
+.tabrow .l2 { grid-column: 2 / 4; color: var(--u-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.tabrow .l2.amber { color: var(--u-amber); }
+.chip {
+  font: 500 10px/1 var(--mono); color: var(--u-dim); border: 1px solid #2a2e30; border-radius: 999px;
+  padding: 3px 6px; cursor: pointer; background: transparent; margin-top: 1px;
+}
+.chip:hover { color: var(--u-fg); border-color: #3a3f42; }
+.chip.amber { color: var(--u-amber); border-color: rgba(233,163,60,.45); }
+.pop {
+  margin: 2px 6px 6px 30px; background: #141618; border: 1px solid #25292b; border-radius: 6px;
+  padding: 4px; display: flex; flex-direction: column;
+}
+.pop button, .hiddenlist button {
+  all: unset; display: flex; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 4px; cursor: pointer;
+  color: var(--u-fg); font: 11.5px/1.3 var(--mono);
+}
+.pop button:hover, .hiddenlist button:hover { background: #1f2325; }
+.pop button:focus-visible, .hiddenlist button:focus-visible { outline: 1px solid var(--u-cyan); }
+.sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--u-faint); flex: none; }
+.sdot.working { background: var(--u-green); }
+.sdot.needs { background: var(--u-amber); }
+.hiddenlist { margin-top: auto; border-top: 1px solid #1d2022; padding-top: 8px; display: flex; flex-direction: column; gap: 1px; }
+.hiddenlist .h { color: var(--u-faint); font-size: 10px; text-transform: uppercase; letter-spacing: .09em; padding: 0 6px 4px; }
+.hiddenlist .t { color: var(--u-faint); margin-left: auto; font-size: 10px; }
+
+.main { display: flex; flex-direction: column; min-width: 0; position: relative; }
+.strip { display: flex; gap: 2px; padding: 8px 8px 0; height: 34px; align-items: stretch; }
+.strip button {
+  all: unset; cursor: pointer; font: 11px/1 var(--mono); padding: 0 10px; border-radius: 5px 5px 0 0;
+  color: var(--u-dim); display: inline-flex; align-items: center; gap: 6px; position: relative; max-width: 150px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.strip button.vis { color: var(--u-fg); background: #0c0d0e; }
+.strip button.hid { color: var(--u-faint); font-style: italic; }
+.strip button.foc { box-shadow: inset 0 2px 0 var(--u-cyan); }
+.strip button:focus-visible { outline: 1px solid var(--u-cyan); }
+.strip .spacer { flex: 1; }
+.panes { flex: 1; display: flex; min-height: 0; }
+.pane {
+  flex: 1 1 0; min-width: 0; border-left: 1px solid var(--u-rule); padding: 14px 14px 10px; position: relative;
+  display: flex; flex-direction: column; gap: 6px; cursor: text; overflow: hidden;
+  transition: flex-grow .28s ease, opacity .28s ease;
+}
+.pane:first-child { border-left: 0; }
+.pane.foc { box-shadow: inset 0 2px 0 var(--u-cyan); }
+.pane.enter { animation: enter .42s ease both; }
+@keyframes enter { from { opacity: 0; flex-grow: 0.001; } to { opacity: 1; flex-grow: 1; } }
+.pane .ttl { color: var(--u-dim); font-size: 11px; }
+.pane .body { color: var(--u-fg); white-space: pre-wrap; font-size: 11.5px; line-height: 1.55; overflow: hidden; flex: 1; }
+.pane .body .dim { color: var(--u-dim); }
+.pane .body .amb { color: var(--u-amber); }
+.pane .stat { font-size: 10.5px; color: var(--u-dim); display: flex; gap: 6px; align-items: center; }
+.pane .hide {
+  position: absolute; top: 8px; right: 8px; opacity: 0; transition: opacity .15s; cursor: pointer;
+  font: 10.5px/1 var(--mono); color: var(--u-dim); background: #111314; border: 1px solid #26292b; border-radius: 4px; padding: 4px 6px;
+}
+.pane:hover .hide, .pane .hide:focus-visible { opacity: 1; }
+.pane .corner { position: absolute; top: 10px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--u-amber); box-shadow: 0 0 0 3px rgba(233,163,60,.18); }
+.pane:hover .corner { display: none; }
+.caret { display: inline-block; width: 7px; height: 13px; background: var(--u-cyan); vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.shelf { height: 34px; border-top: 1px solid var(--u-rule); display: flex; gap: 6px; align-items: center; padding: 0 10px; }
+.shelf .h { color: var(--u-faint); font-size: 10px; text-transform: uppercase; letter-spacing: .09em; margin-right: 4px; }
+.pill {
+  all: unset; cursor: pointer; font: 11px/1 var(--mono); color: var(--u-dim); border: 1px solid #25292b;
+  border-radius: 999px; padding: 5px 10px; display: inline-flex; gap: 6px; align-items: center;
+}
+.pill:hover { color: var(--u-fg); }
+.pill:focus-visible { outline: 1px solid var(--u-cyan); }
+.pill.glow { color: var(--u-amber); border-color: rgba(233,163,60,.6); box-shadow: 0 0 12px rgba(233,163,60,.35); }
+.ovbtn {
+  all: unset; position: absolute; right: 10px; top: 8px; z-index: 2; cursor: pointer; font: 10.5px/1 var(--mono);
+  color: var(--u-dim); border: 1px solid #25292b; border-radius: 4px; padding: 4px 7px; background: #0b0c0d;
+}
+.ovbtn:focus-visible { outline: 1px solid var(--u-cyan); }
+.overview {
+  position: absolute; inset: 0; background: rgba(0,0,0,.97); z-index: 3; padding: 20px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-content: start;
+  animation: fade .18s ease both;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.tile {
+  all: unset; cursor: pointer; height: 120px; border: 1px solid #2a2e30; border-radius: 6px; padding: 10px;
+  display: flex; flex-direction: column; gap: 6px; overflow: hidden; color: var(--u-fg); font: 11px/1.45 var(--mono); position: relative; background: #060707;
+}
+.tile.hid { border-style: dashed; color: var(--u-dim); }
+.tile.foc { box-shadow: inset 0 2px 0 var(--u-cyan); }
+.tile:hover { border-color: #4a5054; }
+.tile:focus-visible { outline: 1px solid var(--u-cyan); }
+.tile .tt { color: var(--u-dim); font-size: 10.5px; display: flex; gap: 6px; align-items: center; }
+.tile .tb { white-space: pre-wrap; overflow: hidden; }
+.overview .hint { grid-column: 1 / -1; color: var(--u-faint); font-size: 10.5px; }
+
+/* Notes */
+.notes { display: flex; flex-direction: column; gap: 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 18px; min-width: 0; }
+.notes .sub { color: var(--muted); font-size: 13.5px; }
+.notes dl { margin: 0; display: grid; gap: 10px; }
+.notes dt { font: 500 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+.notes dd { margin: 4px 0 0; font-size: 13.5px; }
+.notes ul { margin: 4px 0 0; padding-left: 18px; font-size: 13.5px; }
+.notes pre { font-size: 11.5px; }
+
+.keys { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--muted); }
+.keys span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Vocabulary */
+.vocab { display: flex; flex-direction: column; border-top: 1px solid var(--rule); }
+.vrow {
+  display: grid; grid-template-columns: 120px minmax(0, 1fr) 96px 92px; gap: 18px; align-items: center;
+  padding: 12px 0; border-bottom: 1px solid var(--rule);
+}
+.vrow .sw { height: 44px; background: var(--u-bg); border-radius: 5px; position: relative; overflow: hidden; }
+.vrow .name { font-weight: 600; font-size: 14px; }
+.vrow .desc { color: var(--muted); font-size: 13px; }
+.tag { font: 500 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 4px 7px; border-radius: 4px; justify-self: start; }
+.tag.today { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.tag.cand { color: var(--muted); border: 1px dashed var(--rule); }
+.meter { display: flex; gap: 3px; align-items: center; }
+.meter i { width: 12px; height: 6px; border-radius: 2px; background: var(--rule); display: block; }
+.meter i.on { background: var(--ink); }
+.meter-label { font: 11px/1 var(--mono); color: var(--muted); margin-left: 6px; }
+
+/* Swatches inside the vocabulary rows */
+.sw .p { position: absolute; top: 8px; bottom: 8px; width: 42px; border: 1px solid var(--u-rule); background: #070808; }
+.sw .p.a { left: 12px; } .sw .p.b { left: 62px; }
+.sw .cyan-top { box-shadow: inset 0 2px 0 var(--u-cyan); }
+.sw .row { position: absolute; left: 10px; right: 10px; top: 10px; height: 24px; border-radius: 4px; background: var(--u-row); }
+.sw .row.tint { background: rgba(130, 110, 220, .22); }
+.sw .txt { position: absolute; left: 16px; top: 15px; font: 9.5px/1 var(--mono); color: var(--u-dim); white-space: nowrap; }
+.sw .glyph { position: absolute; left: 16px; top: 15px; width: 12px; height: 12px; color: var(--u-amber); }
+.sw .dot { position: absolute; right: 20px; top: 19px; width: 6px; height: 6px; border-radius: 50%; background: var(--u-amber); }
+.sw .cnt { position: absolute; right: 16px; top: 15px; font: 500 9px/1 var(--mono); color: var(--u-dim); border: 1px solid #2a2e30; border-radius: 999px; padding: 2px 5px; }
+.sw .dimmed { opacity: .35; }
+.sw .border { border-color: var(--u-amber); }
+.sw .shelfpill { position: absolute; left: 14px; top: 13px; font: 9.5px/1 var(--mono); color: var(--u-amber); border: 1px solid rgba(233,163,60,.6); border-radius: 999px; padding: 4px 8px; }
+.sw .shelfpill.quiet { color: var(--u-dim); border-color: #2a2e30; }
+.sw .glowing { box-shadow: 0 0 14px rgba(233,163,60,.55); border-color: rgba(233,163,60,.7); }
+.sw .corner { position: absolute; right: 7px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--u-amber); }
+.sw .badge { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 7px; background: #2b2f33; }
+.sw .badge::after { content: "2"; position: absolute; right: -6px; top: -6px; width: 15px; height: 15px; border-radius: 50%; background: #e5484d; color: #fff; font: 600 9px/15px var(--body); text-align: center; }
+.sw .strip2 { position: absolute; left: 10px; right: 10px; top: 9px; display: flex; gap: 3px; }
+.sw .strip2 span { font: 9px/1 var(--mono); color: var(--u-dim); padding: 4px 6px; border-radius: 3px 3px 0 0; }
+.sw .strip2 span.on { color: var(--u-fg); background: #111314; box-shadow: inset 0 2px 0 var(--u-cyan); }
+.sw .fade { position: absolute; inset: 8px 10px; background: #111; border-radius: 3px; animation: swfade 2.4s ease-in-out infinite; }
+@keyframes swfade { 0%, 40% { opacity: 1; } 55% { opacity: 0; } 70%, 100% { opacity: 1; } }
+
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule); padding-top: 18px; }
+
+@media (max-width: 980px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .places { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  h1 { font-size: 27px; }
+  .places { grid-template-columns: minmax(0, 1fr); }
+  .vrow { grid-template-columns: 96px minmax(0, 1fr); row-gap: 8px; }
+  .vrow .tag, .vrow .meter { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Umi design · prototype · 2026-11-07</span>
+  <h1>Where a pane can be, and how a hidden one shows</h1>
+  <p class="lede">A hidden pane stays in its tab with its program running, out of the layout. These mocks compare five ways to show that it exists, and what happens when a hidden agent ends its turn without <code>Status: done</code>. Commands and config lines are illustrative.</p>
+</header>
+
+<section aria-labelledby="places-h">
+  <h2 id="places-h">Four places a pane can be</h2>
+  <div class="places">
+    <div class="place">
+      <div class="diagram" aria-hidden="true">
+        <div class="dg focus"><span class="lbl">notes.md</span></div>
+        <div class="dg"><span class="lbl">claude</span></div>
+      </div>
+      <h3>On show</h3>
+      <p class="what">In the tab's split, taking a share of the space.</p>
+      <pre><span class="c"># default</span>
+umi split right
+<span class="c">// ls --json</span>
+{"id":"p7","place":<span class="k">"shown"</span>}</pre>
+    </div>
+    <div class="place">
+      <div class="diagram" aria-hidden="true">
+        <div class="dg"><span class="lbl">zsh</span></div>
+        <div class="dg" style="position:relative">
+          <div class="dg behind"></div>
+          <div class="dg front focus"><span class="lbl">plan.md</span></div>
+        </div>
+      </div>
+      <h3>Stacked</h3>
+      <p class="what">Shares a place with others; one member on show, ⌘[ ⌘] switch.</p>
+      <pre><span class="c"># drop on a pane's middle</span>
+umi pane move p9 --to p4
+{"id":"p9","place":<span class="k">"stacked"</span>,
+ "stack":["p4","p9"]}</pre>
+    </div>
+    <div class="place">
+      <div class="diagram" aria-hidden="true">
+        <div class="dg focus"><span class="lbl">notes.md</span></div>
+        <div class="dg ghost"><span class="lbl">deploy check</span></div>
+      </div>
+      <h3>Hidden</h3>
+      <p class="what">Out of the layout, still in its tab, still running. Can come back by itself.</p>
+      <pre>umi pane hide p3 \
+  --until 'agent.done=false'
+{"id":"p3","place":<span class="k">"hidden"</span>,
+ "until":"agent.done=false"}</pre>
+    </div>
+    <div class="place">
+      <div class="diagram" aria-hidden="true">
+        <div class="dg focus"><span class="lbl">notes.md</span></div>
+        <div class="dg gone ghost"><span class="lbl">0:41 left</span></div>
+      </div>
+      <h3>Closed, reopenable</h3>
+      <p class="what">Gone from the tab; its program runs for 60 s so ⇧⌘T brings it back intact.</p>
+      <pre>umi reopen --list
+{"kind":"pane","panes":["p5"],
+ "place":<span class="k">"closed"</span>,"expires_in":41}</pre>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="opts-h">
+  <h2 id="opts-h">Five ways to show hidden panes</h2>
+  <p>Each mock is the same Umi window. The tab <b>umi</b> has two panes on show and two hidden agents. Try the controls, then press <b>Simulate</b>: the hidden <i>deploy check</i> agent ends its turn without saying done.</p>
+
+  <div class="switch" role="group" aria-label="Option">
+    <button type="button" data-opt="A" id="opt-A"><span class="n">1</span>A · Sidebar section</button>
+    <button type="button" data-opt="B" id="opt-B"><span class="n">2</span>B · Count on the tab row</button>
+    <button type="button" data-opt="C" id="opt-C"><span class="n">3</span>C · Pane strip</button>
+    <button type="button" data-opt="D" id="opt-D"><span class="n">4</span>D · Shelf</button>
+    <button type="button" data-opt="E" id="opt-E"><span class="n">5</span>E · Tab overview</button>
+  </div>
+
+  <div class="stage">
+    <div class="stage-left">
+      <div class="controls">
+        <button type="button" class="btn primary" id="simulate">Simulate: deploy check isn't done</button>
+        <button type="button" class="btn" id="reset">Reset</button>
+        <span class="readout">Keyboard focus: <b id="focusname">notes.md</b> · moved by Umi: <b id="umimoves">0</b></span>
+      </div>
+      <div class="mock-scroll"><div class="win" id="win"></div></div>
+      <div class="log" id="log" aria-live="polite">Click a pane to focus it. Hover a pane for Hide.</div>
+      <div class="keys">
+        <span><kbd>1</kbd>–<kbd>5</kbd> option</span>
+        <span><kbd>S</kbd> simulate</span>
+        <span><kbd>R</kbd> reset</span>
+        <span><kbd>H</kbd> hide focused pane</span>
+        <span><kbd>O</kbd> overview (E)</span>
+        <span><kbd>Esc</kbd> close</span>
+      </div>
+    </div>
+    <aside class="notes" id="notes" aria-live="polite"></aside>
+  </div>
+</section>
+
+<section aria-labelledby="voc-h">
+  <h2 id="voc-h">Visual vocabulary, quietest first</h2>
+  <p>Every attribute that shows on screen goes through one of these. Fewer channels keep Umi quiet; <code>style.&lt;query&gt;</code> would choose among these only.</p>
+  <div class="vocab" id="vocab"></div>
+</section>
+
+<footer>Prototype for <code>DESIGN-primitives.md</code>, decision 7. Fake content. Built with the artifact-design skill as an experiment.</footer>
+</div>
+
+<script>
+(() => {
+  const ICON = '<svg viewBox="0 0 16 16" class="ico-svg" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 1.2l1.3 4.1 4.3-.9-3 3.2 3 3.2-4.3-.9L8 14.8l-1.3-4.1-4.3.9 3-3.2-3-3.2 4.3.9z"/></svg>';
+  const TERM = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M3 4.5l3.5 3.5L3 11.5M8.5 12h4.5"/></svg>';
+
+  const OPTS = {
+    A: { title: "Sidebar section", sub: "A Hidden list at the bottom of the sidebar, across every tab, each pane with its status.",
+      back: "Its dot turns amber in the list, then it leaves the list and returns to its tab's split, unfocused.",
+      cfg: "hidden.show = sidebar-section",
+      pros: ["Everything hidden is in one place", "Status of each hidden agent at a glance"],
+      cons: ["Shows other tabs' panes, which competes with the tab rows", "Grows with the number of hidden panes"] },
+    B: { title: "Count on the tab row", sub: "A small count on each tab row; click it to list that tab's hidden panes.",
+      back: "The count turns amber and drops by one; the pane returns to its tab, unfocused, with a corner dot.",
+      cfg: "hidden.show = tab-count",
+      pros: ["Quietest option that still tells you", "Belongs to the tab, matching where hidden panes live"],
+      cons: ["Names and status take a click", "Another mark on a row that already has an icon and line 2"] },
+    C: { title: "Pane strip", sub: "Every pane of the tab gets a chip across the top; hidden ones are dim and italic.",
+      back: "Its chip turns amber, then becomes a normal chip as the pane joins the split. Showing a fourth pane hides the least recently used one.",
+      cfg: "hidden.show = strip\ntab.max-visible = 3",
+      pros: ["Also serves a tab with more than three panes", "Click a chip to bring a pane in"],
+      cons: ["Costs a row of height in every tab", "Chip order is fixed, not the on-screen order"] },
+    D: { title: "Shelf", sub: "A thin bar along the window bottom with the tab's hidden panes as pills.",
+      back: "Its pill glows amber for a moment, then the pane rises into the split, unfocused.",
+      cfg: "hidden.show = shelf",
+      pros: ["Clear and spatial: hidden things sit below", "Room for a glow without touching the sidebar"],
+      cons: ["Always costs a row, even with nothing hidden (could auto-hide)", "Far from where your eyes usually are"] },
+    E: { title: "Tab overview", sub: "Nothing on screen by default. O opens a grid of every pane in the tab; hidden ones are dashed.",
+      back: "Nothing shows until it returns; the pane joins the split unfocused with a corner dot, and the tab row's icon turns amber.",
+      cfg: "hidden.show = none\nkey.o = overview",
+      pros: ["Zero cost while you work", "Best way to see a busy tab whole"],
+      cons: ["You can forget hidden panes exist", "One more mode to learn"] }
+  };
+
+  let state, tick, umiMoves, timer = null;
+  function fresh() {
+    tick = 10; umiMoves = 0;
+    state = {
+      opt: (state && state.opt) || "A", tab: "umi", popFor: null, overview: false, simulated: false,
+      tabs: [
+        { id: "umi", name: "umi", br: "main", focused: "notes", panes: [
+          { id: "notes", title: "notes.md", kind: "file", status: "", used: 9, body: "<span class=\"dim\"># Hidden panes</span>\n\nA hidden pane stays in its tab. It keeps running and can come back by itself when its agent ends a turn that isn't done<span class=\"caret\"></span>" },
+          { id: "tint", title: "claude · sidebar tint", kind: "agent", status: "working", used: 8, body: "⏺ Reading UmiSidebar.swift\n⏺ Edit tint to ink 5% over bg\n  <span class=\"dim\">+ .background(ink.opacity(0.05))</span>\n\n<span class=\"dim\">✳ Working… 2m 10s</span>" },
+          { id: "deploy", title: "claude · deploy check", kind: "agent", status: "working", hidden: true, until: "agent.done=false", used: 3, body: "⏺ curl -s staging/healthz\n  <span class=\"dim\">503 on 2 of 6 checks</span>\n⏺ Checked db and cache\n\nStatus: waiting on you: <span class=\"amb\">2 health checks fail; roll back?</span>" },
+          { id: "flaky", title: "claude · flaky test hunt", kind: "agent", status: "working", hidden: true, until: "agent.done=false", used: 2, body: "⏺ Running TabOrderTests ×50\n  <span class=\"dim\">49 passed, 1 failed</span>\n\n<span class=\"dim\">✳ Working… 14m</span>" }
+        ]},
+        { id: "site", name: "website", br: "redesign", focused: "srv", panes: [
+          { id: "srv", title: "zsh · npm run dev", kind: "term", status: "", used: 5, body: "<span class=\"dim\">~/best/projects/website</span>\n$ npm run dev\n  ready on localhost:4321" },
+          { id: "copy", title: "claude · rewrite about page", kind: "agent", status: "working", hidden: true, used: 4, body: "⏺ Drafting about.md\n\n<span class=\"dim\">✳ Working… 6m</span>" }
+        ]},
+        { id: "impact", name: "impact-ops", br: "main", focused: "memo", panes: [
+          { id: "memo", title: "claude · assessment memo", kind: "agent", status: "idle", used: 6, body: "⏺ Draft ready in assessment.md\n\nStatus: done" }
+        ]}
+      ]
+    };
+    clearTimeout(timer);
+  }
+
+  const tabOf = id => state.tabs.find(t => t.id === id);
+  const curTab = () => tabOf(state.tab);
+  const findPane = id => { for (const t of state.tabs) { const p = t.panes.find(p => p.id === id); if (p) return [t, p]; } return [null, null]; };
+  const visible = t => t.panes.filter(p => !p.hidden);
+  const hiddenOf = t => t.panes.filter(p => p.hidden);
+  const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  function log(html) { document.getElementById("log").innerHTML = html; }
+
+  function focusPane(id, byUser = true) {
+    const [t, p] = findPane(id);
+    if (!t) return;
+    if (!byUser) umiMoves++;
+    state.tab = t.id; t.focused = id; p.used = ++tick; p.mark = false;
+  }
+  function showPane(id, { focus = false, byUmi = false } = {}) {
+    const [t, p] = findPane(id);
+    if (!p || !p.hidden) { if (focus) focusPane(id); return; }
+    const vis = visible(t);
+    if (vis.length >= 3) {
+      const lru = vis.filter(x => x.id !== t.focused).sort((a, b) => a.used - b.used)[0];
+      if (lru) { lru.hidden = true; }
+    }
+    p.hidden = false; p.entering = true;
+    if (focus) focusPane(id);
+    else if (!byUmi) p.used = ++tick;
+  }
+  function hidePane(id) {
+    const [t, p] = findPane(id);
+    if (!p || p.hidden) return;
+    if (visible(t).length <= 1) { log("A tab keeps at least one pane on show."); return; }
+    p.hidden = true;
+    if (t.focused === id) {
+      const next = visible(t).sort((a, b) => b.used - a.used)[0];
+      t.focused = next.id; next.used = ++tick;
+    }
+    log(`Hid <b>${esc(p.title)}</b>. It keeps running in tab ${esc(t.name)}.`);
+  }
+
+  function tabNeeds(t) { return t.panes.some(p => p.status === "needs" || p.mark); }
+  function line2(t) {
+    const need = t.panes.find(p => p.status === "needs" || p.mark);
+    if (need) return { text: need.title.replace("claude · ", "") + ": waiting on you", amber: true };
+    const f = t.panes.find(p => p.id === t.focused);
+    return { text: f.kind === "agent" ? f.title.replace("claude · ", "") : f.title, amber: false };
+  }
+  function statusDot(p) { return `<span class="sdot ${p.status === "needs" ? "needs" : p.status === "working" ? "working" : ""}"></span>`; }
+
+  function renderSide() {
+    let h = '<div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>';
+    for (const t of state.tabs) {
+      const l2 = line2(t);
+      const hasAgent = t.panes.some(p => p.kind === "agent");
+      const hid = hiddenOf(t);
+      const amberChip = hid.some(p => p.status === "needs");
+      h += `<div class="tabrow ${t.id === state.tab ? "sel" : ""}" data-act="tab" data-id="${t.id}" role="button" tabindex="0" aria-label="Tab ${t.name}">
+        <span class="ico ${tabNeeds(t) ? "amber" : ""}">${hasAgent ? ICON : TERM}</span>
+        <span class="l1">${esc(t.name)}<span class="br">${esc(t.br)}</span></span>
+        ${state.opt === "B" && hid.length ? `<button type="button" class="chip ${amberChip ? "amber" : ""}" data-act="chip" data-id="${t.id}" aria-label="${hid.length} hidden panes">${hid.length}</button>` : "<span></span>"}
+        <span class="l2 ${l2.amber ? "amber" : ""}">${esc(l2.text)}</span>
+      </div>`;
+      if (state.opt === "B" && state.popFor === t.id && hid.length) {
+        h += `<div class="pop">${hid.map(p => `<button type="button" data-act="show" data-id="${p.id}">${statusDot(p)}${esc(p.title.replace("claude · ", ""))}</button>`).join("")}</div>`;
+      }
+    }
+    if (state.opt === "A") {
+      const all = state.tabs.flatMap(t => hiddenOf(t).map(p => [t, p]));
+      h += `<div class="hiddenlist"><div class="h">Hidden · ${all.length}</div>${all.length ? all.map(([t, p]) =>
+        `<button type="button" data-act="show" data-id="${p.id}">${statusDot(p)}<span>${esc(p.title.replace("claude · ", ""))}</span><span class="t">${esc(t.name)}</span></button>`).join("") : '<span class="t" style="padding:0 6px">nothing hidden</span>'}</div>`;
+    }
+    return `<nav class="side" aria-label="Sidebar">${h}</nav>`;
+  }
+
+  function renderMain() {
+    const t = curTab();
+    let h = "";
+    if (state.opt === "C") {
+      h += `<div class="strip">${t.panes.map(p => `<button type="button" data-act="${p.hidden ? "show" : "focus"}" data-id="${p.id}" class="${p.hidden ? "hid" : "vis"} ${p.id === t.focused ? "foc" : ""}">${p.hidden || p.status === "needs" ? statusDot(p) : ""}${esc(p.title.replace("claude · ", ""))}</button>`).join("")}</div>`;
+    }
+    if (state.opt === "E") h += `<button type="button" class="ovbtn" data-act="overview">Overview · O</button>`;
+    h += `<div class="panes">${visible(t).map(p => `
+      <div class="pane ${p.id === t.focused ? "foc" : ""} ${p.entering ? "enter" : ""}" data-act="focus" data-id="${p.id}">
+        ${p.mark ? '<span class="corner" title="Came back: needs you"></span>' : ""}
+        <button type="button" class="hide" data-act="hide" data-id="${p.id}">Hide</button>
+        <div class="ttl">${esc(p.title)}</div>
+        <div class="body">${p.id === t.focused || !p.body.includes("caret") ? p.body : p.body.replace('<span class="caret"></span>', "")}</div>
+        ${p.kind === "agent" ? `<div class="stat">${statusDot(p)}${p.status === "needs" ? "needs you" : p.status}</div>` : ""}
+      </div>`).join("")}</div>`;
+    if (state.opt === "D") {
+      const hid = hiddenOf(t);
+      h += `<div class="shelf"><span class="h">Hidden</span>${hid.length ? hid.map(p => `<button type="button" class="pill ${p.pending ? "glow" : ""}" data-act="show" data-id="${p.id}">${statusDot(p)}${esc(p.title.replace("claude · ", ""))}</button>`).join("") : '<span class="h" style="text-transform:none;letter-spacing:0">nothing hidden</span>'}</div>`;
+    }
+    if (state.opt === "E" && state.overview) {
+      h += `<div class="overview" role="dialog" aria-label="Tab overview">${t.panes.map(p => `
+        <button type="button" class="tile ${p.hidden ? "hid" : ""} ${p.id === t.focused ? "foc" : ""}" data-act="tile" data-id="${p.id}">
+          <span class="tt">${p.kind === "agent" ? statusDot(p) : ""}${esc(p.title)}${p.hidden ? " · hidden" : ""}</span>
+          <span class="tb">${p.body.replace('<span class="caret"></span>', "")}</span>
+        </button>`).join("")}<div class="hint">Click a tile to show and focus it · Esc closes</div></div>`;
+    }
+    return `<div class="main">${h}</div>`;
+  }
+
+  function renderNotes() {
+    const o = OPTS[state.opt];
+    document.getElementById("notes").innerHTML = `
+      <span class="eyebrow">Option ${state.opt}</span>
+      <h3>${o.title}</h3>
+      <p class="sub">${o.sub}</p>
+      <dl>
+        <div><dt>When it comes back</dt><dd>${o.back}</dd></div>
+        <div><dt>Config</dt><dd><pre>${esc(o.cfg)}</pre></dd></div>
+        <div><dt>For</dt><dd><ul>${o.pros.map(x => `<li>${x}</li>`).join("")}</ul></dd></div>
+        <div><dt>Against</dt><dd><ul>${o.cons.map(x => `<li>${x}</li>`).join("")}</ul></dd></div>
+      </dl>`;
+  }
+
+  function render() {
+    document.getElementById("win").innerHTML = renderSide() + renderMain();
+    for (const b of document.querySelectorAll(".switch button")) b.setAttribute("aria-pressed", String(b.dataset.opt === state.opt));
+    const t = curTab();
+    document.getElementById("focusname").textContent = t.panes.find(p => p.id === t.focused).title;
+    document.getElementById("umimoves").textContent = umiMoves;
+    const sim = document.getElementById("simulate");
+    sim.disabled = state.simulated;
+    sim.textContent = state.simulated ? "Done: press Reset to replay" : "Simulate: deploy check isn't done";
+    renderNotes();
+    for (const tb of state.tabs) for (const p of tb.panes) p.entering = false;
+  }
+
+  function simulate() {
+    if (state.simulated) return;
+    state.simulated = true;
+    const [t, p] = findPane("deploy");
+    if (!p.hidden) { p.hidden = true; }
+    p.status = "needs"; p.pending = true;
+    log('<span class="amber">deploy check</span> ended its turn. Last line: “Status: waiting on you”, not done. Its <code>--until agent.done=false</code> is now true.');
+    render();
+    timer = setTimeout(() => {
+      p.pending = false; p.mark = true;
+      showPane("deploy", { byUmi: true });
+      log(`<span class="amber">deploy check</span> is back in tab <b>umi</b>, unfocused. Keyboard focus stayed on <b>${esc(curTab().panes.find(x => x.id === curTab().focused).title)}</b>.${state.tab !== "umi" ? " You're in another tab, so only its row changed." : ""}`);
+      render();
+    }, 1300);
+  }
+
+  document.getElementById("win").addEventListener("click", e => {
+    const el = e.target.closest("[data-act]");
+    if (!el) return;
+    const { act, id } = el.dataset;
+    if (act === "chip") { e.stopPropagation(); state.popFor = state.popFor === id ? null : id; render(); return; }
+    if (act === "tab") { state.tab = id; state.popFor = null; const t = curTab(); focusPane(t.focused); render(); return; }
+    if (act === "show") { const [t, p] = findPane(id); showPane(id, { focus: true }); state.popFor = null; log(`Showed <b>${esc(p.title)}</b> in tab ${esc(t.name)} and focused it.`); render(); return; }
+    if (act === "hide") { e.stopPropagation(); hidePane(id); render(); return; }
+    if (act === "focus") { focusPane(id); render(); return; }
+    if (act === "overview") { state.overview = true; render(); return; }
+    if (act === "tile") { state.overview = false; const [, p] = findPane(id); showPane(id, { focus: true }); log(`Showed <b>${esc(p.title)}</b> from the overview.`); render(); return; }
+  });
+  document.getElementById("win").addEventListener("keydown", e => {
+    if (e.key === "Enter" && e.target.matches(".tabrow")) e.target.click();
+  });
+  for (const b of document.querySelectorAll(".switch button")) b.addEventListener("click", () => setOpt(b.dataset.opt));
+  document.getElementById("simulate").addEventListener("click", simulate);
+  document.getElementById("reset").addEventListener("click", reset);
+
+  function setOpt(o) { state.opt = o; state.popFor = null; state.overview = false; render(); }
+  function reset() { fresh(); log("Reset. Click a pane to focus it. Hover a pane for Hide."); render(); }
+
+  document.addEventListener("keydown", e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if ("12345".includes(k) && k.length === 1) { setOpt("ABCDE"[+k - 1]); }
+    else if (k === "s") simulate();
+    else if (k === "r") reset();
+    else if (k === "h") { hidePane(curTab().focused); render(); }
+    else if (k === "o") { if (state.opt !== "E") setOpt("E"); state.overview = !state.overview; render(); }
+    else if (k === "escape") { state.overview = false; state.popFor = null; render(); }
+  });
+
+  // Vocabulary
+  const V = [
+    { n: "Tab-switch fade", d: "Panes fade in for about 140 ms when the tab changes.", t: "today", l: 1, sw: '<div class="fade"></div>' },
+    { n: "Sidebar line 2", d: "The second line of a tab row: agent title, command or folder.", t: "today", l: 1, sw: '<div class="row"></div><span class="txt">sidebar tint</span>' },
+    { n: "Dim", d: "Lower the opacity of panes or rows that don't match a view.", t: "cand", l: 1, sw: '<div class="p a cyan-top"></div><div class="p b dimmed"></div>' },
+    { n: "Tab color tint", d: "One of nine colors, washed into the tab's row.", t: "today", l: 2, sw: '<div class="row tint"></div>' },
+    { n: "Cyan focus line", d: "A line on the top edge of the focused pane in a split.", t: "today", l: 2, sw: '<div class="p a cyan-top"></div><div class="p b"></div>' },
+    { n: "Stack strip", d: "Names the members of a stack above its place.", t: "today", l: 2, sw: '<div class="strip2"><span class="on">plan.md</span><span>notes.md</span></div>' },
+    { n: "Count chip", d: "A small number on a tab row, such as hidden panes.", t: "cand", l: 2, sw: '<div class="row"></div><span class="cnt">2</span>' },
+    { n: "Agent icon, quiet color", d: "The agent's mark on a tab row turns amber when it finished unseen or needs you.", t: "today", l: 3, sw: `<div class="row"></div><span class="glyph">${ICON}</span>` },
+    { n: "Status dot", d: "A 6 px dot on a row or chip: green working, amber needs you.", t: "cand", l: 3, sw: '<div class="row"></div><span class="dot"></span>' },
+    { n: "Corner dot on a pane", d: "Marks a pane that came back and still needs you.", t: "cand", l: 3, sw: '<div class="p a"><span class="corner"></span></div>' },
+    { n: "Shelf pill", d: "A named pill on a bottom shelf for a hidden pane.", t: "cand", l: 3, sw: '<span class="shelfpill quiet">deploy check</span>' },
+    { n: "Pane border", d: "A colored outline around a pane matching a style rule.", t: "cand", l: 4, sw: '<div class="p a border"></div><div class="p b"></div>' },
+    { n: "Dock badge count", d: "Red count on Umi's Dock icon: panes that need you.", t: "today", l: 4, sw: '<div class="badge"></div>' },
+    { n: "Glow", d: "A short amber halo on the thing about to change.", t: "cand", l: 5, sw: '<span class="shelfpill glowing">deploy check</span>' }
+  ];
+  const LOUD = ["", "whisper", "quiet", "noticeable", "loud", "loudest"];
+  document.getElementById("vocab").innerHTML = V.map(v => `
+    <div class="vrow">
+      <div class="sw" aria-hidden="true">${v.sw}</div>
+      <div style="min-width:0"><div class="name">${v.n}</div><div class="desc">${v.d}</div></div>
+      <span class="tag ${v.t === "today" ? "today" : "cand"}">${v.t === "today" ? "In Umi" : "Candidate"}</span>
+      <span class="meter" title="${LOUD[v.l]}">${[1,2,3,4,5].map(i => `<i class="${i <= v.l ? "on" : ""}"></i>`).join("")}<span class="meter-label">${LOUD[v.l]}</span></span>
+    </div>`).join("");
+
+  fresh(); render();
+})();
+</script>
+</body>
+</html>
