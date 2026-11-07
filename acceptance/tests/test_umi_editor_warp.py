@@ -724,8 +724,9 @@ def test_header_shows_folder_and_name_left_aligned_and_keeps_the_name_whole(inst
     gx, gy, gw, _ = frame(ui, group)
     name = header_title(ui, path.name, group)
     nx, ny, nw, nh = frame(ui, name)
-    parent = ui.find(lambda e: ui.role(e) == "AXStaticText" and ui.label(e) == "notes", group)
-    assert parent is not None, "the parent folder's name is in the header"
+    parent = ui.find(lambda e: ui.role(e) == "AXStaticText"
+                     and any((t or "").startswith("notes") for t in (ui.label(e), ui.value(e))), group)
+    assert parent is not None, f"the parent folder's name is in the header: {ui.texts(group)[:12]}"
     fx, fy, fw, _ = frame(ui, parent)
     assert ny - gy < 30 and fy - gy < 30, "both in the header row"
     assert fx < nx, "the folder comes before the name"

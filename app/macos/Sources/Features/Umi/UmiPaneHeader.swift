@@ -59,7 +59,6 @@ struct UmiPathTitle: View {
                     .foregroundColor(UmiTheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.head)
-                    .accessibilityLabel(folder)
             }
             HStack(spacing: 4) {
                 if dirty {

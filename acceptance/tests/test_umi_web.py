@@ -333,6 +333,6 @@ def test_a_hosted_pages_switch_in_umis_header_ui(web, ui):
     area = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Web page"), 5, message="the web pane")
     source = wait_until(lambda: ui.button("Source", area), 5, message="Source in the header")
     assert ui.button("Preview", area) is not None and ui.button("GitHub", area) is not None
-    assert ui.find(lambda e: ui.role(e) == "AXStaticText" and ui.label(e) == "AGENTS.md", area) is not None
+    assert ui.find(lambda e: ui.role(e) == "AXStaticText" and "AGENTS.md" in (ui.label(e), ui.value(e)), area) is not None
     ui.press(source)
     titled(inst, page, "Hosted source in umi")
