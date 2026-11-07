@@ -234,7 +234,9 @@ New pieces for moving attention and panes around (prototypes in `design/prototyp
 - **Drawer.** A place that floats over the current tab without changing its layout, shown and put
   away by a key. Holds the manager pane (`key.ctrl+cmd+m = drawer toggle 'role=manager'`), a pane
   that resurfaces, or a pane you want for a moment. A pane can be docked from the drawer into the
-  tab's split, or hidden again. Being explored in `drawer.html`.
+  tab's split, or hidden again. *Decided:* a bottom drawer that rises over the lower half of
+  the tab (option B in `drawer.html`). A pane waiting for it shows as a thin line along the bottom
+  edge with a short label; the key brings it up.
 - **Send back.** A pane moved to another tab can return to the tab and place it came from, read
   from the activity log.
 - **Bucket tabs.** A tab you don't watch (such as `Delegated`, handled by the manager) can be
