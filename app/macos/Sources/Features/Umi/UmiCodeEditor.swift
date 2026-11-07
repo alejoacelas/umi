@@ -577,6 +577,14 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
         scroll.rulersVisible = true
         textView.code = self
         textView.textStorage?.delegate = self
+        // The gutter is a content inset of the clip view (94 points on the left), but the text
+        // starts out at x = 0, under the gutter, as if scrolled 94 points sideways; once laid out
+        // it goes to its left edge (x = -inset), where scrolling to the line start puts it.
+        scroll.contentView.postsFrameChangedNotifications = true
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.firstLayout() }
+            })
         applyFont()
         textChanged()
         observers.append(NotificationCenter.default.addObserver(
@@ -597,6 +605,19 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
 
     deinit {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    private var laidOut = false
+
+    private func firstLayout() {
+        guard !laidOut, let scroll, scroll.contentView.frame.width > 0 else { return }
+        laidOut = true
+        DispatchQueue.main.async { [weak scroll] in
+            guard let scroll else { return }
+            let clip = scroll.contentView
+            clip.scroll(to: NSPoint(x: -clip.contentInsets.left, y: clip.bounds.origin.y))
+            scroll.reflectScrolledClipView(clip)
+        }
     }
 
     /// A new text view for code: TextKit 1 (for the gutter and match colors), no soft wrap, long

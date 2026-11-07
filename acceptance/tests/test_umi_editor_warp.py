@@ -132,6 +132,25 @@ def test_code_view_has_the_terminal_font_line_numbers_and_no_wrap(inst, win, cod
 
 
 @pytest.mark.req("E-21")
+def test_a_file_with_long_lines_opens_at_its_left_edge_beside_the_gutter(inst, win, tmp_path, ui):
+    # Warp opens a file at its top left. A line longer than the pane must not start the text
+    # scrolled sideways, under the gutter.
+    path = tmp_path / "long.txt"
+    path.write_text("start-of-line " + "x" * 400 + "\nsecond\n")
+    open_file(inst, win, path)
+
+    def offset():
+        group = editor_group(ui, path.name)
+        area = group and ui.find(lambda e: ui.role(e) == "AXTextArea", group)
+        scroll = group and ui.find(lambda e: ui.role(e) == "AXScrollArea", group)
+        return area is not None and scroll is not None and frame(ui, area)[0] - frame(ui, scroll)[0]
+
+    wait_until(lambda: offset() is not False, 10, message="the code view in the accessibility tree")
+    time.sleep(0.5)
+    assert offset() == 94, f"the text starts right of the 94-point gutter, not {offset()} points in"
+
+
+@pytest.mark.req("E-21")
 def test_syntax_colors_come_from_the_terminal_palette(inst, win, code):
     pane = open_file(inst, win, code)
     state = wait_until(lambda: (s := ed(inst, pane)).get("highlighted") and s, 10, message="syntax colors")

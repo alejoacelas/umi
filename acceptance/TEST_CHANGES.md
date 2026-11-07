@@ -1147,3 +1147,7 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   keyboard back to the terminal (a second Esc closes it), so the test failed whenever an earlier
   test (the ⌘E ones) had left text there. Checked by hand on mac-air-2: with an empty query one
   Esc closes the search. Its assertions are unchanged. **Requirements:** E-22.
+- **Added, `tests/test_umi_editor_warp.py` `test_a_file_with_long_lines_opens_at_its_left_edge_beside_the_gutter`**:
+  a file with a line longer than the pane opens with its text starting right of the 94-point
+  gutter. It opened scrolled 94 points sideways, its first characters under the line numbers
+  (found walking the branch on mac-air-2). **Requirements:** E-21.
