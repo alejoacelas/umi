@@ -22,7 +22,7 @@ enum UmiTabSwitchCue {
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         // The panes' area: below the titlebar, right of the sidebar.
         var area = content.convert(window.contentLayoutRect, from: nil)
-        if UmiState.shared.sidebarVisible {
+        if controller.sidebarVisible {
             area.origin.x += controller.sidebarWidth
             area.size.width -= controller.sidebarWidth
         }

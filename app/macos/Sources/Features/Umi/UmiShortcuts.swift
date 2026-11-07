@@ -24,6 +24,10 @@ enum UmiShortcuts {
         let action: @MainActor () -> Void
         /// Whether the item applies right now.
         var enabled: @MainActor () -> Bool = { true }
+        /// When the item doesn't apply, its key goes on to whatever has focus (a terminal gets
+        /// ⌃G) instead of beeping. Several items may share a key; the enabled one runs, and the
+        /// key passes on only when every one of them is disabled and passes through.
+        var passesThrough = false
 
         var defaultShortcut: UmiShortcut? {
             key.isEmpty ? nil : UmiShortcut(key: key, modifiers: modifiers)
@@ -46,27 +50,67 @@ enum UmiShortcuts {
             Item(id: "file.open", title: "Open File…", key: "", modifiers: [], symbol: "doc", menu: "File",
                  action: { UmiEditor.openPanel() }),
             Item(id: "file.save", title: "Save File", key: "s", modifiers: [.command], symbol: "square.and.arrow.down", menu: "File",
-                 action: { UmiEditor.currentDocument?.save() },
+                 action: { UmiEditor.currentDocument.map { UmiEditor.saveFromUser($0) } },
                  enabled: { UmiEditor.currentDocument != nil }),
+            // The file editor (E-22, E-23), Warp's keys.
+            Item(id: "file.save_as", title: "Save As…", key: "s", modifiers: [.command, .shift],
+                 symbol: "square.and.arrow.down.on.square", menu: "File",
+                 action: { UmiEditor.currentDocument.map { UmiEditor.saveAs($0) } },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
+            Item(id: "edit.go_to_line", title: "Go to Line…", key: "g", modifiers: [.control], symbol: "arrow.right.to.line",
+                 menu: "Edit", action: { UmiEditor.currentCode?.openGoToLine() },
+                 enabled: { UmiEditor.currentCode != nil }, passesThrough: true),
+            Item(id: "edit.toggle_comment", title: "Toggle Comment", key: "/", modifiers: [.command], symbol: "number",
+                 menu: "Edit", action: { UmiEditor.currentCode?.toggleComment() },
+                 enabled: { UmiEditor.currentCode?.language?.commentPrefix != nil }, passesThrough: true),
+            // In a file pane, find acts on the file (Ghostty's Find items have no keys of their own); a
+            // preview switches to its source first.
+            Item(id: "edit.find", title: "Find in File…", key: "f", modifiers: [.command], symbol: "magnifyingglass",
+                 menu: "Edit", action: { UmiEditor.find(previewAction: #selector(UmiPreviewWebView.find(_:)), inSource: { $0.openFind() }) },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
+            Item(id: "edit.find_next", title: "Find Next in File", key: "g", modifiers: [.command], symbol: "chevron.down",
+                 menu: "Edit", action: { UmiEditor.find(previewAction: #selector(UmiPreviewWebView.findNext(_:)), inSource: { $0.findStep(1) }) },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
+            Item(id: "edit.find_previous", title: "Find Previous in File", key: "g", modifiers: [.command, .shift],
+                 symbol: "chevron.up", menu: "Edit", action: { UmiEditor.find(previewAction: #selector(UmiPreviewWebView.findPrevious(_:)), inSource: { $0.findStep(-1) }) },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
+            Item(id: "edit.find_replace", title: "Find and Replace…", key: "f", modifiers: [.command, .option],
+                 symbol: "text.magnifyingglass", menu: "Edit", action: { UmiEditor.inSource { $0.openFind(replace: true) } },
+                 enabled: { UmiEditor.currentDocument != nil }, passesThrough: true),
             // L-20. Its title names what it would reopen (see `validate`).
             Item(id: "file.reopen", title: UmiReopen.anyTitle, key: "t", modifiers: [.command, .shift],
                  symbol: "arrow.uturn.backward", menu: "File",
                  action: { if (try? UmiReopen.shared.reopen()) == nil { NSSound.beep() } },
                  enabled: { UmiReopen.shared.next != nil }),
+            // Launch configurations (L-21, Warp parity): ⌃⌘L lists them, as in Warp. The submenu
+            // also lists each configuration by name (UmiLaunchConfigs.installMenu).
+            Item(id: "file.launch_configs", title: "Open Launch Configuration…", key: "l", modifiers: [.command, .control],
+                 symbol: "rectangle.3.group", menu: "File", submenu: UmiLaunchConfigs.menuTitle,
+                 action: { UmiPaletteModel.present(.launchConfigs) }),
+            Item(id: "file.save_launch_config", title: "Save New Launch Configuration…", key: "", modifiers: [],
+                 symbol: "square.and.arrow.down.on.square", menu: "File", submenu: UmiLaunchConfigs.menuTitle,
+                 action: { UmiLaunchConfigs.presentSaveDialog() }),
             Item(id: "view.palette", title: "Command Palette…", key: "p", modifiers: [.command], symbol: "command", menu: "View",
                  action: { UmiPaletteModel.present(.commands) }),
             Item(id: "view.sidebar", title: "Toggle Sidebar", key: "b", modifiers: [.command], symbol: "sidebar.left", menu: "View",
-                 action: { UmiState.shared.sidebarVisible.toggle() }),
+                 action: { UmiSidebarVisibility.toggle() }),
+            // Warp's key for its left panel, a second key for the same toggle.
+            Item(id: "view.sidebar_left_panel", title: "Toggle Left Panel", key: "\\", modifiers: [.command],
+                 symbol: "sidebar.left", menu: "View", action: { UmiSidebarVisibility.toggle() }),
+            // Warp's "Search tabs..." field at the top of the sidebar.
+            Item(id: "view.search_tabs", title: "Search Tabs", key: "f", modifiers: [.command, .option],
+                 symbol: "magnifyingglass", menu: "View", action: { UmiSidebarSearch.focusField() }),
             Item(id: "view.explorer", title: "Show Project Explorer", key: "e", modifiers: [.command, .shift], symbol: "folder",
-                 menu: "View", action: {
-                     let state = UmiState.shared
-                     if state.sidebarVisible && state.sidebarMode == .files {
-                         state.sidebarMode = .tabs
-                     } else {
-                         state.sidebarMode = .files
-                         state.sidebarVisible = true
-                     }
-                 }),
+                 menu: "View", action: { UmiSidebarKeys.toggleExplorer() }),
+            // Warp's keys for its left panel, the explorer's hidden files and global search.
+            Item(id: "view.explorer_panel", title: "Left Panel: Project Explorer", key: "1", modifiers: [.control],
+                 symbol: "folder", menu: "View", action: { UmiSidebarKeys.toggleExplorer() }),
+            Item(id: "view.hidden_files", title: "Toggle Hidden Files in Project Explorer", key: ".", modifiers: [.command, .shift],
+                 symbol: "eye", menu: "View", action: { UmiState.shared.showHiddenFiles.toggle() }),
+            Item(id: "view.global_search", title: "Global Search", key: "f", modifiers: [.command, .shift],
+                 symbol: "magnifyingglass", menu: "View", action: { UmiSidebarKeys.openSearch() }),
+            Item(id: "view.search_panel", title: "Left Panel: Global Search", key: "3", modifiers: [.control],
+                 symbol: "magnifyingglass", menu: "View", action: { UmiSidebarKeys.toggleSearch() }),
             // E-11: like Google Docs' ⌥⌘M.
             Item(id: "edit.comment", title: "Add Comment", key: "m", modifiers: [.command, .option], symbol: "text.bubble",
                  menu: "Edit", action: { UmiEditor.currentDocument?.commentTarget?.startComment() },
@@ -84,16 +128,20 @@ enum UmiShortcuts {
             Item(id: "pane.stack_next", title: "Next in Stack", key: "]", modifiers: [.command],
                  symbol: "chevron.right.square", menu: "Window", action: { UmiStacks.cycle(1) }),
             Item(id: "tab.back", title: "Back to Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.uturn.backward",
-                 menu: "Window", action: { if UmiNavigation.tabBack() == nil { NSSound.beep() } },
-                 enabled: { UmiTabHistory.canGoBack }),
+                 menu: "Window", action: {
+                     // While the sidebar has a search query: the previous matching tab, as Warp.
+                     if let searched = UmiSidebarSearch.cycleMatches(-1) { if searched == nil { NSSound.beep() }; return }
+                     if UmiNavigation.tabBack() == nil { NSSound.beep() }
+                 },
+                 enabled: { UmiTabHistory.canGoBack || UmiTopology.currentWindow.map(UmiSidebarSearch.filtersCycling) == true }),
             Item(id: "tab.next", title: "Show Next Tab", key: "]", modifiers: [.command, .shift], symbol: "arrow.down.square",
-                 menu: "Window", action: { UmiNavigation.selectAdjacentTab(1) },
+                 menu: "Window", action: { adjacentTab(1) },
                  enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
             Item(id: "tab.cycle_next", title: "Cycle to Next Tab", key: tab, modifiers: [.control], symbol: "arrow.down.square",
-                 menu: "Window", action: { UmiNavigation.selectAdjacentTab(1) },
+                 menu: "Window", action: { adjacentTab(1) },
                  enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
             Item(id: "tab.cycle_previous", title: "Cycle to Previous Tab", key: tab, modifiers: [.control, .shift],
-                 symbol: "arrow.up.square", menu: "Window", action: { UmiNavigation.selectAdjacentTab(-1) },
+                 symbol: "arrow.up.square", menu: "Window", action: { adjacentTab(-1) },
                  enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
         ] + (1...8).map { n in
             Item(id: "tab.\(n)", title: "Tab \(n)", key: "\(n)", modifiers: [.command], symbol: "\(n).square", menu: "Window",
@@ -125,6 +173,38 @@ enum UmiShortcuts {
             Item(id: "pane.rename", title: "Rename Pane…", key: "r", modifiers: [.command, .control, .shift], symbol: "pencil",
                  menu: "Window", action: { renamePane() }),
 
+            // Tab groups (Warp's "New group with tab"), from the keyboard through the palette.
+            Item(id: "tab.group_new", title: "New Group with Tab", key: "", modifiers: [], symbol: "rectangle.stack.badge.plus",
+                 menu: "Window", action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiTabGroups.newGroup(with: window.selectedTab, in: window)
+                 }),
+            Item(id: "tab.group_toggle", title: "Collapse or Expand Tab Group", key: "", modifiers: [],
+                 symbol: "chevron.up.chevron.down", menu: "Window", action: {
+                     guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabGroups.setCollapsed(group, !group.collapsed, in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+            Item(id: "tab.group_rename", title: "Rename Tab Group", key: "", modifiers: [], symbol: "pencil",
+                 menu: "Window", action: {
+                     guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabMenu.beginRename(.group(group.id), in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+            Item(id: "tab.group_remove", title: "Remove Tab from Group", key: "", modifiers: [], symbol: "rectangle.badge.minus",
+                 menu: "Window", action: {
+                     guard let (window, _) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabGroups.remove(window.selectedTab, in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+            Item(id: "tab.group_new_tab", title: "New Tab in Group", key: "", modifiers: [], symbol: "plus.rectangle.on.rectangle",
+                 menu: "Window", action: {
+                     guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabGroups.newTab(in: group, in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+            Item(id: "tab.group_ungroup", title: "Ungroup Tabs", key: "", modifiers: [], symbol: "rectangle.stack",
+                 menu: "Window", action: {
+                     guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
+                     UmiTabGroups.ungroup(group, in: window)
+                 }, enabled: { UmiTabGroups.currentGroup() != nil }),
+
             // Sessions that need the user (L-12).
             Item(id: "session.next_needing_you", title: "Jump to Next Session Needing You", key: "j", modifiers: [.command, .control],
                  symbol: "exclamationmark.bubble", menu: "Window",
@@ -133,6 +213,12 @@ enum UmiShortcuts {
                  symbol: "arrow.uturn.backward.circle", menu: "Window",
                  action: { if UmiNavigation.jumpBack() == nil { NSSound.beep() } },
                  enabled: { UmiNavigation.canJumpBack }),
+            // Agent events inside the app (Warp parity, 2026-11-05; S-9).
+            Item(id: "view.inbox", title: "Toggle Notifications", key: "u", modifiers: [.command, .shift],
+                 symbol: "tray", menu: "View", action: { UmiInbox.shared.toggle() }),
+            Item(id: "view.dismiss_toasts", title: "Dismiss Toasts", key: "u", modifiers: [.command, .control],
+                 symbol: "xmark.circle", menu: "View", action: { UmiInbox.shared.dismissToasts() },
+                 enabled: { UmiInbox.shared.hasToasts }),
             // A session in the focused pane (AG-6, AG-8).
             Item(id: "session.take_over", title: "Take Over Session", key: "o", modifiers: [.command, .control],
                  symbol: "arrow.down.right.and.arrow.up.left", menu: "Window",
@@ -149,6 +235,55 @@ enum UmiShortcuts {
                      UmiAgentUI.shared.toggleTerminal(pane)
                  },
                  enabled: { UmiTopology.currentPane.map { UmiAgentUI.shared.session(forPane: $0.id) != nil } ?? false }),
+            // Warp's keybindings page (⌘/); in the editor's source the key is the editor's.
+            Item(id: "help.shortcuts", title: "Keyboard Shortcuts", key: "/", modifiers: [.command], symbol: "keyboard",
+                 menu: "Help", action: { UmiShortcutsPageModel.toggle() },
+                 enabled: { !UmiShortcutsPageModel.editorSourceHasFocus }, passesThrough: true),
+        ] + inputSyncItems + zoomItems
+    }
+
+    /// The interface's zoom and the terminals' font size, as Warp's (L-33).
+    private static var zoomItems: [Item] {
+        [
+            Item(id: "view.zoom_in", title: "Zoom In", key: "=", modifiers: [.command], symbol: "plus.magnifyingglass",
+                 menu: "View", action: { if !UmiZoom.shared.step(1) { NSSound.beep() } }),
+            Item(id: "view.zoom_out", title: "Zoom Out", key: "-", modifiers: [.command], symbol: "minus.magnifyingglass",
+                 menu: "View", action: { if !UmiZoom.shared.step(-1) { NSSound.beep() } }),
+            Item(id: "view.zoom_reset", title: "Actual Size", key: "0", modifiers: [.command], symbol: "1.magnifyingglass",
+                 menu: "View", action: { UmiZoom.shared.reset() }),
+            Item(id: "view.font_bigger", title: "Increase Font Size", key: ".", modifiers: [.option, .shift],
+                 symbol: "textformat.size.larger", menu: "View",
+                 action: { if !UmiZoom.shared.stepFontSize(1) { NSSound.beep() } }),
+            Item(id: "view.font_smaller", title: "Decrease Font Size", key: ",", modifiers: [.option, .shift],
+                 symbol: "textformat.size.smaller", menu: "View",
+                 action: { if !UmiZoom.shared.stepFontSize(-1) { NSSound.beep() } }),
+            Item(id: "view.font_reset", title: "Reset Font Size", key: "", modifiers: [], symbol: "textformat.size",
+                 menu: "View", action: { UmiZoom.shared.resetFontSize() }),
+        ]
+    }
+
+    /// Synchronized input, as Warp's (L-32).
+    private static var inputSyncItems: [Item] {
+        [
+            Item(id: "input.sync_tab", title: "Toggle Synchronizing All Panes in Current Tab", key: "i", modifiers: [.command, .option],
+                 symbol: "link", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.toggleTab(window.selectedTab, in: window)
+                 }),
+            Item(id: "input.sync_all", title: "Toggle Synchronizing All Panes in All Tabs", key: "", modifiers: [],
+                 symbol: "link.circle", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.toggleAll(in: window)
+                 }),
+            Item(id: "input.sync_stop", title: "Stop Synchronizing Any Panes", key: "i", modifiers: [.command, .option, .shift],
+                 symbol: "personalhotspot.slash", menu: "Window", submenu: "Synchronize Input",
+                 action: {
+                     guard let window = UmiTopology.currentWindow else { return }
+                     UmiInputSync.shared.stop(in: window)
+                 },
+                 enabled: { UmiTopology.currentWindow.map { UmiInputSync.shared.isSyncingAny($0) } ?? false }),
         ]
     }
 
@@ -158,8 +293,9 @@ enum UmiShortcuts {
 
     private static var handlers: [NSMenuItem: Item] = [:]
     private static var menuItems: [String: NSMenuItem] = [:]
-    /// Each shortcut in effect and its menu item, for the key monitor.
-    private static var byShortcut: [UmiShortcut: NSMenuItem] = [:]
+    /// Each shortcut in effect and its menu items, for the key monitor. Items can share a key
+    /// when at most one of them is enabled at a time (focus decides).
+    private static var byShortcut: [UmiShortcut: [NSMenuItem]] = [:]
     private static var monitor: Any?
 
     static func install() {
@@ -189,15 +325,23 @@ enum UmiShortcuts {
             menuItems[item.id] = menuItem
         }
         applyShortcuts()
+        UmiLaunchConfigs.installMenu(in: mainMenu)
         // Ghostty's own palette item is Umi's Command Palette… now.
         for existing in allItems(mainMenu) where existing.action == #selector(BaseTerminalController.toggleCommandPalette(_:)) {
             existing.isHidden = true
         }
+        // Its font size items go: Umi's (same titles) set the size for every pane, with the zoom (L-33).
+        let fontActions = ["increaseFontSize:", "decreaseFontSize:", "resetFontSize:"].map(NSSelectorFromString)
+        for existing in allItems(mainMenu) where handlers[existing] == nil && existing.action.map(fontActions.contains) == true {
+            existing.menu?.removeItem(existing)
+        }
         // Every session, shown in a pane or not, with its status (AP-3, AP-4).
         if let windowMenu = topMenu("Window", in: mainMenu) {
             UmiAgentMenu.shared.install(in: windowMenu)
+            UmiTabGroupMenu.shared.install(in: windowMenu)
         }
         installMonitor()
+        UmiTabHints.shared.install()
         UmiGhosttyBindings.warm()
         // The CLI's commands for the palette, so the first ⌘P has them.
         UmiCLICatalog.shared.load {}
@@ -219,11 +363,16 @@ enum UmiShortcuts {
             menuItem.keyEquivalent = shortcut?.keyEquivalent ?? ""
             menuItem.keyEquivalentModifierMask = shortcut?.modifiers ?? []
             guard let shortcut else { continue }
-            byShortcut[shortcut] = menuItem
+            byShortcut[shortcut, default: []].append(menuItem)
             for existing in all where handlers[existing] == nil && UmiShortcut(menuItem: existing) == shortcut {
                 existing.keyEquivalent = ""
             }
         }
+        // Items sharing a key are tried in the order `items` lists them (the first enabled one
+        // runs): ⌥⌘F is Find and Replace in a file pane and Search Tabs elsewhere.
+        let order = Dictionary(items.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func rank(_ menuItem: NSMenuItem) -> Int { handlers[menuItem].flatMap { order[$0.id] } ?? Int.max }
+        for shortcut in byShortcut.keys { byShortcut[shortcut]?.sort { rank($0) < rank($1) } }
     }
 
     private static func topMenu(_ name: String, in mainMenu: NSMenu) -> NSMenu? {
@@ -279,16 +428,19 @@ enum UmiShortcuts {
     /// Perform the Umi item whose shortcut this key is. True when the key was Umi's. Every
     /// key press goes through here before any view sees it.
     static func dispatch(_ event: NSEvent) -> Bool {
-        // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing.
+        // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing,
+        // except ⌥⇧ keys an item has (⌥⇧> and ⌥⇧<, Warp's font size keys).
         let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false
-        guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey else { return false }
-        guard let pressed = UmiShortcut(event: event), let menuItem = byShortcut[pressed], let item = handlers[menuItem] else {
+        let isOptionShift = event.modifierFlags.contains([.option, .shift])
+        guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey || isOptionShift else { return false }
+        guard let pressed = UmiShortcut(event: event), let candidates = byShortcut[pressed], !candidates.isEmpty else {
             return false
         }
         // A modal panel or alert keeps its keys.
         if NSApp.modalWindow != nil { return false }
         if let sheetParent = NSApp.keyWindow, sheetParent.attachedSheet != nil { return false }
-        guard item.enabled() else {
+        guard let menuItem = candidates.first(where: { handlers[$0]?.enabled() ?? false }), let item = handlers[menuItem] else {
+            if candidates.allSatisfy({ handlers[$0]?.passesThrough ?? false }) { return false }
             NSSound.beep()
             return true
         }
@@ -322,7 +474,7 @@ enum UmiShortcuts {
                 _ = try? UmiAgentUI.open(session.id, placement: .init(kind: .tab, focus: true), caller: UmiCaller([:]))
             }
         }
-        return fixed + agents
+        return fixed + UmiTabGroups.paletteOptions() + agents
     }
 
     // MARK: Actions
@@ -350,6 +502,16 @@ enum UmiShortcuts {
         }
     }
 
+    /// The next or previous tab in sidebar order; only the matching ones while the sidebar has
+    /// a search query.
+    private static func adjacentTab(_ delta: Int) {
+        if let searched = UmiSidebarSearch.cycleMatches(delta) {
+            if searched == nil { NSSound.beep() }
+            return
+        }
+        UmiNavigation.selectAdjacentTab(delta)
+    }
+
     private static func moveSelectedTab(_ delta: Int) {
         guard let window = UmiTopology.currentWindow else { return }
         if !UmiNavigation.moveTab(window.selectedTab, by: delta, in: window) { NSSound.beep() }
@@ -374,42 +536,17 @@ enum UmiShortcuts {
         }
     }
 
+    /// Rename the current tab in place, in its sidebar row (as Warp).
     private static func renameTab() {
         guard let window = UmiTopology.currentWindow else { return }
-        let tab = window.selectedTab
-        prompt(title: "Rename Tab", message: "Leave blank to name the tab after its folder.", value: tab.name ?? "",
-               window: window.window) { name in
-            tab.name = name.isEmpty ? nil : name
-            window.titleOverride = tab.name
-            UmiEvents.shared.emit("tab.renamed", ["tab": tab.idString, "name": name, "window": window.umiIDString])
-            UmiState.shared.layoutDidChange()
-        }
+        UmiTabMenu.beginRename(.tab(window.selectedTab.id), in: window)
     }
 
+    /// Rename the focused pane in place, in its tab's sidebar row (as Warp).
     private static func renamePane() {
-        guard let window = UmiTopology.currentWindow, let pane = UmiTopology.currentPane else { return }
-        prompt(title: "Rename Pane", message: "CLI commands can use the name as a selector.",
-               value: UmiState.shared.paneName(pane.id) ?? "", window: window.window) { name in
-            UmiState.shared.setPaneName(pane.id, name)
-            UmiEvents.shared.emit("pane.renamed", ["pane": pane.umiID, "name": name])
-        }
-    }
-
-    private static func prompt(title: String, message: String, value: String, window: NSWindow?, completion: @escaping (String) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.stringValue = value
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        let handle: (NSApplication.ModalResponse) -> Void = { response in
-            guard response == .alertFirstButtonReturn else { return }
-            completion(field.stringValue.trimmingCharacters(in: .whitespaces))
-        }
-        if let window { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
+        guard let window = UmiTopology.currentWindow, let pane = UmiTopology.currentPane,
+              let tab = window.tab(containing: pane) else { return }
+        UmiTabMenu.beginRename(.pane(tab: tab.id, pane: pane.id), in: window)
     }
 }
 

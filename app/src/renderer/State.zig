@@ -251,7 +251,7 @@ test "preedit range shifts left at right edge" {
 pub const UmiRows = struct {
     lock: std.Io.Mutex = .init,
     raise: [max]u16 = @splat(0),
-    dx: [max]u16 = @splat(0),
+    dx: [max]i32 = @splat(0),
     len: usize = 0,
 
     /// Rows past this many keep their place for the mouse.
@@ -261,7 +261,7 @@ pub const UmiRows = struct {
     /// row drawn over the bottom of the row above wins), and how far its
     /// text is moved right. Null in the gap a raised row leaves below it.
     /// Caller holds the lock.
-    pub const Moved = struct { row: usize, raise: u16, dx: u16 };
+    pub const Moved = struct { row: usize, raise: u16, dx: i32 };
 
     pub fn rowAt(self: *const UmiRows, y: f64, cell_h: f64) ?Moved {
         if (y < 0) return if (self.len > 0)

@@ -60,7 +60,8 @@ final class UmiPersistence {
     func saveUINow() {
         let state = UmiState.shared
         let json: [String: Any] = ["sidebar": ["visible": state.sidebarVisible, "mode": state.sidebarMode.rawValue,
-                                               "width": Double(state.sidebarWidth)]]
+                                               "width": Double(state.sidebarWidth)],
+                                   "files": ["show_hidden": state.showHiddenFiles]]
         write(json, to: uiPath)
     }
 
@@ -86,6 +87,13 @@ final class UmiPersistence {
         }
         if let name = window.windowName { json["name"] = name }
         json["sidebar_width"] = Double(window.sidebarWidth)
+        json["sidebar_visible"] = window.sidebarVisible
+        if !window.sidebarModel.groups.isEmpty {
+            json["tab_groups"] = window.sidebarModel.groups.map { group in
+                ["id": group.idString, "name": group.name ?? "", "color": UmiTopology.colorName(group.color),
+                 "collapsed": group.collapsed] as [String: Any]
+            }
+        }
         if window === UmiTopology.currentWindow { json["current"] = true }
         return json
     }
@@ -99,6 +107,7 @@ final class UmiPersistence {
         ]
         if let name = tab.name { json["name"] = name }
         if tab.isDocs { json["docs"] = true }
+        if let group = tab.groupID { json["group"] = group.uuidString.lowercased() }
         if let root = tree.root { json["tree"] = encode(node: root) }
         if let focused = (tab === window.selectedTab ? window.focusedSurface : nil) ?? tab.focusedSurface {
             json["focused_pane"] = focused.umiID
@@ -148,6 +157,7 @@ final class UmiPersistence {
         if let visible = sidebar["visible"] as? Bool { state.sidebarVisible = visible }
         if let mode = (sidebar["mode"] as? String).flatMap(UmiState.SidebarMode.init(rawValue:)) { state.sidebarMode = mode }
         if let width = sidebar["width"] as? Double { state.sidebarWidth = UmiTheme.clampSidebarWidth(CGFloat(width)) }
+        if let hidden = (json["files"] as? [String: Any])?["show_hidden"] as? Bool { state.showHiddenFiles = hidden }
     }
 
     /// Recreate the windows of the last run. Returns how many were restored.
@@ -185,6 +195,7 @@ final class UmiPersistence {
                 tab.name = tabJSON["name"] as? String
                 tab.pinned = tabJSON["pinned"] as? Bool ?? false
                 tab.isDocs = tabJSON["docs"] as? Bool ?? false
+                tab.groupID = (tabJSON["group"] as? String).flatMap(UUID.init(uuidString:))
                 tab.color = (tabJSON["color"] as? String).flatMap(UmiTopology.color(named:)) ?? .none
                 if let focusedID = tabJSON["focused_pane"] as? String {
                     tab.focusedSurface = root.leaves().first { $0.umiID == focusedID }
@@ -216,6 +227,15 @@ final class UmiPersistence {
             made.append(controller)
             controller.windowName = windowJSON["name"] as? String
             if let width = windowJSON["sidebar_width"] as? Double { controller.sidebarWidth = CGFloat(width) }
+            if let visible = windowJSON["sidebar_visible"] as? Bool { controller.sidebarVisible = visible }
+            controller.sidebarModel.groups = (windowJSON["tab_groups"] as? [[String: Any]] ?? []).compactMap { json in
+                guard let id = (json["id"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
+                let group = UmiTabGroup(id: id)
+                group.name = (json["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                group.color = (json["color"] as? String).flatMap(UmiTopology.color(named:)) ?? .none
+                group.collapsed = json["collapsed"] as? Bool ?? false
+                return group
+            }
             if windowJSON["current"] as? Bool == true { current = controller }
             restored += 1
         }

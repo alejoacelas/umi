@@ -715,6 +715,13 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 @"selection-foreground": ?TerminalColor = null,
 @"selection-background": ?TerminalColor = null,
 
+/// Umi: how opaque `selection-background` is, from 0 to 1. Below 1 the
+/// selection is laid over each cell's own background instead of replacing
+/// it, as Warp draws its selection (its default Dark theme: `#76a7fa` at
+/// 0.4, with `selection-foreground = cell-foreground`). Applies only when
+/// `selection-background` is a color.
+@"selection-background-opacity": f64 = 1,
+
 /// Whether to clear selected text when typing. This defaults to `true`.
 /// This is typical behavior for most terminal emulators as well as
 /// text input fields. If you set this to `false`, then the selected text
@@ -782,6 +789,14 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 ///
 /// This value does not apply to Emoji or images.
 @"minimum-contrast": f64 = 1,
+
+/// Umi: which text `minimum-contrast` adjusts:
+///
+///   * `all` - all text (Ghostty's behavior).
+///   * `named` - only text in the default foreground or one of the 16 named
+///     colors (0-15), as Warp's default "only for named colors"; text a
+///     program colors from the 256-color table or with RGB keeps its color.
+@"minimum-contrast-colors": MinimumContrastColors = .all,
 
 /// Color palette for the 256 color form that many terminal applications use.
 /// The syntax of this configuration is `N=COLOR` where `N` is 0 to 255 (for
@@ -2045,7 +2060,16 @@ keybind: Keybinds = .{},
 ///   bottom.
 /// * `equal` - Balance the padding equally on all sides without any
 ///   top-padding cap. (Available since: 1.4.0)
+/// * `bottom` - (Umi) Keep the left and bottom padding as given and put the
+///   extra space above the first row and right of the last column, as Warp
+///   places its prompt a fixed distance above the bottom.
 @"window-padding-balance": WindowPaddingBalance = .false,
+
+/// Umi: whether full-screen programs (those that use the alternate screen,
+/// such as vim, less or htop) get the window padding. When `false` they get
+/// the whole pane, as in Warp; the terminal's size changes as they start and
+/// end.
+@"window-padding-alternate-screen": bool = true,
 
 /// The color of the padding area of the window. Valid values are:
 ///
@@ -5553,6 +5577,12 @@ pub const Fullscreen = enum(c_int) {
     @"non-native",
     @"non-native-visible-menu",
     @"non-native-padded-notch",
+};
+
+/// Umi: See minimum-contrast-colors
+pub const MinimumContrastColors = enum {
+    all,
+    named,
 };
 
 pub const WindowPaddingColor = enum {

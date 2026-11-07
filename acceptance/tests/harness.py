@@ -27,7 +27,10 @@ FAKE_CODEX = os.path.join(FAKES, "fake_codex.py")
 # so an agent the tests run in a pane would otherwise inherit, say, the outer Claude Code's
 # CLAUDE_EFFORT or CLAUDE_CONFIG_DIR.
 _SCRUB_PREFIXES = ("CLAUDE_", "CODEX_", "SHADE_", "WRAITH_", "GHOSTTY_", "FAKE_", "UMI_")
-_SCRUB_KEYS = {"CLAUDECODE", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "AI_AGENT"}
+_SCRUB_KEYS = {"CLAUDECODE", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "AI_AGENT",
+               # The runner's Python environment and SSH session (uv run, ssh into the test Mac) aren't
+               # a new window's: Warp's block header shows them (S-10).
+               "VIRTUAL_ENV", "CONDA_DEFAULT_ENV", "CONDA_PREFIX", "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"}
 
 
 def clean_env():

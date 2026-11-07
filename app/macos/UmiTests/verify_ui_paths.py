@@ -231,7 +231,7 @@ def main():
         with open(md, "w") as f:
             f.write("# Title\n")
         inst.cli("edit", md, "--pane", win["pane"])
-        inst.cli("pane", "focus", win["pane"])
+        ctl.call("debug.editor.focus", tab=win["tab"])
         m_title = titles[("m", ("shift", "cmd"))]
         ctl.call("debug.menu.perform", title=m_title)
         mode = next(d for d in inst.json("editor", "ls", "--pane", win["pane"])["documents"] if d["path"].endswith("README.md"))["mode"]

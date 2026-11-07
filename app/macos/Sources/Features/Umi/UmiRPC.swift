@@ -296,21 +296,27 @@ enum UmiRPC {
             let window = params.string("window") != nil
                 ? try UmiTopology.window(params.string("window"), caller: caller)
                 : try? UmiTopology.window(nil, caller: caller)
-            if params.bool("toggle") ?? false { state.sidebarVisible.toggle() }
-            if let visible = params.bool("visible") { state.sidebarVisible = visible }
+            // Shown or hidden per window, as Warp's left panel: the given window, else the
+            // caller's, else the current; with no window, what new windows start with.
+            func setVisible(_ visible: Bool) {
+                if let window { UmiSidebarVisibility.set(visible, in: window) } else { state.sidebarVisible = visible }
+            }
+            if params.bool("toggle") ?? false { setVisible(!(window?.sidebarVisible ?? state.sidebarVisible)) }
+            if let visible = params.bool("visible") { setVisible(visible) }
             if let mode = params.string("mode") {
                 guard let parsed = UmiState.SidebarMode(rawValue: mode) else {
-                    throw UmiError.badRequest("unknown sidebar mode \"\(mode)\" (use tabs or files)")
+                    throw UmiError.badRequest("unknown sidebar mode \"\(mode)\" (use tabs, files or search)")
                 }
                 state.sidebarMode = parsed
-                state.sidebarVisible = true
+                setVisible(true)
             }
             if let width = params.double("width") {
                 guard let window else { throw UmiError.notFound("there are no Umi windows open") }
                 window.sidebarWidth = UmiTheme.clampSidebarWidth(CGFloat(width))
                 state.sidebarWidth = window.sidebarWidth
             }
-            var json: [String: Any] = ["visible": state.sidebarVisible, "mode": state.sidebarMode.rawValue]
+            var json: [String: Any] = ["visible": window?.sidebarVisible ?? state.sidebarVisible,
+                                       "mode": state.sidebarMode.rawValue]
             if let window {
                 json["width"] = Double(window.sidebarWidth)
                 json["window"] = window.umiIDString
@@ -399,6 +405,23 @@ enum UmiRPC {
             // duration.
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
             return UmiInput.blocks(pane)
+        case "debug.terminal":
+            // The terminal's look in a pane: the renderer's report (font, cell, cursor, padding)
+            // with the scrollbar and the bell's effects.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            return UmiInput.blocks(pane).merging(UmiScroller.debugInfo(pane)) { _, new in new }
+        case "debug.terminal.scroller":
+            // An image of a pane's scrollbar as drawn, over the pane's background.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            guard let path = params.string("path"), !path.isEmpty else { throw UmiError.badRequest("give a path") }
+            return try UmiScroller.capture(pane, to: path)
+        case "debug.terminal.action":
+            // Run a Ghostty binding action (such as `select_all`) on a pane, wherever focus is.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            guard let action = params.string("action"), let surface = pane.surface else {
+                throw UmiError.badRequest("give a pane and an action")
+            }
+            return ["ok": ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))]
         case "debug.selection":
             // The text the user selected in a pane (no clipboard involved).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
@@ -406,6 +429,9 @@ enum UmiRPC {
         case "debug.editor.focus":
             let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
             UmiLayout.focusTab(tab, in: window)
+            // focusTab gives the tab's focused pane keyboard focus on a later turn of the main
+            // loop; the editor takes it after that, as a click on it would.
+            try? await Task.sleep(nanoseconds: 300_000_000)
             UmiDebug.focusEditor(in: window, selectEnd: params.bool("select_end") ?? false)
             return ["ok": true]
 
@@ -424,12 +450,19 @@ enum UmiRPC {
 
         case "debug.ui.comments":
             return try await UmiCommentsUI.debug(params)
+        case "debug.ui.markdown":
+            return try await UmiMarkdownScript.debug(params)
+        case let inbox where inbox.hasPrefix("debug.ui.inbox"):
+            return try UmiInboxDebug.handle(method, params, caller: caller)
         case let ui where ui.hasPrefix("debug.ui."):
             return try UmiUIDebug.handle(method, params, caller: caller)
 
         default:
             if UmiNavigationRPC.methods.contains(method) {
                 return try await UmiNavigationRPC.handle(method, params, caller: caller)
+            }
+            if UmiLaunchConfigs.methods.contains(method) {
+                return try UmiLaunchConfigs.handle(method, params)
             }
             if method.hasPrefix("agent.") {
                 return try await UmiAgentRPC.handle(method: method, params: params, caller: caller, connection: connection)
@@ -439,7 +472,7 @@ enum UmiRPC {
     }
 
     private static func badColor(_ name: String) -> UmiError {
-        UmiError.badRequest("unknown color \"\(name)\" (use blue, purple, pink, red, orange, yellow, green, teal, graphite or none)")
+        UmiError.badRequest("unknown color \"\(name)\" (use red, green, yellow, blue, magenta, cyan, purple, pink, orange, teal, graphite or none)")
     }
 }
 

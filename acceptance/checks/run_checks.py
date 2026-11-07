@@ -267,6 +267,66 @@ def setup_theme(target, base):
     return {"S-5": shots}
 
 
+MARKDOWN_WARP = """# Warp's Markdown look
+
+## Second heading
+
+### Third heading
+
+#### Fourth heading
+
+##### Fifth heading
+
+###### Sixth heading
+
+A paragraph with `inline code`, **strong** text and a bare link https://example.com/path.
+
+- [x] done task
+- [ ] open task
+
+| Name | Value | Notes |
+|---|---|---|
+| alpha | 1 | a cell with enough words to make the table wider than a narrow pane |
+
+---
+
+```python
+# greet someone
+def greet(name):
+    return "hi " + name * 2
+```
+
+```bash
+echo hello
+```
+
+```mermaid
+graph TD
+  A[Start] --> B[Finish]
+```
+"""
+
+
+def setup_markdown(target, base):
+    """MD-1: the test document in the preview, on Umi's default (dark) background and on a light one."""
+    shots = []
+    path = os.path.join(base, "warp-look.md")
+    with open(path, "w") as f:
+        f.write(MARKDOWN_WARP)
+    for name, args in (("dark", []), ("light", ["--background=#fafafa", "--foreground=#202020"])):
+        inst = Instance(target, prefix=f"acc-check-md-{name}-", args=args)
+        try:
+            inst.start_app()
+            w = inst.json("window", "new", "--name", f"markdown-{name}", "--cwd", base)
+            inst.cli("sidebar", "off", "--window", w["window"], check=False)
+            inst.cli("edit", path, "--pane", w["pane"])
+            time.sleep(4)   # the page, its highlighting and the diagram
+            shots.append((f"{name} background", *screenshot(inst, w["window"], f"MD-1-{name}")))
+        finally:
+            inst.cleanup()
+    return {"MD-1": shots}
+
+
 SETUPS = [setup_layout, setup_blocks, setup_editor, setup_agents]
 PHASE = "all"
 PHASE_TWO_CHECKS = ("AG-",)   # SPEC.md, Delivery phases
@@ -302,6 +362,10 @@ def main():
         evidence.update(setup_theme(target, base))
     except Exception:  # noqa: BLE001
         evidence.setdefault("_errors", []).append(("setup_theme", traceback.format_exc(), None))
+    try:
+        evidence.update(setup_markdown(target, base))
+    except Exception:  # noqa: BLE001
+        evidence.setdefault("_errors", []).append(("setup_markdown", traceback.format_exc(), None))
 
     only = {x for x in args.only.split(",") if x}
     lines = [f"# Written checks: {target.name}", "",

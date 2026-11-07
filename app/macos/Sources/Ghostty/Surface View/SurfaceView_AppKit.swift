@@ -109,6 +109,14 @@ extension Ghostty {
         /// True when the bell is active. This is set inactive on focus or event.
         @Published private(set) var bell: Bool = false
 
+        /// Umi: true while Edit ▸ Paste or a key reads the clipboard, so what this pane pastes, once
+        /// accepted, is also typed into the panes synced with it (L-32).
+        var umiSyncPaste = false
+
+        /// Umi: whether text was selected before the last right-click, which selects the word
+        /// under the mouse; the right-click menu reads it once (L-31).
+        var umiSelectedBeforeRightClick: Bool?
+
         /// A clipboard confirmation waiting to be handled by its controller.
         @Published var pendingClipboardConfirmation: ClipboardConfirmationRequest? {
             didSet {
@@ -973,6 +981,9 @@ extension Ghostty {
         override func rightMouseDown(with event: NSEvent) {
             guard let surface = self.surface else { return super.rightMouseDown(with: event) }
 
+            // Umi: whether text was selected before the click selects the word under it (L-31).
+            umiSelectedBeforeRightClick = ghostty_surface_has_selection(surface)
+
             let mods = Ghostty.ghosttyMods(event.modifierFlags)
             if ghostty_surface_mouse_button(
                 surface,
@@ -1354,6 +1365,12 @@ extension Ghostty {
                 return false
             }
 
+            // Umi: a file pane's terminal is never shown; its editor takes the keys, through the
+            // menu (⌘F, ⌘G and ⌘Z act on the file, not on this terminal).
+            if UmiFilePanes.shared.isFilePane(id) {
+                return false
+            }
+
             // Get information about if this is a binding.
             let bindingFlags = surfaceModel.flatMap { surface in
                 var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
@@ -1521,13 +1538,23 @@ extension Ghostty {
             var key_ev = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
             key_ev.composing = composing
 
+            // Umi: a key bound to a paste that libghostty runs itself (not through Edit ▸
+            // Paste) is pasted into the synced panes too (L-32).
+            umiSyncPaste = true
+            defer { umiSyncPaste = false }
+
+            // Umi: typed into the panes synced with this one too (L-32).
             if let text = text?.keyEventText {
                 return text.withCString { ptr in
                     key_ev.text = ptr
-                    return ghostty_surface_key(surface, key_ev)
+                    let handled = ghostty_surface_key(surface, key_ev)
+                    UmiInputSync.mirror(key_ev, from: self)
+                    return handled
                 }
             } else {
-                return ghostty_surface_key(surface, key_ev)
+                let handled = ghostty_surface_key(surface, key_ev)
+                UmiInputSync.mirror(key_ev, from: self)
+                return handled
             }
         }
 
@@ -1562,7 +1589,10 @@ extension Ghostty {
 
             return text.withCString { ptr in
                 key_ev.text = ptr
-                return ghostty_surface_key(surface, key_ev)
+                let handled = ghostty_surface_key(surface, key_ev)
+                // Umi: typed into the panes synced with this one too (L-32).
+                UmiInputSync.mirror(key_ev, from: self)
+                return handled
             }
         }
 
@@ -1621,6 +1651,7 @@ extension Ghostty {
                 //
                 // Note this never sounds a right mouse up event but that's the
                 // same as normal right-click with capturing disabled from AppKit.
+                if let surface { umiSelectedBeforeRightClick = ghostty_surface_has_selection(surface) }
                 surfaceModel.sendMouseButton(.init(
                     action: .press,
                     button: .right,
@@ -1630,42 +1661,8 @@ extension Ghostty {
                 return nil
             }
 
-            let menu = NSMenu()
-
-            // We just use a floating var so we can easily setup metadata on each item
-            // in a row without storing it all.
-            var item: NSMenuItem
-
-            // If we have a selection, add copy
-            if let text = self.accessibilitySelectedText(), text.count > 0 {
-                menu.addItem(withTitle: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
-            }
-            menu.addItem(withTitle: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
-
-            menu.addItem(.separator())
-            item = menu.addItem(withTitle: "Split Right", action: #selector(splitRight(_:)), keyEquivalent: "")
-            item.setImageIfDesired(systemSymbolName: "rectangle.righthalf.inset.filled")
-            item = menu.addItem(withTitle: "Split Left", action: #selector(splitLeft(_:)), keyEquivalent: "")
-            item.setImageIfDesired(systemSymbolName: "rectangle.leadinghalf.inset.filled")
-            item = menu.addItem(withTitle: "Split Down", action: #selector(splitDown(_:)), keyEquivalent: "")
-            item.setImageIfDesired(systemSymbolName: "rectangle.bottomhalf.inset.filled")
-            item = menu.addItem(withTitle: "Split Up", action: #selector(splitUp(_:)), keyEquivalent: "")
-            item.setImageIfDesired(systemSymbolName: "rectangle.tophalf.inset.filled")
-
-            menu.addItem(.separator())
-            item = menu.addItem(withTitle: "Reset Terminal", action: #selector(resetTerminal(_:)), keyEquivalent: "")
-            item.setImageIfDesired(systemSymbolName: "arrow.trianglehead.2.clockwise")
-            item = menu.addItem(withTitle: "Toggle Terminal Inspector", action: #selector(toggleTerminalInspector(_:)), keyEquivalent: "")
-            item.setImageIfDesired(systemSymbolName: "scope")
-            item = menu.addItem(withTitle: "Terminal Read-only", action: #selector(toggleReadonly(_:)), keyEquivalent: "")
-            item.setImageIfDesired(systemSymbolName: "eye.fill")
-            item.state = readonly ? .on : .off
-            menu.addItem(.separator())
-            item = menu.addItem(withTitle: "Change Tab Title...", action: #selector(BaseTerminalController.changeTabTitle(_:)), keyEquivalent: "")
-            item.setImageIfDesired(systemSymbolName: "pencil.line")
-            item = menu.addItem(withTitle: "Change Terminal Title...", action: #selector(changeTitle(_:)), keyEquivalent: "")
-
-            return menu
+            // Umi: Warp's right-click items, then Ghostty's (L-31).
+            return UmiPaneMenu.menu(for: self)
         }
 
         // MARK: Menu Handlers
@@ -1686,6 +1683,9 @@ extension Ghostty {
                 UmiAgentUI.shared.pasted(pane: self, text: NSPasteboard.general.string(forType: .string))
             }
             let action = "paste_from_clipboard"
+            // Umi: and into the panes synced with this one (L-32).
+            umiSyncPaste = true
+            defer { umiSyncPaste = false }
             if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action, privacy: .public)")
             }

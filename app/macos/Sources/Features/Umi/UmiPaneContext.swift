@@ -15,6 +15,8 @@ enum UmiPaneContext {
     struct Command {
         let text: String
         let running: Bool
+        /// It finished with a failing exit status (Warp's red triangle on the row).
+        var failed = false
     }
 
     private static var gitCache: [String: (info: Git?, at: Date)] = [:]
@@ -89,7 +91,9 @@ enum UmiPaneContext {
             running = foreground > 0 && !UmiProcess.isShell(foreground)
         }
         if let last = UmiCommandLog.shared.last(pane.id) {
-            return Command(text: last.command, running: running && !last.finished)
+            let isRunning = running && !last.finished
+            return Command(text: last.command, running: isRunning,
+                           failed: !isRunning && UmiCommandLog.isFailure(last.exitCode))
         }
         if running, let args = UmiProcess.arguments(foreground), !args.isEmpty {
             return Command(text: display(args), running: true)
@@ -143,6 +147,8 @@ final class UmiCommandLog: @unchecked Sendable {
     struct Entry {
         let command: String
         var finished: Bool
+        /// The exit status shell integration reported, when it did.
+        var exitCode: Int?
     }
 
     private let lock = NSLock()
@@ -169,13 +175,21 @@ final class UmiCommandLog: @unchecked Sendable {
         commands[paneID] = Entry(command: value, finished: false)
     }
 
-    func commandFinished(_ paneID: UUID) {
+    func commandFinished(_ paneID: UUID, exitCode: Int? = nil) {
         lock.lock()
         defer { lock.unlock() }
         if var entry = commands[paneID] {
             entry.finished = true
+            if let exitCode, exitCode >= 0 { entry.exitCode = exitCode }
             commands[paneID] = entry
         }
+    }
+
+    /// A failing exit status, as Warp counts it: not 0, and not 130 (stopped with ⌃C) or 141
+    /// (SIGPIPE, as in `… | head`).
+    static func isFailure(_ exitCode: Int?) -> Bool {
+        guard let exitCode else { return false }
+        return exitCode != 0 && exitCode != 130 && exitCode != 141
     }
 
     func last(_ paneID: UUID) -> Entry? {

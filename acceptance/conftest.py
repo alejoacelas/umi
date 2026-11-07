@@ -111,12 +111,19 @@ def screen_locked():
 
 
 @pytest.fixture(scope="session")
-def ui(inst):
+def ui_session(inst):
     if not UI.available():
         pytest.skip("this process has no Accessibility permission (System Settings → Privacy → Accessibility)")
+    return UI(inst.app_pid)
+
+
+@pytest.fixture
+def ui(ui_session):
+    # Checked before every UI test, not once per run: a screen that locks partway through a run
+    # would otherwise leave the next UI test walking the menu bar forever.
     if screen_locked():
         pytest.skip("the screen is locked, so the accessibility tree is unavailable (unlock it to run UI tests)")
-    return UI(inst.app_pid)
+    return ui_session
 
 
 def pytest_collection_modifyitems(config, items):

@@ -93,17 +93,50 @@ _entrypoint() {
 _ghostty_deferred_init() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
 
-    # Umi: sets PS1 to the block prompt: two spacer rows, the folder, an
-    # empty command line. The folder is shortened from the left (`…/rest`) to
-    # 4 columns less than the line (`%-4<`, worked out each time zsh draws the
-    # prompt, so it follows resizes), leaving room for the folder box's icon.
+    # Umi: sets PS1 to the block prompt: two spacer rows, the header line, an
+    # empty command line. The header line is Warp's block header: the conda
+    # and Python environments (`(name) `), user@host over SSH, the folder and
+    # ` git:(branch)` (the commit when no branch is checked out). All but the
+    # folder is printed faint: the terminal shows the folder alone in the
+    # folder box at the prompt, and the whole line, in one color, once the
+    # command ran. The folder is shortened from the left (`…/rest`) so the
+    # line ends at least 4 columns short of the pane (`%-N<`, worked out each
+    # time zsh draws the prompt, so it follows resizes), leaving room for the
+    # folder box's icon. The names go into PS1 escaped: `%` always, and `\`,
+    # `$` and backticks when the user's shell has prompt_subst on (oh-my-zsh
+    # and powerlevel10k set it), or zsh would run `$(...)` in a branch's name
+    # each time it draws the prompt. The caller says whether it is on
+    # (umi_prompt_subst), since emulate -L hides the user's options here.
     _umi_block_prompt() {
-        PS1=$'\n\n%-4<…<%~%<<\n'
+        builtin local before= after= head=
+        [[ -n ${CONDA_DEFAULT_ENV-} ]] && before+="(${CONDA_DEFAULT_ENV}) "
+        [[ -n ${VIRTUAL_ENV-} ]] && before+="(${VIRTUAL_ENV:t}) "
+        [[ -n ${SSH_CONNECTION-} ]] && before+="${(%):-%n@%m}:"
+        if (( ${+commands[git]} )); then
+            head=$(command git symbolic-ref --short HEAD 2>/dev/null) ||
+                head=$(command git rev-parse --short HEAD 2>/dev/null)
+            [[ -n $head ]] && after=" git:(${head})"
+        fi
+        builtin local width=${#after}
+        if (( ${umi_prompt_subst:-0} )); then
+            before=${before//\\/\\\\} after=${after//\\/\\\\}
+            before=${before//\$/\\\$} after=${after//\$/\\\$}
+            before=${before//\`/\\\`} after=${after//\`/\\\`}
+        fi
+        PS1=$'\n\n'
+        [[ -n $before ]] && PS1+=$'%{\e[2m%}'${before//\%/%%}$'%{\e[22m%}'
+        # (zsh counts the negative width from where the folder starts.)
+        PS1+="%-$(( 4 + width ))<…<%~%<<"
+        [[ -n $after ]] && PS1+=$'%{\e[2m%}'${after//\%/%%}$'%{\e[22m%}'
+        PS1+=$'\n'
     }
 
     # Enable semantic markup with OSC 133.
     _ghostty_precmd() {
         builtin local -i cmd_status=$?
+        # Umi: the user's prompt_subst, before emulate -L hides it.
+        builtin local -i umi_prompt_subst=0
+        [[ -o prompt_subst ]] && umi_prompt_subst=1
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
 
         # Don't write OSC 133 D when our precmd handler is invoked from zle.

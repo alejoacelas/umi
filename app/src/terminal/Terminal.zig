@@ -2408,13 +2408,23 @@ fn umiAbandonCurrent(self: *Terminal, now: std.Io.Timestamp) void {
     screen.umi_block_aid = null;
 }
 
+/// Umi: whether a command's exit status marks its block as failed. As in
+/// Warp, 130 (stopped with Ctrl-C) and 141 (SIGPIPE, as when a pager quits
+/// early) count as success.
+pub fn umiExitFailed(code: i32) bool {
+    return switch (code) {
+        0, 130, 141 => false,
+        else => true,
+    };
+}
+
 fn umiFinishRow(row: *Row, started: ?std.Io.Timestamp, now: std.Io.Timestamp, exit_code: ?i32) void {
     const ms: u64 = if (started) |t| ms: {
         const ns = t.durationTo(now).nanoseconds;
         break :ms @intCast(@max(0, @divTrunc(ns, std.time.ns_per_ms)));
     } else 0;
     row.umi_state = .done;
-    row.umi_failed = if (exit_code) |code| code != 0 else false;
+    row.umi_failed = if (exit_code) |code| umiExitFailed(code) else false;
     row.umiSetDurationMs(ms);
     row.dirty = true;
 }

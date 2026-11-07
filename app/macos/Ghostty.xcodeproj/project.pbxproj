@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7E5A11C0DE0000000000D0A1 /* UmiSyntax in Frameworks */ = {isa = PBXBuildFile; productRef = 7E5A11C0DE0000000000D0A2 /* UmiSyntax */; };
 		29C15B1D2CDC3B2900520DD4 /* bat in Resources */ = {isa = PBXBuildFile; fileRef = 29C15B1C2CDC3B2000520DD4 /* bat */; };
 		55154BE02B33911F001622DC /* ghostty in Resources */ = {isa = PBXBuildFile; fileRef = 55154BDF2B33911F001622DC /* ghostty */; };
 		552964E62B34A9B400030505 /* vim in Resources */ = {isa = PBXBuildFile; fileRef = 552964E52B34A9B400030505 /* vim */; };
@@ -148,6 +149,7 @@
 			files = (
 				A56B880B2A840447007A0E29 /* Carbon.framework in Frameworks */,
 				A571AB1D2A206FCF00248498 /* GhosttyKit.xcframework in Frameworks */,
+				7E5A11C0DE0000000000D0A1 /* UmiSyntax in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -298,6 +300,7 @@
 			);
 			name = Ghostty;
 			packageProductDependencies = (
+				7E5A11C0DE0000000000D0A2 /* UmiSyntax */,
 			);
 			productName = Ghostty;
 			productReference = A5B30531299BEAAA0047F10C /* Umi.app */;
@@ -340,6 +343,7 @@
 			);
 			mainGroup = A5B30528299BEAAA0047F10C;
 			packageReferences = (
+				7E5A11C0DE0000000000D0A3 /* XCLocalSwiftPackageReference "UmiSyntax" */,
 			);
 			productRefGroup = A5B30532299BEAAA0047F10C /* Products */;
 			projectDirPath = "";
@@ -1132,10 +1136,21 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		7E5A11C0DE0000000000D0A3 /* XCLocalSwiftPackageReference "UmiSyntax" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = UmiSyntax;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		7E5A11C0DE0000000000D0A2 /* UmiSyntax */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = UmiSyntax;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A5B30529299BEAAA0047F10C /* Project object */;

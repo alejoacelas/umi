@@ -213,10 +213,11 @@ def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_i
     assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([50, 25, 25], abs=0.3)
     # b's column counts as one pane of the row: b and d keep their 70/30.
     assert shares(inst, win["tab"], [b, d], key="height") == pytest.approx([70, 30], abs=0.3)
-    # The divider between b and c (its split holds b and c, half the row) to 80% of the row:
-    # a was sized by hand and keeps its 50; b takes the rest of its stretch, c gets 20.
-    rpc(inst, "debug.ui.split.divider", pane=c, action="move", ratio=0.6)
-    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([50, 30, 20], abs=0.3)
+    # The divider between b and c (its split holds b and c, half the row) to 78% of the row:
+    # a was sized by hand and keeps its 50; b takes the rest of its stretch, c gets 22 (every
+    # pane stays above Warp's 190-point minimum).
+    rpc(inst, "debug.ui.split.divider", pane=c, action="move", ratio=(0.78 - 0.5) / 0.5)
+    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([50, 28, 22], abs=0.3)
     # Double-clicking a column divider equalizes the columns only: b/d keep their 70/30.
     rpc(inst, "debug.ui.split.divider", pane=a, action="equalize")
     assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
@@ -227,30 +228,39 @@ def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_i
 def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
     """Alejo: "only the panes that have not been manually resized shrink/grow in response to
     other pane resizing." """
+    # The numbers keep every pane above Warp's 190-point minimum (L-19) in the suite's window.
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
     d = split(inst, "right", c)
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.4)
-    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([40, 20, 20, 20], abs=0.3)
-    # The c|d divider (its split holds c and d, the last 40%) to 90%: a keeps its 40, d gets 10,
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.28)
+    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([28, 24, 24, 24], abs=0.3)
+    # The c|d divider (its split holds c and d, the last 48%) to 78%: a keeps its 28, d gets 22,
     # b and c (never sized) share the 50 between.
-    rpc(inst, "debug.ui.split.divider", pane=d, action="move", ratio=(0.9 - 0.6) / 0.4)
-    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([40, 25, 25, 10], abs=0.3)
+    rpc(inst, "debug.ui.split.divider", pane=d, action="move", ratio=(0.78 - 0.52) / 0.48)
+    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([28, 25, 25, 22], abs=0.3)
     # A split keeps a's divider placed: dragging the divider next to the new pane leaves a alone.
+    # (Closing c first keeps the row at four panes.)
+    inst.cli("pane", "close", c)
+    wait_until(lambda: len(tab_of(inst, win["tab"])["panes"]) == 3, 5, message="c closed")
+    assert shares(inst, win["tab"], [a, b, d]) == pytest.approx([37.3, 33.3, 29.3], abs=0.5)
     e = split(inst, "right", b)
-    before = shares(inst, win["tab"], [a, b, e, c, d])
+    before = shares(inst, win["tab"], [a, b, e, d])
+    assert before == pytest.approx([28, 25, 25, 22], abs=0.5)
+    # e's divider (its split holds e and d, the last 47%) to its middle: a keeps its 28, b and e
+    # share the stretch up to the divider, d gets the rest.
     rpc(inst, "debug.ui.split.divider", pane=e, action="move", ratio=0.5)
-    after = shares(inst, win["tab"], [a, b, e, c, d])
-    assert after[0] == pytest.approx(before[0], abs=0.2) and after[4] == pytest.approx(before[4], abs=0.2)
+    after = shares(inst, win["tab"], [a, b, e, d])
+    assert after[0] == pytest.approx(before[0], abs=0.2), (before, after)
+    assert after == pytest.approx([28, 24.25, 24.25, 23.5], abs=0.5), (before, after)
     # Double-clicking a divider evens the row and forgets the sizes set by hand.
     rpc(inst, "debug.ui.split.divider", pane=a, action="equalize")
-    assert shares(inst, win["tab"], [a, b, e, c, d]) == pytest.approx([20] * 5, abs=0.2)
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.2)
-    assert shares(inst, win["tab"], [a, b, e, c, d]) == pytest.approx([20] * 5, abs=0.2)
-    # d's divider to 90%: a (just sized again) keeps its 20, b, e and c share 70.
-    rpc(inst, "debug.ui.split.divider", pane=d, action="move", ratio=0.75)
-    assert shares(inst, win["tab"], [a, b, e, c, d]) == pytest.approx([20, 23.3, 23.3, 23.3, 10], abs=0.3)
+    assert shares(inst, win["tab"], [a, b, e, d]) == pytest.approx([25] * 4, abs=0.2)
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.25)
+    assert shares(inst, win["tab"], [a, b, e, d]) == pytest.approx([25] * 4, abs=0.2)
+    # d's divider to 77%: a (just sized again) keeps its 25, b and e share 52, d gets 23.
+    rpc(inst, "debug.ui.split.divider", pane=d, action="move", ratio=(0.77 - 0.5) / 0.5)
+    assert shares(inst, win["tab"], [a, b, e, d]) == pytest.approx([25, 26, 26, 23], abs=0.3)
 
 
 @pytest.mark.req("L-19")
@@ -259,9 +269,10 @@ def test_a_dragged_middle_divider_shares_both_sides(inst, win):
     b = split(inst, "right", a)
     c = split(inst, "right", b)
     d = split(inst, "right", c)
-    # The divider between b and c (its split holds b, c and d, the last 3/4 of the row) to 75%.
-    rpc(inst, "debug.ui.split.divider", pane=b, action="move", ratio=(0.75 - 0.25) / 0.75)
-    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([37.5, 37.5, 12.5, 12.5], abs=0.3)
+    # The divider between b and c (its split holds b, c and d, the last 3/4 of the row) to 56%
+    # (every pane stays above Warp's 190-point minimum).
+    rpc(inst, "debug.ui.split.divider", pane=b, action="move", ratio=(0.56 - 0.25) / 0.75)
+    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([28, 28, 22, 22], abs=0.3)
 
 
 @pytest.mark.req("L-19")
@@ -594,9 +605,10 @@ def test_looking_at_the_pane_clears_the_mark_ui(inst, win, ui):
 
 # ---- S-4: the row menu ---------------------------------------------------------------------------
 
-WARP_ITEMS = ["Pin Tab", "Copy Working Directory", "Copy Title", "Rename Tab…", "Rename Pane…", "Move Tab Up",
-              "Move Tab Down", "Close Tab", "Close Other Tabs", "Close Tabs Below", "Tab Color",
-              "Move Tab to New Window"]
+# Warp's labels (its tab.rs). Move Tab Down and Close Tabs Below are left out for the last tab, as in
+# Warp; test_umi_sidebar_warp.py checks them on a tab in the middle.
+WARP_ITEMS = ["Pin tab", "Copy working directory", "Copy tab title", "Rename tab", "Rename active pane", "Move Tab Up",
+              "Close tab", "Close other tabs", "Tab Color", "Move Tab to New Window"]
 
 
 @pytest.mark.req("S-4")
@@ -607,29 +619,29 @@ def test_the_row_menu_has_warps_items(inst, win, tmp_path):
     pane, tab = new_tab(inst, win, "--cwd", str(repo))
     inst.cli("tab", "rename", tab, "named")
     inst.cli("pane", "rename", pane, "pane-named")
-    wait_until(lambda: any(i["title"] == "Copy Branch" for i in rpc(inst, "debug.ui.menu", tab=tab)["items"]), 10,
-               message="Copy Branch")
+    wait_until(lambda: any(i["title"] == "Copy branch" for i in rpc(inst, "debug.ui.menu", tab=tab)["items"]), 10,
+               message="Copy branch")
     titles = [i["title"] for i in rpc(inst, "debug.ui.menu", tab=tab)["items"]]
-    missing = [t for t in WARP_ITEMS + ["Copy Branch", "Reset Tab Name", "Reset Pane Name"] if t not in titles]
+    missing = [t for t in WARP_ITEMS + ["Copy branch", "Reset tab name", "Reset active pane name"] if t not in titles]
     assert not missing, f"missing: {missing}"
     colors = [i for i in rpc(inst, "debug.ui.menu", tab=tab)["items"] if i["path"].startswith("Tab Color > ")]
-    assert len(colors) == 10 and sum(i["checked"] for i in colors) == 1
+    assert len(colors) == 7 and sum(i["checked"] for i in colors) == 1
 
     def perform(title):
         return rpc(inst, "debug.ui.menu.perform", tab=tab, title=title)
 
-    assert perform("Copy Branch")["copied"] == "menu-branch"
-    assert os.path.realpath(perform("Copy Working Directory")["copied"]) == os.path.realpath(repo)
-    assert perform("Copy Title")["copied"] == "named"
-    perform("Reset Tab Name")
+    assert perform("Copy branch")["copied"] == "menu-branch"
+    assert os.path.realpath(perform("Copy working directory")["copied"]) == os.path.realpath(repo)
+    assert perform("Copy tab title")["copied"] == "named"
+    perform("Reset tab name")
     assert not tab_of(inst, tab).get("name")
-    perform("Reset Pane Name")
+    perform("Reset active pane name")
     assert not inst.json("pane", "info", pane).get("name")
     perform("Tab Color > Blue")
     assert tab_of(inst, tab)["color"] == "blue"
-    perform("Pin Tab")
+    perform("Pin tab")
     assert tab_of(inst, tab)["pinned"] and tab_ids(inst, win["window"])[0] == tab
-    perform("Unpin Tab")
+    perform("Unpin tab")
 
 
 @pytest.mark.req("S-4", "L-2")
@@ -643,15 +655,15 @@ def test_move_tab_up_and_down_stay_in_their_pin_group(inst, win):
     rpc(inst, "debug.ui.menu.perform", tab=t1, title="Move Tab Down")
     assert tab_ids(inst, win["window"]) == [t3, t1, t2]
     menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t3)["items"]}
-    assert not menu["Move Tab Up"]["enabled"], "the first tab can't move up"
+    assert "Move Tab Up" not in menu, "the first tab can't move up (left out, as in Warp)"
     inst.cli("tab", "pin", t2)
     # Pinning moves only the pinned tab, to the end of the pinned group (S-7); the first unpinned
     # tab sits right below it and can't move up into it.
     assert tab_ids(inst, win["window"]) == [t2, t3, t1]
     menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t3)["items"]}
-    assert not menu["Move Tab Up"]["enabled"], "an unpinned tab can't move into the pinned group"
+    assert "Move Tab Up" not in menu, "an unpinned tab can't move into the pinned group"
     menu = {i["title"]: i for i in rpc(inst, "debug.ui.menu", tab=t2)["items"]}
-    assert not menu["Move Tab Down"]["enabled"], "a pinned tab can't move out of the pinned group"
+    assert "Move Tab Down" not in menu, "a pinned tab can't move out of the pinned group"
     inst.cli("tab", "unpin", t2)
 
 
@@ -665,7 +677,7 @@ def test_close_other_tabs_and_tabs_below(inst, win):
     assert tab_ids(inst, win["window"]) == [win["tab"], t2]
     p5, t5 = new_tab(inst, win)
     ready(inst, p5)
-    rpc(inst, "debug.ui.menu.perform", tab=t5, title="Close Other Tabs")
+    rpc(inst, "debug.ui.menu.perform", tab=t5, title="Close other tabs")
     assert tab_ids(inst, win["window"]) == [t5]
     # Each closed tab can be reopened.
     assert inst.json("reopen")["kind"] == "tab"
@@ -1044,11 +1056,12 @@ def test_dragging_a_tab_row_reorders_and_the_row_menu_opens_ui(inst, win, ui):
     wait_until(lambda: tab_ids(inst, win["window"])[0] == t3, 5, message="dropped before the first row")
     # Right-click menu: Warp's items. The menu sits in the window's accessibility tree, not
     # among the app's children.
-    _right_click(_frame(ui, _row_element(ui, "drag-second")))
+    # The middle row (now the window's first tab), where every move and close item applies.
+    _right_click(_frame(ui, _row_element(ui, tab_of(inst, win["tab"])["title"])))
     menus = wait_until(lambda: ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the row menu")
     titles = set(t for m in menus for t in ui.texts(m))
     ui.key(ui.ESCAPE)
     wait_until(lambda: not ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="Escape closed the menu")
-    missing = [t for t in ("Copy Title", "Move Tab Up", "Close Tabs Below", "Close Other Tabs", "Tab Color")
-               if t not in titles]
+    missing = [t for t in ("Copy tab title", "Move Tab Up", "Close Tabs Below", "Close other tabs",
+                           "Default (no color)") if t not in titles]
     assert not missing, f"the row menu lacks {missing} (it has {sorted(titles)})"

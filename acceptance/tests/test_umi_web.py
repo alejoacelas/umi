@@ -192,8 +192,9 @@ def test_a_screenshot_shows_the_page(web, tmp_path):
 
 @pytest.mark.req("E-12")
 @pytest.mark.ui
-def test_cmd_click_on_a_link_opens_a_web_pane_ui(web):
-    """The real mouse: ⌘-click on a URL printed in a terminal pane."""
+def test_cmd_click_on_a_link_opens_a_web_pane_ui(web, ui):
+    """The real mouse: ⌘-click on a URL printed in a terminal pane. (The `ui` fixture checks the
+    Accessibility permission and that the screen is unlocked; this drives its own instance.)"""
     import Quartz
     from harness import UI
     if not UI.available():

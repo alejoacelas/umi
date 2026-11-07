@@ -40,9 +40,9 @@ present. Extra fields are fine.
 | `tab back` | the tab visited before (again: the one before that), in any window; JSON `{"tab", "window", "index", "title"}`; fails when there is none |
 | `tab next\|prev [--window W]` | the next or previous tab in sidebar order (wraps); JSON as `tab back` |
 | `tab rename [TAB] NAME` | `""` clears |
-| `tab color [TAB] COLOR` | blue purple pink red orange yellow green teal graphite none |
+| `tab color [TAB] COLOR` | red green yellow blue magenta cyan (Warp's six, from the theme's ANSI colors), purple pink orange teal graphite, none |
 | `tab pin\|unpin [TAB]` | |
-| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down`: one place, within the tab's pin group; fails at the end of the group |
+| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down`: one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
 | `jump [back]` | the next session that needs the user (prints the pane, or the session id when no pane shows it), or back to where the user was; JSON `{"pane", "tab", "window", …}` or `{"session"}`; fails when nothing needs the user |
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions |
 | `pane focus\|close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window` |
@@ -56,15 +56,18 @@ present. Extra fields are fine.
 | `wait [--pane P] (--pattern RE \| --idle SECS) [--timeout T]` | prints the matched text; 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
 | `events [--filter PREFIX]… [--pane P]` | a filter keeps events whose name starts with PREFIX; JSON lines `{"event": name, "data": {…}}`, names like `pane.created`, `pane.closed`, `pane.moved`, `pane.focused`, `tab.created`, `tab.renamed`, `tab.selected`, `window.created` |
 | `notify [--pane P] TITLE [BODY]` | |
-| `sidebar [on\|off\|toggle\|status\|tabs\|files] [--window W]` | JSON: `{"visible": bool, "mode": "tabs"\|"files", "width": points, "window": id}` |
+| `sidebar [on\|off\|toggle\|status\|tabs\|files\|search] [--window W]` | shown or hidden per window (the given one, else the caller's, else the current); JSON: `{"visible": bool, "mode": "tabs"\|"files"\|"search", "width": points, "window": id}` |
 | `sidebar width [N] [--window W]` | prints the window's sidebar width in points; with N sets it (clamped to 180–600) |
 | `reopen [--list]` | reopens the last closed pane, tab or window (closed in the last 60 s); prints the pane's id (the window's for a window); JSON `{"kind": "pane"\|"tab"\|"window", "pane"?, "tab", "window"}`; exit 1 when there's nothing to reopen. `--list`: JSON `{"items": [{"kind", "closed_at", "expires_in", "panes": [id], "tab"?, "title"?, "tabs"?}]}`, most recent first |
 | `screenshot [--window W] OUT.png` | an image of the window, terminal contents included |
 | `worktree ls` | |
+| `layout ls` | launch configurations (SPEC L-21) in `$XDG_CONFIG_HOME/umi/launch_configurations` (default `~/.config/umi/…`), by name; one per YAML document, so a file with several documents (separated by `---`) lists several; JSON `{"directory", "configs": [{"name", "file", "path", "document", "windows", "tabs"} or {"file", "path", "document", "error"}]}` (`document` counts from 0; a file that can't be read is listed once, with `error` and the line) |
+| `layout save NAME [--replace]` | saves every window as `NAME.yaml` (unless NAME ends in `.yaml`/`.yml`), named after the file (`my_work` → "My Work"); prints the path; JSON `{"path", "name", "windows", "tabs"}`; fails when the file exists, unless `--replace` |
+| `layout open NAME [--no-focus]` | NAME is a configuration's name or file name (case doesn't matter; a file holding several configurations fails and lists their names); opens each of its windows as a new window, the active one in front; prints the windows' ids; JSON `{"name", "windows": [id], "panes": [id]}` |
 
 Objects in JSON:
 - **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab]}`
-- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "docs": bool, "color"?, "focused_pane": id, "panes": [Pane]}`
+- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "docs": bool, "color"?, "group"?: its tab group's name, "focused_pane": id, "panes": [Pane]}`
 - **Pane**: `{"id", "cwd", "name"?, "focused": bool, "zoomed": bool, "agent"?: session id (a session
   shown in this pane, read-only or live), "file"?: path (a file pane), "shown": bool (false for a
   stack member that isn't on show), "stack"?: [id] (the panes sharing its place, in strip order),
@@ -73,7 +76,7 @@ Objects in JSON:
   A tab's `panes` lists the panes on show, then stack members that aren't.
 
 Events: `pane.created` and `tab.created` carry `"reopened": true` when `reopen` brought them back;
-`sidebar.changed` is emitted when a window's sidebar width changes.
+`sidebar.changed` is emitted when a window's sidebar is shown or hidden or its width changes.
 
 Other commands:
 

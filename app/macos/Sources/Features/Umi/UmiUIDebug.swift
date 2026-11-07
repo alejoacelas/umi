@@ -1,4 +1,5 @@
 import AppKit
+import GhosttyKit
 
 /// Internal `debug.ui.*` control methods (not part of the CLI contract): scripted checks of
 /// sidebar rows, drops, drags, the row menu, dividers and the open-file path, which otherwise
@@ -11,7 +12,56 @@ enum UmiUIDebug {
             let window = try UmiTopology.window(params.string("window"), caller: caller)
             return ["window": window.umiIDString, "sidebar_width": Double(window.sidebarWidth),
                     "frame": frameJSON(window.window?.frame ?? .zero),
-                    "rows": window.tabs.map { UmiSidebarRowModel(tab: $0, in: window).json() }]
+                    "rows": window.tabs.map { UmiSidebarRowModel(tab: $0, in: window).json(in: window) },
+                    "sidebar": sidebarJSON(window)]
+
+        case "debug.ui.sidebar":
+            // The sidebar's search, ⌘ hints and in-place renames, without typing (Warp parity).
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            let model = window.sidebarModel
+            if let query = params.string("query") { model.query = query }
+            if let held = params.bool("command_held") { UmiTabHints.shared.set(held: held, immediately: true) }
+            if let text = params.string("rename_text") {
+                guard let target = model.renaming else { throw UmiError.failed("nothing is being renamed") }
+                UmiSidebarRename.commit(target, text: text, in: window)
+            }
+            if params.bool("rename_cancel") == true { model.renaming = nil }
+            return sidebarJSON(window)
+
+        case "debug.ui.groups":
+            // A window's tab groups; `toggle` clicks a group's header (collapse or expand).
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            if let id = params.string("toggle") {
+                guard let group = UmiTabGroups.group(id: id, in: window) else { throw UmiError.notFound("no group \"\(id)\"") }
+                UmiTabGroups.setCollapsed(group, !group.collapsed, in: window)
+            }
+            return ["groups": window.sidebarModel.groups.map { UmiTabGroups.json($0, in: window) },
+                    "entries": UmiTabGroups.sidebarEntries(in: window).map { entry -> String in
+                        switch entry {
+                        case .tab(let tab, let indent): return (indent > 0 ? "  " : "") + tab.idString
+                        case .group(let group): return "group:" + group.idString
+                        }
+                    }]
+
+        case "debug.ui.group.menu", "debug.ui.group.perform":
+            // A group header's right-click menu.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            guard let id = params.string("group"), let group = UmiTabGroups.group(id: id, in: window) else {
+                throw UmiError.notFound("give a group of the window")
+            }
+            let items = UmiTabMenu.flatten(UmiTabGroups.headerMenuItems(for: group, in: window))
+            if method == "debug.ui.group.menu" {
+                return ["items": items.map { ["title": $0.item.title, "path": $0.path.joined(separator: " > "),
+                                              "checked": $0.item.checked] }]
+            }
+            guard let path = params.string("title"),
+                  let entry = items.first(where: { $0.path.joined(separator: " > ") == path || $0.item.title == path }),
+                  let action = entry.item.action else { throw UmiError.notFound("no such item") }
+            action()
+            return ["performed": path]
+
+        case "debug.ui.editor":
+            return try UmiEditorDebug.handle(params, caller: caller)
 
         case "debug.ui.open_url":
             // A link ⌘-clicked in a pane: what the terminal's open-URL action runs (E-12).
@@ -36,7 +86,8 @@ enum UmiUIDebug {
             UmiAttention.shared.set(.init(session: params.string("session"), kind: kind,
                                            title: params.string("title") ?? "", status: params.string("status") ?? "idle",
                                            live: params.bool("live") ?? true, mark: mark,
-                                           lastStop: stopped ? Date() : nil), forPane: pane.id)
+                                           lastStop: stopped ? Date() : nil, detail: params.string("detail")),
+                                    forPane: pane.id)
             return attention()
 
         case "debug.ui.attention.clear":
@@ -82,7 +133,7 @@ enum UmiUIDebug {
 
         case "debug.ui.menu":
             let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
-            let items = UmiTabMenu.flatten(UmiTabMenu.items(for: tab, in: window, rename: {}))
+            let items = UmiTabMenu.flatten(UmiTabMenu.items(for: tab, in: window))
             return ["items": items.map { entry in
                 ["title": entry.item.title, "path": entry.path.joined(separator: " > "),
                  "enabled": entry.item.enabled, "checked": entry.item.checked, "submenu": !entry.item.children.isEmpty]
@@ -91,7 +142,7 @@ enum UmiUIDebug {
         case "debug.ui.menu.perform":
             let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
             guard let path = params.string("title") else { throw UmiError.badRequest("give the item's title (or path)") }
-            let items = UmiTabMenu.flatten(UmiTabMenu.items(for: tab, in: window, rename: nil))
+            let items = UmiTabMenu.flatten(UmiTabMenu.items(for: tab, in: window))
             guard let entry = items.first(where: { $0.path.joined(separator: " > ") == path })
                     ?? items.first(where: { $0.item.title == path }) else {
                 throw UmiError.notFound("no menu item \"\(path)\"")
@@ -156,6 +207,90 @@ enum UmiUIDebug {
             }
             return ["pane": pane.umiID]
 
+        case "debug.ui.zoom":
+            // The interface's zoom and the terminals' font size (L-33), and a pane's cell size.
+            let zoom = UmiZoom.shared
+            var out: [String: Any] = ["level": zoom.level, "font_size": Double(zoom.baseFontSize),
+                                      "terminal_font_size": Double(zoom.terminalFontSize)]
+            if let pane = try? UmiTopology.pane(params.string("pane"), caller: caller), let surface = pane.surface {
+                let size = ghostty_surface_size(surface)
+                out["cell_width_px"] = Int(size.cell_width_px)
+                out["cell_height_px"] = Int(size.cell_height_px)
+            }
+            // The editor's text size and the Markdown preview's page zoom in a window.
+            if params.string("window") != nil {
+                let window = try UmiTopology.window(params.string("window"), caller: caller)
+                var editorSizes: [Double] = []
+                var previewZooms: [Double] = []
+                func walk(_ view: NSView) {
+                    if let text = view as? UmiEditorTextView, let font = text.font { editorSizes.append(Double(font.pointSize)) }
+                    if let web = view as? UmiPreviewWebView { previewZooms.append(Double(web.pageZoom)) }
+                    view.subviews.forEach(walk)
+                }
+                if let content = window.window?.contentView { walk(content) }
+                out["editor_font_sizes"] = editorSizes
+                out["preview_page_zooms"] = previewZooms
+            }
+            return out
+
+        case "debug.ui.pane.menu":
+            // The terminal's right-click menu (L-31): its items, or choose one by title.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            let entries = UmiPaneMenu.entries(for: pane)
+            if let title = params.string("title") {
+                guard let entry = entries.compactMap({ $0 }).first(where: { $0.title == title }) else {
+                    throw UmiError.notFound("no menu item \"\(title)\"")
+                }
+                guard entry.enabled else { throw UmiError.failed("the menu item \"\(title)\" is disabled") }
+                entry.action()
+                return ["performed": title]
+            }
+            return ["items": entries.map { entry -> [String: Any] in
+                guard let entry else { return ["separator": true] }
+                return ["title": entry.title, "enabled": entry.enabled, "checked": entry.checked]
+            }]
+
+        case "debug.ui.clipboard.confirmation":
+            // A pane's clipboard confirmation waiting for the user: whether there is one, or
+            // answer it as its dialog's Paste or Cancel buttons do.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            let pending = pane.pendingClipboardConfirmation
+            switch params.string("action") {
+            case nil: break
+            case "confirm":
+                guard let pending else { throw UmiError.failed("no confirmation is waiting") }
+                pending.complete(remember: false)
+                if pane.pendingClipboardConfirmation === pending { pane.pendingClipboardConfirmation = nil }
+            case "cancel":
+                guard let pending else { throw UmiError.failed("no confirmation is waiting") }
+                pending.cancel()
+                if pane.pendingClipboardConfirmation === pending { pane.pendingClipboardConfirmation = nil }
+            default:
+                throw UmiError.badRequest("action is confirm or cancel")
+            }
+            return ["pending": pending != nil]
+
+        case "debug.ui.sheet":
+            // The dialog attached to a window (a close confirmation, say): whether there is one
+            // and its texts, or dismiss it as its Cancel button (the second) does.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            let sheet = window.window?.attachedSheet
+            var texts: [String] = []
+            func walk(_ view: NSView) {
+                if let field = view as? NSTextField, !field.stringValue.isEmpty { texts.append(field.stringValue) }
+                view.subviews.forEach(walk)
+            }
+            if let content = sheet?.contentView { walk(content) }
+            switch params.string("action") {
+            case nil: break
+            case "cancel":
+                guard let sheet else { throw UmiError.failed("no dialog is open") }
+                window.window?.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+            default:
+                throw UmiError.badRequest("action is cancel")
+            }
+            return ["sheet": sheet != nil, "texts": texts]
+
         case "debug.ui.views":
             // The window's AppKit views, as an indented list of class names and frames.
             let window = try UmiTopology.window(params.string("window"), caller: caller)
@@ -169,6 +304,9 @@ enum UmiUIDebug {
             }
             if let content = window.window?.contentView { walk(content, 0) }
             return ["views": lines]
+
+        case let files where files.hasPrefix("debug.ui.files") || files.hasPrefix("debug.ui.search"):
+            return try UmiFileTreeDebug.handle(method, params, caller: caller)
 
         case "debug.ui.open_file":
             // What Finder's double-click and `open FILE` call (AppDelegate's openFile).
@@ -190,6 +328,28 @@ enum UmiUIDebug {
         return ["panes": panes, "needing_you": UmiAttention.shared.needingYouCount,
                 "badge": NSApp.dockTile.badgeLabel ?? "", "looked_at": UmiLooking.lookedAt?.umiID ?? "",
                 "active": NSApp.isActive]
+    }
+
+    /// A window's sidebar besides its rows: shown, the search and what it matches, the ⌘ hints,
+    /// what is being renamed in place, and whether the search field has focus.
+    private static func sidebarJSON(_ window: TerminalController) -> [String: Any] {
+        let model = window.sidebarModel
+        var json: [String: Any] = [
+            "visible": window.sidebarVisible, "query": model.query,
+            "matching": model.matchingTabs(in: window).map(\.idString),
+            "hints": UmiTabHints.shared.revealed, "search_focused": model.searchFocused,
+            // The pane that has the keyboard in this window, if a pane has it.
+            "key_pane": (window.window?.firstResponder as? Ghostty.SurfaceView)?.umiID ?? "",
+        ]
+        switch model.renaming {
+        case .tab(let id): json["renaming"] = ["tab": id.uuidString.lowercased()]
+        case .group(let id): json["renaming"] = ["group": id.uuidString.lowercased()]
+        case .pane(let tab, let pane):
+            json["renaming"] = ["tab": tab.uuidString.lowercased(),
+                                "pane": UmiTopology.allSurfaces.first { $0.id == pane }?.umiID ?? ""]
+        case nil: break
+        }
+        return json
     }
 
     private static func frameJSON(_ frame: NSRect) -> [String: Any] {

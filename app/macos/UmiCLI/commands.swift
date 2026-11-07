@@ -56,7 +56,7 @@ struct CommandHelp {
     }
 }
 
-let colorNames = ["blue", "purple", "pink", "red", "orange", "yellow", "green", "teal", "graphite", "none"]
+let colorNames = ["red", "green", "yellow", "blue", "magenta", "cyan", "purple", "pink", "orange", "teal", "graphite", "none"]
 
 let commandTable: [CommandHelp] = [
     // Layout
@@ -153,6 +153,11 @@ let commandTable: [CommandHelp] = [
                           PaletteAction(title: "Jump Back", argv: ["jump", "back"])]),
     CommandHelp(section: "Layout", usage: "worktree ls",
                 actions: [PaletteAction(title: "List Git Worktrees", argv: ["worktree", "ls"])]),
+    CommandHelp(section: "Layout", usage: "layout ls|save NAME [--replace]|open NAME [--no-focus]",
+                summary: "launch configurations in ~/.config/umi/launch_configurations: list, save every window, open",
+                actions: [PaletteAction(title: "List Launch Configurations", argv: ["layout", "ls"]),
+                          PaletteAction(title: "Save New Launch Configuration…", argv: ["layout", "save"],
+                                        ask: [Ask(name: "NAME", prompt: "File name (e.g. work, saved as work.yaml)")])]),
 
     // Input and output
     CommandHelp(section: "Input and output", usage: "send [--pane P] [--enter|-e] TEXT…",
@@ -173,10 +178,11 @@ let commandTable: [CommandHelp] = [
                 summary: "JSON lines (pane.created, tab.renamed, …)"),
     CommandHelp(section: "Input and output", usage: "notify [--pane P] TITLE [BODY]",
                 actions: [PaletteAction(title: "Notify…", argv: ["notify"], ask: [Ask(name: "TITLE", prompt: "Notification title")])]),
-    CommandHelp(section: "Input and output", usage: "sidebar [on|off|toggle|status|tabs|files] [--window W]",
+    CommandHelp(section: "Input and output", usage: "sidebar [on|off|toggle|status|tabs|files|search] [--window W]",
                 actions: [PaletteAction(title: "Toggle Sidebar", argv: ["sidebar", "toggle"]),
                           PaletteAction(title: "Show Sidebar Files", argv: ["sidebar", "files"]),
-                          PaletteAction(title: "Show Sidebar Tabs", argv: ["sidebar", "tabs"])]),
+                          PaletteAction(title: "Show Sidebar Tabs", argv: ["sidebar", "tabs"]),
+                          PaletteAction(title: "Show Sidebar Search", argv: ["sidebar", "search"])]),
     CommandHelp(section: "Input and output", usage: "sidebar width [N] [--window W]",
                 summary: "the window's sidebar width (points); N sets it",
                 actions: [PaletteAction(title: "Set Sidebar Width…", argv: ["sidebar", "width"],

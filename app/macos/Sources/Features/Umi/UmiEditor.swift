@@ -162,10 +162,15 @@ final class UmiDocument: ObservableObject, Identifiable {
     /// A line to show and put the cursor on (1-based), from the quick file search's
     /// `path:line`. The source view clears it once shown.
     @Published var revealLine: Int?
+    /// With `revealLine`: where in the line the cursor goes (UTF-16 offset from the line's start),
+    /// from global search's match. Cleared with `revealLine`.
+    var revealColumn: Int?
     /// How many agents wait for the user to finish commenting (`umi comments wait`, E-11).
     @Published var reviewWaiters = 0
     /// The shown view, which starts a comment on its selection (E-11).
     weak var commentTarget: UmiCommentTarget?
+    /// The source view's find, go to line and comments (E-21 to E-23), while it's shown.
+    weak var code: UmiCodeEditor?
 
     private(set) var encoding: String.Encoding
     private var bom: Data
@@ -227,6 +232,11 @@ final class UmiDocument: ObservableObject, Identifiable {
         }
     }
 
+    /// Write the text to another file, in this document's encoding (Save As, E-23).
+    func write(to other: URL) throws {
+        try UmiTextFile.write(text, to: other, encoding: encoding, bom: bom)
+    }
+
     func reload() {
         do {
             let loaded = try UmiTextFile.read(url)
@@ -234,6 +244,8 @@ final class UmiDocument: ObservableObject, Identifiable {
             bom = loaded.bom
             savedText = loaded.text
             text = loaded.text
+            // The history's steps point into the old text: ⌘Z after a reload must not replay them.
+            undoManager.removeAllActions()
             isDirty = false
             changedOnDisk = false
             error = nil
@@ -257,13 +269,6 @@ final class UmiDocument: ObservableObject, Identifiable {
         isDirty = text != savedText
         error = nil
         watch()
-    }
-
-    /// Keep the edits as they are and stop warning about the disk.
-    func keepMine() {
-        changedOnDisk = false
-        if let current = try? UmiTextFile.read(url).text { savedText = current }
-        isDirty = text != savedText
     }
 
     // MARK: Watching the file
@@ -360,14 +365,6 @@ enum UmiEditor {
 
     static func isMarkdown(_ url: URL) -> Bool {
         markdownExtensions.contains(url.pathExtension.lowercased())
-    }
-
-    static func icon(for url: URL) -> String {
-        switch url.pathExtension.lowercased() {
-        case "json": return "curlybraces"
-        case "csv", "tsv": return "tablecells"
-        default: return isMarkdown(url) ? "doc.richtext" : "doc.text"
-        }
     }
 
     static func hasPreview(_ url: URL) -> Bool { isMarkdown(url) || UmiDataPreview.handles(url) }
@@ -611,6 +608,55 @@ enum UmiEditor {
         UmiTopology.currentPane.flatMap { UmiFilePanes.shared.document(of: $0) }
     }
 
+    /// The focused pane's source view (find, go to line, comments), when it shows one.
+    static var currentCode: UmiCodeEditor? {
+        guard let doc = currentDocument, doc.mode == .source else { return nil }
+        return doc.code
+    }
+
+    /// ⌘F, ⌘G and ⇧⌘G (Umi's Edit items): a rendered Markdown preview has its own find bar
+    /// (MD-4), which gets the key; any other file pane finds in its source (E-22).
+    static func find(previewAction: Selector, inSource body: @escaping (UmiCodeEditor) -> Void) {
+        if let doc = currentDocument, doc.isMarkdown, doc.mode == .preview, let web = focusedPreview {
+            NSApp.sendAction(previewAction, to: web, from: nil)
+            return
+        }
+        inSource(body)
+    }
+
+    /// The preview in the focused file pane, if it shows one.
+    static var focusedPreview: UmiPreviewWebView? {
+        guard let responder = NSApp.keyWindow?.firstResponder as? NSView else { return nil }
+        var view: NSView? = responder
+        while let current = view, !(current is UmiEditorContainerView) {
+            if let web = current as? UmiPreviewWebView { return web }
+            view = current.superview
+        }
+        guard let container = view else { return nil }
+        func search(_ view: NSView) -> UmiPreviewWebView? {
+            if let web = view as? UmiPreviewWebView { return web }
+            for sub in view.subviews { if let web = search(sub) { return web } }
+            return nil
+        }
+        return search(container)
+    }
+
+    /// Run `body` on the focused file pane's source view, switching a preview (JSON, CSV, or
+    /// Markdown for ⌥⌘F) to its source first (E-22).
+    static func inSource(_ body: @escaping (UmiCodeEditor) -> Void) {
+        guard let doc = currentDocument else { return }
+        if doc.mode == .source, let code = doc.code { return body(code) }
+        let stale = doc.code
+        doc.mode = .source
+        // The source view is built on SwiftUI's next pass.
+        func attempt(_ left: Int) {
+            if doc.mode == .source, let code = doc.code, code !== stale, code.textView?.window != nil { return body(code) }
+            guard left > 0 else { return NSSound.beep() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { MainActor.assumeIsolated { attempt(left - 1) } }
+        }
+        attempt(50)
+    }
+
     /// True when keyboard focus is in an editor view.
     static var editorHasFocus: Bool {
         guard let responder = NSApp.keyWindow?.firstResponder as? NSView else { return false }
@@ -620,6 +666,64 @@ enum UmiEditor {
             view = current.superview
         }
         return false
+    }
+
+    /// ⌘S (and Overwrite): save and say so, as Warp's "File saved." toast does (E-23).
+    @discardableResult
+    static func saveFromUser(_ doc: UmiDocument) -> Bool {
+        guard doc.save() else { return false }
+        doc.code?.reloadDiffBase()
+        UmiToast.show("File saved.", near: UmiFilePanes.shared.open.first { $0.doc === doc }?.pane)
+        return true
+    }
+
+    /// ⇧⌘S: write the document to a file the user names; the pane then shows that file (E-23).
+    static func saveAs(_ doc: UmiDocument) {
+        guard let pane = UmiFilePanes.shared.open.first(where: { $0.doc === doc })?.pane else { return }
+        let panel = NSSavePanel()
+        panel.directoryURL = doc.url.deletingLastPathComponent()
+        panel.nameFieldStringValue = doc.name
+        panel.canCreateDirectories = true
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            do { try saveAs(doc, to: url, pane: pane) } catch {
+                doc.error = (error as? UmiError)?.message ?? error.localizedDescription
+                NSSound.beep()
+            }
+        }
+        if let window = pane.window { panel.beginSheetModal(for: window, completionHandler: finish) } else { finish(panel.runModal()) }
+    }
+
+    /// Save As to `url`: the file gets the text, and the pane shows it from then on. The old file
+    /// keeps what it had. When another pane already shows that file, it stays the file's one pane
+    /// (E-9): it takes the saved text and focus, and this pane closes, its text now saved there.
+    /// That pane's unsaved edits are never overwritten: Save As refuses instead.
+    static func saveAs(_ doc: UmiDocument, to url: URL, pane: Ghostty.SurfaceView) throws {
+        let target = url.standardizedFileURL
+        if target.resolvingSymlinksInPath() == doc.url.resolvingSymlinksInPath() {
+            saveFromUser(doc)
+            return
+        }
+        if let other = UmiFilePanes.shared.pane(showing: target), other !== pane,
+           let shown = UmiFilePanes.shared.document(of: other) {
+            guard !shown.isDirty else {
+                throw UmiError.badRequest("“\(shown.name)” is open in another pane with unsaved changes. Save or close it first.")
+            }
+            try doc.write(to: target)
+            shown.reload()
+            shown.code?.reloadDiffBase()
+            UmiEvents.shared.emit("editor.saved", ["path": shown.url.path, "from": doc.url.path])
+            UmiFilePanes.closePane(pane, discarding: true)
+            try UmiFilePanes.open(shown.url, mode: nil, near: other, focus: true)
+            UmiToast.show("File saved.", near: other)
+            return
+        }
+        try doc.write(to: target)
+        let saved = try UmiDocument(url: target, mode: doc.hasPreview ? doc.mode : nil)
+        UmiFilePanes.shared.replaceDocument(of: pane, with: saved)
+        UmiEvents.shared.emit("editor.saved", ["path": saved.url.path, "from": doc.url.path])
+        UmiToast.show("File saved.", near: pane)
+        DispatchQueue.main.async { UmiFilePanes.shared.focusEditor(of: pane) }
     }
 
     static func saveDirtyDocuments(of tab: UmiTab) {
@@ -674,16 +778,16 @@ enum UmiEditor {
 
 // MARK: - Views
 
-/// The visible preview/source control (E-2).
+/// The visible preview/source control (E-2), named as Warp names it: Rendered / Raw.
 struct UmiModeToggle: View {
     @ObservedObject var doc: UmiDocument
 
     var body: some View {
         HStack(spacing: 0) {
-            segment("Preview", .preview)
-            segment("Source", .source)
+            segment("Rendered", .preview)
+            segment("Raw", .source)
         }
-        .help("Toggle preview / source (⇧⌘M)")
+        .help("Toggle rendered / raw (⌘E or ⇧⌘M)")
     }
 
     private func segment(_ title: String, _ mode: UmiDocument.Mode) -> some View {
@@ -710,7 +814,9 @@ struct UmiDocumentView: View {
     var body: some View {
         VStack(spacing: 0) {
             if doc.changedOnDisk {
-                banner("This file changed on disk.", actions: [("Reload", { doc.reload() }), ("Keep Mine", { doc.keepMine() })])
+                // Warp's wording (E-4): drop the edits and take the disk's version, or save over it.
+                banner("This file has saved changes that are not reflected here.",
+                       actions: [("Discard this version", { doc.reload() }), ("Overwrite", { UmiEditor.saveFromUser(doc) })])
             }
             if let error = doc.error {
                 banner(error, actions: [("Dismiss", { doc.error = nil })])
@@ -773,10 +879,39 @@ final class UmiEditorContainerView: NSView {
             guard let pane else { return }
             UmiFilePanes.shared.editorFocused(pane: pane)
         }
+        // A view that replaces another in the focused file pane (Rendered / Raw, ⌘E or ⇧⌘M) takes
+        // the keyboard the one it replaced had, so ⌘E pressed again switches back.
+        DispatchQueue.main.async { [weak pane, weak focusTarget] in
+            guard let pane, let focusTarget, let window = focusTarget.window,
+                  UmiTopology.locate(pane)?.window.focusedSurface === pane,
+                  window.firstResponder == nil || window.firstResponder === window else { return }
+            window.makeFirstResponder(focusTarget)
+        }
     }
 
-    @objc func saveDocument(_ sender: Any?) { document?.save() }
+    @objc func saveDocument(_ sender: Any?) { document.map { UmiEditor.saveFromUser($0) } }
     @objc func toggleMarkdownPreview(_ sender: Any?) { document?.toggleMode() }
+
+    // The Find menu's items (⌘F, ⌘G, ⇧⌘G, ⌘E) reach the editor's own find instead of the
+    // terminal underneath the file pane (whose window controller handles them otherwise).
+    @objc func find(_ sender: Any?) { if let code = document?.code { code.openFind() } else { NSSound.beep() } }
+    @objc func findNext(_ sender: Any?) { if let code = document?.code { code.findStep(1) } else { NSSound.beep() } }
+    @objc func findPrevious(_ sender: Any?) { if let code = document?.code { code.findStep(-1) } else { NSSound.beep() } }
+    @objc func findHide(_ sender: Any?) { document?.code?.closeFind() }
+    /// ⌘E (Edit ▸ Find ▸ Use Selection for Find in a terminal) toggles Rendered / Raw in a file
+    /// that has both views, as Warp's ⌘E does (E-2); in a file with only a source view it puts
+    /// the selection in the find bar's query. Terminals keep theirs.
+    @objc func selectionForFind(_ sender: Any?) {
+        if document?.hasPreview ?? false { document?.toggleMode(); return }
+        guard let code = document?.code, let textView = code.textView else { return NSSound.beep() }
+        let range = textView.selectedRange()
+        guard range.length > 0 else { return NSSound.beep() }
+        code.find.query = (textView.string as NSString).substring(with: range)
+    }
+    @objc func scrollToSelection(_ sender: Any?) {
+        guard let textView = document?.code?.textView else { return }
+        textView.scrollRangeToVisible(textView.selectedRange())
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let window, let responder = window.firstResponder as? NSView, responder.isDescendant(of: self) else {
@@ -789,10 +924,35 @@ final class UmiEditorContainerView: NSView {
             closeDocument?()
             return true
         case ([.command], "s"):
-            document?.save()
+            if let document { UmiEditor.saveFromUser(document) }
             return true
         case ([.command, .shift], "m"):
             document?.toggleMode()
+            return true
+        // Ghostty leaves these menu items without keys (its terminals take them as bindings), so
+        // the editor's text and its find fields get them here.
+        // Undo is the text's own (the document's history), not the window's (pane closes and moves).
+        case ([.command], "z") where responder is UmiEditorTextView, ([.command, .shift], "z") where responder is UmiEditorTextView:
+            let undo = (responder as? NSTextView)?.undoManager
+            let redo = flags.contains(.shift)
+            if let undo, redo ? undo.canRedo : undo.canUndo {
+                if redo { undo.redo() } else { undo.undo() }
+            } else {
+                NSSound.beep()
+            }
+            return true
+        case ([.command], "c"):
+            return NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
+        case ([.command], "x"):
+            return NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self)
+        case ([.command], "v"):
+            return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
+        case ([.command], "e"):
+            // Warp's key for Rendered / Raw (Warp parity, 2026-11-05) in a file with both views;
+            // in a source-only file, Use Selection for Find. The menu item has no key of its own
+            // (Ghostty's ⌘E is a terminal binding), so the key comes here.
+            guard document != nil else { return super.performKeyEquivalent(with: event) }
+            selectionForFind(nil)
             return true
         default:
             return super.performKeyEquivalent(with: event)
@@ -803,6 +963,8 @@ final class UmiEditorContainerView: NSView {
 /// Plain-text source editing.
 struct UmiSourceEditor: NSViewRepresentable {
     @ObservedObject var doc: UmiDocument
+    /// Umi: the interface's zoom scales the editor's text (L-33).
+    @ObservedObject private var zoom = UmiZoom.shared
     let group: UmiEditorGroup
 
     func makeCoordinator() -> Coordinator { Coordinator(doc: doc) }
@@ -815,10 +977,8 @@ struct UmiSourceEditor: NSViewRepresentable {
             UmiEditor.confirmClose(doc, in: group, window: container?.window)
         }
         doc.commentTarget = context.coordinator
-        let scroll = UmiEditorTextView.scrollable()
+        let (scroll, codeView) = UmiCodeEditor.makeScrollView()
         scroll.drawsBackground = false
-        scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         if let textView = scroll.documentView as? NSTextView {
             context.coordinator.textView = textView
@@ -827,21 +987,27 @@ struct UmiSourceEditor: NSViewRepresentable {
             textView.isRichText = false
             textView.importsGraphics = false
             textView.allowsUndo = true
-            textView.usesFindBar = true
+            // Find is the code view's own bar (E-22), not AppKit's.
+            textView.usesFindBar = false
             textView.isAutomaticQuoteSubstitutionEnabled = false
             textView.isAutomaticDashSubstitutionEnabled = false
             textView.isAutomaticTextReplacementEnabled = false
             textView.isAutomaticSpellingCorrectionEnabled = false
             textView.isContinuousSpellCheckingEnabled = false
-            textView.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
-            textView.textColor = UmiTheme.textNSColor
             textView.insertionPointColor = UmiTheme.accentNSColor
-            textView.textContainerInset = NSSize(width: 12, height: 10)
+            textView.textContainerInset = NSSize(width: 4, height: 10)
             textView.string = doc.text
+            // A new text view starts its own history: steps from an earlier one point into it.
+            doc.undoManager.removeAllActions()
+            // Opened with the caret at the top, as Warp opens files.
+            textView.setSelectedRange(NSRange(location: 0, length: 0))
             textView.setAccessibilityLabel(doc.name)
             container.attach(to: group, focusTarget: textView)
         }
         container.addSubview(scroll)
+        let code = UmiCodeEditor(doc: doc, textView: codeView, scroll: scroll, container: container, pane: group.pane)
+        context.coordinator.code = code
+        doc.code = code
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -857,6 +1023,9 @@ struct UmiSourceEditor: NSViewRepresentable {
         if textView.string != doc.text {
             let selection = textView.selectedRanges
             textView.string = doc.text
+            // The text was replaced from outside the editor (reload, comments, the CLI): the
+            // history's steps point into the old text, so ⌘Z must not replay them.
+            doc.undoManager.removeAllActions()
             let length = (doc.text as NSString).length
             // Keep the selection where it was, clamped to the new text. AppKit throws (and the
             // app crashes) if given no ranges, as when a reload is shorter than the old cursor.
@@ -867,15 +1036,26 @@ struct UmiSourceEditor: NSViewRepresentable {
             }
             textView.selectedRanges = clamped.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : clamped
         }
-        if textView.textColor != UmiTheme.textNSColor { textView.textColor = UmiTheme.textNSColor }
+        // The theme went light or dark: the code view recolors (setting `textColor` would wipe the
+        // syntax colors).
+        if let code = context.coordinator.code, code.baseColor != UmiTheme.textNSColor { code.lookChanged() }
+        // Umi: the interface's zoom (L-33) changes the terminals' font size, which the code view
+        // takes its font from: take it again.
+        if let code = context.coordinator.code, context.coordinator.zoomFactor != zoom.factor {
+            context.coordinator.zoomFactor = zoom.factor
+            code.lookChanged()
+        }
+        if doc.code !== context.coordinator.code { doc.code = context.coordinator.code }
         if let line = doc.revealLine {
-            DispatchQueue.main.async { doc.revealLine = nil }
-            Self.reveal(line: line, in: textView)
+            let column = doc.revealColumn ?? 0
+            DispatchQueue.main.async { doc.revealLine = nil; doc.revealColumn = nil }
+            Self.reveal(line: line, column: column, in: textView)
         }
     }
 
-    /// Put the cursor at the start of a line and scroll it into view.
-    static func reveal(line: Int, in textView: NSTextView) {
+    /// Put the cursor in a line (at `column`, a UTF-16 offset clamped to the line) and scroll it
+    /// into view.
+    static func reveal(line: Int, column: Int = 0, in textView: NSTextView) {
         let text = textView.string as NSString
         var location = 0
         var current = 1
@@ -884,7 +1064,14 @@ struct UmiSourceEditor: NSViewRepresentable {
             location = NSMaxRange(range)
             current += 1
         }
-        let target = NSRange(location: min(location, text.length), length: 0)
+        location = min(location, text.length)
+        if column > 0 {
+            // The line's own text, without its line break.
+            var end = 0, contentsEnd = 0
+            text.getLineStart(nil, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+            location = min(location + column, contentsEnd)
+        }
+        let target = NSRange(location: location, length: 0)
         textView.setSelectedRange(target)
         textView.scrollRangeToVisible(target)
         textView.window?.makeFirstResponder(textView)
@@ -894,6 +1081,10 @@ struct UmiSourceEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate, UmiCommentTarget {
         let doc: UmiDocument
         weak var textView: NSTextView?
+        /// Owned here: lives as long as the source view.
+        var code: UmiCodeEditor?
+        /// The interface zoom the code view's font was last taken at (L-33).
+        var zoomFactor: CGFloat = 1
         init(doc: UmiDocument) { self.doc = doc }
 
         /// Comment on the selection (E-11): the margin is the preview's, so here the text is
@@ -929,6 +1120,8 @@ struct UmiSourceEditor: NSViewRepresentable {
 /// drawn by Umi's own script, which runs apart from the page (`UmiCommentsScript`).
 struct UmiMarkdownPreview: NSViewRepresentable {
     @ObservedObject var doc: UmiDocument
+    /// Umi: the interface's zoom scales the page (L-33).
+    @ObservedObject private var zoom = UmiZoom.shared
     let group: UmiEditorGroup
     let background: Color
 
@@ -945,10 +1138,15 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         config.websiteDataStore = .nonPersistent()
         let scripts = config.userContentController
+        // Code blocks, diagrams and find (Warp parity); before the margin, so it lays out the
+        // page as these leave it.
+        UmiMarkdownScript.userScripts.forEach(scripts.addUserScript)
         scripts.addUserScript(WKUserScript(source: UmiCommentsScript.source, injectionTime: .atDocumentEnd,
                                            forMainFrameOnly: true, in: UmiCommentsUI.world))
         scripts.add(UmiScriptHandlerProxy(context.coordinator), contentWorld: UmiCommentsUI.world, name: "umi")
         let web = UmiPreviewWebView(frame: .zero, configuration: config)
+        web.pageZoom = zoom.factor
+        web.coordinator = context.coordinator
         container.attach(to: group, focusTarget: web)
         web.navigationDelegate = context.coordinator
         web.setValue(false, forKey: "drawsBackground")
@@ -969,6 +1167,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
 
     func updateNSView(_ container: UmiEditorContainerView, context: Context) {
         context.coordinator.group = group
+        if let web = context.coordinator.web, web.pageZoom != zoom.factor { web.pageZoom = zoom.factor }
         context.coordinator.render()
         context.coordinator.showWaiters()
     }
@@ -994,7 +1193,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
 
         func render(force: Bool = false) {
             guard let web else { return }
-            let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight)"
+            let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight):\(UmiMarkdownStyle.fontSize)"
             guard force || lastKey != key else { return }
             if composing && !force {
                 renderPending = true
@@ -1019,8 +1218,46 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                 "waiting": doc.reviewWaiters, "showResolved": showResolved, "reveal": focus != nil,
             ]
             let head = UmiCommentsScript.head(data: data, light: UmiTheme.isLight)
-            web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight, head: head),
+            hasDiagrams = body.contains("umi-code umi-mermaid")
+            web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight, head: head,
+                                                markdown: true, fontSize: UmiMarkdownStyle.fontSize),
                                baseURL: nil)
+        }
+
+        /// The page on show has Mermaid blocks: mermaid.js is loaded into it once it has loaded.
+        private var hasDiagrams = false
+
+        private func renderDiagrams() {
+            guard hasDiagrams, let web else { return }
+            let light = UmiTheme.isLight
+            web.evaluateJavaScript(UmiMarkdownScript.mermaidJS, in: nil, in: UmiCommentsUI.world) { [weak web] _ in
+                web?.callAsyncJavaScript("return window.umiMarkdown && umiMarkdown.renderMermaid(light)",
+                                         arguments: ["light": light], in: nil, in: UmiCommentsUI.world) { _ in }
+            }
+        }
+
+        /// Run in terminal (shell blocks): the command goes to the input of the tab's terminal
+        /// used most recently, as Warp puts a notebook's command in its active session's input. It
+        /// isn't run: the user presses Return there.
+        private func runInTerminal(_ text: String) {
+            guard let pane = group?.pane, let location = UmiTopology.locate(pane) else { return NSSound.beep() }
+            let shown = location.window.tree(of: location.tab).root?.leaves() ?? []
+            let terminals = shown.filter {
+                $0 !== pane && UmiFilePanes.shared.document(of: $0) == nil && UmiAgentUI.shared.session(forPane: $0.id) == nil
+                    && !UmiWebPanes.shared.isWebPane($0.id)
+            }
+            guard let target = UmiFocusHistory.mostRecent(among: terminals) ?? terminals.first,
+                  let surface = target.surfaceModel else {
+                doc.error = "No terminal in this tab to run the command in."
+                return NSSound.beep()
+            }
+            surface.sendText(text)
+            UmiLayout.focusPane(target, activate: true)
+        }
+
+        private func copy(_ text: String) {
+            UmiMarkdownScript.pasteboard.clearContents()
+            UmiMarkdownScript.pasteboard.setString(text, forType: .string)
         }
 
         func showWaiters() {
@@ -1060,6 +1297,10 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                 if !composing && renderPending { render() }
             case "done":
                 call("umiComments.notice(\(jsString(UmiCommentsUI.reviewDone(doc))))")
+            case "copy":
+                copy(body["text"] as? String ?? "")
+            case "run":
+                runInTerminal(body["text"] as? String ?? "")
             case "add", "reply", "edit", "resolve", "delete":
                 perform(type, body)
             default:
@@ -1104,6 +1345,13 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             shownWaiters = doc.reviewWaiters
             call("window.umiComments && umiComments.setWaiting(\(doc.reviewWaiters))")
+            renderDiagrams()
+        }
+
+        // MARK: Find (⌘F, ⌘G, ⇧⌘G), as Warp's find bar in a Markdown file
+
+        func find(_ js: String) {
+            web?.evaluateJavaScript("window.umiMarkdown && umiMarkdown.\(js)", in: nil, in: UmiCommentsUI.world)
         }
 
         // MARK: Links
@@ -1137,35 +1385,148 @@ struct UmiMarkdownPreview: NSViewRepresentable {
 
 /// The source editor's text view: tells its pane when it takes keyboard focus.
 final class UmiEditorTextView: NSTextView {
+    /// The code view's extras (current line, Esc), when it's the source editor.
+    weak var code: UmiCodeEditor?
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { UmiEditorContainerView.focused(self) }
+        if result {
+            UmiEditorContainerView.focused(self)
+            MainActor.assumeIsolated { code?.reloadDiffBase() }
+        }
         return result
     }
 
-    /// A scroll view holding one, set up as `NSTextView.scrollableTextView()` sets up its own.
-    static func scrollable() -> NSScrollView {
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        let size = scroll.contentSize
-        let textView = UmiEditorTextView(frame: NSRect(origin: .zero, size: size))
-        textView.minSize = NSSize(width: 0, height: size.height)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-        scroll.documentView = textView
-        return scroll
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        MainActor.assumeIsolated { code?.drawCurrentLine(in: rect) }
+    }
+
+    /// Right-click in code: Cut, Copy and Paste only. Warp's menu here (Go to definition, Find
+    /// references) needs a language server; AppKit's full text menu would let Substitutions turn
+    /// smart quotes back on in code.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard code != nil else { return super.menu(for: event) }
+        let menu = NSMenu()
+        // No items added by the system (AutoFill, Services, Writing Tools).
+        menu.allowsContextMenuPlugIns = false
+        if #available(macOS 15.2, *) { menu.automaticallyInsertsWritingToolsItems = false }
+        for (title, action) in [("Cut", #selector(cut(_:))), ("Copy", #selector(copy(_:))), ("Paste", #selector(paste(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    /// Esc closes the find bar or the go-to box; otherwise it does nothing (no completion list).
+    override func cancelOperation(_ sender: Any?) {
+        let handled = MainActor.assumeIsolated { code?.escape() ?? false }
+        if !handled && code == nil { super.cancelOperation(sender) }
     }
 }
 
-/// The preview's web view: tells its pane when it takes keyboard focus.
+/// The preview's web view: tells its pane when it takes keyboard focus. In a Markdown preview
+/// Edit ▸ Find's items (⌘F, ⌘G, ⇧⌘G) search the document, and its right-click menu has Warp's
+/// items (Warp parity, 2026-11-05).
 final class UmiPreviewWebView: WKWebView {
+    weak var coordinator: UmiMarkdownPreview.Coordinator?
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result { UmiEditorContainerView.focused(self) }
         return result
     }
+
+    private var isMarkdown: Bool { coordinator?.doc.isMarkdown ?? false }
+
+    @objc func find(_ sender: Any?) { coordinator?.find("openFind()") }
+    @objc func findNext(_ sender: Any?) { coordinator?.find("findNext()") }
+    @objc func findPrevious(_ sender: Any?) { coordinator?.find("findPrevious()") }
+    @objc func findHide(_ sender: Any?) { coordinator?.find("closeFind()") }
+
+    override func responds(to selector: Selector!) -> Bool {
+        let findActions: Set<Selector> = [#selector(find(_:)), #selector(findNext(_:)), #selector(findPrevious(_:)), #selector(findHide(_:))]
+        if let selector, findActions.contains(selector) { return isMarkdown }
+        return super.responds(to: selector)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case #selector(find(_:)), #selector(findNext(_:)), #selector(findPrevious(_:)), #selector(findHide(_:)):
+            return isMarkdown
+        default:
+            return super.validateUserInterfaceItem(item)
+        }
+    }
+
+    // MARK: The right-click menu
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        let hasSelection = menu.items.contains { $0.identifier?.rawValue == "WKMenuItemIdentifierCopy" }
+        let items = warpMenu(selection: hasSelection).items
+        menu.removeAllItems()
+        for item in items {
+            item.menu?.removeItem(item)
+            menu.addItem(item)
+        }
+        super.willOpenMenu(menu, with: event)
+    }
+
+    /// Warp's items for a Markdown file's right-click menu: Copy (with a selection), Copy file
+    /// path, the four splits, then Maximize (or Minimize) pane and Close pane in a split.
+    func warpMenu(selection: Bool) -> NSMenu {
+        let menu = NSMenu()
+        if selection {
+            let copy = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+            copy.target = self
+            menu.addItem(copy)
+        }
+        guard let coordinator, let pane = coordinator.group?.pane else { return menu }
+        let doc = coordinator.doc
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(UmiPreviewMenuItem("Copy file path") {
+            UmiMarkdownScript.pasteboard.clearContents()
+            UmiMarkdownScript.pasteboard.setString(doc.url.path, forType: .string)
+        })
+        menu.addItem(.separator())
+        let splits: [(String, SplitTree<Ghostty.SurfaceView>.NewDirection)] = [
+            ("Split pane right", .right), ("Split pane left", .left), ("Split pane down", .down), ("Split pane up", .up),
+        ]
+        for (title, direction) in splits {
+            menu.addItem(UmiPreviewMenuItem(title) { [weak pane] in
+                guard let pane else { return }
+                var options = UmiLayout.PaneOptions()
+                options.cwd = doc.url.deletingLastPathComponent().path
+                if (try? UmiLayout.split(pane, direction: direction, options: options, ratio: nil, focus: true)) == nil { NSSound.beep() }
+            })
+        }
+        if let location = UmiTopology.locate(pane), location.window.tree(of: location.tab).isSplit {
+            let zoomed = location.window.tree(of: location.tab).zoomed != nil
+            menu.addItem(UmiPreviewMenuItem(zoomed ? "Minimize pane" : "Maximize pane") { [weak pane] in
+                guard let pane else { return }
+                if (try? UmiLayout.toggleZoom(pane)) == nil { NSSound.beep() }
+            })
+            menu.addItem(UmiPreviewMenuItem("Close pane") { [weak self] in
+                guard let container = self?.superview as? UmiEditorContainerView else { return }
+                container.closeDocument?()
+            })
+        }
+        return menu
+    }
+}
+
+/// A menu item that runs a closure.
+final class UmiPreviewMenuItem: NSMenuItem {
+    private let handler: @MainActor () -> Void
+
+    init(_ title: String, handler: @escaping @MainActor () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run(_:)), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @MainActor @objc private func run(_ sender: Any?) { handler() }
 }

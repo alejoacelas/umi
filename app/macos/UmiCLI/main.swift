@@ -689,14 +689,14 @@ func layoutCommand(_ argv: [String]) {
         case "off", "hide": params["visible"] = false
         case "toggle": params["toggle"] = true
         case "status": break
-        case "tabs", "files": params["mode"] = sub
+        case "tabs", "files", "search": params["mode"] = sub
         case "width":
             // `sidebar width` says the window's width; `sidebar width N` sets it.
             if args.positional.count > 1 {
                 guard let width = Double(args.positional[1]), width > 0 else { fail("sidebar width: give a width in points") }
                 params["width"] = width
             }
-        default: fail("sidebar: use on, off, toggle, status, tabs, files or width [N]")
+        default: fail("sidebar: use on, off, toggle, status, tabs, files, search or width [N]")
         }
         let result = callDict("sidebar", params)
         if sub == "width" && !jsonOutput {
@@ -752,6 +752,9 @@ func layoutCommand(_ argv: [String]) {
     case "shortcuts", "shortcut":
         shortcutsCommand(rest)
 
+    case "layout", "layouts":
+        launchConfigCommand(rest)
+
     case "worktree", "worktrees":
         let args = parse(rest, ArgSpec())
         guard args.positional.first ?? "ls" == "ls" || args.positional.first == "list" else {
@@ -768,6 +771,55 @@ func layoutCommand(_ argv: [String]) {
 
     default:
         fail("unknown command `\(command)` (see `\(cliName) help`)")
+    }
+}
+
+/// `layout`: launch configurations (saved windows, tabs and panes; SPEC L-21).
+func launchConfigCommand(_ argv: [String]) {
+    let sub = argv.first ?? "ls"
+    let rest = Array(argv.dropFirst())
+    switch sub {
+    case "ls", "list":
+        _ = parse(rest, ArgSpec())
+        let result = callDict("layout.ls")
+        if jsonOutput {
+            printJSON(result)
+            return
+        }
+        let configs = result["configs"] as? [[String: Any]] ?? []
+        if configs.isEmpty {
+            print(dim("no launch configurations in \(abbreviateHome(result["directory"] as? String ?? ""))"))
+        }
+        for config in configs {
+            let file = abbreviateHome(config["path"] as? String ?? "")
+            if let error = config["error"] as? String {
+                print("\(config["file"] as? String ?? "?")  \(dim("can't be read: \(error)"))")
+            } else {
+                let windows = config["windows"] as? Int ?? 0
+                let tabs = config["tabs"] as? Int ?? 0
+                print("\(bold(config["name"] as? String ?? "?"))  \(windows) window\(windows == 1 ? "" : "s"), "
+                      + "\(tabs) tab\(tabs == 1 ? "" : "s")  \(dim(file))")
+            }
+        }
+
+    case "save":
+        let args = parse(rest, ArgSpec(boolean: ["--replace"]))
+        guard args.positional.count == 1 else { fail("layout save: give one NAME (saved as NAME.yaml)") }
+        let result = callDict("layout.save", ["name": args.positional[0], "replace": args.has("--replace")])
+        if jsonOutput { printJSON(result) } else { print(result["path"] as? String ?? "") }
+
+    case "open":
+        let args = parse(rest, ArgSpec(boolean: ["--no-focus"]))
+        guard !args.positional.isEmpty else { fail("layout open: name the launch configuration (see `\(cliName) layout ls`)") }
+        let result = callDict("layout.open", ["name": args.positional.joined(separator: " "), "focus": !args.has("--no-focus")])
+        if jsonOutput {
+            printJSON(result)
+        } else {
+            for window in result["windows"] as? [String] ?? [] { print(window) }
+        }
+
+    default:
+        fail("layout: use `layout ls`, `layout save NAME` or `layout open NAME`")
     }
 }
 

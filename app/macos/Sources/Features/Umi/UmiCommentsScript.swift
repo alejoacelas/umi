@@ -11,6 +11,7 @@ enum UmiCommentsScript {
     static let css = """
     :root { --umi-mw: 260px; }
     body.umi-commenting { max-width: calc(860px + var(--umi-mw) + 24px); padding-right: calc(28px + var(--umi-mw) + 24px); }
+    body.umi-md.umi-commenting { max-width: none; padding-right: calc(20px + var(--umi-mw) + 24px); }
     body { position: relative; }
     mark { background: none; color: inherit; }
     mark.umi-hl { background: rgba(255, 214, 10, 0.22); border-radius: 2px; }

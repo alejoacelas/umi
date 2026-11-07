@@ -237,7 +237,9 @@ that stretch equally.
 > also, make umi use the same blacks as the warp blacks I currenlty use (the defaults I think)
 
 His Warp follows the system theme, which in dark mode is Warp's default "Dark" theme (background
-`#000000`).
+`#000000`). Corrected 2026-11-05: the theme built into Warp (`themes/default_themes.rs`) is
+`#050505` with the cursor `#19AAD8`; `#000000` came from the themes repository's YAML. His screenshot
+`reference/warp-blocks.png` measures `#050505`.
 
 Then:
 > though let's use warp's terminal color config as well if it's straightforward to implement
@@ -258,3 +260,46 @@ Relayed by Alejo's agent, not his own words; Alejo approved: remove the Settings
 SPEC L-17), the copy of Tern's state on the first launch (both Macs already have Umi state), and
 `umi://open` links (documents from the server are read and edited on a web page the agent server
 serves).
+
+## 2026-11-05: the rest of Warp
+
+> Implement, test, and ship ... to match all the unchosen gaps against warp features except those
+> that would add actions on click ... I basically only use the warp features I can access from the
+> keyboard
+
+Then:
+> go. let's add the warp right click options as well if that's not already included
+
+Keyboard features, looks and Warp's right-click menu items are in; other click- or hover-only
+gestures are out.
+
+- The sidebar (SPEC S-1 to S-4, S-8, S-13, S-14): Warp's vertical tabs look, "Search tabs...",
+  ⌘1–⌘9 hints while ⌘ is held, renames in the row, its row menu with tab groups, and each window
+  showing or hiding its own sidebar (⌘B, ⌘\).
+- The file editor (SPEC E-4, E-21 to E-24): Warp's code view (terminal font, no soft wrap, line
+  numbers, current line, marks against the last commit, tree-sitter colors), its find and replace,
+  ⌃G, ⌘/, ⇧⌘S, the "File saved." toast, the file pane header with Warp's ⋯ menu for each view (the
+  same menu on a right-click of the header is an Umi addition), and file chips with type icons.
+  Warp's right-click items in a file's text (Go to definition, Find references) need a language
+  server and are not in (COMPROMISES).
+- Project explorer and global search: the explorer's keys, look, file watching, hidden and ignored
+  files, active-file reveal and Warp's right-click menu; global search on ⇧⌘F and ⌃3 (SPEC S-2).
+- Palettes and the shortcuts page: one palette with Warp's filters (`files:`, `sessions:` …) and its
+  empty state, Warp's look for the palette and its rows, "Create a file named …" in ⌘O, and ⌘/ for
+  a shortcuts page (SPEC L-14 to L-17). Warp's palette has no right-click menu.
+- How the terminal looks: Warp's built-in Dark colors (`#050505`, cursor `#19AAD8`), its selection
+  and contrast rule, Hack 13 with rows 1.2× the font size and no ligatures, its padding (none for
+  full-screen programs), its rounded 3-point bar cursor blinking every 500 ms, its scrollbar and
+  silent bell; blocks that count Ctrl-C and SIGPIPE as success, show no running time in the first
+  second and carry Warp's header (environments, user@host over SSH, git branch); the folder box
+  with the folder alone, cut at 40 characters (SPEC S-5, S-10 to S-12).
+- Panes, splits, the terminal's right-click menu, synchronized input and zoom (SPEC L-19, L-31,
+  L-32, L-33).
+- The Markdown preview (SPEC MD-1 to MD-5, E-2): Warp's look, code blocks with highlighting, Copy
+  and Run in terminal, Mermaid diagrams, find (⌘F ⌘G ⇧⌘G), Rendered / Raw with ⌘E, and Warp's
+  right-click items in the preview.
+- Saved layouts (Warp's launch configurations; SPEC L-21): YAML files in
+  `~/.config/umi/launch_configurations`, ⌃⌘L to open one, File ▸ Save New Launch Configuration…,
+  "Save as New Config" in a sidebar row's right-click menu, `umi layout ls|save|open`. ⌃⌘T stays
+  Umi's Move Pane to New Tab, so Warp's tab-configs menu key isn't added.
+- Agent status, attention, inbox, toasts and the update note (SPEC S-3, AG-24, I-4, L-9).

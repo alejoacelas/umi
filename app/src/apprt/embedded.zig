@@ -2017,14 +2017,20 @@ pub const CAPI = struct {
             // are above the viewport).
             var header: std.ArrayList(u8) = .empty;
             defer header.deinit(alloc);
+            // Umi: the whole header line: the folder and the parts Umi's zsh
+            // prints faint around it (environments, user@host, git).
+            var header_line: std.ArrayList(u8) = .empty;
+            defer header_line.deinit(alloc);
             var command: std.ArrayList(u8) = .empty;
             defer command.deinit(alloc);
             if (b.start) |start| rows: {
                 var p = start.down(2) orelse break :rows;
-                umiRowText(alloc, p, false, &header) catch return false;
+                umiRowTextStyled(alloc, p, .folder, &header) catch return false;
+                umiRowText(alloc, p, false, &header_line) catch return false;
                 while (p.rowAndCell().row.wrap) {
                     p = p.down(1) orelse break :rows;
-                    umiRowText(alloc, p, false, &header) catch return false;
+                    umiRowTextStyled(alloc, p, .folder, &header) catch return false;
+                    umiRowText(alloc, p, false, &header_line) catch return false;
                 }
                 var n: usize = 0;
                 while (n < 64) : (n += 1) {
@@ -2037,6 +2043,8 @@ pub const CAPI = struct {
             }
             w.writeAll(",\"header\":") catch return false;
             umiWriteJsonString(w, header.items) catch return false;
+            w.writeAll(",\"header_line\":") catch return false;
+            umiWriteJsonString(w, header_line.items) catch return false;
             w.writeAll(",\"command\":") catch return false;
             umiWriteJsonString(w, command.items) catch return false;
             w.writeAll("}") catch return false;
@@ -2045,22 +2053,50 @@ pub const CAPI = struct {
         {
             // Where rows are drawn, in points, for tests that point at them.
             const scale = surface.getContentScale() catch apprt.ContentScale{ .x = 1, .y = 1 };
-            // How far the folder box's text is drawn right of its cells, as last drawn.
+            // How far the folder box's text is drawn right of its cells, as last drawn
+            // (left of them when the folder doesn't start the row or is cut).
             const box_dx: f32 = dx: {
                 const rows = &core.renderer_state.umi_rows;
                 rows.lock.lockUncancelable(global.io());
                 defer rows.lock.unlock(global.io());
-                var most: u16 = 0;
-                for (rows.dx[0..rows.len]) |v| most = @max(most, v);
-                break :dx @floatFromInt(most);
+                for (layout.rows.items, 0..) |r, y| {
+                    if (r.role != .header or y >= rows.len) continue;
+                    const b = layout.block(r) orelse continue;
+                    if (b.state == .active) break :dx @floatFromInt(rows.dx[y]);
+                }
+                break :dx 0;
             };
-            w.print(",\"cell_pt\":[{d:.3},{d:.3}],\"padding_pt\":{{\"top\":{d:.3},\"left\":{d:.3}}},\"box_text_dx_pt\":{d:.3}}}", .{
+            w.print(",\"cell_pt\":[{d:.3},{d:.3}],\"padding_pt\":{{\"top\":{d:.3},\"left\":{d:.3},\"bottom\":{d:.3},\"right\":{d:.3}}},\"box_text_dx_pt\":{d:.3}", .{
                 @as(f32, @floatFromInt(core.size.cell.width)) / scale.x,
                 @as(f32, @floatFromInt(cell_h)) / scale.y,
                 @as(f32, @floatFromInt(core.size.padding.top)) / scale.y,
                 @as(f32, @floatFromInt(core.size.padding.left)) / scale.x,
+                @as(f32, @floatFromInt(core.size.padding.bottom)) / scale.y,
+                @as(f32, @floatFromInt(core.size.padding.right)) / scale.x,
                 box_dx / scale.x,
             }) catch return false;
+            // The terminal font as drawn: the primary face's name, its size,
+            // and the cursor's measurements, in points.
+            {
+                const grid = core.renderer.font_grid;
+                grid.lock.lockSharedUncancelable(global.io());
+                defer grid.lock.unlockShared(global.io());
+                const m = grid.metrics;
+                var name_buf: [256]u8 = undefined;
+                const name: []const u8 = name: {
+                    const face = grid.resolver.collection.getFace(.{ .idx = 0 }) catch break :name "";
+                    break :name face.name(&name_buf) catch "";
+                };
+                w.writeAll(",\"font\":") catch return false;
+                umiWriteJsonString(w, name) catch return false;
+                w.print(",\"font_pt\":{d:.3},\"face_height_pt\":{d:.3},\"cursor_pt\":[{d:.3},{d:.3}],\"screen\":\"{s}\"}}", .{
+                    core.font_size.points,
+                    @as(f32, @floatCast(m.face_height)) / scale.y,
+                    @as(f32, @floatFromInt(m.cursor_thickness)) / scale.x,
+                    @as(f32, @floatFromInt(m.cursor_height)) / scale.y,
+                    @tagName(t.screens.active_key),
+                }) catch return false;
+            }
         }
 
         const text = alloc.dupeZ(u8, out.written()) catch return false;
@@ -2073,6 +2109,16 @@ pub const CAPI = struct {
             .text_len = text.len,
         };
         return true;
+    }
+
+    /// Umi: whether a program's full-screen view (the alternate screen) is
+    /// showing, as in vim or less. The right-click menu leaves out Paste and
+    /// Clear there, as Warp's does.
+    export fn ghostty_surface_umi_alternate_screen(surface: *Surface) bool {
+        const core = &surface.core_surface;
+        core.renderer_state.mutex.lockUncancelable(global.io());
+        defer core.renderer_state.mutex.unlock(global.io());
+        return core.renderer_state.terminal.screens.active_key == .alternate;
     }
 
     /// Umi: whether the shell waits at its prompt with nothing typed, as
@@ -2131,10 +2177,25 @@ pub const CAPI = struct {
         input_only: bool,
         out: *std.ArrayList(u8),
     ) !void {
+        return umiRowTextStyled(alloc, pin, if (input_only) .input else .all, out);
+    }
+
+    /// Umi: which cells of a row umiRowTextStyled reads: all, the input
+    /// (a command), or the folder (a header's cells that aren't faint).
+    const UmiRowCells = enum { all, input, folder };
+
+    fn umiRowTextStyled(
+        alloc: Allocator,
+        pin: terminal.Pin,
+        which: UmiRowCells,
+        out: *std.ArrayList(u8),
+    ) !void {
         const start = out.items.len;
         const page = pin.node.page();
         for (pin.cells(.all)) |*cell| {
-            if (input_only and cell.semantic_content != .input) continue;
+            if (which == .input and cell.semantic_content != .input) continue;
+            if (which == .folder and cell.hasStyling() and
+                page.styles.get(page.memory, cell.style_id).flags.faint) continue;
             // A wide character's spacer cells aren't text of their own.
             if (cell.wide == .spacer_tail or cell.wide == .spacer_head) continue;
             const cp: u21 = if (cell.hasText()) cell.codepoint() else ' ';

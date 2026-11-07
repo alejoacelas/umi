@@ -689,3 +689,474 @@ tab; other text files still go to the closest tab. **Requirement:** E-10.
 - **New, `tests/test_umi_panes_ui.py`**: `test_markdown_opens_in_one_docs_tab_most_recent_first`
   (five files from two folders share one tab, one stack, newest first and on show; opening one again
   makes it the most recent; a text file still goes by folder).
+
+## The sidebar as Warp's vertical tabs (S-2, S-3, S-4, S-8, S-13; Warp parity, 2026-11-05)
+
+S-4 changed: the row menu takes Warp's labels ("Pin tab", "Copy tab title", "Rename active pane",
+"Close other tabs" …) and order, leaves out items that can't apply instead of greying them, and
+shows its colors as a row of dots (Default plus Warp's six). Renames happen in the row. S-2 changed:
+each window shows or hides its own sidebar. **Requirements:** S-2, S-3, S-4, S-8, S-13.
+
+- **Changed, `tests/test_umi_panes_ui.py` `test_the_row_menu_has_warps_items`**: the titles it
+  looks for are Warp's; it no longer expects Move Tab Down and Close Tabs Below on the window's last
+  tab (Warp leaves them out there; the new tests check them on a middle tab); it counts 7 color
+  dots instead of 10 colors. Every action it performed is still performed and checked.
+- **Changed, `tests/test_umi_panes_ui.py` `test_move_tab_up_and_down_stay_in_their_pin_group`**: a
+  move that can't apply is checked to be absent from the menu instead of disabled. The moves and the
+  pin-group boundaries it checks are the same.
+- **Changed, `tests/test_umi_panes_ui.py` `test_close_other_tabs_and_tabs_below`**: performs "Close
+  other tabs" (Warp's label) instead of "Close Other Tabs"; nothing else changed.
+- **Changed, `tests/test_umi_panes_ui.py` `test_dragging_a_tab_row_reorders_and_the_row_menu_opens_ui`**:
+  the right-click goes to the middle row (where every move and close item applies; on the last row
+  Warp leaves out Close Tabs Below) and looks for Warp's titles and the "Default (no color)" dot.
+- **New, `tests/test_umi_sidebar_warp.py`**: per-window sidebars from the CLI and with real ⌘B and
+  ⌘\ presses; the 248 pt default width; the failed-command triangle (and 130, 141 not counting);
+  Maximized; ⌘1–⌘9 hints (through `debug.ui.sidebar` and with a real held ⌘); search matching each
+  field, the empty state, and ⌥⌘F, ⌃Tab, ⇧⌘], ⇧⌘[ and Esc pressed for real; the menu's exact order,
+  hidden items, copies, color dots and toggling; Copy pull request link with a stand-in `gh`;
+  renames in the row from the menu and with real ⌃⌘R and ⌃⇧⌘R presses; the menu opened with a real
+  right-click.
+- **New, `tests/test_umi_sidebar_warp.py`, tab groups (S-14)**: New group with tab and its name
+  typed in place, Move to group, a member moved away coming back, Remove from group, pinning
+  leaving a group; collapsing (hidden rows, search inside, rename opening it); the header's menu
+  (order, color, New tab in group, Rename, Ungroup tabs); groups restored with the layout; and
+  the Window menu's group items chosen for real with the name typed.
+- **Test hooks**: `debug.ui.sidebar` (set the query, hold ⌘, type into or cancel an in-row rename;
+  read the sidebar's state), `debug.ui.groups` (list a window's groups and sidebar lines, click a
+  header), `debug.ui.group.menu` / `debug.ui.group.perform` (a header's right-click menu) and
+  `UMI_GH_BIN` (the `gh` the pull request lookup runs).
+
+## Sidebar review fixes (S-3, S-4, S-13, S-14; Warp parity, 2026-11-05)
+
+- **Changed, `tests/test_umi_sidebar_warp.py` `test_the_group_header_menu`**: the exact list of
+  header items now includes "Close tabs above" and "Close tabs below" (Warp's, added). Nothing it
+  checked before was dropped.
+- **New, `tests/test_umi_sidebar_warp.py`**: Move Tab Up/Down at group edges (left out, the CLI
+  refusing, hopping over a whole group as one undo step) from the menu and with real ⌃⇧←/⌃⇧→;
+  undo of a move to a new window and of a close, and reopen, bringing the group back; the group
+  box's color in a screenshot; Close tabs above/below; Window ▸ Move Tab to Group ▸ and New Tab in
+  Group chosen for real; ⌘ hints kept while ⇧ and ⌥ join ⌘; the pull request item at the first
+  menu read; ⌥⌘F from a hidden sidebar in Files mode, Esc giving the keyboard back to the same
+  pane, and ⌃Tab not filtered in Files mode; real clicks on a group header (click folds, a
+  double-click only renames), on a color dot in the open row menu, and outside an in-row rename.
+- **Test hooks**: `debug.ui.sidebar` also reports `key_pane`, the pane that has the keyboard.
+- **New, `tests/test_umi_sidebar_warp.py` `test_an_item_clicked_in_the_row_menu_runs_ui`**: a real
+  click on "Pin tab" in a real right-click menu. It failed before the fix: the menus' AppKit items
+  never ran their closures, which every earlier test called directly through `debug.ui.menu.perform`.
+## The file editor as Warp's (E-4, E-21 to E-24, 2026-11-05)
+
+Warp parity for the file editor. **Requirements:** E-4 (amended: the banner's wording), E-21 to E-24
+(new).
+
+- **New, `tests/test_umi_editor_warp.py`**: the code view (terminal font and size, no wrap, the
+  94-point gutter), syntax colors from the terminal's palette, marks against the last commit, ⌃G go
+  to line (and ⌃G still reaching a terminal), ⌘F/⌘G/⇧⌘G driving the editor's own find with its
+  toggles, replace one, Replace all with preserve case as one undo step, ⌘/ by language, ⌘S's toast
+  and ⇧⌘S through the save panel, the disk-change banner's Discard this version / Overwrite, the
+  header menu's items (Maximize/Minimize pane, Reload file asking first), the unsaved dot and the
+  300-point chip limit. Keys are pressed as key events; results are read from files, the
+  accessibility tree and the internal `debug.ui.editor`.
+- No existing test changed.
+
+### Review fixes (2026-11-05)
+
+- **Changed, `test_cmd_f_opens_the_editors_own_find`**: after ⇧⌘G it expects the caret at the
+  match's start (`[offset, 0]`) instead of the match selected. Warp moves the caret to the match's
+  start (W: `code/editor/view.rs` `move_cursor_to_selected_match`), and E-22 now says so. The
+  count and the match reached are checked as before.
+- **Changed, `test_header_menu_has_warps_items`**: the source view's menu is Warp's code view menu
+  (Maximize pane, Copy file path, Reveal in Finder); Reload file moved to the preview's menu as
+  Warp's "Refresh file" (new test below). Stronger: the menu is also opened through the ⋯ button and
+  a right-click on the header, and Copy file path is run and the pasteboard read back.
+- **Changed, `test_header_shows_the_unsaved_dot_and_chips_show_type_icons`**: stronger. The dot is
+  looked for on the chip itself (its accessibility value), not anywhere; the long name's chip must be
+  wider than 200 (Warp's old limit) and at most 300; the type icon is checked in a screenshot.
+- **New**: the preview's menu (Refresh file asking first, Open in editor, View Markdown preview
+  back); ⌘G and ⇧⌘G from a closed bar landing on the nearest match; regex replace with a lookbehind;
+  ⌘F in a Markdown preview; ⌘Z after Discard this version; Save As onto a file open in another
+  pane; ⌘C, ⌘X, ⌘V, ⌘Z and ⇧⌘Z in the text; right-click in the text (Cut, Copy, Paste); a
+  configured font-family; line-number colors and the current line, and the marks' colors, measured
+  in screenshots; the header's title centred.
+- **Fixed, `test_syntax_colors_come_from_the_terminal_palette`**: it read `highlighted` before the
+  code view existed and failed with a KeyError once on mac-air-2; it now waits for the key. Same
+  assertions.
+## 3. Explorer and global search tests, and `debug.key` that keeps focus (`tests/test_umi_files.py`)
+
+**What was missing.** Nothing tested the project explorer beyond the sidebar's mode, and global
+search is new (SPEC S-2, Warp parity 2026-11-05).
+
+**Change.** A new file, `tests/test_umi_files.py` (8 tests): the explorer's root, order, ignored
+marks and row numbers; file-system changes without a refresh; the right-click menu's items and
+what each does; revealing the active file; every new key (⌃1, ⇧⌘E, ↑↓←→, Enter, Esc, ⇧⌘>, ⇧⌘F,
+⌃3, typing into the inline name field and the query); New File and Rename in the row; global
+search's results, folding, opening at the line, the toggles. Keys go through `debug.key`, which
+gains `focus: "none"` (keep focus where it is; an unhandled key goes to the window's first
+responder), so the tests also run while the test Mac's screen is locked. Two internal methods back
+them: `debug.ui.files*` (state and the right-click menu) and `debug.ui.search*` (state and the
+toggles). No existing test changed.
+
+**Requirement.** S-2 and L-9, L-10 as amended.
+
+## 4. Explorer and global search: the review's fixes (`tests/test_umi_files.py`, 2026-11-05)
+
+**What was missing.** A review found gaps against Warp and behaviors without a test.
+
+**Change.** In `test_explorer_menu_has_warps_items`, the file menu's first item is now Warp's
+"Open in New Pane" (it replaced "Open in Editor", the same action); the test performs it (a split
+beside the terminal, no new tab). cd to Directory is now checked as Warp does it: the typed text is
+replaced with `cd <folder>`, not run until Enter, and the item is off while a program runs. Insert
+Path in Terminal is performed; Delete of a file open in a pane closes that pane. `test_explorer_keys`
+also checks that ⇧⌘> is saved in `ui.json` and that ⌃1 pressed in the tree goes back to Tabs with
+focus in the pane. New tests: `test_explorer_reveal_keeps_folders_the_user_closed`,
+`test_explorer_opens_binary_files_with_their_default_app` (a fresh instance with the new test hook
+`UMI_TEST_OPEN_LOG`, which writes what would go to the default app to a file),
+`test_global_search_regex_is_perl_style_and_opens_at_the_match` (`a\d`, its highlight, the cursor
+on the match's column, a bad regex's error), `test_global_search_outside_git_and_capped` and
+`test_shift_cmd_f_leaves_a_terminal_search_open`. No assertion was weakened: the old cd check
+(Enter sent with the command) asserted behavior that differed from Warp's.
+
+**Requirement.** S-2, L-9.
+- **Changed, `test_explorer_follows_the_file_system`**: a new `.rs` file's icon was the monogram
+  "RS"; it is now Material Icon Theme's Rust icon, so the test checks the asset name
+  (`fileicon-rust`) and that the app loads it (`icon_loaded`), which is stricter than before.
+## One palette with Warp's filters and empty state; the shortcuts page (L-14 to L-17, 2026-11-05)
+
+L-14 changed: the empty unfiltered ⌘P shows filter chips, Recent and Suggested (Warp's empty
+state) instead of every action. **Requirements:** L-14 to L-17.
+
+- **Changed, `tests/test_umi_nav.py`**: `test_command_palette_offers_cli_commands_menu_actions_and_ghostty_actions`
+  lists the actions with `mode="actions"` (the palette's `actions:` filter) instead of the empty
+  unfiltered palette. Its assertions are unchanged.
+- **New, `tests/test_umi_palette_warp.py`**: typed prefixes filter the palette and show as its
+  filter word; ⇧⌘P and ⌘O open it filtered; the unfiltered palette mixes actions, panes and files
+  (at most 250); the empty palette's chips, Recent (after choosing a pane and an action) and
+  Suggested; ⌘O's "Create a file named …" makes the file and opens it; Keyboard Shortcuts is the
+  ⌘/ menu item and in `umi shortcuts`; ⌘P, ⇧⌘P, ⌘O and ⌘/ delivered through `debug.key` (Umi's own
+  key handling) choose the filter, toggle the page, and leave it closed in the editor's source. `ui` tests press the real keys: typing `files:` and
+  Backspace, ⇧⌘P then ⌘O, ↓ in the empty palette, ⌘O then Return to create a file, the palette's
+  size and place (640 wide, 117 px from the window's top, at most 464 tall), ⌘/ opening, searching
+  (by name and by "cmd p"), Esc and ⌘/ closing the page, and ⌘/ leaving the page closed in the
+  editor's source.
+- **Test hook, `debug.palette.state`** now also returns the query, filter word, selection, whether
+  the empty state shows, its chips and the rows; **`debug.shortcuts_page`** returns the page's state.
+- **After review, `tests/test_umi_palette_warp.py`**: new tests that an entry under Recent and
+  Suggested is two rows with distinct ids; that ⌘O creates `~/…` and absolute names there; that
+  the shortcuts page finds keys in any order, as words or symbols, Ghostty's bindings included,
+  and never ⌘. for "cmd p"; that a file opened from the palette shows under Recent (with its
+  line) and opens from there; that the empty palette indexes no files until a query; that a
+  partial filter word is suggested; and `ui` tests for Tab applying it and for the arrows
+  stopping at the empty palette's ends. `test_the_empty_palette_shows_filter_chips_recent_and_suggested`
+  also checks the chips' icons. Hooks: rows carry `id` and `row_id`; `debug.palette.state` adds
+  `files_index`, `suggestion` and `chip_icons`; `debug.shortcuts_page` takes a `query` and its
+  rows carry their `shortcuts`.
+- **Fixed, two `ui` tests that never passed on the test Mac**:
+  `test_typing_a_prefix_filters_and_backspace_removes_the_filter_ui` looks for "Filter files:" in
+  the element's value as well as its label (a static text's label reaches accessibility as its
+  value). `test_cmd_slash_in_the_editor_source_leaves_the_page_closed_ui` focuses the source text
+  through accessibility and asserts it has focus before pressing ⌘/: `debug.editor.focus` left
+  the terminal focused there, so ⌘/ rightly opened the page. Their assertions are unchanged.
+
+## Warp's look for the terminal itself (S-5, S-10 to S-12, 2026-11-05)
+
+Warp parity: Warp's built-in Dark colors, selection, contrast rule, font, padding, cursor,
+scrollbar, bell, block statuses and header, and the folder box. **Requirements:** S-5, S-10, S-11,
+S-12.
+
+- **New, `tests/test_umi_warp_terminal.py`**: the background `#050505` and the cursor `#19AAD8`
+  (screenshots; the cursor test is a `ui` test, as it needs the window focused), the selection's color
+  over the background with red text staying red, named colors raised to 4.5:1 while the same RGB gray
+  isn't, Hack 13 with 15.3–15.9-point rows and a configured `font-family` replacing it, padding 16 /
+  20 and none for a full-screen program (and back after it), the cursor 3 points wide, a row tall,
+  with round ends, the scrollbar's thumb, the silent bell (no Dock badge), exit codes 130 and 141 and
+  Ctrl-C as success, no running time in the first second, the header's `git:(branch)` (and the commit
+  when detached), `(conda) (venv) user@host:`, and the folder box ending after 40 characters.
+- **Changed, `tests/harness.py`**: instances no longer inherit the runner's `VIRTUAL_ENV`,
+  `CONDA_DEFAULT_ENV`, `CONDA_PREFIX`, `SSH_CONNECTION`, `SSH_CLIENT` and `SSH_TTY` (`uv run` and the
+  ssh session into the test Mac set them). The block header now shows them as Warp does, so panes
+  inherited `(.venv) user@host:` from the test runner, which a window opened from the Dock never has.
+  No assertion changed.
+- **Test hook, `debug.terminal`**: `debug.blocks`' report plus the scrollbar (`scroller`) and the
+  bell's effects (`bell`); `debug.terminal.action` runs a Ghostty binding action (`select_all`) on a pane. `debug.blocks` now also reports each block's `header_line` (the whole
+  header; `header` stays the folder alone), the padding's four sides, the font's name and size, the
+  cursor's size in points and the active screen.
+
+### Review fixes (2026-11-05)
+
+- **New, `tests/test_umi_warp_terminal.py`**: `test_a_branch_name_is_shown_and_never_run_with_prompt_subst`
+  (a branch named `$(touch${IFS}pwned)` plus backticks, with `prompt_subst` on and off: no file
+  made, the name shown as it is); `test_a_reset_on_the_alternate_screen_brings_the_padding_back`
+  (RIS and the `reset` action); `test_turning_the_option_on_while_a_full_screen_program_runs_brings_the_padding_back`
+  (config reload); `test_the_box_text_is_bold` (the box's folder has more heavy pixels than the same
+  folder in a block's header).
+- **Stricter**: `test_full_screen_programs_get_the_pane_without_padding` now requires no padding
+  above the first row (was: less than a row) and less than a cell below and right.
+  `test_minimum_contrast_raises_named_colors_only` adds a 256-color gray (index 59) that must keep
+  its color. `test_the_scrollbar_is_warps_thumb_without_a_track` now checks what is drawn: after
+  `seq 1 400` and a page up, the scroller is in the overlay style and visible, and its image shows
+  one rounded `#696969` thumb 8 points wide, 2 points from the edge, with background above, below
+  and right of it (it read back the class's constants before).
+- **Test hook, `debug.terminal.scroller`**: writes an image of a pane's scrollbar as shown (its
+  layers as on screen, mid-fade included), over the pane's background (the window's screenshot draws
+  the terminal's image over the scrollbar). `debug.terminal`'s `scroller` adds `style`, `hidden`,
+  `knob_proportion`, `value`, `width_pt`, `edge_inset`, `knob_rect_pt` (AppKit's knob),
+  `thumb_rect_pt` and `thumb_attached`. This test found that AppKit drew the old thumb clipped to
+  its own 6-point knob.
+## Warp's panes, right-click menu, synchronized input and zoom (L-19, L-31–L-33, 2026-11-05)
+
+L-19 gained Warp's 190-point minimum pane size: a dragged divider stops before a pane gets smaller,
+and a keyboard resize or `pane resize` that would is refused. **Requirement:** L-19.
+
+- **Changed, `tests/test_umi_panes_ui.py`**: three drag tests used shares that put a pane at 10–20%
+  of the suite's window (its panes' area is about 928 points wide, so 20% is 186 points). Their
+  numbers now keep every pane above 190 points; what each checks is unchanged:
+  - `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row`: the b|c
+    divider goes to 78% of the row (50/28/22) instead of 80% (50/30/20);
+  - `test_panes_sized_by_hand_keep_their_size_and_the_others_share`: the first divider goes to 28%
+    and the last to 78% (28/25/25/22 instead of 40/25/25/10). The row then never holds five panes
+    (five can't all be 190 points wide there): c is closed before the split that tests a placed
+    divider surviving a split, so the drag after it still shows a keeping its share while b and e
+    share the stretch; the double-click and the last drag use four panes (25/26/26/23 instead of
+    20/23.3/23.3/23.3/10);
+  - `test_a_dragged_middle_divider_shares_both_sides`: the middle divider goes to 56% (28/28/22/22)
+    instead of 75% (37.5/37.5/12.5/12.5).
+- **New, `tests/test_umi_warp_panes.py`**: the minimum (a drag stops at 190 points on either side; a
+  keyboard resize below it is refused and says so), the divider's color and 9-point grab area, the
+  right-click menu's items and order, and Maximize/Minimize, Close and Split from it (L-31), ⌥⌘I,
+  ⌥⇧⌘I and the all-tabs toggle typing into the synced panes only, with the sidebar's mark and the
+  inspector's new key (L-32), and ⌘= ⌘- ⌘0 and ⌥⇧> ⌥⇧< with the terminal's and the sidebar's sizes
+  and the saved level (L-33). The divider grab area, the real right-click, and the key tests are
+  `ui` tests.
+
+### Review follow-ups (L-19, L-31–L-33, 2026-11-05)
+
+New tests in `tests/test_umi_warp_panes.py`; no existing test changed. **Requirements:** L-19, L-31,
+L-32, L-33.
+
+- L-32: ⌥⌘I in a one-tab window leaves a tab opened later out; a paste into a synced pane reaches
+  every pane, and a paste that needs confirming asks once, in the pane pasted into (cancelled, it
+  goes nowhere); file and web panes in synced tabs get no keys; the sidebar row's link mark comes
+  and goes (`ui`).
+- L-31: Paste disabled with an empty clipboard; with text selected the menu starts with Copy and
+  has no Paste or Clear, and Copy copies; in less's full-screen view there's no Paste, Clear or
+  Copy; Close Pane asks first when a program runs, and Cancel keeps the pane.
+- L-19: the minimum for a divider between rows; a drag stops when a pane beyond the divider's
+  neighbours reaches it; a pane already below it may grow but not shrink.
+- L-33: the zoom level and font size survive a restart; the editor's text and the Markdown
+  preview scale with the zoom; sidebar rows drag and take clicks at 125% (`ui`).
+- New internal methods for them: `debug.ui.clipboard.confirmation` (a pane's pending paste
+  confirmation, answered as its buttons do), `debug.ui.sheet` (a window's dialog, cancelled as its
+  Cancel button does), and `debug.ui.zoom` with `window` (the editor's text sizes and the preview's
+  page zoom there).
+## The Markdown preview as Warp's (MD-1 to MD-5, E-2; Warp parity, 2026-11-05)
+
+New requirements MD-1 to MD-5 and E-2's Rendered / Raw and ⌘E. No existing test changed.
+
+- **New, `tests/test_markdown_warp.py`**: the look (computed styles: font, sizes, weights, colors,
+  borders, padding, full width; bare URLs linked), code blocks (labels, highlighting, Copy, Run in
+  terminal), Mermaid (drawn, Raw / Rendered, Open full screen, Esc, a broken diagram), find (Edit ▸
+  Find's items through the responder chain, Return / ⇧Return, Aa, `.*`, No matches, Esc), ⌘E's menu
+  action in a file pane and in a terminal, and the right-click menu's items and actions. UI tests
+  press the real keys (⌘F, ⌘G, ⇧⌘G, Return, Esc, ⌘E), check the Rendered / Raw buttons and open
+  the right-click menu through the accessibility tree.
+- **Test hook, `debug.ui.markdown`**: reads the preview's state and computed styles, clicks its
+  buttons, types into find, performs menu actions through the responder chain, and lists or chooses
+  the right-click menu's items. Once a test has used it, Copy and Copy file path write to a private
+  pasteboard (`action=pasteboard` reads it), never the test Mac's clipboard.
+
+### Review fixes (2026-11-05)
+
+- `test_a_broken_diagram_shows_its_source_and_error` also checks that the error is drawn (its box
+  is taller than its padding); before, it read only the message the script stored, which the page
+  never showed.
+- `test_code_blocks_are_highlighted_and_copy_or_run` checks Warp's highlight colors from its base16
+  theme (functions blue, strings green; comments, numbers and parameters in the text color), so the
+  Python block gained a comment and a number and the expected copied text changed with it.
+- New, `test_on_a_light_background_the_preview_uses_warps_light_theme`: with a light background the
+  preview's text, links and done checkboxes use Warp's Light theme (accent `#00c2ff`).
+- `test_mermaid_diagrams_render_and_open_larger` also checks the footer's layout (Raw / Rendered and
+  Open full screen beside the label, Copy at the right) and that Raw hides Open full screen, as in
+  Warp.
+- Written checks: new **MD-1** check in `CHECKS.md`, with a `run_checks.py` setup that screenshots a
+  test document on the default dark background and on a light one; E-2's check now names the
+  Rendered / Raw control.
+- `test_the_preview_looks_like_warps_markdown_view` checks that the page has Roboto's four bundled
+  faces and loaded one. Before, it used `document.fonts.check`, which is true when no face matches,
+  so a build without the fonts passed.
+- New, `test_the_text_follows_the_terminals_font_size`: with `font-size = 15` the preview's text,
+  headings and code scale to 15 px, as Warp's Markdown follows its terminal font size.
+- New Swift tests, `UmiMarkdownLinksTests`: bare URLs with trailing punctuation, unbalanced and
+  balanced brackets, `www.`, escaping, and URLs in links, inline code and fenced blocks left alone;
+  fenced blocks' language labels and kinds.
+## Added: launch configurations (L-21, 2026-11-05)
+
+- **New, `tests/test_umi_layouts.py`**: its own instance with a temporary `XDG_CONFIG_HOME`, so the
+  user's launch configurations are never read or written. `umi layout save` writes Warp's format and
+  `layout open` brings the windows, tabs, names, colors, folders, split direction and focused pane
+  back; a hand-written file (two windows, a three-pane vertical split, pane and tab commands, Warp's
+  `cyan`) opens as written and its commands run; a broken file is listed with its line and opens
+  nothing; the File menu items and ⌃⌘L; the palette lists configurations and opens the chosen one;
+  the row menu's "Save as New Config" sits where Warp has it, writes `my_tab_config.yaml` (then
+  `_1`) and opens it in the editor; ⌃⌘L through the app's key monitor from a terminal, the editor
+  and a palette; real key presses (UI, need an unlocked screen): ⌃⌘L then Return, and File ▸ Save New Launch
+  Configuration… through its dialog, including the duplicate-name message.
+- **New, `tests/test_umi_layouts.py`**: `test_a_file_with_several_documents_holds_several_configurations`
+  (each `---` document is a configuration, listed and opened by name; the file's name is then
+  ambiguous and says so; a broken second document is reported with its line in the file).
+- **New, `tests/test_umi_layouts.py`**: `test_saved_colors_use_warps_names_where_warp_has_them`
+  (purple, teal, graphite and pink tabs are saved as `magenta`, `cyan`, `white` and `pink`, and open
+  with their Umi colors again).
+- **New, `tests/test_umi_layouts.py`**: `test_command_palette_finds_launch_configurations_by_name`
+  (⌘P's list finds a configuration by name and opens it; unreadable files stay out of it).
+- **Changed, `tests/test_umi_layouts.py`**: `test_palette_lists_configurations_and_opens_the_chosen_one`
+  now asserts what the query returns: a query that matches nothing empties the list, and `alp`
+  ranks Alpha first (it sent the query without checking the result). The query also matches the
+  file paths shown under the entries, so a weaker match can stay below Alpha.
+- **Changed, `tests/test_umi_layouts.py`**: `test_save_new_launch_configuration_from_the_file_menu`
+  (UI, real keys) now also checks that the dialog shown again after a duplicate name has the name in
+  its focused field, that Cancel keeps the file, and that "Open YAML File" opens the saved file in
+  the editor. AXPress on that button reports a failure because the sheet is gone when it returns;
+  the test checks the editor instead of the code.
+- **New, `tests/test_umi_layouts.py`**: `test_file_menu_lists_each_launch_configuration_by_name`
+  (File ▸ Launch Configurations lists each readable configuration by name before the two items,
+  choosing one opens it, and the list follows the folder).
+- **New, `tests/test_umi_layouts.py`**: `test_save_captures_every_window_merges_rows_and_leaves_out_file_panes`
+  (two windows saved and read back as a structure: `active_window_index` from the current window,
+  `active_tab_index` counted among the saved tabs, a row nested in a row saved as one row, file
+  panes left out, a tab of only a file pane left out and its "Save as New Config" disabled) and
+  `test_layout_open_no_focus_keeps_the_users_focus_and_front_app` (L-8 for `layout open --no-focus`).
+## Agent status, inbox, toasts and the update note (S-3, AG-24, I-4, L-9; Warp parity, 2026-11-05)
+
+New tests only; no existing test changed. **Requirements:** S-3 (amended), AG-24 (new), I-4 and L-9
+(amended).
+
+- **New, `tests/test_umi_agent_events.py`**: Warp's status badges on the sidebar row
+  (`debug.ui.rows` reports `badge`); a finish seen from another pane of its tab leaves no mark; a
+  new turn clears the mark (`harness`, a fake Claude); OSC 9 and 777 from a pane running an agent
+  are dropped; the inbox's items, filters and keys; toasts (8 s, two at most, read by a look,
+  dismissed by ⌃⌘U and by opening the inbox); the note after an update, once; no note after a
+  failed update; one `ui` test presses ⇧⌘U, ↓, Return, Shift-Tab, Escape and ⌃⌘U for real.
+- **Test hooks**: `debug.ui.inbox` (what the inbox and toasts show), `debug.ui.inbox.toggle`,
+  `debug.ui.inbox.key` (the inbox's own key handler), `debug.ui.inbox.dismiss` (⌃⌘U's action) and
+  `debug.ui.inbox.fill` (finishes from panes that don't exist, to check the 100 limit). The
+  update-note tests write `updates/attempt.json` in the instance's state directory, as the run
+  before an update does.
+
+### After review (2026-11-05)
+
+- **Changed, `test_a_finish_seen_from_another_pane_of_its_tab_leaves_no_mark`**: it set the finished
+  mark through `debug.ui.attention.set`, so it never ran the seen rule in the engine and passed only
+  because looking cleared every finished mark in the looked-at tab (a bug). It now runs a fake
+  Claude turn in a split beside the focused pane and checks the engine leaves no mark and a read
+  item. Stronger, not weaker.
+- **New**: `test_a_sibling_that_finished_out_of_sight_keeps_its_mark` (the negative case: switching
+  to a sibling pane and an unrelated attention change leave the mark; a look at its own pane clears
+  it).
+- **New**: `test_no_note_after_a_rollback` (an `attempt.json` going down shows no note).
+- **Extended, `tests/test_umi_extra.py`**: `test_not_now_activity_install_now_and_rollback` serves a
+  feed with release notes and checks the relaunched 999.0.0 shows them in the note (the real path:
+  feed, staged `release.json`, `attempt.json`), and that the rollback to 0.0.1 shows no note. Added
+  assertions only.
+- **New**: `test_the_inbox_belongs_to_one_window_and_goes_with_it` (⇧⌘U's action in a second window
+  opens it there; closing that window closes it; toasts show again) and
+  `test_a_click_outside_the_inbox_closes_it_and_typing_reaches_the_pane_ui` (real clicks inside and
+  outside the panel, then real typing). `debug.ui.inbox.toggle` now takes `window`.
+- **Extended, `test_the_agents_mark_wears_warps_status_badge`**: a session still waiting after the
+  user looked (`needs_input`, no mark) keeps the "needs you" badge.
+- **New**: `test_inbox_items_use_warps_words_and_read_rule` (Warp's titles and messages for each
+  category, the agent's own error and question, cancelled, Codex; a request in a sibling pane of
+  the looked-at tab is read and doesn't toast). `debug.ui.attention.set` takes `detail` (what the
+  engine passes: the error or the question).
+- **Extended, `test_an_agents_own_desktop_notifications_are_dropped`**: once the session is stopped,
+  or its interface no longer runs in the terminal, OSC 9 is let through. `debug.ui.inbox` reports
+  `passed_notifications`, so the test now checks each let-through notification arrived, where it
+  only checked that nothing was dropped (stronger).
+- **Changed, `test_unread_events_toast_in_the_active_window`**: the "no toasts while the app isn't
+  active" check ran only when the test app happened to be in the background. A new hook,
+  `debug.ui.inbox.assume_inactive`, makes the app count as inactive, so the check always runs
+  (stronger).
+
+## Merging the Warp branches (warp/parity, 2026-11-05)
+
+Two tests changed because two branches' behaviours met; what each checks is unchanged.
+
+- **Changed, `tests/test_umi_warp_panes.py` `test_the_zoom_scales_the_editor_and_the_markdown_preview`**:
+  the editor's text now uses the terminal's font (E-21) instead of a fixed 12.5 pt, so the test reads
+  the size at 100% and expects 110% of it after ⌘=, instead of 12.5 → 13.75. **Requirements:** L-33.
+- **Changed, `tests/test_umi_editor_warp.py` `test_cmd_f_in_a_preview_finds_in_the_source`**: it
+  opens a JSON file instead of a Markdown file. A rendered Markdown file now has its own find bar
+  (MD-4), which ⌘F opens; JSON and CSV previews still switch to the source. **Requirements:** E-22.
+- **Changed, `tests/test_umi_layouts.py` `test_tab_menu_save_as_new_config_saves_the_tab_and_opens_the_file`**:
+  the item before "Save as New Config" is "Close tab", not "Close Tabs Below": the tab is its
+  window's only tab, and Warp's menu (S-4) leaves out close items that can't apply. It still checks
+  the item comes after the close items and before the colors. **Requirements:** L-21, S-4.
+- **Changed, `tests/test_umi_sidebar_warp.py` `test_the_row_menu_has_warps_labels_in_warps_order`**:
+  the expected list gains "Save as New Config" before "Tab Color" (L-21 put it there).
+  **Requirements:** S-4.
+- **Changed, `tests/test_umi_blocks.py` `test_the_folder_is_shortened_again_when_the_pane_narrows`**:
+  narrows the pane in 5-column steps until the 190-point minimum (L-19) refuses one, instead of
+  four 10-column steps the minimum refused. It still requires the pane at least 10 columns
+  narrower and the folder shortened to fit. **Requirements:** S-10.
+- **Changed, `tests/test_umi_palette_warp.py` (the ⌘/ shortcuts page test)**: in a Python file's
+  source ⌘/ is the editor's Toggle Comment, an Umi item, so the key counts as handled; the test now
+  checks the line was commented, and still that the page stayed closed. **Requirements:** L-17, E-23.
+- **Changed, `tests/test_umi_layouts.py` `test_palette_lists_configurations_and_opens_the_chosen_one`
+  and `test_command_palette_finds_launch_configurations_by_name`**: the full list is read with the
+  `actions` mode, because the empty unfiltered palette is Warp's empty state (L-14). Assertions
+  unchanged. **Requirements:** L-21.
+
+## Testing warp/parity (2026-11-06)
+
+- **Changed, `conftest.py` fixture `ui`**: it checks for a locked screen before every UI test
+  instead of once per run (the Accessibility check stays once per run, in the new `ui_session`). On
+  mac-air-2 the screen locked partway through a full run, and the next UI test walked the menu bar
+  for over 30 minutes, which a locked screen makes endless (see `screen_locked`). UI tests that
+  start after a lock are now skipped, with the same reason as before. No assertion changed.
+- **Changed, `tests/test_umi_web.py` `test_cmd_click_on_a_link_opens_a_web_pane_ui`**: it now takes
+  the `ui` fixture, as the other UI tests that drive their own instance do, so a locked screen skips
+  it. It built its own `UI` without that check and, with the screen locked, searched the
+  accessibility tree forever. No assertion changed. **Requirements:** E-12.
+- **Changed, `tests/test_umi_warp_terminal.py` `test_full_screen_programs_get_the_pane_without_padding`**:
+  after the program ends it waits up to 5 s for the columns and rows to be what they were, instead
+  of reading them once at the moment the padding comes back. The terminal takes its new size on its
+  own thread, so on mac-air-2 the read saw the full-screen column count (72 for 68). The required
+  size is unchanged. **Requirements:** S-5, S-12.
+- **Changed, `tests/test_markdown_warp.py` `test_rendered_and_raw_toggle_with_cmd_e`**: it no
+  longer looks for a menu item with ⌘E. Ghostty's ⌘E (`search_selection`) is a performable
+  binding, and Ghostty leaves performable bindings off its menu items (its own test in
+  `src/config/CApi.zig` checks this), so no item ever had the key. The test now selects text in the
+  terminal, presses ⌘E there and requires the terminal's search to open with the file still
+  rendered: what SPEC E-2 asks of ⌘E in a terminal. The Rendered / Raw checks are unchanged.
+  **Requirements:** E-2.
+- **Added, `tests/test_markdown_warp.py` `test_cmd_e_in_a_source_only_file_uses_the_selection_for_find`**:
+  in a file with only a source view, ⌘E puts the selected text in the find query and the file
+  stays in source. **Requirements:** E-2.
+- **Changed, `tests/test_markdown_warp.py` `test_right_click_opens_warps_menu`**: it reads the
+  items drawn in their own rows. The accessibility tree of the preview's menu also lists an
+  untitled, disabled element at the first item's position that the menu doesn't draw and that is
+  not one of its items (checked on mac-air-2: the NSMenu holds the 8 expected items, and a
+  screenshot of a real right-click shows only those). The expected list, separator included, is
+  unchanged. **Requirements:** MD-5.
+- **Fixed, `app/macos/UmiTests/verify_ui_paths.py` E-2 check**: before ⇧⌘M it focused the
+  terminal pane, but `edit FILE --pane P` opens the file in a pane of its own beside P, so the
+  focused pane had no document and Toggle Markdown Preview was rightly disabled (it failed on main
+  too). It now focuses the file's pane with `debug.editor.focus`, as the E-3 and E-5 checks do.
+  The check is unchanged. **Requirements:** E-2.
+- **Fixed, `tests/test_umi_editor_warp.py` `test_cmd_f_in_a_terminal_still_searches_the_terminal`**:
+  it empties the shared find pasteboard first and puts its text back afterwards. Ghostty's search
+  starts with the pasteboard's text as its query, and with a query its first Esc only moves the
+  keyboard back to the terminal (a second Esc closes it), so the test failed whenever an earlier
+  test (the ⌘E ones) had left text there. Checked by hand on mac-air-2: with an empty query one
+  Esc closes the search. Its assertions are unchanged. **Requirements:** E-22.
+- **Added, `tests/test_umi_editor_warp.py` `test_a_file_with_long_lines_opens_at_its_left_edge_beside_the_gutter`**:
+  a file with a line longer than the pane opens with its text starting right of the 94-point
+  gutter. It opened scrolled 94 points sideways, its first characters under the line numbers
+  (found walking the branch on mac-air-2). **Requirements:** E-21.
+- **Added, `tests/test_umi_warp_panes.py` `test_the_pane_menu_shows_each_items_key_ui`**: the
+  terminal's right-click menu shows each item's key, ⌘V for Paste, ⌘K for Clear and ⌘C for Copy
+  included. Those three showed no key: Ghostty gives its performable bindings no menu key (found
+  walking the branch on mac-air-2). **Requirements:** L-31.
+- **Changed, `tests/test_markdown_warp.py` `test_rendered_and_raw_toggle_with_cmd_e`**: it no
+  longer gives the pane keyboard focus again between the two ⌘E presses. Switching views left the
+  keyboard with the window, so the second ⌘E did nothing for a person pressing it twice (found
+  walking the branch on mac-air-2); the test's extra focus hid that. Stricter than before.
+  **Requirements:** E-2.

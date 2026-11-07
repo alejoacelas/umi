@@ -12,6 +12,10 @@ enum TerminalTabColor: Int, CaseIterable, Codable {
     case green
     case teal
     case graphite
+    // Umi: Warp's tab colors are the theme's ANSI red, green, yellow, blue, magenta and cyan
+    // (`umiWarpChoices`); these two complete them. Added last so saved raw values keep meaning.
+    case magenta
+    case cyan
 
     var localizedName: String {
         switch self {
@@ -35,13 +39,23 @@ enum TerminalTabColor: Int, CaseIterable, Codable {
             return "Teal"
         case .graphite:
             return "Graphite"
+        case .magenta:
+            return "Magenta"
+        case .cyan:
+            return "Cyan"
         }
     }
 
     var displayColor: NSColor? {
+        // Umi: Warp's six take the theme's ANSI colors.
+        if let ansi = umiANSIColor { return ansi }
         switch self {
         case .none:
             return nil
+        case .magenta:
+            return .systemPurple
+        case .cyan:
+            return .systemCyan
         case .blue:
             return .systemBlue
         case .purple:
@@ -65,6 +79,28 @@ enum TerminalTabColor: Int, CaseIterable, Codable {
         case .graphite:
             return .systemGray
         }
+    }
+
+    /// Umi: Warp's six tab colors, in its order.
+    static let umiWarpChoices: [TerminalTabColor] = [.red, .green, .yellow, .blue, .magenta, .cyan]
+
+    /// Umi: the terminal palette index Warp takes this color from (its normal ANSI colors).
+    var umiANSIIndex: Int? {
+        switch self {
+        case .red: return 1
+        case .green: return 2
+        case .yellow: return 3
+        case .blue: return 4
+        case .magenta: return 5
+        case .cyan: return 6
+        default: return nil
+        }
+    }
+
+    /// Umi: the color from the configured terminal palette (`UmiTheme.ansiPalette`).
+    private var umiANSIColor: NSColor? {
+        guard let index = umiANSIIndex, let palette = UmiTheme.ansiPalette, index < palette.count else { return nil }
+        return palette[index]
     }
 
     func swatchImage(selected: Bool) -> NSImage {

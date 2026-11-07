@@ -3,9 +3,11 @@ import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The left sidebar: Warp-style vertical tabs and a project explorer. No cards, borders or
-/// "agents" section: rows sit on a faint tint of the terminal background, as in Warp, with a
-/// subtle hover and selection tint (S-1, S-2). Its width is per window, dragged at its edge (S-8).
+/// The left sidebar: Warp's vertical tabs panel and a project explorer. Its look follows Warp's
+/// (`vertical_tabs.rs`): a 5% ink panel; a header with "Search tabs..." (Tabs mode), the
+/// Tabs/Files buttons and +; rows 8 pt inside, 4 pt apart, radius 4; a selected row at 10% with
+/// a 1 px border at 15%, a hovered one at 5% (S-1, S-2, S-3). Its width is per window, dragged
+/// at its edge (S-8), and it is shown or hidden per window.
 struct UmiSidebar: View {
     @ObservedObject var controller: TerminalController
     /// Height of the titlebar band above the sidebar content (traffic lights).
@@ -14,30 +16,37 @@ struct UmiSidebar: View {
     @ObservedObject private var state = UmiState.shared
     @ObservedObject private var attention = UmiAttention.shared
     @ObservedObject private var updater = UmiUpdater.shared
-    @StateObject private var files = UmiFileTreeModel()
+    @ObservedObject private var hints = UmiTabHints.shared
     /// Periodic refresh for things nothing publishes (running command, branch).
     @State private var tick = 0
     @State private var listDropTargeted = false
+    @State private var scroll = UmiOverlayScrollbar.Metrics()
     private let refresh = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear.frame(height: topInset)
 
-            modeBar
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
+            UmiSidebarHeader(controller: controller, model: controller.sidebarModel)
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: state.sidebarMode == .tabs ? 4 : 1) {
                     switch state.sidebarMode {
                     case .tabs: tabsList
-                    case .files: UmiFileTreeView(model: files, hostWindow: controller.window)
+                    case .files: UmiFileTreeView(model: UmiFileTreeModel.model(for: controller))
+                    case .search: UmiGlobalSearchView(model: UmiGlobalSearchModel.model(for: controller))
                     }
                 }
-                .padding(.horizontal, 6)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+                .background(UmiOverlayScrollbar.contentReader)
             }
+            .coordinateSpace(name: UmiOverlayScrollbar.space)
+            .background(UmiOverlayScrollbar.viewportReader)
+            .onPreferenceChange(UmiOverlayScrollbar.ContentKey.self) { scroll.content = $0 }
+            .onPreferenceChange(UmiOverlayScrollbar.ViewportKey.self) { scroll.viewport = $0 }
+            // Warp's 4 px scrollbar over the list's right edge.
+            .overlay(alignment: .topTrailing) { UmiOverlayScrollbar(metrics: scroll) }
             // Dropped below the rows: a tab goes to the end of this window's tabs, a pane
             // becomes a new tab there (M-4).
             .onDrop(of: UmiSidebarDrop.types, delegate: UmiSidebarListDropDelegate(
@@ -53,53 +62,8 @@ struct UmiSidebar: View {
         .background(UmiTheme.sidebarFill)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Sidebar")
-        .onChange(of: state.sidebarMode) { _ in syncFileTree() }
-        .onAppear { syncFileTree() }
-        .onDisappear { files.stop() }
         .onReceive(refresh) { _ in
             if state.sidebarMode == .tabs { tick &+= 1 }
-        }
-    }
-
-    // MARK: Mode bar
-
-    private var modeBar: some View {
-        HStack(spacing: 2) {
-            modeButton(.tabs, symbol: "rectangle.stack", help: "Tabs")
-            modeButton(.files, symbol: "folder", help: "Project Explorer (⇧⌘E)")
-            Spacer()
-            Button {
-                _ = try? UmiLayout.newTab(in: controller, options: .init(), tabName: nil, color: .none,
-                                           index: nil, focus: true, inheritFrom: nil)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 26, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(UmiIconButtonStyle(size: 22))
-            .help("New Tab (⌘T)")
-            .accessibilityLabel("New Tab")
-        }
-    }
-
-    private func modeButton(_ mode: UmiState.SidebarMode, symbol: String, help: String) -> some View {
-        Button { state.sidebarMode = mode } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 26, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(UmiIconButtonStyle(active: state.sidebarMode == mode, size: 22))
-        .help(help)
-        .accessibilityLabel(mode == .tabs ? "Tabs" : "Files")
-    }
-
-    private func syncFileTree() {
-        if state.sidebarMode == .files {
-            files.start { [weak controller] in controller?.window }
-        } else {
-            files.stop()
         }
     }
 
@@ -109,28 +73,163 @@ struct UmiSidebar: View {
     private var tabsList: some View {
         let _ = state.revision
         let _ = attention.revision
-        let tabs = controller.tabs
-        let pinned = tabs.filter(\.pinned)
-        let others = tabs.filter { !$0.pinned }
+        let _ = hints.revealed
+        let blocks = UmiTabGroups.sidebarBlocks(in: controller)
 
-        if !pinned.isEmpty {
-            ForEach(pinned) { tab in
-                UmiSidebarTabRow(controller: controller, tab: tab, tick: tick)
-            }
-            Rectangle().fill(UmiTheme.hairline).frame(height: 1)
-                .padding(.horizontal, 8).padding(.vertical, 5)
+        if blocks.isEmpty && controller.sidebarModel.isSearching {
+            Text("No tabs match your search.")
+                .font(.system(size: 12))
+                .foregroundColor(UmiTheme.rowSubtitle)
+                .padding(12)
+                .accessibilityLabel("No tabs match your search.")
         }
-        ForEach(others) { tab in
-            UmiSidebarTabRow(controller: controller, tab: tab, tick: tick)
+        ForEach(blocks) { block in
+            switch block {
+            case .tab(let tab):
+                UmiSidebarTabRow(controller: controller, tab: tab, model: controller.sidebarModel, tick: tick)
+            case .group(let group, let members):
+                UmiTabGroupBox(controller: controller, group: group, model: controller.sidebarModel,
+                               members: members, tick: tick)
+            }
         }
         // Where a drop below the rows lands.
         UmiInsertionLine().opacity(listDropTargeted ? 1 : 0)
     }
 }
 
+// MARK: - Header
+
+/// Warp's control bar: "Search tabs..." (12 pt icon, 24 high), then Umi's Tabs, Files and Search buttons
+/// and +; 4 pt above and below, 8 at the sides, 4 between items.
+struct UmiSidebarHeader: View {
+    @ObservedObject var controller: TerminalController
+    @ObservedObject var model: UmiSidebarModel
+    @ObservedObject private var state = UmiState.shared
+    @FocusState private var searchFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if state.sidebarMode == .tabs {
+                searchField
+            } else {
+                Spacer(minLength: 0)
+            }
+            modeButton(.tabs, symbol: "rectangle.stack", help: "Tabs")
+            modeButton(.files, symbol: "folder", help: "Project Explorer (⇧⌘E)")
+            modeButton(.search, symbol: "magnifyingglass", help: "Global Search (⇧⌘F)")
+            Button {
+                _ = try? UmiLayout.newTab(in: controller, options: .init(), tabName: nil, color: .none,
+                                           index: nil, focus: true, inheritFrom: nil)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(UmiIconButtonStyle(size: 24, radius: 4))
+            .help("New Tab (⌘T)")
+            .accessibilityLabel("New Tab")
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .onChange(of: model.searchFocusRequest) { _ in takeFocusRequest() }
+        .onAppear { if model.searchFocusPending { takeFocusRequest() } }
+        .onChange(of: searchFocused) { model.searchFocused = $0 }
+    }
+
+    /// ⌥⌘F: once the field is on screen, give it the keyboard.
+    private func takeFocusRequest() {
+        DispatchQueue.main.async {
+            model.searchFocusPending = false
+            searchFocused = true
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10, weight: .medium))
+                .frame(width: 12, height: 12)
+                .foregroundColor(UmiTheme.rowSubtitle)
+            TextField("Search tabs...", text: $model.query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundColor(UmiTheme.rowTitle)
+                .focused($searchFocused)
+                .onExitCommand { model.endSearch(in: controller) }
+                .accessibilityLabel("Search tabs")
+        }
+        .frame(height: 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { searchFocused = true }
+    }
+
+    private func modeButton(_ mode: UmiState.SidebarMode, symbol: String, help: String) -> some View {
+        Button { state.sidebarMode = mode } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(UmiIconButtonStyle(active: state.sidebarMode == mode, size: 24, radius: 4))
+        .help(help)
+        .accessibilityLabel(mode == .tabs ? "Tabs" : (mode == .files ? "Files" : "Search"))
+    }
+}
+
+// MARK: - Scrollbar
+
+/// Warp's overlay scrollbar: a 4 pt thumb over the list's right edge, shown while the list is
+/// longer than the panel.
+struct UmiOverlayScrollbar: View {
+    struct Metrics: Equatable {
+        var content = CGRect.zero
+        var viewport = CGFloat.zero
+    }
+
+    let metrics: Metrics
+    static let space = "umi.sidebar.scroll"
+
+    struct ContentKey: PreferenceKey {
+        static let defaultValue = CGRect.zero
+        static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+    }
+
+    struct ViewportKey: PreferenceKey {
+        static let defaultValue = CGFloat.zero
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+    }
+
+    static var contentReader: some View {
+        GeometryReader { geo in
+            Color.clear.preference(key: ContentKey.self, value: geo.frame(in: .named(space)))
+        }
+    }
+
+    static var viewportReader: some View {
+        GeometryReader { geo in Color.clear.preference(key: ViewportKey.self, value: geo.size.height) }
+    }
+
+    var body: some View {
+        let content = metrics.content.height
+        let viewport = metrics.viewport
+        if content > viewport + 1, viewport > 0 {
+            let thumb = max(24, viewport * viewport / content)
+            let progress = min(max(-metrics.content.minY / (content - viewport), 0), 1)
+            Capsule()
+                .fill(UmiTheme.rowSubtitle.opacity(0.5))
+                .frame(width: 4, height: thumb)
+                .offset(x: -2, y: progress * (viewport - thumb))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 // MARK: - Row model
 
-/// What a tab's row shows (S-3). The view and `debug.sidebar.rows` both read it.
+/// What a tab's row shows (S-3). The view and `debug.ui.rows` both read it.
 ///
 /// Line 1 is the tab's folder (the focused pane's), or the name the user gave the tab, with the
 /// git branch (a linked worktree shown differently), a pane count when split, and pin and
@@ -164,37 +263,56 @@ struct UmiSidebarRowModel {
     let title: String
     let agent: UmiAttention.Agent?
     let detail: Detail
+    /// The focused pane's last command failed (Warp's red triangle before the title).
+    let failed: Bool
+    /// A pane of the tab is zoomed (Warp's "Maximized" indicator).
+    let maximized: Bool
+    /// The key that selects the tab, while ⌘ is held (⌘1–⌘9).
+    let hint: String?
 
     init(tab: UmiTab, in controller: TerminalController) {
         self.tab = tab
         selected = tab === controller.selectedTab
-        let panes = controller.tree(of: tab).root?.leaves() ?? []
+        let tree = controller.tree(of: tab)
+        let panes = tree.root?.leaves() ?? []
         paneCount = panes.count
+        maximized = tree.zoomed != nil
         let focusedPane = (selected ? controller.focusedSurface.flatMap { panes.contains($0) ? $0 : nil } : nil)
             ?? tab.effectiveFocusedSurface
         self.focusedPane = focusedPane
         let cwd = focusedPane.map(UmiTopology.cwd(of:)).flatMap { $0.isEmpty ? nil : $0 }
         self.cwd = cwd
         git = cwd.flatMap { UmiPaneContext.git(for: $0) }
+        // Ask for the branch's pull request as soon as the branch is known, so the row menu has
+        // "Copy pull request link" at its first right-click.
+        if let cwd, let branch = git?.branch, !branch.isEmpty { UmiPullRequests.shared.prefetch(cwd: cwd, branch: branch) }
         title = tab.name.flatMap { $0.isEmpty ? nil : $0 } ?? cwd.map(UmiPaneContext.folderName) ?? tab.title
         let agent = UmiAttention.shared.agent(for: tab, in: controller)
         self.agent = agent
+        let command = focusedPane.flatMap { UmiPaneContext.command(for: $0) }
+        failed = command?.failed ?? false
         if let agent {
             detail = .session(title: agent.title.isEmpty ? Self.describe(agent.status) : agent.title, status: agent.status)
-        } else if let command = focusedPane.flatMap({ UmiPaneContext.command(for: $0) }) {
+        } else if let command {
             detail = .command(text: command.text, running: command.running)
         } else {
             detail = .folder(cwd.map(Self.abbreviate) ?? "shell")
         }
+        hint = UmiTabHints.shared.revealed
+            ? controller.index(of: tab).flatMap { UmiTabHints.label(index: $0, count: controller.tabs.count) }
+            : nil
     }
 
     var icon: Icon {
         switch agent?.kind {
         case .claude: return .claude
         case .codex: return .codex
-        case nil: return tab.pinned ? .pin : .terminal
+        case nil: return .terminal
         }
     }
+
+    /// The status badge on the agent's mark (Warp's states).
+    var badge: UmiAttention.Badge { agent?.badge ?? .none }
 
     /// The mark's name for the CLI and accessibility.
     var markName: String {
@@ -206,13 +324,18 @@ struct UmiSidebarRowModel {
     }
 
     var accessibilityValue: String {
-        guard let agent else { return detail.text }
-        var parts = [agent.kind.rawValue, Self.describe(agent.status)]
+        var parts: [String] = []
+        if failed { parts.append("last command failed") }
+        if maximized { parts.append("Maximized") }
+        if tab.pinned { parts.append("pinned") }
+        guard let agent else { return (parts + [detail.text]).joined(separator: " · ") }
+        parts += [agent.kind.rawValue, Self.describe(agent.status)]
         switch agent.mark {
         case .finished: parts.append("finished, not seen yet")
         case .needsYou: parts.append("needs you")
         case .none: break
         }
+        if agent.badge == .error { parts.append("error") }
         return (parts + [detail.text]).joined(separator: " · ")
     }
 
@@ -227,12 +350,20 @@ struct UmiSidebarRowModel {
         return path
     }
 
-    func json() -> [String: Any] {
+    func json(in controller: TerminalController? = nil) -> [String: Any] {
         var json: [String: Any] = [
             "tab": tab.idString, "selected": selected, "pinned": tab.pinned, "panes": paneCount,
-            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName,
-            "color": UmiTopology.colorName(tab.color),
+            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName, "badge": badge.rawValue,
+            "color": UmiTopology.colorName(tab.color), "failed": failed, "maximized": maximized,
         ]
+        if let hint { json["hint"] = hint }
+        if let controller {
+            json["shown"] = UmiTabGroups.isShown(tab, in: controller)
+                && UmiSidebarModel.matches(self, query: controller.sidebarModel.query)
+            if let group = UmiTabGroups.group(of: tab, in: controller) { json["group"] = group.name }
+        }
+        // Umi: synchronized input (L-32).
+        if let window = UmiTopology.locate(tab: tab) { json["input_synced"] = UmiInputSync.shared.isSynced(tab, in: window) }
         if let git {
             json["branch"] = git.branch
             if let worktree = git.worktree { json["worktree"] = worktree }
@@ -252,21 +383,27 @@ struct UmiSidebarRowModel {
 
 // MARK: - Row
 
-/// One tab in the sidebar, on two lines (S-3; see `UmiSidebarRowModel`). Rows can be
-/// clicked, double-clicked to rename, right-clicked for Warp's menu (S-4), dragged to reorder
-/// or out of the window, and take panes and tabs dropped on them (M-4).
+/// One tab in the sidebar, on two lines (S-3; see `UmiSidebarRowModel`), drawn as Warp's
+/// vertical tab rows. Rows can be clicked, double-clicked to rename in place, right-clicked for
+/// Warp's menu (S-4), dragged to reorder or out of the window, and take panes and tabs dropped
+/// on them (M-4).
 struct UmiSidebarTabRow: View {
     @ObservedObject var controller: TerminalController
     @ObservedObject var tab: UmiTab
+    @ObservedObject var model: UmiSidebarModel
     var tick: Int = 0
     @ObservedObject private var state = UmiState.shared
     @ObservedObject private var attention = UmiAttention.shared
     @State private var hovering = false
     @State private var dropZone: UmiSidebarDrop.Zone?
-    @State private var editing = false
     @State private var draftName = ""
     @State private var rowHeight: CGFloat = 40
     @FocusState private var nameFieldFocused: Bool
+
+    /// What this row is renaming in place, if anything.
+    private var renaming: UmiSidebarModel.RenameTarget? {
+        model.renaming.flatMap { $0.tabID == tab.id ? $0 : nil }
+    }
 
     var body: some View {
         let _ = state.revision
@@ -274,76 +411,121 @@ struct UmiSidebarTabRow: View {
         let _ = tick
         let row = UmiSidebarRowModel(tab: tab, in: controller)
 
-        HStack(alignment: .top, spacing: 7) {
+        HStack(alignment: .top, spacing: 8) {
             icon(row)
-                .frame(width: 14, height: 17)
 
-            VStack(alignment: .leading, spacing: 4) {
-                // Line 1: the folder (or the tab's name), branch, pane count, affordances.
-                HStack(spacing: 6) {
-                    if editing {
-                        TextField("Tab name", text: $draftName, onCommit: commitRename)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .focused($nameFieldFocused)
-                            .onExitCommand { editing = false }
+            VStack(alignment: .leading, spacing: 1) {
+                // Line 1: the folder (or the tab's name), branch, pane count, indicators.
+                HStack(spacing: 4) {
+                    if row.failed {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .frame(width: 12, height: 12)
+                            .foregroundColor(UmiTheme.errorRed)
+                            .help("The last command failed")
+                            .accessibilityLabel("Last command failed")
+                    }
+                    if let renaming {
+                        renameField(renaming)
                     } else {
                         Text(row.title)
-                            .font(.system(size: 12.5, weight: row.selected ? .semibold : .regular))
-                            .foregroundColor(row.selected ? UmiTheme.textPrimary : UmiTheme.textSecondary)
+                            .font(.system(size: 12))
+                            .foregroundColor(UmiTheme.rowTitle)
                             .lineLimit(1)
                             .layoutPriority(1)
                     }
 
-                    if let git = row.git, !editing {
+                    if let git = row.git, renaming == nil {
                         HStack(spacing: 3) {
                             Image(systemName: git.worktree != nil ? "square.stack.3d.up" : "arrow.triangle.branch")
-                                .font(.system(size: 8.5, weight: .semibold))
+                                .font(.system(size: 7.5, weight: .semibold))
+                                .frame(width: 8, height: 8)
                             Text(git.worktree != nil ? "\(git.branch) · worktree" : git.branch)
                                 .lineLimit(1)
                         }
-                        .font(.system(size: 11))
-                        .foregroundColor(git.worktree != nil ? UmiTheme.accent.opacity(0.75) : UmiTheme.textTertiary)
+                        .font(.system(size: 10))
+                        .foregroundColor(git.worktree != nil ? UmiTheme.accent.opacity(0.75) : UmiTheme.rowSubtitle)
                         .help(git.worktree.map { "linked worktree \($0) · branch \(git.branch)" } ?? "branch \(git.branch)")
                     }
 
                     if row.paneCount > 1 {
                         Text("\(row.paneCount)")
                             .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundColor(UmiTheme.textTertiary)
+                            .foregroundColor(UmiTheme.rowSubtitle)
                             .padding(.horizontal, 4)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(UmiTheme.hoverFill))
+                            .background(RoundedRectangle(cornerRadius: 3).fill(UmiTheme.overlay2))
                             .help("\(row.paneCount) panes")
                     }
                     Spacer(minLength: 4)
 
-                    if hovering && !editing {
+                    if row.maximized {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .frame(width: 12, height: 12)
+                            .foregroundColor(UmiTheme.rowSubtitle)
+                            .help("Maximized")
+                            .accessibilityLabel("Maximized")
+                    }
+                    if let hint = row.hint {
+                        Text(hint)
+                            .font(.system(size: 12))
+                            .foregroundColor(UmiTheme.rowSubtitle)
+                    }
+                    // Umi: Warp's link mark on a tab whose input is synchronized (L-32).
+                    if UmiInputSync.shared.isSynced(tab, in: controller) {
+                        Image(systemName: "link")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .frame(width: 12, height: 12)
+                            .foregroundColor(UmiTheme.syncedInput)
+                            .help("Input is synchronized across this tab's panes")
+                            .accessibilityLabel("Synchronized input")
+                    }
+
+                    if hovering && renaming == nil {
                         Button { pinToggle() } label: {
                             Image(systemName: tab.pinned ? "pin.slash" : "pin")
                                 .font(.system(size: 9, weight: .semibold)).frame(width: 14, height: 14)
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(UmiTheme.textTertiary)
+                        .foregroundColor(UmiTheme.rowSubtitle)
                         .help(tab.pinned ? "Unpin tab" : "Pin tab")
                         Button { controller.closeTab(tab, sender: nil) } label: {
                             Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(UmiTheme.textTertiary)
+                        .foregroundColor(UmiTheme.rowSubtitle)
                         .help("Close tab")
                     }
                 }
+                .frame(minHeight: 15)
 
                 // Line 2: the session's title, or what the focused pane is doing.
                 detail(row)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 10)
+        .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(background(row))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .strokeBorder(row.selected ? UmiTheme.overlay3 : .clear, lineWidth: 1)
+        )
+        // Warp's pin: a 16 pt diagonal pin 6 pt inside the top-right corner, hidden on hover
+        // (and while ⌘ shows the tab keys there).
+        .overlay(alignment: .topTrailing) {
+            if tab.pinned && !hovering && row.hint == nil {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 10))
+                    .rotationEffect(.degrees(45))
+                    .frame(width: 16, height: 16)
+                    .foregroundColor(UmiTheme.rowSubtitle)
+                    .padding(6)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay(alignment: .top) { UmiInsertionLine().opacity(dropZone == .before ? 1 : 0).offset(y: -1) }
         .overlay(alignment: .bottom) { UmiInsertionLine().opacity(dropZone == .after ? 1 : 0).offset(y: 1) }
         .background(GeometryReader { geo in
@@ -352,97 +534,133 @@ struct UmiSidebarTabRow: View {
         })
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture(count: 2) { beginRename() }
+        .onTapGesture(count: 2) { UmiTabMenu.beginRename(.tab(tab.id), in: controller) }
         .onTapGesture { select() }
         .gesture(DragGesture(minimumDistance: 5).onChanged { _ in
             // An AppKit drag, so a drop outside the window can make a new window (M-4).
-            guard !editing else { return }
+            guard renaming == nil else { return }
             UmiTabDragSource.shared.begin(tab: tab, in: controller, title: row.title)
         })
         .onDrop(of: UmiSidebarDrop.types, delegate: UmiSidebarRowDropDelegate(
             controller: controller, tab: tab, height: rowHeight, zone: $dropZone))
-        .contextMenu { UmiTabMenuView(items: UmiTabMenu.items(for: tab, in: controller, row: row, rename: beginRename)) }
+        // Warp's menu, as an AppKit menu so its colors can be a row of dots.
+        .overlay(UmiRowMenuCatcher { UmiTabMenu.nsMenu(UmiTabMenu.items(for: tab, in: controller)) })
         .help(row.cwd.map(UmiSidebarRowModel.abbreviate) ?? row.title)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.title)
-        .accessibilityValue(row.accessibilityValue)
+        // Umi: the link mark, which the combined row element would otherwise hide (L-32).
+        .accessibilityValue(UmiInputSync.shared.isSynced(tab, in: controller)
+                            ? "Synchronized input · " + row.accessibilityValue : row.accessibilityValue)
         .accessibilityAddTraits(row.selected ? [.isSelected, .isButton] : .isButton)
+        .onAppear { if renaming != nil { startEditing() } }
+        .onChange(of: renaming) { target in if target != nil { startEditing() } }
     }
 
     // MARK: Pieces
 
+    /// Warp's backgrounds: a tab color at 15% (50% selected or hovered); otherwise 10% selected
+    /// and 5% hovered, over the panel's 5% (and a group's box, which carries the group's color).
     private func background(_ row: UmiSidebarRowModel) -> Color {
         let lit = row.selected || hovering || dropZone == .into
-        // A tab color tints its row, quietly (as Warp does).
         if let color = tab.color.displayColor {
-            return Color(color).opacity(lit ? 0.16 : 0.08)
+            return Color(color).opacity(lit ? 0.5 : 0.15)
         }
-        if row.selected { return UmiTheme.selectedFill }
-        return hovering || dropZone == .into ? UmiTheme.hoverFill : .clear
+        if row.selected { return UmiTheme.overlay2 }
+        return hovering || dropZone == .into ? UmiTheme.overlay1 : .clear
     }
 
+    /// Warp's leading icon: a 24 pt circle at 10% with a 16 pt glyph at 90%. A tab with an agent
+    /// session shows the agent's mark there instead (S-3).
     @ViewBuilder
     private func icon(_ row: UmiSidebarRowModel) -> some View {
-        switch row.icon {
-        case .claude, .codex:
-            UmiAgentMark(kind: row.agent?.kind ?? .claude)
-                .foregroundColor(Self.markColor(row.agent?.mark ?? .none))
-                .frame(width: 11, height: 11)
-                .help(row.accessibilityValue)
-        case .pin:
-            Image(systemName: "pin.fill").font(.system(size: 8.5))
-                .foregroundColor(UmiTheme.textTertiary)
-        case .terminal:
-            Image(systemName: "terminal").font(.system(size: 10, weight: .medium))
-                .foregroundColor(UmiTheme.textTertiary)
+        ZStack {
+            Circle().fill(UmiTheme.overlay2)
+            switch row.icon {
+            case .claude, .codex:
+                UmiAgentMark(kind: row.agent?.kind ?? .claude)
+                    .foregroundColor(Self.markColor(row.agent?.mark ?? .none))
+                    .frame(width: 12, height: 12)
+                    .help(row.accessibilityValue)
+            case .pin, .terminal:
+                Image(systemName: "terminal")
+                    .font(.system(size: 11, weight: .regular))
+                    .frame(width: 16, height: 16)
+                    .foregroundColor(UmiTheme.rowTitle)
+            }
         }
+        .frame(width: 24, height: 24)
+        // Warp's status badge on the agent's icon; the mark stays monochrome and the badge carries
+        // the color (Warp parity, 2026-11-05).
+        .umiStatusBadge(row.icon == .claude || row.icon == .codex ? row.badge : .none, total: 24)
     }
 
-    /// The agent's icon takes a quiet color when its session finished unseen or needs the
-    /// user; otherwise it is as quiet as the rest of the chrome.
+    /// The agent's mark is monochrome: a little brighter when its session finished unseen or
+    /// needs the user. Its status badge carries the color (Warp parity, 2026-11-05).
     static func markColor(_ mark: UmiAttention.Mark) -> Color {
-        switch mark {
-        case .none: return UmiTheme.textTertiary
-        case .finished: return UmiTheme.accent.opacity(0.85)
-        case .needsYou: return Color(red: 0.93, green: 0.66, blue: 0.30).opacity(0.9)
-        }
+        // Quiet (60%), and the row title's 90% while marked.
+        mark == .none ? UmiTheme.textSecondary : UmiTheme.rowTitle
     }
 
+    /// Line 2: Warp's 10 pt at 60%.
     @ViewBuilder
     private func detail(_ row: UmiSidebarRowModel) -> some View {
         switch row.detail {
-        case .session(let title, let status):
+        case .session(let title, _):
             Text(title)
-                .font(.system(size: 11))
-                .foregroundColor(status == "working" ? UmiTheme.textSecondary : UmiTheme.textTertiary)
+                .font(.system(size: 10))
+                .foregroundColor(UmiTheme.rowSubtitle)
                 .lineLimit(1)
                 .truncationMode(.tail)
-        case .command(let text, let running):
-            HStack(spacing: 4) {
-                if running {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 6))
-                        .foregroundColor(UmiTheme.accent)
-                }
-                Text(text)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(running ? UmiTheme.textSecondary : UmiTheme.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+        case .command(let text, _):
+            Text(text)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(UmiTheme.rowSubtitle)
+                .lineLimit(1)
+                .truncationMode(.tail)
         case .folder(let path):
             Text(path)
-                .font(.system(size: 11))
-                .foregroundColor(UmiTheme.textTertiary)
+                .font(.system(size: 10))
+                .foregroundColor(UmiTheme.rowSubtitle)
                 .lineLimit(1)
                 .truncationMode(.head)
         }
     }
 
+    @ViewBuilder
+    private func renameField(_ target: UmiSidebarModel.RenameTarget) -> some View {
+        let placeholder: String = {
+            if case .pane = target { return "Pane name" }
+            return "Tab name"
+        }()
+        TextField(placeholder, text: $draftName)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .foregroundColor(UmiTheme.rowTitle)
+            .focused($nameFieldFocused)
+            .onSubmit { UmiSidebarRename.commit(target, text: draftName, in: controller) }
+            .onExitCommand { UmiSidebarRename.cancel(target, in: controller) }
+            .onChange(of: nameFieldFocused) { focused in
+                // Focus going elsewhere (a click outside) cancels, as Warp's CancelActiveRename.
+                if !focused, model.renaming == target {
+                    UmiSidebarRename.cancel(target, in: controller, focusPane: false)
+                }
+            }
+            .accessibilityLabel(placeholder)
+    }
+
     // MARK: Actions
 
+    private func startEditing() {
+        guard let renaming else { return }
+        switch renaming {
+        case .tab, .group: draftName = tab.name ?? ""
+        case .pane(_, let paneID): draftName = UmiState.shared.paneName(paneID) ?? ""
+        }
+        DispatchQueue.main.async { nameFieldFocused = true }
+    }
+
     private func select() {
-        guard !editing else { return }
+        guard renaming == nil else { return }
         UmiLayout.focusTab(tab, in: controller)
     }
 
@@ -452,16 +670,38 @@ struct UmiSidebarTabRow: View {
             controller.setPinned(tab, pin)
         }
     }
+}
 
-    private func beginRename() {
-        draftName = tab.name ?? ""
-        editing = true
-        DispatchQueue.main.async { nameFieldFocused = true }
+/// Opens an AppKit menu on a right-click (or ⌃-click) and lets every other event through to
+/// the SwiftUI row underneath.
+struct UmiRowMenuCatcher: NSViewRepresentable {
+    let menu: @MainActor () -> NSMenu
+
+    func makeNSView(context: Context) -> CatcherView {
+        let view = CatcherView()
+        view.menuProvider = menu
+        return view
     }
 
-    private func commitRename() {
-        editing = false
-        UmiTabMenu.rename(tab, in: controller, to: draftName)
+    func updateNSView(_ view: CatcherView, context: Context) {
+        view.menuProvider = menu
+    }
+
+    final class CatcherView: NSView {
+        var menuProvider: (@MainActor () -> NSMenu)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent else { return nil }
+            let rightClick = event.type == .rightMouseDown || event.type == .rightMouseUp
+                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+            return rightClick ? super.hitTest(point) : nil
+        }
+
+        override func menu(for event: NSEvent) -> NSMenu? {
+            MainActor.assumeIsolated { menuProvider?() }
+        }
+
+        override func accessibilityIsIgnored() -> Bool { true }
     }
 }
 
@@ -524,7 +764,8 @@ struct UmiAgentMark: View {
     }
 }
 
-/// The drag edge on the sidebar's trailing side (S-8). Double-click goes back to the default.
+/// The drag edge on the sidebar's trailing side (S-8): Warp's 5 pt strip inside the edge.
+/// Double-click goes back to the default.
 struct UmiSidebarResizeEdge: View {
     @ObservedObject var controller: TerminalController
     @State private var startWidth: CGFloat?
@@ -532,9 +773,8 @@ struct UmiSidebarResizeEdge: View {
 
     var body: some View {
         Color.clear
-            .frame(width: 7)
+            .frame(width: 5)
             .contentShape(Rectangle())
-            .offset(x: 3)
             .onHover { inside in
                 if inside, !cursorPushed {
                     NSCursor.resizeLeftRight.push()

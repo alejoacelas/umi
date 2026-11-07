@@ -251,6 +251,29 @@ fn collection(
         }
     }
 
+    // Umi: with no font-family configured, the terminal font is Hack
+    // (Warp's default), in its four styles. A configured family replaces it.
+    if (key.descriptorsForStyle(.regular).len == 0) {
+        const hack = [_]struct { Style, [:0]const u8 }{
+            .{ .regular, font.embedded.hack_regular },
+            .{ .bold, font.embedded.hack_bold },
+            .{ .italic, font.embedded.hack_italic },
+            .{ .bold_italic, font.embedded.hack_bold_italic },
+        };
+        for (hack) |entry| {
+            if (entry[0] != .regular and key.descriptorsForStyle(entry[0]).len > 0) continue;
+            _ = try c.add(
+                self.alloc,
+                try .init(self.font_lib, entry[1], load_options.faceOptions()),
+                .{
+                    .style = entry[0],
+                    .fallback = false,
+                    .size_adjustment = .none,
+                },
+            );
+        }
+    }
+
     // Complete our styles to ensure we have something to satisfy every
     // possible style request. We do this before adding our built-in font
     // because we want to ensure our built-in styles are fallbacks to

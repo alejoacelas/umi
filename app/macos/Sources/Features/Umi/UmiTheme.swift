@@ -6,6 +6,8 @@ import SwiftUI
 enum UmiTheme {
     static let accent = Color(red: 0x19 / 255, green: 0xAA / 255, blue: 0xD8 / 255)
     static let accentNSColor = NSColor(red: 0x19 / 255, green: 0xAA / 255, blue: 0xD8 / 255, alpha: 1)
+    /// Warp's mark for synchronized input (`TAB_INDICATOR_SYNCED_COLOR`, #4A93FF).
+    static let syncedInput = Color(red: 0x4A / 255, green: 0x93 / 255, blue: 0xFF / 255)
 
     /// The chrome sits on the terminal's configured background, so its ink is white on dark
     /// backgrounds and black on light ones (S-5).
@@ -18,7 +20,7 @@ enum UmiTheme {
 
     static var chromeFill: Color { ink.opacity(0.035) }
     /// The sidebar's fill: ink at 5% over the window background, as Warp paints its vertical
-    /// tabs panel (`fg_overlay_1`; #0D0D0D on the default Dark theme).
+    /// tabs panel (`fg_overlay_1`; #121212 over the default Dark theme's #050505).
     static var sidebarFill: Color { ink.opacity(0.05) }
     static var hoverFill: Color { ink.opacity(0.06) }
     static var selectedFill: Color { ink.opacity(isLight ? 0.07 : 0.085) }
@@ -29,9 +31,13 @@ enum UmiTheme {
         isLight ? NSColor.black.withAlphaComponent(0.86) : NSColor.white.withAlphaComponent(0.9)
     }
 
+    /// The terminal's configured background (Warp's `theme.background()`), as last adopted.
+    nonisolated(unsafe) private(set) static var terminalBackground: Color = .black
+
     /// Follow the configured background (called when a terminal view renders).
     @MainActor
     static func adopt(background: Color) {
+        terminalBackground = background
         let color = NSColor(background).usingColorSpace(.sRGB) ?? .black
         let luminance = 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent
         let light = luminance > 0.55
@@ -40,8 +46,34 @@ enum UmiTheme {
         UmiState.shared.layoutDidChange()
     }
 
-    /// The sidebar's default width; each window's can be dragged between the limits (S-8).
-    static let sidebarWidth: CGFloat = 252
+    // MARK: Warp's vertical tabs (S-3, S-4)
+
+    /// Warp's `fg_overlay_*` steps: ink at 5%, 10% and 15% over the background.
+    static var overlay1: Color { ink.opacity(0.05) }
+    static var overlay2: Color { ink.opacity(0.10) }
+    static var overlay3: Color { ink.opacity(0.15) }
+    /// A row's title (Warp's main text) and second line (its sub text).
+    static var rowTitle: Color { ink.opacity(0.90) }
+    static var rowSubtitle: Color { ink.opacity(0.60) }
+    /// The 1 px line between the sidebar and the panes (foreground 10%).
+    static var sidebarDivider: Color { ink.opacity(0.10) }
+    /// Warp's error red (`ui_error_color`, #BC362A): the failed-command triangle.
+    static let errorRed = Color(red: 188 / 255, green: 54 / 255, blue: 42 / 255)
+
+    /// The terminal's 16 ANSI colors as configured (Warp's tab colors come from them).
+    nonisolated(unsafe) private(set) static var ansiPalette: [NSColor]?
+
+    /// Follow the configured palette (called when a terminal view renders).
+    @MainActor
+    static func adopt(palette: [NSColor]?) {
+        guard let palette, palette != ansiPalette else { return }
+        ansiPalette = palette
+        UmiState.shared.layoutDidChange()
+    }
+
+    /// The sidebar's default width (Warp's 248); each window's can be dragged between the
+    /// limits (S-8).
+    static let sidebarWidth: CGFloat = 248
     static let sidebarMinWidth: CGFloat = 180
     static let sidebarMaxWidth: CGFloat = 600
 
@@ -69,17 +101,19 @@ enum UmiTheme {
     // MARK: Default terminal configuration
 
     /// Umi's colors, shipped as a Ghostty theme so a user's own `theme` replaces them
-    /// entirely (explicit colors would otherwise override it). The background is Warp's default
-    /// Dark theme (`warp_bundled/warp_dark.yaml` in warpdotdev/themes): pure black, white text, its
-    /// cursor accent and its 16 terminal colors (S-5).
+    /// entirely (explicit colors would otherwise override it). They are Warp's built-in Dark
+    /// theme (Warp's `themes/default_themes.rs`): background #050505, white text, the cyan accent
+    /// as the cursor, its selection (blue at 40% over the text, which keeps its colors) and its 16
+    /// terminal colors (S-5).
     static let themeConfig = """
-    background = #000000
+    background = #050505
     foreground = #ffffff
-    cursor-color = #00c2ff
-    selection-background = #24435c
-    selection-foreground = #ffffff
-    split-divider-color = #1f1f1f
-    unfocused-split-fill = #000000
+    cursor-color = #19aad8
+    selection-background = #76a7fa
+    selection-background-opacity = 0.4
+    selection-foreground = cell-foreground
+    split-divider-color = #262626
+    unfocused-split-fill = #050505
     palette = 0=#616161
     palette = 1=#ff8272
     palette = 2=#b4fa72
@@ -108,15 +142,29 @@ enum UmiTheme {
         macos-titlebar-proxy-icon = hidden
         theme = \(themePath)
 
+        # Warp's terminal (Warp parity): Hack 13 (bundled; the default when no font-family is
+        # set), rows 1.2× the font size, no ligatures, a 3-point bar cursor with round ends,
+        # 16 points either side, 20 below the prompt, none for full-screen programs.
         cursor-style = bar
         font-size = 13
-        adjust-cell-height = 15%
-        window-padding-x = 14
-        window-padding-y = 10
-        window-padding-balance = true
+        adjust-cell-height = 3%
+        adjust-cursor-height = 3%
+        font-feature = -calt
+        font-feature = -liga
+        font-feature = -dlig
+        window-padding-x = 16
+        window-padding-y = 10,20
+        window-padding-balance = bottom
+        window-padding-alternate-screen = false
         window-padding-color = extend
         unfocused-split-opacity = 1
         mouse-hide-while-typing = true
+
+        # Warp's contrast rule (named colors raised to 4.5:1) and its silent bell (no sound,
+        # no Dock bounce, no bell in the title).
+        minimum-contrast = 4.5
+        minimum-contrast-colors = named
+        bell-features = no-system,no-audio,no-attention,no-title,no-border
 
         # ⌃⌘← / ⌃⌘→ move the pane into the previous or next tab.
         keybind = super+ctrl+arrow_left=unbind
@@ -134,6 +182,18 @@ enum UmiTheme {
         keybind = ctrl+shift+tab=unbind
         keybind = super+shift+p=unbind
         keybind = super+,=unbind
+        # ⇧⌘F opens global search in the sidebar (as in Warp); Esc still ends a terminal search.
+        keybind = super+shift+f=unbind
+        # ⌥⌘I and ⌥⇧⌘I synchronize input (Window ▸ Synchronize Input), as in Warp; the
+        # terminal inspector moves to ⌃⌥⌘I.
+        keybind = super+alt+i=unbind
+        keybind = super+alt+ctrl+i=inspector:toggle
+        # ⌘= ⌘- ⌘0 zoom the whole interface (View menu), as in Warp; the terminals' font size
+        # is ⌥⇧> and ⌥⇧<.
+        keybind = super+==unbind
+        keybind = super++=unbind
+        keybind = super+-=unbind
+        keybind = super+0=unbind
         \(digitUnbinds)
         """
     }
@@ -176,9 +236,10 @@ enum UmiTheme {
 struct UmiIconButtonStyle: ButtonStyle {
     var active: Bool = false
     var size: CGFloat = 24
+    var radius: CGFloat = 6
 
     func makeBody(configuration: Configuration) -> some View {
-        UmiIconButtonBody(configuration: configuration, active: active, size: size)
+        UmiIconButtonBody(configuration: configuration, active: active, size: size, radius: radius)
     }
 }
 
@@ -186,13 +247,14 @@ private struct UmiIconButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let active: Bool
     let size: CGFloat
+    var radius: CGFloat = 6
     @State private var hovering = false
 
     var body: some View {
         configuration.label
             .foregroundColor(active ? UmiTheme.textPrimary : (hovering ? UmiTheme.textSecondary : UmiTheme.textTertiary))
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .fill(active ? UmiTheme.selectedFill : (configuration.isPressed || hovering ? UmiTheme.hoverFill : .clear))
             )
             .onHover { hovering = $0 }

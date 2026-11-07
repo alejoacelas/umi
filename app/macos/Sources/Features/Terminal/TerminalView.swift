@@ -62,12 +62,14 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     // Umi: the sidebar beside a window's panes.
     @ObservedObject private var umiState = UmiState.shared
+    // Umi: the interface's zoom (L-33).
+    @ObservedObject private var umiZoom = UmiZoom.shared
 
     /// The focused terminal's initial size plus the sidebar.
     private var idealContentSize: CGSize? {
         guard let initial = lastFocusedSurface?.value?.initialSize else { return nil }
         let controller = viewModel as? TerminalController
-        let chrome = UmiTheme.chromeSize(sidebar: umiState.sidebarVisible && controller != nil,
+        let chrome = UmiTheme.chromeSize(sidebar: controller?.sidebarVisible ?? false,
                                           width: controller?.sidebarWidth ?? UmiTheme.sidebarWidth)
         return CGSize(width: initial.width + chrome.width, height: initial.height + chrome.height)
     }
@@ -92,19 +94,30 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                     let topInset = geometry.safeAreaInsets.top
                     let controller = viewModel as? TerminalController
                     let _ = UmiTheme.adopt(background: ghostty.config.backgroundColor)
+                    let _ = UmiTheme.adopt(palette: ghostty.config.umiANSIPalette)
 
                     HStack(spacing: 0) {
-                        if umiState.sidebarVisible, let controller {
-                            UmiSidebar(controller: controller, topInset: topInset)
+                        // Shown or hidden at once, per window, as Warp's panel.
+                        if let controller, controller.sidebarVisible {
+                            UmiSidebar(controller: controller, topInset: topInset / umiZoom.factor)
+                                .umiZoomed(umiZoom.factor)
                                 .frame(width: controller.sidebarWidth)
+                                // Warp's 1 px line at foreground 10% between the panel and the panes.
+                                .overlay(alignment: .trailing) {
+                                    Rectangle().fill(UmiTheme.sidebarDivider).frame(width: 1).allowsHitTesting(false)
+                                }
                                 .overlay(alignment: .trailing) { UmiSidebarResizeEdge(controller: controller) }
-                                .transition(.move(edge: .leading))
                         }
 
                         terminals
                             .padding(.top, topInset)
+                        if let controller {
+                            // Umi: the shortcuts page (⌘/), at the right as Warp's keybindings panel.
+                            UmiShortcutsPageSlot(model: controller.palette.shortcutsPage,
+                                                 background: ghostty.config.backgroundColor)
+                                .padding(.top, topInset)
+                        }
                     }
-                    .animation(.easeInOut(duration: 0.16), value: umiState.sidebarVisible)
                     .ignoresSafeArea(.container, edges: .top)
                 }
                 .frame(idealWidth: idealContentSize?.width, idealHeight: idealContentSize?.height)
@@ -112,6 +125,9 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                 if let controller = viewModel as? TerminalController {
                     // Umi's palette: commands, panes and files, whatever has focus (L-14–L-16).
                     UmiPaletteView(model: controller.palette, background: ghostty.config.backgroundColor)
+                        .umiZoomed(umiZoom.factor)
+                    // Umi: agent toasts, the update note and the inbox (⇧⌘U), at the top right.
+                    UmiInboxOverlay(controller: controller, background: ghostty.config.backgroundColor)
                 } else if let surfaceView = lastFocusedSurface?.value {
                     TerminalCommandPaletteView(
                         surfaceView: surfaceView,
