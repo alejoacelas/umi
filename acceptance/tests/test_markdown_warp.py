@@ -295,7 +295,7 @@ def test_find_through_edit_find_items(inst, win, doc):
 
 @pytest.mark.req("E-2")
 def test_cmd_e_menu_action_toggles_a_file_pane_but_not_a_terminal(inst, win, doc):
-    """⌘E is Edit ▸ Find ▸ Use Selection for Find: in a file pane it toggles Rendered / Raw."""
+    """⌘E is Edit ▸ Find ▸ Use Selection for Find: in a file pane it toggles Preview / Source."""
     shown(inst, win, doc)
     assert md(inst, doc, "perform", selector="selectionForFind")["performed"]
     wait_until(lambda: doc_mode(inst, win, doc) == "source", 5, message="raw")
@@ -365,15 +365,15 @@ def test_esc_key_closes_the_larger_diagram(inst, win, doc, ui):
 
 
 @pytest.mark.req("E-2")
-def test_rendered_and_raw_toggle_with_cmd_e(inst, win, doc, ui):
+def test_preview_and_source_toggle_with_cmd_e(inst, win, doc, ui):
     pane = shown(inst, win, doc)
-    assert ui.button("Rendered") is not None and ui.button("Raw") is not None, "the control says Rendered / Raw"
+    assert ui.button("Preview") is not None and ui.button("Source") is not None, "the control says Preview / Source"
     focus_preview(inst, ui, pane)
     ui.key(KEY_E, ui.CMD)
-    wait_until(lambda: doc_mode(inst, win, doc) == "source", 5, message="⌘E shows the raw file")
+    wait_until(lambda: doc_mode(inst, win, doc) == "source", 5, message="⌘E shows the source")
     focus_preview(inst, ui, pane)
     ui.key(KEY_E, ui.CMD)
-    wait_until(lambda: doc_mode(inst, win, doc) == "preview", 5, message="⌘E shows it rendered again")
+    wait_until(lambda: doc_mode(inst, win, doc) == "preview", 5, message="⌘E shows the preview again")
 
     # In a terminal ⌘E stays Ghostty's Use Selection for Find: it searches for the selected text.
     term = win["pane"]
@@ -388,7 +388,7 @@ def test_rendered_and_raw_toggle_with_cmd_e(inst, win, doc, ui):
 
 @pytest.mark.req("E-2")
 def test_cmd_e_in_a_source_only_file_uses_the_selection_for_find(inst, win, ui, tmp_path):
-    """A file with only a source view has no Rendered / Raw: ⌘E puts the selection in the find query."""
+    """A file with only a source view has no Preview / Source: ⌘E puts the selection in the find query."""
     path = tmp_path / "sample.py"
     path.write_text("def f():\n    return 1\n")
     pane = inst.json("edit", str(path), "--pane", win["pane"])["documents"][0]["pane"]

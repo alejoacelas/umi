@@ -1191,3 +1191,28 @@ anyway (CLI.md).
   `test_the_split_shortcut_stacks_a_fourth_pane` (Ghostty's `new_split` action, which ⌘D, the
   menus and AppleScript use), `test_a_stacked_fourth_pane_can_be_undone_and_redone` and
   `test_a_stacked_fourth_pane_survives_a_restart`. **Requirements:** M-7, L-1, M-3, R-3.
+
+## One header for Markdown panes (2026-11-07)
+
+- **Replaced, `tests/test_umi_editor_warp.py` `test_header_title_is_centred`** with
+  `test_header_shows_folder_and_name_left_aligned_and_keeps_the_name_whole`: Alejo chose the U1
+  header (REQUESTS.md, 2026-11-07), so SPEC E-24 no longer centres the name. The new test checks
+  that the parent folder's name and the file's name sit left-aligned after the grip and icon in
+  the header row, folder first, that the switch says Preview / Source and sits right of the name,
+  and that the name keeps its full width when the pane is split to an ordinary width (at least 300
+  points). **Requirements:** E-24, E-2.
+- **Changed, `tests/test_markdown_warp.py` `test_rendered_and_raw_toggle_with_cmd_e`**, now
+  `test_preview_and_source_toggle_with_cmd_e`: it looks for buttons named Preview and Source
+  instead of Rendered and Raw (SPEC E-2's new labels). The ⌘E checks are unchanged; two docstrings
+  and two wait messages say Preview / Source. **Requirements:** E-2.
+- **Added, `tests/test_umi_web.py`** `test_a_hosted_page_shows_its_path_and_switch_in_umis_header`
+  (a stand-in page that speaks Umi's hosted-page messages: Umi marks it, takes its path, mode and
+  GitHub link into the header, its switch and ⌘E's action switch the page, GitHub opens in the
+  browser and the pane stays), `test_malformed_messages_from_a_page_are_ignored` (wrong shapes and
+  non-GitHub links leave the header on the page's title and open nothing) and
+  `test_a_hosted_pages_switch_in_umis_header_ui` (the header's Preview / Source and GitHub buttons
+  in the accessibility tree; pressing Source switches the page). They read the header through the
+  new internal `debug.ui.web`. **Requirements:** E-12, E-24, E-2.
+- **Added, Swift unit tests `UmiHostedPageTests`**: which hosted-page messages are kept (shape,
+  JavaScript booleans, modes, only https://github.com links) and how a path splits into folder and
+  name. **Requirements:** E-12, E-24.

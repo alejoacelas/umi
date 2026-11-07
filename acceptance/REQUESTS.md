@@ -324,3 +324,22 @@ line with the title, the date and how many keys are left, and opens to a compact
 Alejo approved that the fourth and later panes join a stack (SPEC M-7) on the place of the pane that
 opened them, and that this holds for every kind of new pane in a tab: files, web pages, splits,
 new terminals and agent sessions, not only files (SPEC E-9, M-7).
+
+## 2026-11-07: one header for Markdown panes
+
+About the agent server's file page (`/o?p=PATH`) in a web pane, whose own header row sat under
+Umi's:
+
+> feels redundant at the top
+
+> A, and make sure it's consistent with how we render local markdown (maybe that involves changing
+> the header for local markdown?)
+
+Of the prototypes shown next, Alejo approved "U1": one row for both, with the Preview / Source switch
+in Umi's bar for local files and for the page alike (the page drops its own row inside Umi and Umi
+drives its switch), "folder / name" left-aligned, and GitHub in the bar.
+
+Then, about the same page opened in a normal browser:
+
+> I want to chrome hosted pages to mimic to the greatest extent possible the umi design (with only
+> changes for things that are different / don't make sense there)

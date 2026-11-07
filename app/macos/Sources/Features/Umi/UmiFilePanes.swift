@@ -354,69 +354,43 @@ enum UmiFilePaneMenu {
     }
 }
 
-/// The file pane's header, as Warp's: the name centred (a dot 8 points before it while there are
-/// unsaved changes), the drag grip on the left, and on the right the preview/source control, ⋯
-/// (the pane menu, also on right-click) and close.
+/// The file pane's header (E-24; Alejo's choice of 2026-11-07, the same row as a hosted page's):
+/// the drag grip, the file type's icon and "folder / name" on the left (a dot before the name while
+/// there are unsaved changes), and on the right Preview / Source (E-2), ⋯ (the pane menu, also on
+/// right-click) and close.
 private struct UmiFilePaneHeader: View {
     let surfaceView: Ghostty.SurfaceView
     @ObservedObject var doc: UmiDocument
-    @State private var dragging = false
-    @State private var hovering = false
 
     var body: some View {
-        let edge: CGFloat = doc.hasPreview ? 190 : 64
-        HStack(spacing: 0) {
-            ZStack {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(hovering ? UmiTheme.textSecondary : UmiTheme.textTertiary)
-                Ghostty.SurfaceDragSource(surfaceView: surfaceView, isDragging: $dragging, isHovering: $hovering)
+        UmiPaneHeaderBar(surfaceView: surfaceView) {
+            UmiFileIcon(url: doc.url)
+            UmiPathTitle(folder: Self.folder(of: doc.url), name: doc.name, dirty: doc.isDirty, help: doc.url.path)
+        } trailing: {
+            if doc.hasPreview { UmiModeToggle(doc: doc) }
+            Menu {
+                menuItems
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold))
             }
-            .frame(width: 22, height: 18)
-            .help("Drag to move this pane")
-            .frame(width: edge, alignment: .leading)
-            Spacer(minLength: 0)
-            HStack(spacing: 4) {
-                if doc.isDirty {
-                    Circle().fill(UmiTheme.textSecondary).frame(width: 8, height: 8)
-                        .accessibilityLabel("Unsaved changes")
-                }
-                Text(doc.name)
-                    .font(UmiTheme.uiFont)
-                    .foregroundColor(UmiTheme.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .help(doc.url.path)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .foregroundColor(UmiTheme.textTertiary)
+            .help("More")
+            .accessibilityLabel("More actions")
+            UmiPaneHeaderButton(symbol: "xmark", help: "Close (⌘W)", label: "Close \(doc.name)", size: 8) {
+                UmiFilePanes.confirmClose(surfaceView)
             }
-            .layoutPriority(1)
-            Spacer(minLength: 0)
-            HStack(spacing: 4) {
-                if doc.hasPreview { UmiModeToggle(doc: doc).fixedSize() }
-                Menu {
-                    menuItems
-                } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold))
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .foregroundColor(UmiTheme.textTertiary)
-                .help("More")
-                .accessibilityLabel("More actions")
-                Button { UmiFilePanes.confirmClose(surfaceView) } label: {
-                    Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(UmiTheme.textTertiary)
-                .help("Close (⌘W)")
-                .accessibilityLabel("Close \(doc.name)")
-            }
-            .frame(width: edge, alignment: .trailing)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 30)
         .contentShape(Rectangle())
         .contextMenu { menuItems }
+    }
+
+    /// The parent folder's name; none at the volume's root.
+    static func folder(of url: URL) -> String? {
+        let parent = url.deletingLastPathComponent()
+        return parent.path == "/" ? nil : parent.lastPathComponent
     }
 
     @ViewBuilder private var menuItems: some View {

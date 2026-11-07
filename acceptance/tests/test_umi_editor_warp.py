@@ -710,9 +710,35 @@ def test_marks_are_drawn_in_the_palette_colors(inst, win, tmp_path, ui):
 
 
 @pytest.mark.req("E-24")
-def test_header_title_is_centred(inst, win, code, ui):
-    open_file(inst, win, code)
-    group = wait_until(lambda: editor_group(ui, code.name), 5, message="the file pane")
-    gx, _, gw, _ = frame(ui, group)
-    tx, _, tw, _ = frame(ui, header_title(ui, code.name, group))
-    assert abs((tx + tw / 2) - (gx + gw / 2)) <= 1, f"title centre {tx + tw / 2}, pane centre {gx + gw / 2}"
+def test_header_shows_folder_and_name_left_aligned_and_keeps_the_name_whole(inst, win, tmp_path, ui):
+    """Alejo's choice of 2026-11-07: the type icon, then "folder / name" left-aligned after the grip,
+    Preview / Source on the right; in a pane of ordinary width the whole name shows (the centred
+    name between two fixed side areas used to shrink to "fr")."""
+    from test_umi_panes_ui import split
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    path = folder / "frontier.md"
+    path.write_text("# Frontier\n\nNotes.\n")
+    pane = open_file(inst, win, path)
+    group = wait_until(lambda: editor_group(ui, path.name), 5, message="the file pane")
+    gx, gy, gw, _ = frame(ui, group)
+    name = header_title(ui, path.name, group)
+    nx, ny, nw, nh = frame(ui, name)
+    parent = ui.find(lambda e: ui.role(e) == "AXStaticText"
+                     and any((t or "").startswith("notes") for t in (ui.label(e), ui.value(e))), group)
+    assert parent is not None, f"the parent folder's name is in the header: {ui.texts(group)[:12]}"
+    fx, fy, fw, _ = frame(ui, parent)
+    assert ny - gy < 30 and fy - gy < 30, "both in the header row"
+    assert fx < nx, "the folder comes before the name"
+    assert fx - gx < 64, f"left-aligned after the grip and the icon: {fx - gx} points in"
+    preview, source = ui.button("Preview", group), ui.button("Source", group)
+    assert preview is not None and source is not None, "the switch says Preview / Source"
+    assert frame(ui, preview)[0] > nx + nw, "the switch is right of the name"
+    # An ordinary narrower pane: the name keeps its full width.
+    split(inst, "right", pane)
+    wait_until(lambda: frame(ui, editor_group(ui, path.name))[2] < gw * 0.75, 5, message="the file pane narrower")
+    group = editor_group(ui, path.name)
+    narrow = frame(ui, group)[2]
+    assert narrow >= 300, f"the check needs an ordinary pane width, got {narrow}"
+    assert abs(frame(ui, header_title(ui, path.name, group))[2] - nw) <= 1, \
+        f"the whole name shows in a {narrow}-point pane: {frame(ui, header_title(ui, path.name, group))[2]} vs {nw}"

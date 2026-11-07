@@ -168,6 +168,9 @@ final class UmiWebPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
     @Published private(set) var loading = false
     /// Why the page didn't load, until it does.
     @Published private(set) var failure: String?
+    /// What a hosted page (one that speaks to Umi, as the agent server's file page does) last said
+    /// about itself; nil until it says so, and again after each navigation.
+    @Published private(set) var hosted: UmiHostedPage.State?
     private var observations: [NSKeyValueObservation] = []
 
     init(url: URL) {
@@ -175,8 +178,17 @@ final class UmiWebPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
         origin = UmiWebPanes.origin(of: url)
         let config = WKWebViewConfiguration()
         config.websiteDataStore = UmiWebPanes.dataStore
+        // Only pages from a listed origin are told they are in Umi and may speak to it (E-12).
+        let speaks = UmiWebPanes.handles(url)
+        if speaks {
+            config.userContentController.addUserScript(WKUserScript(
+                source: UmiHostedPage.marker, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         webView = UmiWebView(frame: .zero, configuration: config)
         super.init()
+        if speaks {
+            webView.configuration.userContentController.add(UmiHostedPage.Relay(page: self), name: UmiHostedPage.handlerName)
+        }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -212,6 +224,34 @@ final class UmiWebPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
 
     func openInBrowser() { UmiWebPanes.openInBrowser(webView.url ?? url, from: pane) }
 
+    // MARK: A hosted page's state and switch
+
+    /// A message from the page: kept only when it comes from this page's own origin in the main
+    /// frame and has the expected shape; anything else is ignored.
+    func received(_ message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, let origin,
+              UmiHostedPage.origin(of: message.frameInfo.securityOrigin) == origin,
+              let state = UmiHostedPage.State(message: message.body) else { return }
+        if hosted != state { hosted = state }
+    }
+
+    /// Show the hosted page's preview or source: the page switches itself.
+    func setMode(_ mode: UmiHostedPage.Mode) {
+        guard hosted?.hasModes == true else { return }
+        webView.evaluateJavaScript(UmiHostedPage.setModeScript(mode), completionHandler: nil)
+    }
+
+    func toggleMode() {
+        guard let hosted, hosted.hasModes else { return }
+        setMode(hosted.mode == .preview ? .source : .preview)
+    }
+
+    /// The page's file on GitHub, in the default browser; only an https://github.com address.
+    func openGitHub() {
+        guard let link = hosted?.github, UmiHostedPage.isGitHub(link) else { return }
+        UmiWebPanes.openInBrowser(link, from: pane)
+    }
+
     // MARK: Navigation: this origin stays, everything else goes to the browser
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
@@ -241,6 +281,9 @@ final class UmiWebPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { failure = nil }
+
+    /// A new document: what the last one said about itself no longer holds.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { hosted = nil }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         noteFailure(error)
@@ -303,8 +346,7 @@ final class UmiWebView: WKWebView {
 
 // MARK: - The view over a web pane
 
-/// Drawn over a web pane's terminal: a header (drag grip, title, reload, Open in Browser, close)
-/// and the page.
+/// Drawn over a web pane's terminal: a header (UmiWebPaneHeader) and the page.
 struct UmiWebPaneOverlay: View {
     let surfaceView: Ghostty.SurfaceView
     let background: Color
@@ -348,51 +390,49 @@ private struct UmiWebPaneContent: View {
     }
 }
 
+/// A web pane's header, the same row as a file pane's (E-24): the grip, a globe and the page's
+/// title, or for a hosted page "folder / name" from what it says; on the right a hosted page's
+/// Preview / Source and GitHub, then Reload, Open in Browser and close.
 private struct UmiWebPaneHeader: View {
     let surfaceView: Ghostty.SurfaceView
     @ObservedObject var page: UmiWebPage
-    @State private var dragging = false
-    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            ZStack {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(hovering ? UmiTheme.textSecondary : UmiTheme.textTertiary)
-                Ghostty.SurfaceDragSource(surfaceView: surfaceView, isDragging: $dragging, isHovering: $hovering)
-            }
-            .frame(width: 22, height: 18)
-            .help("Drag to move this pane")
+        UmiPaneHeaderBar(surfaceView: surfaceView) {
             Image(systemName: "globe").font(.system(size: 10))
                 .foregroundColor(UmiTheme.textSecondary)
-            Text(page.displayTitle)
-                .font(UmiTheme.uiFont)
-                .foregroundColor(UmiTheme.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(page.url.absoluteString)
+            if let hosted = page.hosted {
+                let parts = UmiPathTitle.split(hosted.path)
+                UmiPathTitle(folder: parts.folder, name: parts.name, dirty: hosted.dirty,
+                             help: page.url.absoluteString)
+            } else {
+                Text(page.displayTitle)
+                    .font(UmiTheme.uiFont)
+                    .foregroundColor(UmiTheme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(page.url.absoluteString)
+            }
             if page.loading { ProgressView().controlSize(.mini) }
-            Spacer(minLength: 8)
-            headerButton("arrow.clockwise", help: "Reload (⌘R)", label: "Reload") { page.reload() }
-            headerButton("arrow.up.forward.square", help: "Open in Browser", label: "Open in Browser") { page.openInBrowser() }
-            headerButton("xmark", help: "Close (⌘W)", label: "Close \(page.displayTitle)", size: 8) {
+        } trailing: {
+            if let hosted = page.hosted {
+                if hosted.hasModes {
+                    UmiPreviewSourceSwitch(isPreview: hosted.mode == .preview) { page.setMode($0 ? .preview : .source) }
+                }
+                if hosted.github != nil {
+                    UmiPaneHeaderButton(symbol: "arrow.triangle.branch", help: "Open on GitHub", label: "GitHub") {
+                        page.openGitHub()
+                    }
+                }
+            }
+            UmiPaneHeaderButton(symbol: "arrow.clockwise", help: "Reload (⌘R)", label: "Reload") { page.reload() }
+            UmiPaneHeaderButton(symbol: "arrow.up.forward.square", help: "Open in Browser", label: "Open in Browser") {
+                page.openInBrowser()
+            }
+            UmiPaneHeaderButton(symbol: "xmark", help: "Close (⌘W)", label: "Close \(page.displayTitle)", size: 8) {
                 UmiFilePanes.closePane(surfaceView)
             }
         }
-        .padding(.horizontal, 8)
-        .frame(height: 30)
-    }
-
-    private func headerButton(_ symbol: String, help: String, label: String, size: CGFloat = 10,
-                              action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: size, weight: .bold)).frame(width: 16, height: 16)
-        }
-        .buttonStyle(.plain)
-        .foregroundColor(UmiTheme.textTertiary)
-        .help(help)
-        .accessibilityLabel(label)
     }
 }
 
@@ -400,6 +440,12 @@ private struct UmiWebPaneHeader: View {
 final class UmiWebContainerView: NSView {
     var closePane: (() -> Void)?
     var reload: (() -> Void)?
+    weak var page: UmiWebPage?
+
+    /// ⇧⌘M (View ▸ Toggle Markdown Preview) on a hosted page with both views.
+    @objc func toggleMarkdownPreview(_ sender: Any?) {
+        if page?.hosted?.hasModes == true { page?.toggleMode() } else { NSSound.beep() }
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let window, let responder = window.firstResponder as? NSView, responder.isDescendant(of: self) else {
@@ -412,6 +458,11 @@ final class UmiWebContainerView: NSView {
             return true
         case ([.command], "r"):
             reload?()
+            return true
+        case ([.command], "e") where page?.hosted?.hasModes == true,
+             ([.command, .shift], "m") where page?.hosted?.hasModes == true:
+            // As in a file pane (E-2): a hosted page's Preview / Source.
+            page?.toggleMode()
             return true
         default:
             return super.performKeyEquivalent(with: event)
@@ -434,6 +485,7 @@ private struct UmiWebPageView: NSViewRepresentable {
     private func update(_ container: UmiWebContainerView) {
         container.closePane = { [weak pane] in if let pane { UmiFilePanes.closePane(pane) } }
         container.reload = { [weak page] in page?.reload() }
+        container.page = page
         let web = page.webView
         guard web.superview !== container else { return }
         // The page's one web view moves into this pane's view (a pane moved, a window rebuilt).
@@ -446,5 +498,98 @@ private struct UmiWebPageView: NSViewRepresentable {
             web.topAnchor.constraint(equalTo: container.topAnchor),
             web.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
+    }
+}
+
+// MARK: - Hosted pages
+
+/// What passes between Umi and a page from a listed origin that knows it can be hosted (the agent
+/// server's file page, `/o?p=PATH`). Umi marks the page as hosted before its own scripts run
+/// (`window.umiHosted` and `<html data-umi="1">`), so the page hides its own header row; the page
+/// posts its state to the `umi` message handler on load and on every change, and Umi's header
+/// shows that state and calls
+/// `window.umiPage.setMode('preview' | 'source')` to switch. Umi never navigates on what a page
+/// says; it only opens the GitHub address in the browser when the user asks.
+enum UmiHostedPage {
+    static let handlerName = "umi"
+    /// Run before the page's own scripts. The document element may not exist yet at that moment,
+    /// so the page also reads `window.umiHosted` and marks itself.
+    static let marker = "window.umiHosted = true; if (document.documentElement) document.documentElement.dataset.umi = '1';"
+
+    enum Mode: String { case preview, source }
+
+    struct State: Equatable {
+        /// The file's path, as the page names it ("desk/AGENTS.md").
+        let path: String
+        let mode: Mode
+        let hasModes: Bool
+        let github: URL?
+        let dirty: Bool
+
+        /// `{path, mode, hasModes, github, dirty}`; nil for anything else (a missing or extra-typed
+        /// field, an unknown mode, a GitHub address that isn't https://github.com).
+        init?(message body: Any) {
+            guard let dict = body as? [String: Any],
+                  let path = dict["path"] as? String, Self.validPath(path),
+                  let raw = dict["mode"] as? String, let mode = Mode(rawValue: raw),
+                  let hasModes = UmiHostedPage.bool(dict["hasModes"]),
+                  let dirty = UmiHostedPage.bool(dict["dirty"]) else { return nil }
+            var github: URL?
+            switch dict["github"] {
+            case nil, is NSNull: github = nil
+            case let text as String:
+                guard text.count <= 2048, let url = URL(string: text), UmiHostedPage.isGitHub(url) else { return nil }
+                github = url
+            default: return nil
+            }
+            self.init(path: path, mode: mode, hasModes: hasModes, github: github, dirty: dirty)
+        }
+
+        init(path: String, mode: Mode, hasModes: Bool, github: URL?, dirty: Bool) {
+            self.path = path
+            self.mode = mode
+            self.hasModes = hasModes
+            self.github = github
+            self.dirty = dirty
+        }
+
+        private static func validPath(_ path: String) -> Bool {
+            !path.isEmpty && path.count <= 1024
+                && !path.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+        }
+    }
+
+    /// A JavaScript boolean (not a number that happens to be 0 or 1).
+    static func bool(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        return number.boolValue
+    }
+
+    static func isGitHub(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.lowercased() == "github.com"
+            && url.user == nil && url.password == nil && (url.port == nil || url.port == 443)
+    }
+
+    static func setModeScript(_ mode: Mode) -> String {
+        "window.umiPage && window.umiPage.setMode && window.umiPage.setMode('\(mode.rawValue)');"
+    }
+
+    /// `scheme://host[:port]` of a frame's origin, as `UmiWebPanes.origin(of:)` writes it.
+    static func origin(of security: WKSecurityOrigin) -> String? {
+        var parts = URLComponents()
+        parts.scheme = security.protocol
+        parts.host = security.host
+        if security.port != 0 { parts.port = security.port }
+        return parts.url.flatMap(UmiWebPanes.origin(of:))
+    }
+
+    /// The message handler; holds its page weakly (the web view's configuration keeps the handler).
+    final class Relay: NSObject, WKScriptMessageHandler {
+        weak var page: UmiWebPage?
+        init(page: UmiWebPage) { self.page = page }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            MainActor.assumeIsolated { page?.received(message) }
+        }
     }
 }

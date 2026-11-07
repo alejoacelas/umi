@@ -32,6 +32,28 @@ PAGES = {
     "/hop": "<title>Hop</title><script>setTimeout(() => location.href = '/landed', 200)</script>",
     "/landed": "<title>Landed</title>",
     "/away": "<title>Away</title><script>setTimeout(() => location.href = '{other}/elsewhere', 200)</script>",
+    # A page that speaks to Umi as the agent server's file page does: it tells Umi its path, mode
+    # and GitHub link, and switches when Umi calls window.umiPage.setMode. Its title reports what
+    # it saw: whether Umi marked it as hosted, and its mode.
+    "/hosted": "<title>Hosted</title><script>"
+               "const hosted = window.umiHosted === true;"
+               "let mode = 'preview';"
+               "function tell() {"
+               "  document.title = 'Hosted ' + mode + (hosted ? ' in umi' : '');"
+               "  if (hosted) webkit.messageHandlers.umi.postMessage({path: 'desk/notes/AGENTS.md', mode: mode,"
+               "    hasModes: true, github: 'https://github.com/alejoacelas/desk/blob/main/notes/AGENTS.md', dirty: false});"
+               "}"
+               "window.umiPage = {setMode: m => { mode = m; tell(); }};"
+               "tell();</script>",
+    # Messages of the wrong shape, then one asking Umi to open somewhere other than GitHub: all ignored.
+    "/malformed": "<title>Malformed</title><script>"
+                  "const post = m => webkit.messageHandlers.umi.postMessage(m);"
+                  "post('desk/AGENTS.md'); post({path: 42, mode: 'preview', hasModes: true, dirty: false});"
+                  "post({path: 'a/b.md', mode: 'edit', hasModes: true, dirty: false});"
+                  "post({path: 'a/b.md', mode: 'preview', hasModes: 1, dirty: false});"
+                  "post({path: 'a/b.md', mode: 'preview', hasModes: true, dirty: false, github: 'https://evil.example/x'});"
+                  "post({path: 'a/b.md', mode: 'preview', hasModes: true, dirty: false, github: 'http://github.com/x'});"
+                  "document.title = 'Malformed sent';</script>",
 }
 
 
@@ -249,3 +271,68 @@ def test_cmd_click_on_a_link_opens_a_web_pane_ui(web, ui):
                              f"screenshot in {inst.dir}; the pane shows:\n{inst.screen(a)[-600:]}")
     assert page["url"] == url
     assert not web["log"].exists() or url not in web["log"].read_text()
+
+
+def web_header(inst, pane_id, **params):
+    return inst.rpc("debug.ui.web", pane=pane_id, **params)
+
+
+@pytest.mark.req("E-12", "E-24", "E-2")
+def test_a_hosted_page_shows_its_path_and_switch_in_umis_header(web):
+    """The agent server's file page in Umi (2026-11-07): Umi marks it as hosted, its path and
+    Preview / Source move into Umi's header, and Umi's switch drives the page's."""
+    inst, site, a, log = web["inst"], web["site"], web["pane"], web["log"]
+    page = inst.json("edit", site + "/hosted", "--pane", a)["pages"][0]["pane"]
+    titled(inst, page, "Hosted preview in umi")
+    state = wait_until(lambda: web_header(inst, page)["hosted"], 10, message="the page's state reached Umi")
+    assert state == {"path": "desk/notes/AGENTS.md", "mode": "preview", "has_modes": True,
+                     "github": "https://github.com/alejoacelas/desk/blob/main/notes/AGENTS.md", "dirty": False}
+    header = web_header(inst, page)["header"]
+    assert (header["folder"], header["name"]) == ("notes", "AGENTS.md"), header
+    assert header["switch"] and header["github"], header
+    web_header(inst, page, mode="source")
+    titled(inst, page, "Hosted source in umi")
+    wait_until(lambda: web_header(inst, page)["hosted"]["mode"] == "source", 5, message="Umi's switch follows")
+    web_header(inst, page, toggle=True)   # ⌘E's action
+    titled(inst, page, "Hosted preview in umi")
+    web_header(inst, page, github=True)
+    github = "https://github.com/alejoacelas/desk/blob/main/notes/AGENTS.md"
+    wait_until(lambda: log.exists() and github in log.read_text(), 5, message="GitHub opened in the browser")
+    assert pane(inst, page)["url"] == site + "/hosted", "the pane itself stays on the page"
+
+
+@pytest.mark.req("E-12")
+def test_malformed_messages_from_a_page_are_ignored(web):
+    inst, site, a, log = web["inst"], web["site"], web["pane"], web["log"]
+    page = inst.json("edit", site + "/malformed", "--pane", a)["pages"][0]["pane"]
+    titled(inst, page, "Malformed sent")
+    time.sleep(0.5)
+    out = web_header(inst, page, github=True, mode="source")
+    assert out["hosted"] is None, out
+    assert out["header"]["name"] == "Malformed sent" and not out["header"]["switch"], "the bar shows the title"
+    assert not log.exists() or "evil.example" not in log.read_text()
+    # A page that says nothing keeps today's bar: its title.
+    plain = inst.json("edit", site + "/doc", "--pane", a)["pages"][0]["pane"]
+    titled(inst, plain, "Desk doc")
+    assert web_header(inst, plain)["hosted"] is None
+
+
+@pytest.mark.req("E-12", "E-2")
+@pytest.mark.ui
+def test_a_hosted_pages_switch_in_umis_header_ui(web, ui):
+    """The real switch: Preview / Source buttons in the web pane's header, pressed through the
+    accessibility tree."""
+    from harness import UI
+    if not UI.available():
+        pytest.skip("this process has no Accessibility permission")
+    inst, site, a = web["inst"], web["site"], web["pane"]
+    ui = UI(inst.app_pid)
+    page = inst.json("edit", site + "/hosted", "--pane", a)["pages"][0]["pane"]
+    titled(inst, page, "Hosted preview in umi")
+    wait_until(lambda: web_header(inst, page)["hosted"], 10, message="the page's state reached Umi")
+    area = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Web page"), 5, message="the web pane")
+    source = wait_until(lambda: ui.button("Source", area), 5, message="Source in the header")
+    assert ui.button("Preview", area) is not None and ui.button("GitHub", area) is not None
+    assert ui.find(lambda e: ui.role(e) == "AXStaticText" and "AGENTS.md" in (ui.label(e), ui.value(e)), area) is not None
+    ui.press(source)
+    titled(inst, page, "Hosted source in umi")
