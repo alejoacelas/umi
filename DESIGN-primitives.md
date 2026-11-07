@@ -17,7 +17,7 @@ Config and CLI syntax in sections 3 and 4 is illustrative: nothing there is deci
 | **Agent in a pane** | Claude Code or Codex running in a terminal pane, reported by Umi's hook plugin. | kind, title, status (starting, working, idle, needs_input, stopped, error), live or read-only, its **mark**, when its turn last stopped. |
 | **Mark** | Umi's only attention flag: `none`, `finished` (turn ended while you weren't looking), `needsYou` (waits on an approval or question). Set by the agent's state, cleared by looking. | |
 | **Closed item** | A pane, tab or window closed in the last 60 s; its programs still run. | what it was, where it was, when it expires. |
-| **Parked pane** | A live agent pane taken out of the layout while it finishes its turn. Exists only for hidden agent sessions today. | |
+| **Parked pane** | A live agent pane taken out of the layout while it finishes its turn. Exists only for hidden agent sessions {==today.==}{>>I’d like to have a consistent visual identity for ‘panes not visible’ so far I want to use them for tasks that I suspect will be done and don’t want to touch unless they need my attention, but it seems like a more general thing. maybe I want to delegate sessions from hidden panes to a manager agent also, I’d like the comment box to expand so that it shows the full text I type<<}{#c5} | |
 | **Comment thread** | A comment on a Markdown file, stored in the file. | id, anchor text, body, author, open or resolved, replies. |
 
 Surfaces that show those things: the **sidebar** (Tabs or Files mode; each tab row has two lines, an
@@ -36,9 +36,12 @@ Every action below exists as a CLI command; most also have a key, a menu item an
 | Terminal content | send text, send keys, read screen or scrollback, wait for a pattern or for idleness |
 | File | open (placed by the rules in §2), close, toggle preview/source, comment, reply, resolve, wait for Done |
 | Navigation | jump to the next pane that needs you, jump back, tab back |
-| Other | notify, reopen a closed item, sidebar on/off/mode/width, rebind shortcuts, update |
+| Other | notify, reopen a closed item, sidebar on/off/mode/width, rebind shor{==tcuts, update==}{>>write to sidebar?<<}{#c4} |
 
-### Signals: how Umi learns things
+Nothing writes to the sidebar today: its text is worked out from the tab's agent, command and folder.
+§3.4 makes line 2 a template over attributes, so `umi pane set status="reviewing PR"` writes to it.
+
+### Signals: how Umi l{==earns things==}{>>I’d like to be able to extract at the end of the day the docuemtns and sessions I had on focus and for how much time, so I can track which tasks I devoted attention to<<}{#c1}
 
 | Signal | Source | Visible to scripts today? |
 |---|---|---|
@@ -48,6 +51,8 @@ Every action below exists as a CLI command; most also have a key, a menu item an
 | "You looked at this pane": it has focus in the front window while Umi is active | the app | no event of its own |
 | Idle time: no typing or clicking in Umi | the app | only through `update --status` |
 | Process state: what runs in a terminal, whether it sits at the prompt | the app | partly, through `ls` |
+
+Umi keeps no record of where your attention went over time. §3.1 adds an attention log.
 
 ## 2. What Umi does on its own today
 
@@ -102,6 +107,12 @@ With `seen_at` and `changed_at` as plain facts, today's mark stops being a separ
 CLI shape: `umi pane set [PANE] priority=high`, `umi pane unset [PANE] priority`; attributes appear
 in `ls --json` and every change emits `pane.changed {pane, key, old, new}`.
 
+**Attention log.** The app also records each stretch of time a pane had your focus: start, end,
+the pane, its tab, and what it showed (file path, agent session and title, cwd, your attributes at
+the time). Time counts only while Umi is in front and you are active (no input for a few minutes
+or a locked screen ends the stretch). `umi history --since 9am --json` returns the stretches; an
+end-of-day report is a script that groups them by file, session or `project=`.
+
 ### 3.2 Selection: queries and named lists
 
 A query picks panes by attribute and orders them:
@@ -127,8 +138,8 @@ The existing verbs, plus a few new ones:
 
 - `set` / `unset` an attribute;
 - `park` (take a pane out of the layout; its program keeps running) and `unpark` (put it back where it was, or after the current tab);
-- `seen` (mark looked at without focusing it);
-- `go LIST` / `go --next LIST` / `go --back` (generalised `jump`).
+- {==`seen` (mark looked at without focusing it);==}{>>is this a special case of attributes?<<}{#c2} this is only `set seen_at=now`, kept as a shorthand;
+- {==`go LIST` / `go --next LIST`==}{>>Is this kind of “put tab X in front of user?”<<}{#c3} / `go --back` (generalised `jump`): put the first pane of a list in front of you, that is select its tab, bring its window and Umi forward, and focus it. `--next` walks the list; `--back` returns to where the walk started.
 
 Every action takes a query as its target, so `umi pane park 'project=old'` parks a group.
 
@@ -145,7 +156,8 @@ Each slot is filled from a named list or a template:
 | `tab.next` / `tab.prev` | sidebar order |
 | `pane-switcher` (⇧⌘P order) | most recently focused |
 | `sidebar.line2` | template `{agent.title or command or cwd}` |
-| `sidebar.icon`, `sidebar.tint` | from the strongest `agent.*` state in the tab |
+| `tab.summary` (which pane speaks for a tab in the sidebar) | the focused pane's agent, else the one most in need of you, else the most recent stop |
+| `sidebar.icon`, `sidebar.tint` | from the pane `tab.summary` picks |
 | `style.<query>` | border color, sidebar dot, dim, for panes matching the query |
 | `notify` | none |
 
@@ -164,7 +176,7 @@ Plus `key.<keys> = <action>` so any list gets a shortcut.
 
 **Important panes.** A key toggles `priority=high` on the focused pane. `list.important` sorts
 them. `landing = important` after 15 minutes away. `key.ctrl+cmd+] = go --next important`.
-`style.priority=high = sidebar-dot:orange`.
+{==`style.priority=high = sidebar-dot:orange`.==}{>>Yeah, something we have not mentioned is a palette of visual primitives for example, we have the blue thing for focused panes, there’s some things we might want to do with the sidebar we want to keep these things mimimal and not too distracting, but it’s good to think about the space of options here<<}{#c8}
 
 **Park until not done.** `umi pane park --until 'agent.done=false or agent.status=needs_input'`.
 The Stop hook sets `agent.done` from the last message (by the `park.done-check` policy command, or a
@@ -180,6 +192,23 @@ as you go.
 **Project focus.** `umi view project=impact-ops` dims or collapses tabs without a matching pane;
 `umi view off` restores.
 
+**Hand hidden panes to a manager.** Hide panes with `owner=manager`. A manager agent lists them
+(`umi ls --where 'hidden and owner=manager'`), reads and answers them with `read` and `send`, and
+calls `umi pane show` only for what it can't settle.
+
+**Organize into tabs.** An agent reads `umi ls --json` (folders, branches, files, agent titles,
+attributes), proposes groups, and applies them with `tab new`, `pane move` and `tab rename`.
+Nothing new is needed in Umi beyond a dry run you approve first.
+
+### 3.7 Visual vocabulary
+
+Every attribute or list that shows on screen goes through a small set of visual channels. Keeping
+the set small keeps Umi quiet. Today's channels: the cyan line on the focused pane's top edge, a
+tab's color tint, the agent icon and its quiet color, sidebar line 2, the stack strip, the Dock
+badge, the fade on tab switch. Candidates: a dot on a tab row, a count chip, dimming, a pane border,
+a pill on a bottom shelf, a glow on resurfacing. `style.<query>` picks among these only. The
+prototypes page renders each with how loud it is.
+
 ## 4. Big design decisions
 
 Each has a recommendation; your input changes what gets built.
@@ -194,15 +223,14 @@ Each has a recommendation; your input changes what gets built.
    *Recommend:* our own small syntax. It has to be typed in the palette and in `--pane`, where jq
    is too heavy. Scripts that need more can run jq over `umi ls --json`.
 
-3. **How long an attribute lives.** A pane outlives the programs in it: quit Claude, start another
-   task, and "priority=high" may no longer apply.
-   *Recommend:* two lifetimes. Your attributes stay with the pane until removed; `agent.*` ones
-   reset when the agent in the pane changes. Option: let you set yours with `--until-program-exits`.
+3. **How long an attribute lives.** {==A pane outlives the programs in it: quit Claude==}{>>in practice I always quit panes instead of killing the current program, so let’s keep it simple<<}{#c9}.
+   *Decided:* attributes live and die with the pane. `agent.*` ones are overwritten by the next
+   agent's hooks.
 
 4. **Panes or tabs as the unit of attention.** Attributes, lists and marks naturally sit on panes,
    but the sidebar shows tabs.
-   *Recommend:* attributes on panes; a tab shows the strongest of its panes (as today's marks
-   do), and tabs can carry their own attributes too. Add a sidebar mode that lists panes from a
+   *Recommend:* attributes on panes; {==a tab shows the strongest of its panes==}{>>this can be the default, but not hardcoded<<}{#c10} by default
+   (the `tab.summary` slot, §3.4, so you can change it), and tabs can carry their own attributes too. Add a sidebar mode that lists panes from a
    named list later, if tab rows prove too coarse.
 
 5. **Attention as facts, not flags.** Replace the `finished`/`needsYou` mark with `seen_at`,
@@ -214,10 +242,99 @@ Each has a recommendation; your input changes what gets built.
    *Recommend:* a fixed, documented set of slots (§3.4), grown one at a time, rather than letting
    the config hook any internal decision.
 
-7. **Where a pane can be.** Today: on show, stacked behind another, parked (agents only), closed
+7. **Where a pane can be.** Today{==: on show, stacked behind another, parked (agents only), cl==}{>>let’s make prototypes for how to express what we have and different visual options. this is one of the most important UI decisions we have<<}{#c11}osed
    for 60 s. *Recommend:* make `parked` an ordinary place any pane can be in, visible in `ls` and
    the pane switcher, so `park`, `--until` and `landing` work for every pane kind.
 
-8. **Stability of the CLI contract.** `acceptance/CLI.md` is a fixed contract that agents rely on.
-   *Recommend:* add the new surface under the same contract with tests, and give the query syntax
-   a version in `help --json` so the palette and scripts can tell what this Umi understands.
+8. **The CLI contract.** *{==Decided:* design the ==}{>>we can restart from scratch. I just want to get the best thing<<}{#c12}CLI from scratch around these
+   primitives, then rewrite `acceptance/CLI.md` and its tests to match. Existing commands stay
+   only where they fit.
+
+---
+comments:
+  c1:
+    by: user
+    at: "2026-11-07T19:11:21.933Z"
+    umi-quote: earns things
+    umi-body: "I’d like to be able to extract at the end of the day the docuemtns and sessions I had on focus and for how much time, so I can track which tasks I devoted attention to"
+    resolved: "Added an attention log (§3.1): focus stretches with what each pane showed; umi history --since … --json feeds an end-of-day report."
+    status: resolved
+  c2:
+    by: user
+    at: "2026-11-07T19:15:12.939Z"
+    umi-quote: "`seen` (mark looked at without focusing it);"
+    umi-body: "is this a special case of attributes?"
+    resolved: "Yes: seen is set seen_at=now, kept as a shorthand."
+    status: resolved
+  c3:
+    by: user
+    at: "2026-11-07T19:18:03.238Z"
+    umi-quote: "`go LIST` / `go --next LIST`"
+    umi-body: "Is this kind of “put tab X in front of user?”"
+    resolved: "Yes: put a list's first pane in front of you (tab, window, focus); --next walks the list."
+    status: resolved
+  c4:
+    by: user
+    at: "2026-11-07T19:19:29.054Z"
+    umi-quote: "tcuts, update"
+    umi-body: "write to sidebar?"
+    resolved: "Nothing writes to it today. Line 2 becomes a template over attributes, so pane set writes to it."
+    status: resolved
+  c5:
+    by: user
+    at: "2026-11-07T19:23:28.099Z"
+    umi-quote: today.
+    umi-body: "I’d like to have a consistent visual identity for ‘panes not visible’ so far I want to use them for tasks that I suspect will be done and don’t want to touch unless they need my attention, but it seems like a more general thing. maybe I want to delegate sessions from hidden panes to a manager agent also, I’d like the comment box to expand so that it shows the full text I type"
+  c6:
+    body: hmmm
+    by: user
+    at: "2026-11-07T19:23:49.508Z"
+    re: c5
+  c7:
+    body: "A thing with hidden panes is: sometimes I want to have a tab that has a unified purpose (e.g, editing my personal website) but that might have more than 3 panes and I want a view that makes it easy to have more panes on a tab without cluttering things\n\nanother affordance I imagine is having an ‘organize into tabs command’ where an agent looks at everything that’s open and puts it into meaningful tab groups"
+    by: user
+    at: "2026-11-07T19:26:37.045Z"
+    re: c5
+  c8:
+    by: user
+    at: "2026-11-07T19:29:09.670Z"
+    umi-quote: "`style.priority=high = sidebar-dot:orange`."
+    umi-body: "Yeah, something we have not mentioned is a palette of visual primitives for example, we have the blue thing for focused panes, there’s some things we might want to do with the sidebar we want to keep these things mimimal and not too distracting, but it’s good to think about the space of options here"
+    resolved: "Added §3.7 Visual vocabulary; the prototypes page renders each channel with how loud it is."
+    status: resolved
+  c9:
+    by: user
+    at: "2026-11-07T19:30:31.535Z"
+    umi-quote: "A pane outlives the programs in it: quit Claude"
+    umi-body: "in practice I always quit panes instead of killing the current program, so let’s keep it simple"
+    resolved: "Decided: attributes live and die with the pane."
+    status: resolved
+  c10:
+    by: user
+    at: "2026-11-07T19:31:22.247Z"
+    umi-quote: a tab shows the strongest of its panes
+    umi-body: "this can be the default, but not hardcoded"
+    resolved: Made it the tab.summary slot with that default.
+    status: resolved
+  c11:
+    by: user
+    at: "2026-11-07T19:32:15.793Z"
+    umi-quote: ": on show, stacked behind another, parked (agents only), cl"
+    umi-body: "let’s make prototypes for how to express what we have and different visual options. this is one of the most important UI decisions we have"
+  c12:
+    by: user
+    at: "2026-11-07T19:32:41.671Z"
+    umi-quote: "Recommend:* add the ne"
+    umi-body: we can restart from scratch. I just want to get the best thing
+    resolved: "Decision 8 now: design the CLI from scratch, then rewrite CLI.md and tests."
+    status: resolved
+  c13:
+    body: "Added 'hand hidden panes to a manager' and 'organize into tabs' to the worked examples (§3.6); both fit the primitives. The visual identity of hidden panes, including tabs with many panes, is what the prototypes cover; I'll resolve this once you've picked. The comment box that doesn't grow with your text is a separate editor fix, on the decision list."
+    by: AI
+    at: "2026-11-07T19:34:29.058Z"
+    re: c5
+  c14:
+    body: "Building now: design/prototypes/where-panes-live.html, five options for hidden panes, each with a resurfacing demo, plus the visual vocabulary."
+    by: AI
+    at: "2026-11-07T19:34:29.068Z"
+    re: c11
