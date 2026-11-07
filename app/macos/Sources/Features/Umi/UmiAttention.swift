@@ -253,6 +253,8 @@ final class UmiAttention: ObservableObject {
         default: throw UmiError.badRequest("mark is none, finished or needs_you")
         }
         if agent.status != .working { agent.lastStop = at }
+        // The pane being looked at sees it at once, as with its hooks.
+        if UmiLooking.lookedAt?.id == id { agent.seenAt = Date() }
         panes[id] = agent
         changed()
     }

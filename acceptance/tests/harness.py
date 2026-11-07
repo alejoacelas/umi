@@ -316,15 +316,6 @@ class Instance:
         wait_until(lambda: not any(alive(p) for p in victims), 10, message="product processes gone")
 
     def cleanup(self):
-        # Stop sessions first so nothing outlives the test.
-        if self.app_running():
-            try:
-                for s in self.agents():
-                    if s.get("running") or s.get("live") or s.get("location") == "live" \
-                            or s.get("status") not in ("stopped", "error"):
-                        self.cli("agent", "stop", s["id"], check=False, timeout=30)
-            except Exception:  # noqa: BLE001
-                pass
         self.quit_app()
         shutil.rmtree(self.dir, ignore_errors=True)
 
@@ -386,55 +377,47 @@ class Instance:
                         return window, tab, pane
         return None
 
-    def find_agent_pane(self, session):
-        for window in self.tree()["windows"]:
-            for tab in window["tabs"]:
-                for pane in tab["panes"]:
-                    if pane.get("agent") == session:
-                        return window, tab, pane
-        return None
+    # -- agents typed in panes (Umi's plugin reports them through `<cli> hook`)
 
-    # -- agent helpers
+    def plugin(self, kind):
+        """The app's bundled copy of Umi's plugin for `kind`."""
+        return os.path.join(self.target.app, "Contents/Resources/agent-plugins", kind)
 
-    def start_agent(self, kind, prompt=None, *options, name=None, chaos=None, background=True, env=None, cwd=None):
-        args = ["agent", "start", kind, "--cwd", cwd or self.work, "--env", "FAKE_AGENT_DIR=" + self.fake_dir,
-                "--env", "CLAUDE_CONFIG_DIR=" + self.claude_config]
-        if chaos is not None:
-            args += ["--env", f"FAKE_CHAOS={chaos}"]
-        for key, value in (env or {}).items():
-            args += ["--env", f"{key}={value}"]
-        if name:
-            args += ["--name", name]
-        if background:
-            args.append("--background")
-        args += list(options)
-        if prompt is not None:
-            args.append(prompt)
-        return self.json(*args)["session"]["id"]
+    def type_agent(self, pane, kind, args="", plugin_dirs=None, prefix=""):
+        """Type a fake agent into a pane's shell, as a person types `claude` or `codex`, with Umi's
+        plugin installed (the fake reads its plugins from FAKE_*_PLUGIN_DIRS). Waits until its hooks
+        reported it on the pane; returns the pane's attributes."""
+        fake = FAKE_CLAUDE if kind == "claude" else FAKE_CODEX
+        var = "FAKE_CLAUDE_PLUGIN_DIRS" if kind == "claude" else "FAKE_CODEX_PLUGIN_DIRS"
+        dirs = ":".join(plugin_dirs or [self.plugin(kind)])
+        self.type_line(pane, f"{prefix}FAKE_AGENT_DIR='{self.fake_dir}' {var}='{dirs}' '{fake}' {args}".rstrip())
+        return wait_until(lambda: (a := self.attributes(pane)).get("agent.kind") == kind and a, 20,
+                          message=f"the {kind} typed in the pane to report itself")
 
-    def send(self, session, text):
-        return self.json("agent", "send", session, text)["message"]["id"]
+    def attributes(self, pane):
+        """A pane's attributes (`ls --json`)."""
+        found = self.find_pane(pane)
+        return (found[2].get("attributes") or {}) if found else {}
 
-    def wait(self, session, *options, timeout=60):
-        proc = self.cli("--json", "agent", "wait", session, "--timeout", str(timeout), *options, check=False,
-                        timeout=timeout + 60)
-        try:
-            return proc.returncode, json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            raise AssertionError(f"`agent wait {session} {' '.join(options)}` exited {proc.returncode} without "
-                                 f"a JSON answer: {(proc.stdout + proc.stderr).strip()[:500]!r}") from None
+    def agent_status(self, pane):
+        return self.attributes(pane).get("agent.status")
 
-    def info(self, session):
-        return self.json("agent", "info", session)
+    def wait_agent_status(self, pane, status, timeout=15):
+        return wait_until(lambda: self.agent_status(pane) == status, timeout,
+                          message=f"agent.status={status} (it is {self.agent_status(pane)})")
 
-    def read_reply(self, session, message):
-        return self.json("agent", "read", session, "--message", message)["reply"]
+    def instance_id(self):
+        with open(os.path.join(self.dir, "instance.json")) as f:
+            return json.load(f)["instance"]
 
-    def agents(self):
-        return self.json("agent", "ls", timeout=30)["sessions"]
-
-    def transcript(self, session):
-        return self.json("agent", "read", session, "--transcript")["items"]
+    def hook(self, pane, event, kind="claude", pid=None, **payload):
+        """Run `<cli> hook EVENT` as Umi's plugin does from an agent in `pane` (its UMI_PANE_ID and
+        UMI_INSTANCE), with `payload` as the hook's input."""
+        env = {"UMI_PANE_ID": pane, "UMI_INSTANCE": self.instance_id(), "UMI_CLI": self.target.cli_path}
+        args = ["hook", event, "--agent", kind] + (["--pid", str(pid)] if pid else [])
+        payload.setdefault("hook_event_name", event)
+        payload.setdefault("session_id", "00000000-0000-4000-8000-000000000001")
+        return self.cli(*args, stdin=json.dumps(payload), env=env, timeout=30)
 
     def receipts(self):
         return read_jsonl(os.path.join(self.fake_dir, "receipts.jsonl"))
@@ -461,24 +444,6 @@ class Instance:
     def type_line(self, pane, text):
         """Type a line into a pane's terminal (and press Enter), as a person would."""
         self.cli("send", "--pane", pane, "--enter", text, timeout=30)
-
-    def session_view(self, pane):
-        """What a pane shows of a session (Umi's internal `debug.agent.pane`): {"showing":
-        "agent" (the read-only view) | "live" | "terminal", "session"?, "transcript"?, "texts"?,
-        "buttons"?}."""
-        return self.rpc("debug.agent.pane", pane=pane)
-
-    def press(self, pane, title, field_text=None):
-        """Press a button of a pane's read-only session view (Umi's internal `debug.agent.press`)."""
-        params = {"pane": pane, "title": title}
-        if field_text is not None:
-            params["field_text"] = field_text
-        return self.rpc("debug.agent.press", **params)
-
-    def session_panes(self, session):
-        """Every pane of the layout that shows the session (read-only or live)."""
-        return [p for w in self.tree()["windows"] for t in w["tabs"] for p in t["panes"]
-                if p.get("agent") == session]
 
 
 def read_jsonl(path):

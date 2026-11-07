@@ -5,7 +5,7 @@ Fake time is Umi's internal `debug.update.clock` (it moves the clock the quiet c
 isolated instance); `debug.update.input` is someone typing or clicking in the app, as the app's event
 monitor sees it. Text and keys sent with `umi send` are not the user's input, so the tests can drive
 panes without restarting the two minutes. Each test has an instance of its own: quiet is about every
-pane and session of an instance.
+pane of an instance. Agents are the fakes typed in panes (Umi's plugin reports them, AG-18).
 
 The end-to-end installs (download, countdown, relaunch, rollback) are in test_umi_extra.py.
 """
@@ -15,13 +15,17 @@ import time
 
 import pytest
 
-from harness import FAKE_CLAUDE, wait_until
-from test_sessions import fake_args, nonce
+import uuid
+
+from harness import wait_until
 
 pytestmark = [pytest.mark.install]
 
 IDLE = 120          # seconds without typing or clicking that a quiet moment needs
-PLUGIN = "Contents/Resources/agent-plugins/claude"
+
+
+def nonce():
+    return uuid.uuid4().hex[:8]
 
 
 def quiet(inst):
@@ -149,68 +153,40 @@ def test_a_busy_pane_is_not_quiet(calm):
     wait_quiet(inst)
 
 
-@pytest.mark.req("I-4", "AG-18")
-@pytest.mark.harness
-def test_a_running_turn_or_a_waiting_message_is_not_quiet(calm):
-    """No agent turn may run in any session the app knows, and no message may wait to be delivered."""
+@pytest.mark.req("I-4", "AG-18", "AG-19")
+def test_an_agent_at_work_or_waiting_for_the_user_is_not_quiet(calm):
+    """A pane running an agent is quiet only while its `agent.status` is idle with nothing typed: a turn
+    running (background work included), a question or permission prompt, and a failed turn are not."""
     inst, pane = calm
+    inst.type_agent(pane, "claude")
     no_input(inst)
-    wait_quiet(inst)
-    sid = inst.start_agent("claude", f"SLEEP 6 {nonce()}", name="busy-" + nonce())
-    # First its message waits for the agent to start, then its turn runs.
-    found = wait_reason(inst, lambda r: r.get("session") == sid and "turn is running" in r["reason"])
-    assert found["kind"] == "session" and found["name"].startswith("busy-"), found
-    assert inst.wait(sid, timeout=30)[1]["status"] == "DONE"
-    wait_quiet(inst)
-
-    # A command Codex left running in a background terminal after its turn ended.
-    bg = inst.start_agent("codex", "BACKGROUND 8", name="bg-" + nonce())
-    assert inst.wait(bg, timeout=30)[1]["status"] == "DONE"
-    found = wait_reason(inst, lambda r: r.get("session") == bg)
-    assert "background command" in found["reason"], found
+    assert wait_quiet(inst) == []
+    # A turn running: its agent is working (and the command it runs is a job of its own).
+    inst.type_line(pane, f"SLEEP 6 {nonce()}")
+    found = wait_reason(inst, lambda r: r.get("pane") == pane and ("working" in r["reason"] or "started by its agent" in r["reason"]))
+    assert found["kind"] == "pane" and found.get("tab"), found
     wait_quiet(inst, timeout=30)
-
-    # A process a headless agent left running on its own (output redirected), after its turn: the quit
-    # would end it (it carries the session's tag). (Not `sleep`: macOS hides a system binary's
-    # environment, so neither this check nor the quit can tell it belongs to the session.)
-    left = inst.start_agent("claude", "RUN python3 -c 'import time; time.sleep(9)' > /dev/null 2>&1 &",
-                            name="left-" + nonce())
-    assert inst.wait(left, timeout=30)[1]["status"] == "DONE"
-    found = wait_reason(inst, lambda r: r.get("session") == left)
-    assert "still running" in found["reason"], found
+    # Background work it started (that will wake it) keeps it working after its turn's end.
+    inst.type_line(pane, f"WAKE 4 {nonce()}")
+    wait_until(lambda: "⏺ started" in inst.screen(pane, scrollback=True), 15, message="the background task")
+    time.sleep(0.5)
+    assert inst.agent_status(pane) == "working"
+    assert any(r.get("pane") == pane for r in reasons(inst)), "background work counted as quiet"
     wait_quiet(inst, timeout=30)
-
-    # A message waiting for a live Claude whose user has something typed in it.
-    live = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
-                     "--pane", pane, "--name", "live-" + nonce(), "ECHO hello")
-    lid, lpane = live["session"]["id"], live["pane"]
-    assert inst.wait(lid, timeout=30)[1]["status"] == "DONE"
-    wait_until(lambda: inst.info(lid)["location"] == "live", 30, message="live")
-    wait_until(lambda: "Fake Claude Code" in inst.screen(lpane, scrollback=True), 20, message="its interface")
+    inst.type_line(pane, "ASK_PERMISSION")
+    found = wait_reason(inst, lambda r: r.get("pane") == pane and "waiting for you" in r["reason"])
+    inst.type_line(pane, "y")
+    inst.wait_agent_status(pane, "idle", 15)
+    # Keys typed into the dialog: Umi can't tell when it closed, so they count until a prompt is sent.
+    inst.type_line(pane, f"ECHO after the dialog {nonce()}")
+    wait_quiet(inst, timeout=30)
+    inst.type_line(pane, "FAIL")
+    wait_reason(inst, lambda r: r.get("pane") == pane and "failed" in r["reason"])
+    inst.type_line(pane, f"ECHO recovered {nonce()}")
+    wait_quiet(inst, timeout=30)
+    inst.type_line(pane, "/exit")
+    inst.wait_agent_status(pane, "stopped", 15)
     wait_quiet(inst)
-    inst.cli("send", "--pane", lpane, "a draft")
-    typed = wait_reason(inst, lambda r: r.get("session") == lid)
-    assert "typed in its interface" in typed["reason"], typed
-    inst.send(lid, f"ECHO waiting {nonce()}")
-    wait_reason(inst, lambda r: r.get("session") == lid and "waiting to be delivered" in r["reason"])
-    inst.cli("keys", "--pane", lpane, "ctrl+u")
-    # The message goes (the draft is cleared), the interface comes back; its line counts as empty once
-    # it's back (a fresh interface).
-    wait_quiet(inst, timeout=60)
-    # A prompt typed and sent in Codex's interface (attached to Umi's server): once its turn is
-    # done, the interface is empty again, and quiet.
-    cx = inst.json("agent", "start", "codex", "--cwd", inst.work, *fake_args(inst), "--split", "down",
-                   "--pane", pane, "--name", "cx-" + nonce(), "ECHO hello")
-    cid, cpane = cx["session"]["id"], cx["pane"]
-    assert inst.wait(cid, timeout=30)[1]["status"] == "DONE"
-    wait_until(lambda: inst.info(cid)["location"] == "live", 30, message="Codex live")
-    wait_until(lambda: "Fake Codex" in inst.screen(cpane, scrollback=True), 20, message="its interface")
-    inst.type_line(cpane, f"ECHO typed {nonce()}")
-    wait_until(lambda: inst.info(cid)["status"] == "working" or "typed" in inst.screen(cpane, scrollback=True), 15,
-               message="the typed turn")
-    wait_quiet(inst, timeout=30)
-    for s in (sid, lid, bg, cid, left):
-        inst.cli("agent", "stop", s, check=False, timeout=60)
 
 
 @pytest.mark.req("I-4")
@@ -229,127 +205,87 @@ def test_unsaved_changes_in_the_editor_are_not_quiet(calm):
     wait_quiet(inst)
 
 
-@pytest.mark.req("I-4", "AG-5", "AG-18")
-@pytest.mark.harness
-def test_idle_agents_in_panes_are_quiet(calm):
-    """A pane showing an idle agent is quiet: its own interface with nothing typed in it (started by
-    Umi or typed by the user), or a session's read-only view."""
+@pytest.mark.req("I-4", "AG-18")
+@pytest.mark.parametrize("kind", ["claude", "codex"])
+def test_an_idle_agent_with_nothing_typed_is_quiet(calm, kind):
+    """A pane showing an idle agent with nothing typed in it is quiet. What is typed in it and not
+    sent keeps the moment from being quiet, as far as Umi can follow the agent's input line."""
     inst, pane = calm
-    live = inst.json("agent", "start", "claude", "--cwd", inst.work, *fake_args(inst), "--split", "right",
-                     "--pane", pane, "--name", "live-" + nonce(), "ECHO hello")
-    lid, lpane = live["session"]["id"], live["pane"]
-    assert inst.wait(lid, timeout=30)[1]["status"] == "DONE"
-    wait_until(lambda: inst.info(lid)["location"] == "live", 30, message="live")
-    viewed = inst.start_agent("codex", "ECHO viewed", name="viewed-" + nonce())
-    assert inst.wait(viewed, timeout=30)[1]["status"] == "DONE"
-    view_pane = inst.json("agent", "open", viewed, "--split", "down", "--pane", pane)["pane"]
-    wait_until(lambda: inst.session_view(view_pane).get("showing") == "agent", 20, message="the read-only view")
-
-    # The user's own `claude`, typed in a pane (Umi's plugin reports it, AG-18).
-    typed_pane = inst.json("split", "down", "--pane", lpane, "--cwd", inst.work)["pane"]
-    shell_ready(inst, typed_pane)
-    known = {s["id"] for s in inst.agents()}
-    plugin = os.path.join(inst.target.app, PLUGIN)
-    inst.type_line(typed_pane, f"FAKE_AGENT_DIR='{inst.fake_dir}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
-    typed = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
-                       message="the typed agent to become a session")
-    wait_until(lambda: "Fake Claude Code" in inst.screen(typed_pane, scrollback=True), 20, message="its interface")
-
+    inst.type_agent(pane, kind)
     no_input(inst)
     assert wait_quiet(inst) == []
-    inst.cli("send", "--pane", typed_pane, "not sent yet")
-    found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
-    assert "typed in its interface" in found["reason"], found
-    # Esc leaves what was typed; Ctrl-U may clear only part of the line (before the cursor, or one
-    # line of several); Ctrl-C may be remapped and never reach the interface. None of them counts as
-    # emptying the line; sending a prompt does.
+    inst.cli("send", "--pane", pane, "not sent yet")
+    found = wait_reason(inst, lambda r: r.get("pane") == pane)
+    assert "typed in its agent" in found["reason"], found
+    # Esc leaves what was typed; Ctrl-U may clear only part of the line; Ctrl-C may be remapped and
+    # never reach the agent. None of them counts as emptying the line; sending a prompt does.
     for key in ("esc", "ctrl+u", "ctrl+c"):
-        inst.cli("keys", "--pane", typed_pane, key)
+        inst.cli("keys", "--pane", pane, key)
         time.sleep(0.5)
-        assert any(r.get("session") == typed["id"] for r in reasons(inst)), f"{key} counted as emptying the line"
-    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
-    inst.type_line(typed_pane, f"ECHO sent {nonce()}")
+        assert any(r.get("pane") == pane for r in reasons(inst)), f"{key} counted as emptying the line"
+    inst.cli("keys", "--pane", pane, "ctrl+u")
+    inst.type_line(pane, f"ECHO sent {nonce()}")
     wait_quiet(inst, timeout=30)
+    if kind == "codex":
+        inst.type_line(pane, "/exit")
+        return
     # Recalling a prompt (Up, Ctrl-P) or moving the cursor: the line may hold text Umi can't follow.
     for key in ("up", "ctrl+p", "left"):
-        inst.cli("keys", "--pane", typed_pane, key)
-        found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
+        inst.cli("keys", "--pane", pane, key)
+        found = wait_reason(inst, lambda r: r.get("pane") == pane)
         assert "may hold text" in found["reason"], (key, found)
-        inst.cli("keys", "--pane", typed_pane, "ctrl+u")
-        inst.type_line(typed_pane, f"ECHO sent {nonce()}")
+        inst.cli("keys", "--pane", pane, "ctrl+u")
+        inst.type_line(pane, f"ECHO sent {nonce()}")
         wait_quiet(inst, timeout=30)
     # A prompt sent while a turn runs (queued, taken in later), then a newer draft left unsent: taking
     # the queued prompt in doesn't count the newer draft as sent.
-    inst.type_line(typed_pane, f"SLEEP 4 {nonce()}")
-    wait_until(lambda: inst.info(typed["id"])["status"] == "working", 10, message="the turn")
-    inst.type_line(typed_pane, f"ECHO queued {nonce()}")
-    inst.cli("send", "--pane", typed_pane, "a newer draft")
-    wait_until(lambda: inst.info(typed["id"])["status"] == "idle", 30, message="the turns done")
+    inst.type_line(pane, f"SLEEP 4 {nonce()}")
+    inst.wait_agent_status(pane, "working", 10)
+    inst.type_line(pane, f"ECHO queued {nonce()}")
+    inst.cli("send", "--pane", pane, "a newer draft")
+    inst.wait_agent_status(pane, "idle", 30)
     time.sleep(1)
-    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "the newer draft counted as sent"
-    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
-    inst.type_line(typed_pane, f"ECHO last {nonce()}")
-    wait_quiet(inst, timeout=30)
-    # Work an interface Umi opened left running detached (no terminal, output redirected): the quit
-    # would end it (it carries the session's tag).
-    inst.type_line(lpane, "RUN python3 -c 'import os, time; os.setsid(); time.sleep(9)' < /dev/null > /dev/null 2>&1 &")
-    found = wait_reason(inst, lambda r: r.get("session") == lid and "still running" in r["reason"], timeout=20)
+    assert any(r.get("pane") == pane for r in reasons(inst)), "the newer draft counted as sent"
+    inst.cli("keys", "--pane", pane, "ctrl+u")
+    inst.type_line(pane, f"ECHO last {nonce()}")
     wait_quiet(inst, timeout=30)
     # Shift-Return inserts a newline: not a prompt sent.
-    inst.cli("send", "--pane", typed_pane, "x")
-    inst.cli("keys", "--pane", typed_pane, "shift+enter")
+    inst.cli("send", "--pane", pane, "x")
+    inst.cli("keys", "--pane", pane, "shift+enter")
     time.sleep(1)
-    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "Shift-Return counted as sending"
-    inst.cli("keys", "--pane", typed_pane, "ctrl+u")
-    inst.type_line(typed_pane, f"ECHO after {nonce()}")
+    assert any(r.get("pane") == pane for r in reasons(inst)), "Shift-Return counted as sending"
+    inst.cli("keys", "--pane", pane, "ctrl+u")
+    inst.type_line(pane, f"ECHO after {nonce()}")
     wait_quiet(inst, timeout=30)
     # A turn interrupted from the keyboard is taken as idle without the agent saying so: an update
     # waits until it does.
-    inst.type_line(typed_pane, f"SLEEP 30 {nonce()}")
-    wait_until(lambda: inst.info(typed["id"])["status"] == "working", 10, message="the turn")
-    inst.cli("keys", "--pane", typed_pane, "esc")
-    wait_until(lambda: inst.info(typed["id"])["status"] == "idle", 15, message="the interrupt noticed")
-    found = wait_reason(inst, lambda r: r.get("session") == typed["id"])
+    inst.type_line(pane, f"SLEEP 30 {nonce()}")
+    inst.wait_agent_status(pane, "working", 10)
+    inst.cli("keys", "--pane", pane, "esc")
+    inst.wait_agent_status(pane, "idle", 15)
+    found = wait_reason(inst, lambda r: r.get("pane") == pane)
     assert "interrupted" in found["reason"], found
-    inst.type_line(typed_pane, f"ECHO again {nonce()}")
+    inst.type_line(pane, f"ECHO again {nonce()}")
     wait_quiet(inst, timeout=30)
-    # Keys while a permission dialog is up: Umi can't tell when it closed, so they count too.
-    inst.type_line(typed_pane, "ASK_PERMISSION")
-    wait_until(lambda: inst.info(typed["id"])["status"] == "needs_input", 15, message="the permission prompt")
-    inst.type_line(typed_pane, "y")
-    wait_until(lambda: inst.info(typed["id"])["status"] == "idle", 15, message="allowed and done")
-    time.sleep(0.5)
-    assert any(r.get("session") == typed["id"] for r in reasons(inst)), "keys during the dialog were ignored"
-    inst.type_line(typed_pane, f"ECHO after the dialog {nonce()}")
-    wait_quiet(inst, timeout=30)
-    for s in (lid, viewed, typed["id"]):
-        inst.cli("agent", "stop", s, check=False, timeout=60)
+    inst.type_line(pane, "/exit")
 
 
 @pytest.mark.req("I-4", "AG-18")
-@pytest.mark.harness
 def test_a_job_beside_an_agent_interface_is_not_quiet(calm):
     """An idle agent in front doesn't make its pane quiet when the shell also runs a job (`sleep &`
     before typing `claude`): the relaunch would end it."""
     inst, pane = calm
-    plugin = os.path.join(inst.target.app, PLUGIN)
-    known = {s["id"] for s in inst.agents()}
-    inst.type_line(pane, f"sleep 300 & FAKE_AGENT_DIR='{inst.fake_dir}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}'")
-    typed = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
-                       message="the typed agent to become a session")
-    wait_until(lambda: "Fake Claude Code" in inst.screen(pane, scrollback=True), 20, message="its interface")
+    inst.type_agent(pane, "claude", prefix="sleep 300 & ")
     no_input(inst)
     found = wait_reason(inst, lambda r: r.get("pane") == pane)
     assert "sleep" in found["reason"] and "background" in found["reason"], found
-    inst.cli("agent", "stop", typed["id"], check=False, timeout=60)
-    wait_until(lambda: "Fake Claude Code" not in inst.screen(pane) or inst.info(typed["id"])["location"] != "live", 20,
-               message="the interface to end")
+    inst.type_line(pane, "/exit")
+    inst.wait_agent_status(pane, "stopped", 15)
     inst.cli("send", "--pane", pane, "--enter", "kill %1")
     wait_quiet(inst)
 
 
 @pytest.mark.req("I-4", "AG-18")
-@pytest.mark.harness
 def test_an_agents_own_hook_still_running_is_not_quiet(calm):
     """Claude Code runs the hooks for an event side by side: Umi's Stop hook says the turn is done while
     the user's own Stop hook (a build, tests; here one that `exec`s its program) may still run. What an
@@ -363,11 +299,7 @@ def test_an_agents_own_hook_still_running_is_not_quiet(calm):
         f.write('{"name": "slow", "version": "1.0.0"}')
     with open(os.path.join(slow, "hooks", "hooks.json"), "w") as f:
         f.write('{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "exec sleep 8", "timeout": 30}]}]}}')
-    plugin = os.path.join(inst.target.app, PLUGIN)
-    known = {s["id"] for s in inst.agents()}
-    inst.type_line(pane, f"FAKE_AGENT_DIR='{inst.fake_dir}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}:{slow}' '{FAKE_CLAUDE}'")
-    typed = wait_until(lambda: next((s for s in inst.agents() if s["id"] not in known), None), 20,
-                       message="the typed agent to become a session")
+    inst.type_agent(pane, "claude", plugin_dirs=[inst.plugin("claude"), slow])
     wait_until(lambda: "Fake Claude Code" in inst.screen(pane, scrollback=True), 20, message="its interface")
     no_input(inst)
     wait_quiet(inst)
@@ -375,4 +307,4 @@ def test_an_agents_own_hook_still_running_is_not_quiet(calm):
     # (Hooks' own shells come and go; the exec'd `sleep` stays until it ends.)
     wait_reason(inst, lambda r: r.get("pane") == pane and "sleep, started by its agent" in r["reason"], timeout=15)
     wait_quiet(inst, timeout=30)
-    inst.cli("agent", "stop", typed["id"], check=False, timeout=60)
+    inst.type_line(pane, "/exit")

@@ -87,7 +87,7 @@ def main():
             ("1", ("cmd",)): "tab 1", ("9", ("cmd",)): "last tab",
             ("left", ("ctrl", "shift")): "move tab up", ("right", ("ctrl", "shift")): "move tab down",
             ("p", ("cmd",)): "command palette", ("p", ("shift", "cmd")): "pane palette", (",", ("cmd",)): "settings",
-            ("j", ("ctrl", "cmd")): "next session needing you", ("k", ("ctrl", "cmd")): "jump back",
+            ("j", ("ctrl", "cmd")): "next pane needing you", ("k", ("ctrl", "cmd")): "jump back",
         }
         titles = {}
         for (key, mods), what in wanted.items():

@@ -11,16 +11,14 @@ the tests stay independent of any implementation.
    - The app can be launched directly (its executable, plus any arguments) with an environment
      variable naming a **state directory**. Everything that instance stores or listens on lives
      there or is derived from it. The CLI given the same variable talks to that instance and nothing
-     else. So do agents started by that instance.
+     else. So do agents typed in its panes.
    - Such an instance must not restore or save the user's windows. It must not touch the user's own
-     running copy, its state or its sessions.
-2. **Agent binaries.** Environment variables naming the executables to run for managed Claude and
-   managed Codex sessions. They are set on the app and CLI of an isolated instance.
-   - The product runs them exactly as it would run the real `claude`/`codex`: same arguments, same
-     protocol.
-   - The tests point them at `fakes/fake_claude.py` and `fakes/fake_codex.py`.
-   - `agent start --env K=V` must reach the agent's environment (the fakes read `FAKE_*` variables
-     from there).
+     running copy or its state.
+2. **Agents in panes.** The app's environment reaches its panes' shells, so an isolated instance's
+   agents (the tests type `fakes/fake_claude.py` and `fakes/fake_codex.py` into panes) see the
+   variables the tests set on the app (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `FAKE_*`). The app bundle
+   carries Umi's plugins (`Contents/Resources/agent-plugins/claude|codex`), which the fakes load from
+   `FAKE_CLAUDE_PLUGIN_DIRS` / `FAKE_CODEX_PLUGIN_DIRS`.
 3. **Installer test mode.** The installer can be told the destination for the app and the CLI link,
    and told not to change the default Markdown app and not to launch anything.
 4. **Screenshots.** `<cli> screenshot` (a product feature in CLI.md) is how written checks collect

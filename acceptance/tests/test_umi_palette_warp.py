@@ -1,7 +1,7 @@
 """The palette and the shortcuts page as Warp's (SPEC L-14 to L-17, Warp parity, 2026-11-05).
 
 One palette: ⌘P shows everything, a typed prefix (`files:`, `sessions:`, `actions:`,
-`conversations:`, `tabs:`) filters it and shows as a word before the query, Backspace in an empty
+`tabs:`) filters it and shows as a word before the query, Backspace in an empty
 query removes the filter, ⇧⌘P and ⌘O open it filtered to sessions and files. Empty, it shows
 filter chips, Recent and Suggested. ⌘O offers to create a file nothing matches. ⌘/ opens a
 searchable shortcuts page (but not in the editor's source).
@@ -64,8 +64,7 @@ def repo_pane(inst, win, tmp_path):
 def test_a_typed_prefix_filters_the_palette_and_shows_as_its_filter_word(inst, win):
     try:
         for typed, mode, word in (("files:", "files", "files:"), ("sessions:", "panes", "sessions:"),
-                                  ("actions:", "actions", "actions:"), ("tabs:", "tabs", "tabs:"),
-                                  ("conversations:", "conversations", "conversations:")):
+                                  ("actions:", "actions", "actions:"), ("tabs:", "tabs", "tabs:")):
             rpc(inst, "debug.palette", window=win["window"], mode="commands", query=typed)
             s = state(inst, win)
             assert (s["mode"], s["filter"], s["query"]) == (mode, word, ""), (typed, s)
@@ -162,9 +161,10 @@ def test_the_empty_palette_shows_filter_chips_recent_and_suggested(inst, win):
         rows = rpc(inst, "debug.palette", window=win["window"], mode="commands")["entries"]
         s = state(inst, win)
         assert s["zero_state"] and s["selection"] == -1, "nothing is selected until an arrow key"
-        assert s["chips"] == ["files", "actions", "sessions", "conversations"], s["chips"]
+        # Umi runs no agent conversations of its own: no "conversations" chip (design step 1).
+        assert s["chips"] == ["files", "actions", "sessions"], s["chips"]
         # Each chip but actions shows its filter's icon, as Warp's.
-        assert s["chip_icons"] == ["doc", "", "terminal", "bubble.left"], s["chip_icons"]
+        assert s["chip_icons"] == ["doc", "", "terminal"], s["chip_icons"]
         recent = [r["title"] for r in rows if r.get("section") == "Recent"]
         suggested = [r["title"] for r in rows if r.get("section") == "Suggested"]
         assert recent[:2] == ["Toggle Sidebar", "recent-pane"] and len(recent) <= 3, recent
