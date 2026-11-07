@@ -344,3 +344,65 @@ def test_the_rows_close_closes_the_shown_member_and_a_terminal_adds_no_controls_
     ui.press(rightmost(ui, "Close todo.py", strip_of(ui)))
     wait_until(lambda: f not in [p["id"] for p in tab_of(inst, win["tab"])["panes"]], 5, message="the file closed")
     assert shown(inst, win["tab"]) == [win["pane"], b] and not stack_of(inst, win["tab"], b)
+
+
+@pytest.mark.req("M-7", "E-24")
+def test_a_narrow_stacks_chips_are_never_cut_off_and_the_rest_wait_in_a_menu_ui(inst, win, tmp_path, ui):
+    """A third-of-the-window place with seven members: every chip that shows is whole, inside the
+    room between the grip and the controls; the shown one always shows; the others are in a "+N"
+    chip whose menu shows one of them."""
+    import re
+
+    from test_umi_editor_warp import frame, open_menu_item, open_menu_titles
+    a, b, c = three_places(inst, win)
+    names = [f"a-rather-long-file-name-number-{i}.md" for i in range(1, 7)]
+    for name in names:
+        (tmp_path / name).write_text(f"# {name}\n")
+        inst.cli("edit", str(tmp_path / name), "--pane", b)
+    members = stack_of(inst, win["tab"], b)
+    assert len(members) == 7, members
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+
+    def check(shown_name):
+        strip = strip_of(ui)
+        sx, sy, sw, sh = frame(ui, strip)
+        more = ui.find(lambda e: ui.label(e) == "More actions", strip)
+        right_edge = frame(ui, ui.button("Preview", strip) or more)[0]
+        chips = {ui.label(e): e for e in ui.find_all(lambda e: ui.label(e) in names and ui.role(e) != "AXStaticText", strip)}
+        assert shown_name in chips, f"the shown chip shows: {ui.texts(strip)}"
+        for name, e in chips.items():
+            x, y, w, h = frame(ui, e)
+            assert sx + 22 <= x and x + w <= right_edge + 0.5, f"{name} whole, left of the controls: {x}..{x + w} in {sx}..{right_edge}"
+            assert w >= 60, f"{name} keeps a usable width: {w}"
+        overflow = ui.find(lambda e: re.fullmatch(r"\d+ more", ui.label(e) or "") is not None, strip)
+        assert overflow is not None, f"a +N chip for the rest: {ui.texts(strip)}"
+        ox, _, ow, _ = frame(ui, overflow)
+        assert ox + ow <= right_edge + 0.5, "the +N chip whole too"
+        visible = [ui.label(e) for e in ui.find_all(lambda e: ui.role(e) == "AXButton" and ui.label(e), strip)
+                   if ui.label(e) not in ("Preview", "Source") and not ui.label(e).startswith("Close")]
+        assert len(visible) + int(ui.label(overflow).split()[0]) == 7, f"every member is a chip or in the menu: {visible}, {ui.texts(strip)}"
+        return overflow, chips
+
+    def settled(shown_name, timeout=5):
+        """check() once the row has caught up (the last failure if it never does)."""
+        import time
+        deadline = time.time() + timeout
+        while True:
+            try:
+                return check(shown_name)
+            except AssertionError:
+                if time.time() > deadline:
+                    raise
+                time.sleep(0.2)
+
+    overflow, chips = settled(names[-1])
+    hidden = [n for n in names if n not in chips]
+    assert hidden, "some files wait in the menu"
+    ui.press(overflow)
+    titles = wait_until(lambda: open_menu_titles(ui), 3, message="the +N menu")
+    assert set(hidden) <= set(titles), titles
+    ui.press(open_menu_item(ui, hidden[0]))
+    wait_until(lambda: [p["id"] for p in tab_of(inst, win["tab"])["panes"] if p.get("shown", True)][1] != members[-1],
+               5, message="the picked file on show")
+    settled(hidden[0])

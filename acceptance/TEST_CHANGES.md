@@ -1232,3 +1232,9 @@ anyway (CLI.md).
   (a hosted page stacked on a terminal: Preview, Source, GitHub, Reload and Open in Browser are in
   the row and not over the page, the page starts right under the 30-point row, the chip's tooltip
   is the page's address, and the row's ✕ closes the page). **Requirements:** E-12, E-24, M-7.
+- **Added, `tests/test_umi_stacks.py`**
+  `test_a_narrow_stacks_chips_are_never_cut_off_and_the_rest_wait_in_a_menu_ui` (a third-of-the-
+  window place with seven members: every chip that shows lies whole between the grip and the
+  controls and is at least 60 points wide, the shown one shows, the rest are counted by a "+N"
+  chip whose menu lists them, and picking one shows it with its chip whole). The coordinator found
+  the first version scrolling the chips so one was cut to "es.md". **Requirements:** M-7, E-24.
