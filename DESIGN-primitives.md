@@ -242,8 +242,13 @@ New pieces for moving attention and panes around (prototypes in `design/prototyp
   edge with a short label; the key brings it up.
 - **Send back.** A pane moved to another tab can return to the tab and place it came from, read
   from the activity log.
-- **Bucket tabs.** A tab you don't watch (such as `Delegated`, handled by the manager) can be
-  collapsed at the bottom of the sidebar.
+- **The manager is an attribute, not a feature.** `role=manager` is an attribute only one pane
+  can hold: setting it on a pane removes it from the one that had it. The manager pane gets the
+  same indicator states as any other pane. What the manager does with other panes (taking over
+  hidden ones, sending them back, a "Delegated" tab) is the manager's own logic, written against
+  the CLI. Umi encodes none of it.
+- **Hard-coded in Umi:** pinned tabs (pinned tabs come first). Everything else here is attributes,
+  lists and slots.
 - **Moving panes from the keyboard with a preview.** A key lifts the focused pane; arrows move it
   over the sidebar's tabs while a preview shows where it would land in each (and which pane there
   would be hidden); Enter commits, Esc puts everything back. Targets include a new tab, bucket
@@ -256,7 +261,8 @@ New pieces for moving attention and panes around (prototypes in `design/prototyp
   each group its own tab.
 - **More panes than places.** A tab holds more panes than it shows. A switcher within the tab
   (most recent first) brings one in; the visible pane used least recently is hidden to make room,
-  unless pinned in place. The limit of visible panes is per tab, three by default. The same rule
+  unless it has the attribute `pinned` (read by the `strip.make-room` slot, whose default is
+  "least recently used, skipping pinned"). The limit of visible panes is per tab, three by default. The same rule
   decides where a resurfacing pane goes.
 
 Selecting several panes at once is left out for now, to keep visual actions few.
