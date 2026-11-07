@@ -69,6 +69,32 @@ enum UmiUIDebug {
             guard let url = params.string("url") else { throw UmiError.badRequest("url is required") }
             return ["web_pane": UmiWebPanes.openFromTerminal(url, pane: pane)]
 
+        case "debug.ui.web":
+            // A web pane's hosted-page state and its header (E-12). `mode` runs what the header's
+            // Preview / Source does, `toggle` what ⌘E does, `github` what its GitHub button does.
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            guard let page = UmiWebPanes.shared.page(of: pane) else { throw UmiError.notFound("not a web pane") }
+            if let raw = params.string("mode") {
+                guard let mode = UmiHostedPage.Mode(rawValue: raw) else { throw UmiError.badRequest("mode is preview or source") }
+                page.setMode(mode)
+            }
+            if params.bool("toggle") == true { page.toggleMode() }
+            if params.bool("github") == true { page.openGitHub() }
+            var header: [String: Any] = ["switch": page.hosted?.hasModes == true, "github": page.hosted?.github != nil]
+            if let hosted = page.hosted {
+                let parts = UmiPathTitle.split(hosted.path)
+                header["folder"] = parts.folder ?? NSNull()
+                header["name"] = parts.name
+                header["dirty"] = hosted.dirty
+            } else {
+                header["name"] = page.displayTitle
+            }
+            let hosted: Any = page.hosted.map { state -> [String: Any] in
+                ["path": state.path, "mode": state.mode.rawValue, "has_modes": state.hasModes,
+                 "github": state.github?.absoluteString ?? NSNull(), "dirty": state.dirty]
+            } ?? NSNull()
+            return ["hosted": hosted, "header": header]
+
         case "debug.ui.attention.set":
             // Stands in for the agent engine (UmiAttention's writer).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)

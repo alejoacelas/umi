@@ -717,9 +717,10 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   as a table (row numbers, a header that stays in view, numbers right-aligned); other text opens as
   source.
 - **E-2 [A+W]** Preview and source can be toggled with ⇧⌘M, with a visible control, and from the CLI.
-  Warp parity (2026-11-05): the control says "Rendered / Raw", as Warp's does, and ⌘E (Warp's key)
-  toggles too while a file pane with both views has focus; in a terminal ⌘E stays Ghostty's "Use
-  Selection for Find".
+  The control says "Preview / Source" (Alejo's choice of 2026-11-07, the agent server's page's words;
+  it said Warp's "Rendered / Raw" before), and ⌘E (Warp's key, Warp parity 2026-11-05) toggles too
+  while a file pane with both views has focus; in a terminal ⌘E stays Ghostty's "Use Selection for
+  Find".
 - **E-3 [A+W]** Edits can be saved with ⌘S. Closing a file with unsaved changes asks first. Closing a
   tab or quitting never silently loses edits: they are saved, or a recovery copy is kept.
 - **E-4 [A+W]** If the file changes on disk:
@@ -796,6 +797,18 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   open in the default browser. `<cli> edit` refuses a URL from an origin that isn't listed. A web
   pane counts as quiet for updates (I-4): the pages it is for keep unsaved drafts in their local
   storage, which survives the relaunch.
+  Hosted pages (2026-11-07): Umi marks every page from a listed origin as hosted before its scripts
+  run (`<html data-umi="1">`) and gives it a message handler, `umi`. A page that posts
+  `{path, mode: "preview"|"source", hasModes, github: URL|null, dirty}` (on load and on every
+  change), as the agent server's file page does, hides its own header row, and the pane's header
+  becomes the file pane's (E-24): a globe, then "folder / name" from `path` with the unsaved dot
+  while `dirty`; on the right Preview / Source when `hasModes` (Umi calls
+  `window.umiPage.setMode('preview'|'source')`; ⌘E and ⇧⌘M toggle too), GitHub when the page gives
+  a link, Reload, Open in Browser and close. Until a page posts, and for pages that never do, the
+  header shows the page's title. Umi keeps a message only from the page's own origin in its main
+  frame and only with exactly that shape, else ignores it; it never navigates on a message, and
+  opens the GitHub link (only an https://github.com address) in the default browser when the user
+  clicks GitHub.
 
 - **E-21 [A+W]** The source view looks and reads like Warp's code editor (Warp parity, 2026-11-05):
   - the terminal's font at the terminal's size; no soft wrap: long lines scroll sideways;
@@ -829,15 +842,19 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   text and focus and this one closes; with unsaved edits there, Save As refuses and says why); ⌘S shows a "File saved." toast at the top of the tab for 4
   seconds. Saving never reformats the file. When no file pane is focused these keys go to whatever
   is (a terminal gets ⌃G).
-- **E-24 [A+W]** File pane header and stack chips, as Warp's (Warp parity, 2026-11-05): the file's
-  name centred, with an 8-point dot 4 points before it while there are unsaved changes; on the right
-  the preview/source control (E-2), ⋯ and close. ⋯ opens the pane menu, as Warp's for each view
+- **E-24 [A+W]** File pane header and stack chips. The header (Alejo's choice of 2026-11-07, "U1";
+  the same row as a hosted page's, E-12; before, the name was centred as Warp's): the drag grip, the
+  file type's colored icon, then "folder / name" left-aligned, the parent folder's name muted and
+  the file's name in the primary color, with an 8-point dot 4 points before the name while there
+  are unsaved changes, and the full path as its tooltip. When the row is too narrow the folder
+  shortens first, then the name (from its start); in a pane of ordinary width the whole name
+  shows. On the right the preview/source control (E-2, only for files with a preview), ⋯ and close. ⋯ opens the pane menu, as Warp's for each view
   (W: `code/view.rs`, `notebooks/file/mod.rs`); a right-click on the header opens the same menu (an
   Umi addition: Warp's header has none). In the source view: Maximize pane (Minimize pane while
   maximized; outside a split it does nothing), Copy file path, Reveal in Finder, and View Markdown
   preview for Markdown. In a preview: Maximize pane, Refresh file (asks first when there are unsaved
   changes), Open in editor (the source view), Copy file path. A right-click in the source text offers
-  Cut, Copy and Paste. A stack chip (M-7) for a file shows
+  Cut, Copy and Paste. As Warp's (Warp parity, 2026-11-05), a stack chip (M-7) for a file shows
   the file type's colored icon and the same dot, and is at most 300 points wide.
 ### The Markdown preview as Warp's (Warp parity, 2026-11-05)
 

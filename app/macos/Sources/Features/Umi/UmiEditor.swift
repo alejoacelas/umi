@@ -778,31 +778,13 @@ enum UmiEditor {
 
 // MARK: - Views
 
-/// The visible preview/source control (E-2), named as Warp names it: Rendered / Raw.
+/// The visible preview/source control (E-2): Preview / Source (Alejo's choice of 2026-11-07, the
+/// same words as the agent server's pages).
 struct UmiModeToggle: View {
     @ObservedObject var doc: UmiDocument
 
     var body: some View {
-        HStack(spacing: 0) {
-            segment("Rendered", .preview)
-            segment("Raw", .source)
-        }
-        .help("Toggle rendered / raw (⌘E or ⇧⌘M)")
-    }
-
-    private func segment(_ title: String, _ mode: UmiDocument.Mode) -> some View {
-        Button { doc.mode = mode } label: {
-            Text(title)
-                .font(UmiTheme.uiFontSmall)
-                .foregroundColor(doc.mode == mode ? UmiTheme.textPrimary : UmiTheme.textTertiary)
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(RoundedRectangle(cornerRadius: 5).fill(doc.mode == mode ? UmiTheme.selectedFill : .clear))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(doc.mode == mode ? .isSelected : [])
+        UmiPreviewSourceSwitch(isPreview: doc.mode == .preview) { doc.mode = $0 ? .preview : .source }
     }
 }
 
@@ -890,7 +872,7 @@ final class UmiEditorContainerView: NSView {
     @objc func findNext(_ sender: Any?) { if let code = document?.code { code.findStep(1) } else { NSSound.beep() } }
     @objc func findPrevious(_ sender: Any?) { if let code = document?.code { code.findStep(-1) } else { NSSound.beep() } }
     @objc func findHide(_ sender: Any?) { document?.code?.closeFind() }
-    /// ⌘E (Edit ▸ Find ▸ Use Selection for Find in a terminal) toggles Rendered / Raw in a file
+    /// ⌘E (Edit ▸ Find ▸ Use Selection for Find in a terminal) toggles Preview / Source in a file
     /// that has both views, as Warp's ⌘E does (E-2); in a file with only a source view it puts
     /// the selection in the find bar's query. Terminals keep theirs.
     @objc func selectionForFind(_ sender: Any?) {
@@ -940,7 +922,7 @@ final class UmiEditorContainerView: NSView {
         case ([.command], "v"):
             return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
         case ([.command], "e"):
-            // Warp's key for Rendered / Raw (Warp parity, 2026-11-05) in a file with both views;
+            // Warp's key for Preview / Source (Warp parity, 2026-11-05) in a file with both views;
             // in a source-only file, Use Selection for Find. The menu item has no key of its own
             // (Ghostty's ⌘E is a terminal binding), so the key comes here.
             guard document != nil else { return super.performKeyEquivalent(with: event) }
