@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resurfacing Panes</title>
+<style>
+  :root {
+    --bg: #000; --page: #0a0a0a; --side: #0d0d0d;
+    --ink: #e6e6e6; --dim: #8a8a8a; --faint: #5a5a5a;
+    --line: #1c1c1c; --line2: #262626;
+    --cyan: #3ad1e0; --amber: #e0b04a; --green: #6cc28a;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --dur: 260ms;
+  }
+  @media (prefers-reduced-motion: reduce) { :root { --dur: 1ms; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  main { max-width: 1240px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 36px 0 6px; }
+  p.lead, p.sub { color: var(--dim); margin: 0 0 14px; max-width: 820px; }
+  a { color: var(--cyan); }
+  code, pre { font-family: var(--mono); font-size: 12px; }
+  pre { margin: 0; white-space: pre-wrap; color: #cfcfcf; }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; color: var(--dim); }
+
+  /* ---------- controls ---------- */
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 16px; align-items: center; }
+  .presets .lbl { color: var(--faint); font-size: 12px; margin-right: 4px; }
+  button.b { background: transparent; color: var(--dim); border: 1px solid var(--line2); border-radius: 6px; padding: 5px 10px; font: 12.5px var(--sans); cursor: pointer; }
+  button.b:hover { border-color: #555; color: var(--ink); }
+  button.b[aria-pressed="true"] { color: var(--ink); border-color: #666; background: #161616; }
+  button.b:disabled { opacity: .35; cursor: default; }
+  button.primary { background: #161616; color: var(--ink); border-color: #444; }
+  .dims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .dim { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .dim.off { opacity: .45; }
+  .dim h3 { margin: 0 0 2px; font-size: 13px; font-weight: 600; }
+  .dim .q { color: var(--dim); font-size: 12px; margin: 0 0 8px; }
+  .dim .opts { display: flex; flex-wrap: wrap; gap: 5px; }
+  .dim .cost { margin-top: 10px; font-size: 12px; color: var(--dim); min-height: 36px; }
+  .dim .cfg { margin-top: 6px; background: #0d0d0d; border-radius: 4px; padding: 6px 8px; font: 11.5px var(--mono); color: #cfcfcf; }
+  .sub2 { display: inline-flex; gap: 4px; margin-left: 4px; }
+  .sub2 button.b { padding: 2px 6px; font-size: 11.5px; }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0 10px; }
+  .bar .sp { flex: 1; }
+  .bar label { color: var(--dim); font-size: 12.5px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .focusread { font-size: 12px; color: var(--dim); }
+  .focusread b { color: var(--ink); font-weight: 500; }
+  .focusread .zero { color: var(--green); }
+
+  /* ---------- timeline ---------- */
+  .tl { position: relative; height: 58px; margin: 4px 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  .tl .seg { position: absolute; top: 8px; height: 6px; border-radius: 3px; background: #2a3b3d; }
+  .tl .mk { position: absolute; top: 4px; width: 2px; height: 14px; border-radius: 1px; }
+  .tl .mk.stop { background: var(--amber); }
+  .tl .mk.user { background: #888; }
+  .tl .mk.lay { background: var(--cyan); }
+  .tl .ml { position: absolute; top: 22px; font-size: 10.5px; color: var(--faint); white-space: nowrap; transform: translateX(-50%); }
+  .tl .ml.lay { color: var(--cyan); top: 38px; }
+  .tl .mk.lay { height: 30px; }
+  .tl .ml.stop { color: var(--amber); }
+  .tl .head { position: absolute; top: 0; bottom: 0; width: 1px; background: #fff; opacity: .5; }
+  .tl .typ { position: absolute; left: 6px; top: -1px; font-size: 9.5px; color: #4b6a6d; }
+
+  /* ---------- window ---------- */
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
+  .win { position: relative; background: var(--bg); border: 1px solid #222; border-radius: 10px; overflow: hidden; height: 520px; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  .titlebar { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: var(--side); flex: none; }
+  .titlebar i { width: 11px; height: 11px; border-radius: 50%; background: #2a2a2a; }
+  .body { flex: 1; display: flex; min-height: 0; }
+  .sidebar { width: 220px; background: var(--side); flex: none; display: flex; flex-direction: column; padding: 4px 0 8px; border-right: 1px solid #111; }
+  .row { position: relative; display: flex; gap: 9px; padding: 9px 12px; margin: 1px 6px; border-radius: 6px; cursor: pointer; overflow: hidden; }
+  .row:hover { background: rgba(255,255,255,.04); }
+  .row.sel { background: rgba(255,255,255,.07); }
+  .row .ic { width: 16px; flex: none; font: 12px var(--mono); color: var(--dim); text-align: center; padding-top: 1px; transition: color var(--dur); }
+  .row .ic.needs { color: var(--amber); }
+  .row .tx { min-width: 0; flex: 1; }
+  .row .l1 { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .l1 .br { color: var(--faint); font-size: 11.5px; margin-left: 5px; }
+  .row .l2 { font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--dur); }
+  .row .l2.needs { color: #c9a456; }
+  .row.newtab { max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; transition: max-height var(--dur), padding var(--dur), margin var(--dur); }
+  .row.newtab.on { max-height: 60px; padding-top: 9px; padding-bottom: 9px; margin: 1px 6px; }
+  .preview { margin: 0 6px 0 31px; border-left: 2px solid #3d3220; padding: 0 10px; font-size: 11.5px; color: var(--dim); max-height: 0; overflow: hidden; transition: max-height var(--dur), padding var(--dur); }
+  .preview.on { max-height: 110px; padding: 6px 10px 8px; }
+  .preview .pv { font: 11px/1.5 var(--mono); color: #bbb; }
+  .preview button { margin-top: 6px; }
+
+  .content { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .tstrip { height: 26px; flex: none; display: flex; gap: 2px; padding: 3px 6px 0; border-bottom: 1px solid #141414; overflow: hidden; }
+  .tchip { font-size: 11.5px; padding: 3px 10px; border-radius: 5px 5px 0 0; color: var(--dim); cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap; max-width: 150px; overflow: hidden; transition: max-width var(--dur), background var(--dur), color var(--dur); }
+  .tchip.shown { color: var(--ink); background: #111; }
+  .tchip.shown.focus { box-shadow: inset 0 2px 0 var(--cyan); }
+  .tchip.hidden { color: var(--faint); font-style: italic; }
+  .tchip .d { width: 5px; height: 5px; border-radius: 50%; background: var(--amber); flex: none; }
+  .tchip.filled { max-width: 330px; font-style: normal; color: var(--ink); background: rgba(224,176,74,.10); box-shadow: inset 0 -1px 0 rgba(224,176,74,.5); }
+  .tchip .sum { color: #c9a456; }
+
+  .peek { height: 0; overflow: hidden; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #0b0905; border-bottom: 1px solid transparent; font-size: 12px; color: var(--dim); transition: height var(--dur), border-color var(--dur); }
+  .peek.on { height: 32px; border-bottom-color: #2a2312; }
+  .peek .t { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .peek .t b { color: var(--ink); font-weight: 500; }
+
+  .panes { flex: 1; display: flex; min-height: 0; position: relative; }
+  .place { flex: var(--g, 1) 1 0; min-width: 0; position: relative; overflow: hidden; border-left: 1px solid #1a1a1a; display: flex; flex-direction: column; transition: flex-grow var(--dur) ease, opacity var(--dur); }
+  .place:first-child { border-left: none; }
+  .place.focus::before { content: ""; position: absolute; z-index: 2; left: 0; right: 0; top: 0; height: 2px; background: var(--cyan); }
+  .place.arrived::after { content: ""; position: absolute; z-index: 2; right: 10px; top: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+  .pstrip { height: 0; flex: none; display: flex; gap: 2px; padding: 0 4px; overflow: hidden; background: #070707; transition: height var(--dur); }
+  .pstrip.on { height: 22px; padding-top: 3px; }
+  .pstrip .tchip { font-size: 11px; padding: 2px 8px; }
+  .pane { flex: 1; position: relative; padding: 14px 14px 10px; font: 11.5px/1.6 var(--mono); color: #d8d8d8; overflow: hidden; cursor: default; }
+  .pane .inner { min-width: 240px; transition: opacity var(--dur); }
+  .pane .inner.fade { opacity: 0; }
+  .pane .p-b { color: #f0f0f0; } .pane .p-d { color: var(--faint); font-style: italic; }
+  .pane .p-g { color: var(--green); } .pane .p-a { color: var(--amber); }
+  .pane .p-h { color: #fff; font-weight: 600; font-family: var(--sans); font-size: 15px; }
+  .pane .p-m { color: #bbb; font-family: var(--sans); font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; }
+  .caret { display: inline-block; width: 7px; height: 14px; background: var(--cyan); vertical-align: -2px; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .pane .closeb { position: absolute; right: 8px; bottom: 8px; font: 10.5px var(--sans); color: var(--faint); border: 1px solid #2a2a2a; border-radius: 4px; padding: 1px 6px; background: #0b0b0b; opacity: 0; cursor: pointer; }
+  .place:hover .closeb { opacity: 1; }
+
+  .sliver { flex: none; width: 0; overflow: hidden; border-left: 1px solid transparent; background: #080604; position: relative; cursor: pointer; transition: width var(--dur) ease, border-color var(--dur); }
+  .sliver.on { width: 16px; border-left-color: #3d3220; }
+  .sliver.on:hover, .sliver.on.wide { width: 170px; }
+  .sliver .v { position: absolute; left: 3px; top: 12px; writing-mode: vertical-rl; font-size: 10.5px; color: #c9a456; white-space: nowrap; }
+  .sliver .w { position: absolute; left: 22px; top: 10px; width: 140px; font-size: 11px; color: var(--dim); opacity: 0; transition: opacity var(--dur); }
+  .sliver.on:hover .w, .sliver.on.wide .w { opacity: 1; }
+  .sliver .w b { color: var(--ink); font-weight: 500; display: block; margin-bottom: 4px; }
+
+  .pip { position: absolute; right: 14px; bottom: 14px; width: 260px; height: 160px; background: #050505; border: 1px solid #3d3220; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.7); z-index: 4; display: flex; flex-direction: column; opacity: 0; transform: translateY(12px) scale(.96); pointer-events: none; transition: opacity var(--dur), transform var(--dur); }
+  .pip.on { opacity: 1; transform: none; pointer-events: auto; }
+  .pip .ph { display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: 11px; color: var(--ink); border-bottom: 1px solid #1c1c1c; }
+  .pip .ph .sp { flex: 1; }
+  .pip .ph button { font-size: 10.5px; padding: 1px 6px; }
+  .pip .pb { flex: 1; padding: 8px 10px; font: 10.5px/1.5 var(--mono); color: #bbb; overflow: hidden; }
+
+  .toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); font-size: 11.5px; color: var(--dim); background: #111; border: 1px solid #262626; border-radius: 6px; padding: 4px 10px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 7; white-space: nowrap; }
+  .toast.on { opacity: 1; }
+
+  .notes { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px; font-size: 12.5px; }
+  .notes h3 { margin: 0 0 6px; font-size: 13px; }
+  .notes pre { background: #0d0d0d; border-radius: 4px; padding: 8px; font-size: 11px; margin-bottom: 12px; }
+  .log { font-size: 12px; color: var(--dim); }
+  .log div { padding: 2px 0; border-bottom: 1px solid #121212; }
+  .log .t { font: 10.5px var(--mono); color: var(--faint); margin-right: 6px; }
+  .log .you { color: #bbb; }
+  .log .umi { color: var(--cyan); }
+  .log .ag { color: var(--amber); }
+
+  @media (max-width: 960px) {
+    .dims { grid-template-columns: minmax(0, 1fr); }
+    .stage { grid-template-columns: minmax(0, 1fr); }
+    .sidebar { width: 170px; }
+  }
+  @media (max-width: 560px) {
+    .sidebar { display: none; }
+    .win { height: 460px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Resurfacing a hidden pane</h1>
+  <p class="lead">You're typing in <b>notes.md</b>. A hidden agent in the same tab, <i>deploy check</i>, ends its turn without <code>Status: done</code>, so it should come back. Pick when the layout changes, how the pane enters, and what happens when the tab already shows three panes, then press Play. Keyboard focus never moves on its own: the counter under the window checks it. Syntax is illustrative; content is made up. Companion page: <a href="where-panes-live.html">Where panes live</a>.</p>
+
+  <div class="presets" id="presets"><span class="lbl">Presets</span></div>
+  <div class="dims" id="dims"></div>
+
+  <div class="bar">
+    <button class="b primary" id="play">▶ Play</button>
+    <label><input type="checkbox" id="slow"> Slow motion (×3)</label>
+    <span class="sub2" id="scen"></span>
+    <button class="b" id="bring" title="J">Bring it in <kbd>J</kbd></button>
+    <span class="sp"></span>
+    <span class="focusread" id="focusread"></span>
+  </div>
+  <div class="tl" id="tl"></div>
+
+  <div class="stage">
+    <div class="win" id="win">
+      <div class="titlebar"><i></i><i></i><i></i></div>
+      <div class="body">
+        <div class="sidebar" id="sidebar"></div>
+        <div class="content" id="content">
+          <div class="tstrip" id="tstrip"></div>
+          <div class="peek" id="peek"><span class="t"><b>deploy check</b> · waiting on you: approve migration 0042?</span><button class="b" data-act="show">Show</button><button class="b" data-act="dismiss">Later</button></div>
+          <div class="panes" id="panes"><div class="sliver" id="sliver"><span class="v">deploy check · needs you</span><div class="w"><b>deploy check</b>Waiting on you: approve migration 0042?<br><br><button class="b" data-act="show">Show <kbd>J</kbd></button></div></div></div>
+          <div class="pip" id="pip"><div class="ph"><span class="sdot" style="width:6px;height:6px;border-radius:50%;background:var(--amber)"></span>deploy check<span class="sp"></span><button class="b" data-act="dock">Dock</button><button class="b" data-act="dismiss">×</button></div><div class="pb" id="pipbody"></div></div>
+          <div class="toast" id="toast"></div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h3>This combination</h3>
+      <pre id="cfg"></pre>
+      <h3>What happened</h3>
+      <div class="log" id="log"></div>
+    </aside>
+  </div>
+  <p class="sub" style="margin-top:12px"><kbd>P</kbd> play · <kbd>J</kbd> bring the pane in · <kbd>M</kbd> slow motion · click a pane to focus it (that's you moving focus) · hover the pane's bottom right to close it, which frees a place for a floating pane.</p>
+</main>
+
+<script>
+(() => {
+  // ---------------- options ----------------
+  const WHEN = [
+    { id: 'now', label: 'At once', cfg: 'resurface.when = now', cost: 'Your layout shifts mid-keystroke; you stay in your pane, but the text you are reading moves.' },
+    { id: 'pause', label: 'Typing pauses', cfg: n => `resurface.when = typing-pause ${n}s`, cost: 'Waits for a gap; while you type steadily it can take a while. N decides how long a pause counts.' },
+    { id: 'focus', label: 'Next focus move', cfg: 'resurface.when = next-focus-move', cost: 'Changes the layout at the moment you are already changing context; it may be minutes away.' },
+    { id: 'never', label: 'Never by itself', cfg: 'resurface.when = never   # mark only; J brings it in', cost: 'Nothing moves until you ask; relies on you noticing the mark.' },
+  ];
+  const ENTER = [
+    { id: 'split', label: 'New split', cfg: 'resurface.enter = split', cost: 'The others ease narrower. Clear, but every pane re-wraps.' },
+    { id: 'sliver', label: 'Edge sliver', cfg: 'resurface.enter = sliver   # hover widens, J opens', cost: '16 px on the right edge. Almost free; easy to miss on a busy day.' },
+    { id: 'stack', label: 'Join a stack', cfg: 'resurface.enter = stack least-recent', cost: 'Joins the least recently used place as an amber chip, not shown. No reflow; one click to see it.' },
+    { id: 'float', label: 'Floating mini pane', cfg: 'resurface.enter = float corner   # Dock makes it a split', cost: 'Readable at a glance, no reflow; covers a corner of whatever is under it.' },
+    { id: 'peek', label: 'Peek bar', cfg: 'resurface.enter = peek   # one line under the strip', cost: 'One line with what it needs; the panes lose 32 px of height.' },
+    { id: 'strip', label: 'Strip chip fills', cfg: 'resurface.enter = strip', cost: 'Its chip in the pane strip grows to say what it needs. Only works if the strip is visible.' },
+    { id: 'swap', label: 'Swap into an idle place', cfg: 'resurface.enter = swap idle   # the idle pane stacks behind it', cost: 'Takes over the place whose pane has been idle longest. No reflow, but something you saw is gone (still one ⌘[ away).' },
+    { id: 'preview', label: 'Sidebar preview', cfg: 'resurface.enter = sidebar-preview', cost: 'The tab row grows a two-line preview. Out of the work area, but only if the sidebar is open.' },
+    { id: 'mark', label: 'Mark only', cfg: 'resurface.enter = mark   # amber dot, line 2; J brings it in', cost: 'Quietest: an amber chip dot and sidebar line 2. Nothing else.' },
+  ];
+  const FULL = [
+    { id: 'add', label: 'Add a 4th split', cfg: 'resurface.full = add-split', cost: 'Simple, but four panes at laptop width are each narrow.' },
+    { id: 'lru', label: 'Hide least recent', cfg: 'resurface.full = hide-least-recent', cost: 'The pane you used least goes hidden (watch it slide into the strip). Three stays three.' },
+    { id: 'stacklru', label: 'Stack onto least recent', cfg: 'resurface.full = stack-least-recent', cost: 'Shares that place; the old pane stays one ⌘[ away in the place\'s strip.' },
+    { id: 'tab', label: 'Go to "Needs you" tab', cfg: 'resurface.full = move-to-tab "Needs you"', cost: 'This tab is left alone; a separate tab collects everything waiting on you.' },
+    { id: 'float', label: 'Float until room', cfg: 'resurface.full = float   # docks when a place frees', cost: 'Covers a corner until you close a pane (try it: hover a pane, close).' },
+  ];
+  const PRESETS = [
+    { name: 'Default', when: 'pause', n: 2, enter: 'split', full: 'lru' },
+    { name: 'Quietest', when: 'never', n: 2, enter: 'mark', full: 'stacklru' },
+    { name: 'Fast lane', when: 'now', n: 2, enter: 'float', full: 'float' },
+    { name: 'Glance', when: 'pause', n: 1, enter: 'peek', full: 'lru' },
+    { name: 'Out of the way', when: 'focus', n: 2, enter: 'sliver', full: 'tab' },
+    { name: 'Stacker', when: 'pause', n: 2, enter: 'swap', full: 'stacklru' },
+  ];
+  // Entry modes that end up adding a place, so the "full" rule applies to them.
+  const ADDS_PLACE = new Set(['split']);
+
+  const cfg = { when: 'pause', n: 2, enter: 'split', full: 'lru', three: true, slow: false };
+
+  // ---------------- pane content ----------------
+  const TYPED = 'Ship list for Friday:\n- move the blog to the new grid\n- check the deploy logs before 5\n- reply to Ben about the schema';
+  const P = {
+    notes: { title: 'notes.md', html: () => `<div class="p-h">Friday</div><div class="p-m" id="typed"></div>` },
+    dev: { title: 'npm run dev', html: () => `<div class="p-d">~/site · main</div><div>$ npm run dev</div><div class="p-g">  ▲ ready on http://localhost:4321</div><div class="p-d">  12:04:11 GET /projects 200 18ms</div><div class="p-d">  12:04:13 GET /blog 200 22ms</div>` },
+    refactor: { title: 'claude · refactor auth', html: () => `<div class="p-b">● Moving session checks into middleware.</div><div class="p-d">  ⎿ Edit src/auth/session.ts</div><div class="p-d">  ⎿ Edit src/middleware.ts</div><div class="p-d">✻ Working… 1m 12s</div>` },
+    deploy: { title: 'claude · deploy check', html: () => `<div class="p-b">● Staging deploy is green. Migration 0042 drops <span class="p-a">users.legacy_id</span>.</div><div class="p-d">✻ Cooked for 3m 40s</div><div></div><div>Status: waiting on you: approve migration 0042?</div>` },
+    logs: { title: 'tail -f api.log', html: () => `<div class="p-d">12:03:58 INFO healthcheck ok</div>` },
+  };
+
+  // ---------------- state ----------------
+  let S, timers = [], t0 = 0, raf = 0, typedN = 0, playing = false, endT = 13;
+  const $ = id => document.getElementById(id);
+  let uidN = 0;
+  const place = (id) => ({ uid: 'u' + (++uidN), members: [id], show: id });
+
+  function fresh() {
+    const vis = cfg.three ? ['dev', 'notes', 'refactor'] : ['dev', 'notes'];
+    return {
+      places: vis.map(place),
+      hidden: ['deploy', 'logs'],
+      lastUsed: { dev: 1, refactor: 2, notes: 3 },
+      focus: 'notes', stopped: false, seen: false,
+      sliver: false, peek: false, pip: null, preview: false, filled: false,
+      needsTab: false, inNeeds: null, tab: 'main',
+      umiMoves: 0, youMoves: 0,
+    };
+  }
+
+  // ---------------- controls ----------------
+  function btn(label, pressed, on, title) {
+    const b = document.createElement('button');
+    b.className = 'b'; b.textContent = label; b.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    if (title) b.title = title;
+    b.onclick = on; return b;
+  }
+  function renderControls() {
+    const pr = $('presets');
+    pr.querySelectorAll('button').forEach(b => b.remove());
+    PRESETS.forEach(p => {
+      const on = cfg.when === p.when && cfg.enter === p.enter && cfg.full === p.full && (p.when !== 'pause' || cfg.n === p.n);
+      pr.appendChild(btn(p.name, on, () => { Object.assign(cfg, { when: p.when, n: p.n, enter: p.enter, full: p.full }); renderControls(); play(); }));
+    });
+    const dims = $('dims'); dims.innerHTML = '';
+    const mk = (title, q, list, key, extra) => {
+      const d = document.createElement('div'); d.className = 'dim';
+      d.innerHTML = `<h3>${title}</h3><p class="q">${q}</p><div class="opts"></div><div class="cost"></div><div class="cfg"></div>`;
+      const opts = d.querySelector('.opts');
+      list.forEach(o => {
+        opts.appendChild(btn(o.label, cfg[key] === o.id, () => { cfg[key] = o.id; renderControls(); reset(); }));
+        if (key === 'when' && o.id === 'pause' && cfg.when === 'pause') {
+          const s = document.createElement('span'); s.className = 'sub2';
+          [1, 2, 3].forEach(n => s.appendChild(btn(n + ' s', cfg.n === n, () => { cfg.n = n; renderControls(); reset(); })));
+          opts.appendChild(s);
+        }
+      });
+      const cur = list.find(o => o.id === cfg[key]);
+      d.querySelector('.cost').textContent = cur.cost;
+      d.querySelector('.cfg').textContent = typeof cur.cfg === 'function' ? cur.cfg(cfg.n) : cur.cfg;
+      if (extra) extra(d);
+      dims.appendChild(d);
+    };
+    mk('1. When the layout changes', 'The mark appears at once in every case; this is about the layout.', WHEN, 'when');
+    mk('2. How it enters', 'What you see first, while you keep typing.', ENTER, 'enter');
+    mk('3. When the tab already shows 3 panes', 'Applies when the pane takes a place of its own (a split, or later via J, Dock, Show).', FULL, 'full', d => {
+      if (!cfg.three) { d.classList.add('off'); d.querySelector('.q').textContent = 'Off: the scenario has 2 panes on show. Switch to "3 panes on show".'; }
+    });
+    const sc = $('scen'); sc.innerHTML = '';
+    sc.appendChild(btn('2 panes on show', !cfg.three, () => { cfg.three = false; renderControls(); reset(); }));
+    sc.appendChild(btn('3 panes on show', cfg.three, () => { cfg.three = true; renderControls(); reset(); }));
+    const w = WHEN.find(o => o.id === cfg.when), e = ENTER.find(o => o.id === cfg.enter), f = FULL.find(o => o.id === cfg.full);
+    $('cfg').textContent = [typeof w.cfg === 'function' ? w.cfg(cfg.n) : w.cfg, e.cfg, f.cfg].join('\n');
+    $('slow').checked = cfg.slow;
+  }
+
+  // ---------------- timeline ----------------
+  const TYPE_SEGS = [[0, 4.5], [7.0, 10.0]];
+  const STOP_AT = 1.5, FOCUS_AT = 11.5;
+  function triggerAt() {
+    if (cfg.when === 'now') return STOP_AT + 0.4;
+    if (cfg.when === 'focus') return FOCUS_AT;
+    if (cfg.when === 'never') return null;
+    // first pause after the stop that lasts at least n seconds
+    const pauses = [[4.5, 7.0], [10.0, Infinity]];
+    for (const [a, b] of pauses) if (a >= STOP_AT && b - a >= cfg.n) return a + cfg.n;
+    return null;
+  }
+  function renderTimeline() {
+    const trig = triggerAt();
+    endT = Math.max(13, (trig || 0) + 2);
+    const tl = $('tl'), W = tl.clientWidth - 24, x = s => 12 + (s / endT) * W;
+    let h = '<span class="typ">you typing</span>';
+    TYPE_SEGS.forEach(([a, b]) => h += `<div class="seg" style="left:${x(a)}px;width:${x(b) - x(a)}px"></div>`);
+    const mark = (s, cls, label) => h += `<div class="mk ${cls}" style="left:${x(s)}px"></div><div class="ml ${cls}" style="left:${x(s)}px">${label}</div>`;
+    mark(STOP_AT, 'stop', 'agent stops: not done');
+    mark(FOCUS_AT, 'user', 'you move focus');
+    if (trig != null) mark(trig, 'lay', 'layout changes');
+    h += '<div class="head" id="head" style="left:12px"></div>';
+    tl.innerHTML = h;
+  }
+
+  // ---------------- rendering ----------------
+  const allInTab = () => {
+    const ids = [];
+    S.places.forEach(p => p.members.forEach(m => ids.push(m)));
+    S.hidden.forEach(h => ids.push(h));
+    return ids;
+  };
+  function renderSidebar() {
+    const sb = $('sidebar');
+    const needsMark = S.stopped && !S.seen;
+    const l2 = needsMark ? 'deploy check · waiting on you: approve migration?' : 'claude · refactor auth';
+    sb.innerHTML = `
+      <div class="row ${S.tab === 'main' ? 'sel' : ''}" data-tab="main"><div class="ic ${needsMark ? 'needs' : ''}">✳</div><div class="tx"><div class="l1">~/site<span class="br">main</span></div><div class="l2 ${needsMark ? 'needs' : ''}">${l2}</div></div></div>
+      <div class="preview ${S.preview ? 'on' : ''}"><div class="pv">Migration 0042 drops users.legacy_id.<br>Status: waiting on you: approve?</div><button class="b" data-act="show">Show <kbd>J</kbd></button></div>
+      <div class="row"><div class="ic">›</div><div class="tx"><div class="l1">impact-ops<span class="br">assess</span></div><div class="l2">uv run pytest</div></div></div>
+      <div class="row"><div class="ic">✳</div><div class="tx"><div class="l1">umi<span class="br">main</span></div><div class="l2">claude · design doc</div></div></div>
+      <div class="row newtab ${S.needsTab ? 'on' : ''} ${S.tab === 'needs' ? 'sel' : ''}" data-tab="needs"><div class="ic needs">●</div><div class="tx"><div class="l1">Needs you</div><div class="l2 needs">deploy check · approve migration?</div></div></div>`;
+  }
+  function renderStrip() {
+    const ts = $('tstrip');
+    if (S.tab === 'needs') { ts.innerHTML = `<div class="tchip shown">${P.deploy.title}</div>`; return; }
+    const shownIds = new Set(S.places.map(p => p.show));
+    ts.innerHTML = allInTab().map(id => {
+      const shown = shownIds.has(id);
+      const marked = id === 'deploy' && S.stopped && !S.seen;
+      const filled = id === 'deploy' && S.filled && !shown;
+      const cls = ['tchip', shown ? 'shown' : 'hidden', id === S.focus ? 'focus' : '', filled ? 'filled' : ''].join(' ');
+      return `<div class="${cls}" data-chip="${id}">${marked ? '<span class="d"></span>' : ''}${P[id].title}${filled ? ' <span class="sum">· waiting on you: approve migration 0042?</span>' : ''}</div>`;
+    }).join('');
+  }
+  function placeEl(p) {
+    const el = document.createElement('div');
+    el.className = 'place'; el.dataset.uid = p.uid;
+    el.innerHTML = `<div class="pstrip"></div><div class="pane"><div class="inner"></div><span class="closeb" data-act="close">Close</span></div>`;
+    return el;
+  }
+  function fillPlace(el, p, animateSwap) {
+    const inner = el.querySelector('.inner');
+    if (inner.dataset.id !== p.show) {
+      const put = () => {
+        inner.dataset.id = p.show;
+        inner.innerHTML = P[p.show].html();
+        if (p.show === 'notes') paintTyped();
+        inner.classList.remove('fade');
+      };
+      if (animateSwap && inner.dataset.id) { inner.classList.add('fade'); setTimeout(put, dur()); } else put();
+    }
+    const ps = el.querySelector('.pstrip');
+    ps.classList.toggle('on', p.members.length > 1);
+    ps.innerHTML = p.members.length > 1 ? p.members.map(m => {
+      const marked = m === 'deploy' && S.stopped && !S.seen;
+      return `<div class="tchip ${m === p.show ? 'shown' : 'hidden'}" data-stack="${p.uid}" data-m="${m}">${marked ? '<span class="d"></span>' : ''}${P[m].title}</div>`;
+    }).join('') : '';
+    el.classList.toggle('focus', p.show === S.focus && S.places.length > 1);
+    el.classList.toggle('arrived', p.show === 'deploy' && S.stopped && !S.seen);
+  }
+  // Keyed reconcile so the focused pane's element (and its typing) is never rebuilt.
+  function renderPanes(opts = {}) {
+    const box = $('panes'), sliver = $('sliver');
+    const want = S.tab === 'needs' ? [{ uid: 'needs', members: ['deploy'], show: 'deploy' }] : S.places;
+    const have = new Map([...box.querySelectorAll('.place')].map(e => [e.dataset.uid, e]));
+    const keep = new Set(want.map(p => p.uid));
+    have.forEach((el, uid) => {
+      if (keep.has(uid) || el.dataset.leaving) return;
+      if (opts.instant) { el.remove(); return; }
+      el.dataset.leaving = '1';
+      el.style.setProperty('--g', '0'); el.style.opacity = '0';
+      setTimeout(() => el.remove(), dur() + 30);
+    });
+    let prev = null;
+    want.forEach(p => {
+      let el = have.get(p.uid);
+      const isNew = !el;
+      if (isNew) {
+        el = placeEl(p);
+        if (!opts.instant) el.style.setProperty('--g', '0.0001');
+      }
+      // keep DOM order: after prev (skipping leaving elements is fine; they shrink in place)
+      let ref = prev ? prev.nextSibling : box.firstChild;
+      while (ref && ref.dataset && ref.dataset.leaving) ref = ref.nextSibling;
+      if (el !== ref) box.insertBefore(el, ref);
+      fillPlace(el, p, opts.swap);
+      if (isNew && !opts.instant) requestAnimationFrame(() => requestAnimationFrame(() => el.style.setProperty('--g', '1')));
+      prev = el;
+    });
+    box.appendChild(sliver);
+    sliver.classList.toggle('on', S.sliver && S.tab === 'main');
+  }
+  function renderOverlays() {
+    $('peek').classList.toggle('on', S.peek && S.tab === 'main');
+    $('pip').classList.toggle('on', !!S.pip && S.tab === 'main');
+    $('pipbody').innerHTML = P.deploy.html();
+  }
+  function render(opts) { renderSidebar(); renderStrip(); renderPanes(opts); renderOverlays(); renderFocus(); }
+  function renderFocus() {
+    const z = S.umiMoves === 0;
+    const where = S.tab === 'needs' ? 'claude · deploy check (Needs you tab)' : P[S.focus].title;
+    $('focusread').innerHTML = `Keyboard focus: <b>${where}</b> · moved by Umi: <b class="${z ? 'zero' : ''}">${S.umiMoves}</b> · by you: <b>${S.youMoves}</b>`;
+  }
+  function paintTyped() {
+    const el = document.getElementById('typed');
+    if (!el) return;
+    const s = TYPED.slice(0, typedN).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    el.innerHTML = s + (S.focus === 'notes' ? '<span class="caret"></span>' : '');
+  }
+
+  // ---------------- log, toast ----------------
+  function now() { return playing ? (performance.now() - t0) / 1000 / speed() : null; }
+  function log(who, text) {
+    const t = now();
+    const d = document.createElement('div');
+    d.innerHTML = `<span class="t">${t == null ? '  —  ' : t.toFixed(1).padStart(4, ' ') + 's'}</span><span class="${who}">${who === 'you' ? 'You' : who === 'umi' ? 'Umi' : 'Agent'}:</span> ${text}`;
+    $('log').appendChild(d);
+  }
+  let toastT;
+  function toast(text) {
+    const t = $('toast'); t.textContent = text; t.classList.add('on');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600 * speed());
+  }
+  const speed = () => cfg.slow ? 3 : 1;
+  const dur = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur')) || 260;
+
+  // ---------------- behaviour ----------------
+  function lruPlace() {
+    const cands = S.places.filter(p => p.show !== S.focus);
+    cands.sort((a, b) => (S.lastUsed[a.show] || 0) - (S.lastUsed[b.show] || 0));
+    return cands[0];
+  }
+  function unhide(id) { S.hidden = S.hidden.filter(h => h !== id); }
+
+  // The pane takes a place of its own: the "full" rule applies.
+  function showAsPlace(id, why) {
+    S.sliver = false; S.peek = false; S.preview = false; S.filled = false;
+    if (S.pip === id) S.pip = null;
+    const full = S.places.length >= 3;
+    if (!full || cfg.full === 'add') {
+      unhide(id);
+      S.places.push(place(id));
+      log('umi', `${why}: adds <b>${P[id].title}</b> as a split on the right${full ? ' (4th pane)' : ''}; focus stays in ${P[S.focus].title}.`);
+      render();
+      return;
+    }
+    if (cfg.full === 'lru') {
+      const lp = lruPlace(), idx = S.places.indexOf(lp), old = lp.show;
+      unhide(id);
+      S.hidden.push(...lp.members);
+      S.places.splice(idx, 1, place(id));
+      log('umi', `${why}: hides the least recently used pane, <b>${P[old].title}</b> (now an italic chip in the strip), and puts ${P[id].title} in its place.`);
+      render();
+      return;
+    }
+    if (cfg.full === 'stacklru') {
+      const lp = lruPlace();
+      unhide(id);
+      lp.members.push(id); lp.show = id;
+      log('umi', `${why}: stacks ${P[id].title} onto <b>${P[lp.members[0]].title}</b>'s place and shows it; the old pane is one ⌘[ away in that place's strip.`);
+      render({ swap: true });
+      return;
+    }
+    if (cfg.full === 'tab') {
+      unhide(id); S.needsTab = true; S.inNeeds = id;
+      log('umi', `${why}: moves ${P[id].title} to the <b>Needs you</b> tab; this tab is unchanged.`);
+      toast('deploy check went to the "Needs you" tab');
+      render();
+      return;
+    }
+    if (cfg.full === 'float') {
+      S.pip = id;
+      log('umi', `${why}: no free place, so ${P[id].title} floats in the corner until you close a pane.`);
+      render();
+    }
+  }
+
+  function enter() {
+    const id = 'deploy';
+    if (!S.hidden.includes(id)) return;
+    const m = cfg.enter;
+    if (m === 'split') return showAsPlace(id, 'Resurfaces');
+    if (m === 'sliver') { S.sliver = true; log('umi', 'shows a 16 px sliver on the right edge; hover it to read, J or click to open.'); }
+    if (m === 'stack') {
+      const lp = lruPlace(); unhide(id); lp.members.push(id);
+      log('umi', `stacks ${P[id].title} behind <b>${P[lp.show].title}</b> as an amber chip, not shown. Click the chip to see it there.`);
+    }
+    if (m === 'float') { S.pip = id; log('umi', 'shows it as a floating mini pane in the corner; Dock makes it a split.'); }
+    if (m === 'peek') { S.peek = true; log('umi', 'opens a one-line peek bar under the strip.'); }
+    if (m === 'strip') { S.filled = true; log('umi', 'grows its chip in the pane strip to say what it needs; click to open.'); }
+    if (m === 'swap') {
+      const lp = lruPlace(); unhide(id); const old = lp.show;
+      lp.members.push(id); lp.show = id;
+      log('umi', `swaps it into the idle place: <b>${P[old].title}</b> stays stacked behind it (⌘[).`);
+      render({ swap: true }); return;
+    }
+    if (m === 'preview') { S.preview = true; log('umi', 'grows a two-line preview under the tab\'s sidebar row.'); }
+    if (m === 'mark') { log('umi', 'leaves only the mark. Press J to bring it in.'); }
+    render();
+  }
+
+  function bringIn(why) {
+    if (S.tab === 'needs') return;
+    // Wherever it sits now (hidden, sliver, peek, pip, preview, stacked behind), give it a place of its own.
+    const stacked = S.places.find(p => p.members.includes('deploy'));
+    if (stacked) {
+      if (stacked.show !== 'deploy') { stacked.show = 'deploy'; log('you', `${why}: shows deploy check in its stack.`); render({ swap: true }); }
+      return;
+    }
+    if (S.pip === 'deploy' && S.places.length >= 3) { S.pip = null; S.hidden.includes('deploy') || S.hidden.push('deploy'); }
+    if (!S.hidden.includes('deploy') && S.pip !== 'deploy') return;
+    if (S.pip === 'deploy') S.pip = null;
+    log('you', why + '.');
+    showAsPlace('deploy', 'In response');
+  }
+
+  function userFocus(id, how) {
+    if (!id || id === S.focus) return;
+    S.focus = id; S.youMoves++; S.lastUsed[id] = 10 + S.youMoves;
+    if (id === 'deploy') { S.seen = true; }
+    log('you', `${how} → focus on <b>${P[id].title}</b>.`);
+    render();
+    if (pendingFocusTrigger) { pendingFocusTrigger = false; log('umi', 'you moved focus, so the layout may change now.'); enter(); }
+  }
+  let pendingFocusTrigger = false;
+
+  function agentStops() {
+    S.stopped = true;
+    log('ag', 'deploy check ends its turn: <i>Status: waiting on you: approve migration 0042?</i> (not done).');
+    log('umi', 'marks it: amber dot on its strip chip, amber icon and line 2 in the sidebar.');
+    render();
+    if (cfg.when === 'focus') pendingFocusTrigger = true;
+    if (cfg.when === 'never') log('umi', 'resurface.when = never: nothing else happens until you press J.');
+  }
+
+  // ---------------- playback ----------------
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; cancelAnimationFrame(raf); playing = false; pendingFocusTrigger = false; }
+  function at(s, fn) { timers.push(setTimeout(fn, s * 1000 * speed())); }
+  function reset() {
+    clearTimers();
+    S = fresh(); typedN = 0;
+    $('panes').querySelectorAll('.place').forEach(e => e.remove());
+    $('log').innerHTML = '';
+    render({ instant: true });
+    paintTyped();
+    renderTimeline();
+    $('play').textContent = '▶ Play';
+  }
+  function play() {
+    reset();
+    playing = true; t0 = performance.now();
+    $('play').textContent = '↻ Replay';
+    log('you', 'typing in notes.md.');
+    // typing
+    const perChar = 0.06;
+    let cursor = 0;
+    TYPE_SEGS.forEach(([a, b]) => {
+      for (let s = a; s < b; s += perChar) at(s, () => { if (S.focus === 'notes' && S.tab === 'main') { typedN = Math.min(TYPED.length, typedN + 1); paintTyped(); } });
+    });
+    at(TYPE_SEGS[0][1], () => log('you', 'pause typing.'));
+    at(TYPE_SEGS[1][0], () => log('you', 'resume typing.'));
+    at(TYPE_SEGS[1][1], () => log('you', 'stop typing.'));
+    at(STOP_AT, agentStops);
+    const trig = triggerAt();
+    if (trig != null && cfg.when !== 'focus') at(trig, () => { log('umi', cfg.when === 'now' ? 'resurface.when = now.' : `typing paused ${cfg.n} s.`); enter(); });
+    at(FOCUS_AT, () => {
+      const order = S.places.map(p => p.show);
+      const i = order.indexOf(S.focus);
+      const target = order[i - 1] || order[i + 1];
+      userFocus(target, 'press ⌥⌘← (move to the pane on the left)');
+    });
+    at(endT, () => { playing = false; cancelAnimationFrame(raf); $('head').style.left = ($('tl').clientWidth - 12) + 'px'; });
+    const tick = () => {
+      const t = now(); if (t == null) return;
+      const tl = $('tl'), W = tl.clientWidth - 24;
+      $('head').style.left = (12 + Math.min(1, t / endT) * W) + 'px';
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  }
+
+  // ---------------- events ----------------
+  $('play').onclick = play;
+  $('slow').onchange = e => { cfg.slow = e.target.checked; setSlow(); reset(); };
+  function setSlow() { document.documentElement.style.setProperty('--dur', matchMedia('(prefers-reduced-motion: reduce)').matches ? '1ms' : (260 * speed()) + 'ms'); }
+  $('bring').onclick = () => bringIn('press J');
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'p') play();
+    else if (k === 'j') bringIn('press J');
+    else if (k === 'm') { cfg.slow = !cfg.slow; $('slow').checked = cfg.slow; setSlow(); reset(); }
+  });
+  $('win').addEventListener('click', e => {
+    const act = e.target.closest('[data-act]');
+    if (act) {
+      const a = act.dataset.act;
+      if (a === 'show') return bringIn('click Show');
+      if (a === 'dock') return bringIn('click Dock');
+      if (a === 'dismiss') { S.peek = false; S.pip = null; S.preview = false; if (!S.hidden.includes('deploy') && !S.places.some(p => p.members.includes('deploy'))) S.hidden.push('deploy'); log('you', 'dismiss it for now; the mark stays.'); return render(); }
+      if (a === 'close') {
+        const el = act.closest('.place'); const p = S.places.find(x => x.uid === el.dataset.uid);
+        if (!p || S.places.length < 2) return;
+        S.places = S.places.filter(x => x !== p);
+        log('you', `close <b>${P[p.show].title}</b>.`);
+        if (p.members.includes(S.focus)) { S.focus = S.places[0].show; }
+        render();
+        if (S.pip && S.places.length < 3) { const id = S.pip; S.pip = null; unhide(id); S.places.push(place(id)); log('umi', `a place freed, so the floating ${P[id].title} docks as a split.`); render(); }
+        return;
+      }
+    }
+    if (e.target.closest('.sliver.on')) return bringIn('click the sliver');
+    const sc = e.target.closest('[data-stack]');
+    if (sc) {
+      const p = S.places.find(x => x.uid === sc.dataset.stack);
+      if (p && p.show !== sc.dataset.m) { const was = p.show; p.show = sc.dataset.m; if (S.focus === was) S.focus = p.show; log('you', `click <b>${P[p.show].title}</b> in the stack's strip.`); render({ swap: true }); }
+      return;
+    }
+    const chip = e.target.closest('[data-chip]');
+    if (chip) {
+      const id = chip.dataset.chip;
+      if (S.hidden.includes(id)) { if (id === 'deploy') return bringIn('click its chip'); log('you', `click <b>${P[id].title}</b>.`); showOther(id); }
+      return;
+    }
+    const row = e.target.closest('[data-tab]');
+    if (row) {
+      const t = row.dataset.tab;
+      if (t !== S.tab && (t === 'main' || S.needsTab)) {
+        S.tab = t; S.youMoves++;
+        if (t === 'needs') S.seen = true;
+        log('you', `switch to the <b>${t === 'main' ? '~/site' : 'Needs you'}</b> tab.`);
+        render({ instant: true });
+      }
+      return;
+    }
+    const pl = e.target.closest('.place');
+    if (pl && S.tab === 'main') {
+      const p = S.places.find(x => x.uid === pl.dataset.uid);
+      if (p) userFocus(p.show, 'click');
+    }
+  });
+  function showOther(id) { const saved = cfg.full; showAsPlace(id, 'In response'); cfg.full = saved; }
+  $('sliver').addEventListener('mouseenter', () => { if (S.sliver) log('you', 'hover the sliver: it widens to show what it needs.'); });
+
+  window.addEventListener('resize', renderTimeline);
+  setSlow();
+  renderControls();
+  reset();
+})();
+</script>
+</body>
+</html>
