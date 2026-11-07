@@ -294,7 +294,9 @@ struct UmiStackStrip: View {
     var body: some View {
         let doc = files.document(of: surfaceView)
         UmiPaneHeaderBar(surfaceView: surfaceView) {
-            UmiStackChips(surfaceView: surfaceView, named: namedMembers, unnamed: stack.members.count - namedMembers.count)
+            let named = namedMembers
+            UmiStackChips(surfaceView: surfaceView, named: named,
+                          unnamed: stack.members.filter { m in !named.contains { $0 === m } })
         } trailing: {
             if let doc {
                 UmiFilePaneControls(surfaceView: surfaceView, doc: doc)
@@ -319,45 +321,132 @@ struct UmiStackStrip: View {
     }
 }
 
-/// The chips, in the room the folder and name take in a pane's own header. They show at full
-/// width (300 points at most) when they fit, else each name shortens to 140 points, else they
-/// scroll sideways, keeping the shown member's chip in view.
+/// The chips, in the room the folder and name take in a pane's own header. A chip is never cut
+/// off: when they don't all fit at their full width (300 points at most), the names shorten, the
+/// shown member's last and to no less than 120 points, the others to no less than 90; past that,
+/// the chips farthest from the shown one give way to a "+N" chip whose menu lists them (⌘[ and ⌘]
+/// still reach them). The docs tab's older documents (E-10) are in that menu too.
 private struct UmiStackChips: View {
     let surfaceView: Ghostty.SurfaceView
     let named: [Ghostty.SurfaceView]
-    let unnamed: Int
+    let unnamed: [Ghostty.SurfaceView]
+    @ObservedObject private var files = UmiFilePanes.shared
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            row(maxChip: 300)
-            row(maxChip: 140)
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    row(maxChip: 140)
+        GeometryReader { geometry in
+            let shownIndex = named.firstIndex { $0 === surfaceView } ?? 0
+            let plan = UmiStackChipPlan.make(width: geometry.size.width, naturals: named.map(naturalWidth),
+                                             shown: shownIndex, extra: unnamed.count,
+                                             overflowWidth: { Self.overflowWidth(Self.overflowTitle($0, docs: !unnamed.isEmpty)) })
+            let hidden = named.indices.filter { plan.widths[$0] == nil }.map { named[$0] } + unnamed
+            HStack(spacing: UmiStackChipPlan.gap) {
+                ForEach(Array(named.enumerated()), id: \.element.id) { index, member in
+                    if let width = plan.widths[index] {
+                        UmiStackChip(member: member, shown: member === surfaceView, width: width)
+                    }
                 }
-                .onAppear { proxy.scrollTo(surfaceView.id) }
-                .onChange(of: surfaceView.id) { id in withAnimation { proxy.scrollTo(id) } }
+                if !hidden.isEmpty {
+                    UmiStackOverflowChip(members: hidden, title: Self.overflowTitle(hidden.count, docs: !unnamed.isEmpty))
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
+        .frame(height: 22)
     }
 
-    private func row(maxChip: CGFloat) -> some View {
-        HStack(spacing: 2) {
-            ForEach(named, id: \.id) { member in
-                UmiStackChip(member: member, shown: member === surfaceView, maxWidth: maxChip)
-                    .id(member.id)
-            }
-            if unnamed > 0 {
-                Text("+\(unnamed) · ⌘[ ⌘]")
-                    .font(UmiTheme.uiFont)
-                    .foregroundColor(UmiTheme.textTertiary)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.horizontal, 6)
-                    .help("\(unnamed) older \(unnamed == 1 ? "document" : "documents"): ⌘[ and ⌘] go through all of them")
-                    .accessibilityLabel("\(unnamed) more")
-            }
+    /// A chip's width with its whole name: padding, icon, dot, name, close (300 at most).
+    private func naturalWidth(_ member: Ghostty.SurfaceView) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let text = (UmiStacks.label(of: member) as NSString).size(withAttributes: [.font: font]).width
+        // Room for the unsaved dot on every file chip, so the plan needn't follow each edit.
+        let dot: CGFloat = files.document(of: member) != nil ? 12 : 0
+        return min(300, ceil(8 + 14 + 5 + dot + text + 5 + 14 + 8 + 2))
+    }
+
+    static func overflowTitle(_ count: Int, docs: Bool) -> String {
+        docs ? "+\(count) · ⌘[ ⌘]" : "+\(count)"
+    }
+
+    static func overflowWidth(_ title: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        return ceil((title as NSString).size(withAttributes: [.font: font]).width + 16 + 2)
+    }
+}
+
+/// Which chips show and how wide (UmiStackChips).
+enum UmiStackChipPlan {
+    static let gap: CGFloat = 2
+    static let minShown: CGFloat = 120
+    static let minOther: CGFloat = 90
+
+    /// `widths[i]` is chip i's width, nil when it waits in the "+N" menu. `extra` members are in
+    /// that menu whatever the room.
+    static func make(width: CGFloat, naturals: [CGFloat], shown: Int, extra: Int,
+                     overflowWidth: (Int) -> CGFloat) -> (widths: [CGFloat?], hidden: Int) {
+        guard !naturals.isEmpty else { return ([], extra) }
+        var visible = Array(naturals.indices)
+        func minimum(_ i: Int) -> CGFloat { min(naturals[i], i == shown ? minShown : minOther) }
+        var room: CGFloat = 0
+        while true {
+            let hidden = naturals.count - visible.count + extra
+            room = width - (hidden > 0 ? overflowWidth(hidden) + gap : 0) - gap * CGFloat(visible.count - 1)
+            if visible.count == 1 || visible.map(minimum).reduce(0, +) <= room { break }
+            // The chip farthest from the shown one gives way (the later one on a tie).
+            let drop = visible.filter { $0 != shown }.max { a, b in
+                let da = abs(a - shown), db = abs(b - shown)
+                return da != db ? da < db : a < b
+            }!
+            visible.removeAll { $0 == drop }
         }
+        var widths = [CGFloat?](repeating: nil, count: naturals.count)
+        for i in visible { widths[i] = minimum(i) }
+        var slack = room - visible.map(minimum).reduce(0, +)
+        if slack < 0 {
+            // Only the shown chip, and less room than its minimum: it takes what there is.
+            widths[visible[0]] = max(0, room)
+            return (widths, naturals.count - visible.count + extra)
+        }
+        // The shown chip gets its whole name first, then the others share what's left evenly.
+        if let current = widths[shown] {
+            let add = min(slack, naturals[shown] - current)
+            widths[shown] = current + add
+            slack -= add
+        }
+        var growing = visible.filter { $0 != shown && widths[$0]! < naturals[$0] }
+        while slack > 0.5, !growing.isEmpty {
+            let share = slack / CGFloat(growing.count)
+            for i in growing {
+                let add = min(share, naturals[i] - widths[i]!)
+                widths[i]! += add
+                slack -= add
+            }
+            growing = growing.filter { widths[$0]! < naturals[$0] - 0.01 }
+        }
+        return (widths, naturals.count - visible.count + extra)
+    }
+}
+
+/// "+N": the members without a chip; its menu shows one.
+private struct UmiStackOverflowChip: View {
+    let members: [Ghostty.SurfaceView]
+    let title: String
+
+    var body: some View {
+        Menu {
+            ForEach(members, id: \.id) { member in
+                Button(UmiStacks.label(of: member)) { try? UmiStacks.show(member) }
+            }
+        } label: {
+            Text(title).font(UmiTheme.uiFont)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundColor(UmiTheme.textTertiary)
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+        .help("\(members.count) more: pick one, or go through all with ⌘[ and ⌘]")
+        .accessibilityLabel("\(members.count) more")
     }
 }
 
@@ -378,7 +467,7 @@ private struct UmiStackRowMenu: ViewModifier {
 private struct UmiStackChip: View {
     @ObservedObject var member: Ghostty.SurfaceView
     let shown: Bool
-    var maxWidth: CGFloat = 300
+    let width: CGFloat
     @State private var hovering = false
     @ObservedObject private var files = UmiFilePanes.shared
     @ObservedObject private var web = UmiWebPanes.shared
@@ -400,7 +489,11 @@ private struct UmiStackChip: View {
                 .font(UmiTheme.uiFont)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
+                // The tooltip on the name only: SwiftUI gives a modifier's tooltip to every part of a
+                // view, and the chip's accessibility element would then repeat it per part.
+                .help(tooltip(doc: doc, page: page))
             Button {
                 UmiFilePanes.confirmClose(member)
             } label: {
@@ -414,12 +507,11 @@ private struct UmiStackChip: View {
         .foregroundColor(shown ? UmiTheme.textPrimary : UmiTheme.textTertiary)
         .padding(.horizontal, 8)
         .frame(height: 22)
-        .frame(maxWidth: maxWidth)
+        .frame(width: width)
         .background(RoundedRectangle(cornerRadius: 6).fill(shown ? UmiTheme.selectedFill : (hovering ? UmiTheme.hoverFill : .clear)))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { try? UmiStacks.show(member) }
-        .help(tooltip(doc: doc, page: page))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(UmiStacks.label(of: member))
         .modifier(UmiChipDirtyValue(doc: doc))

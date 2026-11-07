@@ -471,9 +471,10 @@ A "live session" is a pane with a running program, its scrollback and its state.
     leaves a stack, or whose stack dissolves, gets its header back. A chip's tooltip is what the
     header named: the file's path, the page's address, the terminal's folder; a file's chip, and a
     hosted page's, shows its unsaved dot. A right-click on the
-    row opens the shown file's pane menu (E-24). Chips are at most 300 points wide; when they
-    don't fit, each shortens to 140, and past that they scroll sideways, keeping the shown one in
-    view.
+    row opens the shown file's pane menu (E-24). A chip is never cut off. Chips are at most 300
+    points wide; when they don't all fit, names shorten (the shown chip's last, to no less than
+    120 points, the others to 90); past that, the chips farthest from the shown one give way to a
+    "+N" chip whose menu lists them and shows the one picked. The shown chip always shows.
   - ⌘[ and ⌘] show the previous and next member of the focused pane's stack. In a pane that isn't
     stacked they go to the previous and next pane, as before.
   - Members not on show keep running. Focusing one (`pane focus`, the palette, `jump`) shows it.
@@ -773,7 +774,7 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   - Markdown (asked 2026-11-05) opens in one shared tab, the docs tab (`docs: true` in `ls`, named
     Docs). Its documents share one place as a stack (M-7), the most recently opened first. The
     strip names the three most recent (and the one on show, if older), then "+N · ⌘[ ⌘]" for the
-    rest, which ⌘[ and ⌘] reach. A new document goes first and on show; one already open anywhere shows where it
+    rest, which ⌘[ and ⌘] and that chip's menu reach. A new document goes first and on show; one already open anywhere shows where it
     is (in the docs tab it becomes the most recent). Without a docs tab, one is made in the current
     window (a new window if there is none). Closing the last document closes the tab.
   - Text, JSON, CSV, TSV and YAML files open in the tab whose folder is closest to the file: the
