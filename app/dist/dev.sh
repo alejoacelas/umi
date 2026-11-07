@@ -25,8 +25,10 @@ state="${UMI_DEV_STATE_DIR:-$HOME/Library/Application Support/Umi-dev}"
 stamp="$root/macos/build/.dev-lib-stamp"
 log="$root/macos/build/dev-build.log"
 
+# The running dev copy, built in this worktree or any other: they share the bundle id and the
+# state directory, so only one runs at a time.
 running_pid() {
-    pgrep -f "^$app/Contents/MacOS/umi-app" | head -1 || true
+    pgrep -f "/macos/build/Debug/Umi.app/Contents/MacOS/umi-app" | head -1 || true
 }
 
 stop() {
@@ -81,8 +83,9 @@ if [[ "$build" == 1 ]]; then
     # (app/macos/UmiSyntax) in their own folders and can't find their module maps.
     # No index store: Xcode 27 fails to make its folder for the grammars' C sources.
     (cd "$root/macos" && xcodebuild -target Ghostty -configuration Debug -arch arm64 build SYMROOT="$root/macos/build" COMPILER_INDEX_STORE_ENABLE=NO \
-        CODE_SIGN_IDENTITY="$umi_sign_identity" UMI_SIGN_IDENTITY="$umi_sign_identity" > "$log" 2>&1) \
+        CODE_SIGN_IDENTITY=- UMI_SIGN_IDENTITY="$umi_sign_identity" > "$log" 2>&1) \
         || { grep -E "error:" "$log" | head -20 >&2; echo "dev.sh: the build failed ($log)" >&2; exit 1; }
+    umi_sign_app "$app" "$root/macos/GhosttyDebug.entitlements" || { echo "dev.sh: signing failed" >&2; exit 1; }
     echo "built in $((SECONDS - start)) s"
 fi
 

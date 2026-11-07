@@ -58,7 +58,7 @@ if [[ "$build" == 1 ]]; then
     # (app/macos/UmiSyntax) in their own folders and can't find their module maps.
     (cd "$root/macos" && { xattr -cr build/ReleaseLocal/Umi.app 2>/dev/null || true; } \
         && xcodebuild -target Ghostty -configuration ReleaseLocal -arch arm64 build SYMROOT="$root/macos/build" \
-               CODE_SIGN_IDENTITY="$umi_sign_identity" UMI_SIGN_IDENTITY="$umi_sign_identity" > "$root/dist/build.log" 2>&1) \
+               CODE_SIGN_IDENTITY=- UMI_SIGN_IDENTITY="$umi_sign_identity" > "$root/dist/build.log" 2>&1) \
         || { grep -E "error:" "$root/dist/build.log" | head -20 >&2; echo "release.sh: the build failed (dist/build.log)" >&2; exit 1; }
 fi
 if [[ "$publish" == 1 && -n "$(git -C "$root" status --porcelain --untracked-files=no)" ]]; then

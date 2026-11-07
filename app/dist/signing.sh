@@ -17,3 +17,14 @@ umi_require_sign_identity() {
         return 1
     fi
 }
+
+# Xcode builds sign ad hoc (CODE_SIGN_IDENTITY=-): Xcode refuses a self-signed identity for the
+# Swift packages' resource bundles ("requires a development team"). The finished app is then
+# signed here with the stable identity, keeping the app's entitlements.
+umi_sign_app() {
+    local app="$1" entitlements="$2"
+    rm -f "$app/Icon"$'\r'
+    xattr -cr "$app"
+    codesign --force --deep --sign "$umi_sign_identity" "$app" >/dev/null 2>&1 \
+        && codesign --force --sign "$umi_sign_identity" --entitlements "$entitlements" "$app" >/dev/null 2>&1
+}
