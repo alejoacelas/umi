@@ -280,31 +280,31 @@ enum UmiStacks {
     }
 }
 
-/// The strip of names along the top of a stack's place: click one to show it, ✕ to close it.
+/// A stack's one header row (M-7, E-24; Alejo's choice of 2026-11-07, "S1": the strip replaces
+/// the pane's own header, so a stack never costs two rows). The drag grip moves the member on
+/// show; then a chip per member (click shows it, ✕ closes it); on the right the shown member's own
+/// controls, as its header has them (a file's or a web page's; a terminal or agent has none). A
+/// right-click on the row opens the shown file's pane menu, as its header does.
 struct UmiStackStrip: View {
     let surfaceView: Ghostty.SurfaceView
     @ObservedObject var stack: UmiPaneStack
+    @ObservedObject private var files = UmiFilePanes.shared
+    @ObservedObject private var web = UmiWebPanes.shared
 
     var body: some View {
-        let named = namedMembers
-        let unnamed = stack.members.count - named.count
-        HStack(spacing: 2) {
-            ForEach(named, id: \.id) { member in
-                UmiStackChip(member: member, shown: member === surfaceView)
+        let doc = files.document(of: surfaceView)
+        UmiPaneHeaderBar(surfaceView: surfaceView) {
+            UmiStackChips(surfaceView: surfaceView, named: namedMembers, unnamed: stack.members.count - namedMembers.count)
+        } trailing: {
+            if let doc {
+                UmiFilePaneControls(surfaceView: surfaceView, doc: doc)
+            } else if let page = web.page(of: surfaceView) {
+                UmiWebPaneControls(surfaceView: surfaceView, page: page)
             }
-            if unnamed > 0 {
-                Text("+\(unnamed) · ⌘[ ⌘]")
-                    .font(UmiTheme.uiFont)
-                    .foregroundColor(UmiTheme.textTertiary)
-                    .padding(.horizontal, 6)
-                    .help("\(unnamed) older \(unnamed == 1 ? "document" : "documents"): ⌘[ and ⌘] go through all of them")
-                    .accessibilityLabel("\(unnamed) more")
-            }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 30)
         .background(UmiTheme.chromeFill)
+        .contentShape(Rectangle())
+        .modifier(UmiStackRowMenu(surfaceView: surfaceView, doc: doc))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Stacked panes")
     }
@@ -319,15 +319,73 @@ struct UmiStackStrip: View {
     }
 }
 
+/// The chips, in the room the folder and name take in a pane's own header. They show at full
+/// width (300 points at most) when they fit, else each name shortens to 140 points, else they
+/// scroll sideways, keeping the shown member's chip in view.
+private struct UmiStackChips: View {
+    let surfaceView: Ghostty.SurfaceView
+    let named: [Ghostty.SurfaceView]
+    let unnamed: Int
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row(maxChip: 300)
+            row(maxChip: 140)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    row(maxChip: 140)
+                }
+                .onAppear { proxy.scrollTo(surfaceView.id) }
+                .onChange(of: surfaceView.id) { id in withAnimation { proxy.scrollTo(id) } }
+            }
+        }
+    }
+
+    private func row(maxChip: CGFloat) -> some View {
+        HStack(spacing: 2) {
+            ForEach(named, id: \.id) { member in
+                UmiStackChip(member: member, shown: member === surfaceView, maxWidth: maxChip)
+                    .id(member.id)
+            }
+            if unnamed > 0 {
+                Text("+\(unnamed) · ⌘[ ⌘]")
+                    .font(UmiTheme.uiFont)
+                    .foregroundColor(UmiTheme.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 6)
+                    .help("\(unnamed) older \(unnamed == 1 ? "document" : "documents"): ⌘[ and ⌘] go through all of them")
+                    .accessibilityLabel("\(unnamed) more")
+            }
+        }
+    }
+}
+
+/// A right-click on a stack's row: the shown file's pane menu (other panes' headers have none).
+private struct UmiStackRowMenu: ViewModifier {
+    let surfaceView: Ghostty.SurfaceView
+    let doc: UmiDocument?
+
+    func body(content: Content) -> some View {
+        if let doc {
+            content.contextMenu { UmiFilePaneMenuItems(surfaceView: surfaceView, doc: doc) }
+        } else {
+            content
+        }
+    }
+}
+
 private struct UmiStackChip: View {
     @ObservedObject var member: Ghostty.SurfaceView
     let shown: Bool
+    var maxWidth: CGFloat = 300
     @State private var hovering = false
     @ObservedObject private var files = UmiFilePanes.shared
     @ObservedObject private var web = UmiWebPanes.shared
 
     var body: some View {
         let doc = files.document(of: member)
+        let page = web.page(of: member)
         HStack(spacing: 5) {
             // A file's type icon in its colors and its unsaved dot, as Warp's file tabs show them.
             if let doc {
@@ -336,11 +394,13 @@ private struct UmiStackChip: View {
             } else {
                 Image(systemName: web.isWebPane(member.id) ? "globe" : "terminal")
                     .font(.system(size: 10))
+                if let page { UmiChipPageState(page: page) }
             }
             Text(UmiStacks.label(of: member))
                 .font(UmiTheme.uiFont)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .layoutPriority(1)
             Button {
                 UmiFilePanes.confirmClose(member)
             } label: {
@@ -354,16 +414,41 @@ private struct UmiStackChip: View {
         .foregroundColor(shown ? UmiTheme.textPrimary : UmiTheme.textTertiary)
         .padding(.horizontal, 8)
         .frame(height: 22)
-        .frame(maxWidth: 300)
+        .frame(maxWidth: maxWidth)
         .background(RoundedRectangle(cornerRadius: 6).fill(shown ? UmiTheme.selectedFill : (hovering ? UmiTheme.hoverFill : .clear)))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { try? UmiStacks.show(member) }
+        .help(tooltip(doc: doc, page: page))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(UmiStacks.label(of: member))
         .modifier(UmiChipDirtyValue(doc: doc))
         .accessibilityAddTraits(shown ? .isSelected : [])
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+extension UmiStackChip {
+    /// What the pane's own header gave: the file's full path, the page's address, the terminal's folder.
+    fileprivate func tooltip(doc: UmiDocument?, page: UmiWebPage?) -> String {
+        if let doc { return doc.url.path }
+        if let page { return page.url.absoluteString }
+        return UmiTopology.cwd(of: member)
+    }
+}
+
+/// A web chip's unsaved dot (a hosted page that says so) and its loading spinner, as the web pane's
+/// header shows them.
+private struct UmiChipPageState: View {
+    @ObservedObject var page: UmiWebPage
+
+    var body: some View {
+        if page.hosted?.dirty == true {
+            Circle().fill(UmiTheme.textSecondary).frame(width: 8, height: 8)
+                .padding(.trailing, -1)
+                .accessibilityLabel("Unsaved changes")
+        }
+        if page.loading { ProgressView().controlSize(.mini) }
     }
 }
 

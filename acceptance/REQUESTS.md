@@ -343,3 +343,14 @@ Then, about the same page opened in a normal browser:
 
 > I want to chrome hosted pages to mimic to the greatest extent possible the umi design (with only
 > changes for things that are different / don't make sense there)
+
+## 2026-11-07: a stack's chips in the pane's header row
+
+A stacked file or web pane showed two rows: the stack's strip, then the pane's own header. On a
+similar double row Alejo had said:
+
+> feels redundant at the top
+
+Of the prototypes shown, Alejo picked "S1": "the strip replaces that pane's bar, so a stack never
+costs two rows". The stack's one row holds the drag grip, the chips where the folder and name
+were, and the shown pane's own controls on the right (SPEC M-7, E-24).

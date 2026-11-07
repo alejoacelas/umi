@@ -350,12 +350,14 @@ final class UmiWebView: WKWebView {
 struct UmiWebPaneOverlay: View {
     let surfaceView: Ghostty.SurfaceView
     let background: Color
+    /// False while the pane is in a stack: the stack's row is its header then (M-7, E-24).
+    var showsHeader = true
     @ObservedObject private var web = UmiWebPanes.shared
 
     var body: some View {
         if let page = web.page(of: surfaceView) {
             UmiFilePaneHosted(content: AnyView(UmiWebPaneContent(surfaceView: surfaceView, page: page,
-                                                                  background: background)))
+                                                                  background: background, showsHeader: showsHeader)))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -365,10 +367,11 @@ private struct UmiWebPaneContent: View {
     let surfaceView: Ghostty.SurfaceView
     @ObservedObject var page: UmiWebPage
     let background: Color
+    let showsHeader: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            UmiWebPaneHeader(surfaceView: surfaceView, page: page)
+            if showsHeader { UmiWebPaneHeader(surfaceView: surfaceView, page: page) }
             ZStack {
                 UmiWebPageView(page: page, pane: surfaceView)
                 if let failure = page.failure {
@@ -415,23 +418,34 @@ private struct UmiWebPaneHeader: View {
             }
             if page.loading { ProgressView().controlSize(.mini) }
         } trailing: {
-            if let hosted = page.hosted {
-                if hosted.hasModes {
-                    UmiPreviewSourceSwitch(isPreview: hosted.mode == .preview) { page.setMode($0 ? .preview : .source) }
+            UmiWebPaneControls(surfaceView: surfaceView, page: page)
+        }
+    }
+}
+
+/// The right side of a web pane's header, also shown in its stack's row (M-7): a hosted page's
+/// Preview / Source and GitHub, then Reload, Open in Browser and close.
+struct UmiWebPaneControls: View {
+    let surfaceView: Ghostty.SurfaceView
+    @ObservedObject var page: UmiWebPage
+
+    var body: some View {
+        if let hosted = page.hosted {
+            if hosted.hasModes {
+                UmiPreviewSourceSwitch(isPreview: hosted.mode == .preview) { page.setMode($0 ? .preview : .source) }
+            }
+            if hosted.github != nil {
+                UmiPaneHeaderButton(symbol: "arrow.triangle.branch", help: "Open on GitHub", label: "GitHub") {
+                    page.openGitHub()
                 }
-                if hosted.github != nil {
-                    UmiPaneHeaderButton(symbol: "arrow.triangle.branch", help: "Open on GitHub", label: "GitHub") {
-                        page.openGitHub()
-                    }
-                }
             }
-            UmiPaneHeaderButton(symbol: "arrow.clockwise", help: "Reload (⌘R)", label: "Reload") { page.reload() }
-            UmiPaneHeaderButton(symbol: "arrow.up.forward.square", help: "Open in Browser", label: "Open in Browser") {
-                page.openInBrowser()
-            }
-            UmiPaneHeaderButton(symbol: "xmark", help: "Close (⌘W)", label: "Close \(page.displayTitle)", size: 8) {
-                UmiFilePanes.closePane(surfaceView)
-            }
+        }
+        UmiPaneHeaderButton(symbol: "arrow.clockwise", help: "Reload (⌘R)", label: "Reload") { page.reload() }
+        UmiPaneHeaderButton(symbol: "arrow.up.forward.square", help: "Open in Browser", label: "Open in Browser") {
+            page.openInBrowser()
+        }
+        UmiPaneHeaderButton(symbol: "xmark", help: "Close (⌘W)", label: "Close \(page.displayTitle)", size: 8) {
+            UmiFilePanes.closePane(surfaceView)
         }
     }
 }

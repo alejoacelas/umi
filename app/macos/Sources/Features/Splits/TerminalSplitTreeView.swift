@@ -101,9 +101,10 @@ private struct TerminalSplitLeaf: View {
     @State private var isSelfDragging: Bool = false
 
     var body: some View {
-        // Umi: panes sharing this place (a stack, M-7) show a strip of their names on top.
+        // Umi: panes sharing this place (a stack, M-7) show one row on top: their names and the
+        // shown member's controls, in place of that member's own header.
         VStack(spacing: 0) {
-            if let stack = umiStack, stack.members.count > 1 {
+            if let stack = umiStack {
                 UmiStackStrip(surfaceView: surfaceView, stack: stack)
             }
             leaf
@@ -111,20 +112,25 @@ private struct TerminalSplitLeaf: View {
     }
 
     private var umiStack: UmiPaneStack? {
-        UmiTopology.locate(surfaceView)?.tab.stack(of: surfaceView)
+        guard let stack = UmiTopology.locate(surfaceView)?.tab.stack(of: surfaceView),
+              stack.members.count > 1 else { return nil }
+        return stack
     }
 
     private var leaf: some View {
-        GeometryReader { geometry in
+        let ownHeader = umiStack == nil
+        return GeometryReader { geometry in
             Ghostty.InspectableSurface(
                 surfaceView: surfaceView,
                 isSplit: isSplit)
             // Umi: a managed session shown in this pane is drawn over its terminal.
             .overlay { UmiAgentPaneOverlay(surfaceView: surfaceView) }
             // Umi: so is a file's editor, in a file pane (E-1).
-            .overlay { UmiFilePaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
+            .overlay { UmiFilePaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor,
+                                          showsHeader: ownHeader) }
             // Umi: and a page, in a web pane (E-12).
-            .overlay { UmiWebPaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
+            .overlay { UmiWebPaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor,
+                                         showsHeader: ownHeader) }
             // Umi: a 2px accent line along the top edge marks the focused pane of a split.
             .overlay(alignment: .top) {
                 if isSplit && UmiTopology.locate(surfaceView)?.tab.focusedSurface === surfaceView {

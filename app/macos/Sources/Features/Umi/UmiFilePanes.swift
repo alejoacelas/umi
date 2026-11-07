@@ -240,12 +240,14 @@ final class UmiTabFiles {
 struct UmiFilePaneOverlay: View {
     let surfaceView: Ghostty.SurfaceView
     let background: Color
+    /// False while the pane is in a stack: the stack's row is its header then (M-7, E-24).
+    var showsHeader = true
     @ObservedObject private var files = UmiFilePanes.shared
 
     var body: some View {
         if let doc = files.document(of: surfaceView), let host = files.host(of: surfaceView) {
             UmiFilePaneHosted(content: AnyView(UmiFilePaneContent(surfaceView: surfaceView, doc: doc, host: host,
-                                                                   background: background)))
+                                                                   background: background, showsHeader: showsHeader)))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -274,10 +276,11 @@ private struct UmiFilePaneContent: View {
     @ObservedObject var doc: UmiDocument
     let host: UmiEditorGroup
     let background: Color
+    let showsHeader: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            UmiFilePaneHeader(surfaceView: surfaceView, doc: doc)
+            if showsHeader { UmiFilePaneHeader(surfaceView: surfaceView, doc: doc) }
             UmiDocumentView(doc: doc, group: host, background: background)
                 .id(doc.id)
         }
@@ -356,8 +359,7 @@ enum UmiFilePaneMenu {
 
 /// The file pane's header (E-24; Alejo's choice of 2026-11-07, the same row as a hosted page's):
 /// the drag grip, the file type's icon and "folder / name" on the left (a dot before the name while
-/// there are unsaved changes), and on the right Preview / Source (E-2), ⋯ (the pane menu, also on
-/// right-click) and close.
+/// there are unsaved changes), and on the right its controls (UmiFilePaneControls).
 private struct UmiFilePaneHeader: View {
     let surfaceView: Ghostty.SurfaceView
     @ObservedObject var doc: UmiDocument
@@ -367,24 +369,10 @@ private struct UmiFilePaneHeader: View {
             UmiFileIcon(url: doc.url)
             UmiPathTitle(folder: Self.folder(of: doc.url), name: doc.name, dirty: doc.isDirty, help: doc.url.path)
         } trailing: {
-            if doc.hasPreview { UmiModeToggle(doc: doc) }
-            Menu {
-                menuItems
-            } label: {
-                Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .foregroundColor(UmiTheme.textTertiary)
-            .help("More")
-            .accessibilityLabel("More actions")
-            UmiPaneHeaderButton(symbol: "xmark", help: "Close (⌘W)", label: "Close \(doc.name)", size: 8) {
-                UmiFilePanes.confirmClose(surfaceView)
-            }
+            UmiFilePaneControls(surfaceView: surfaceView, doc: doc)
         }
         .contentShape(Rectangle())
-        .contextMenu { menuItems }
+        .contextMenu { UmiFilePaneMenuItems(surfaceView: surfaceView, doc: doc) }
     }
 
     /// The parent folder's name; none at the volume's root.
@@ -392,8 +380,39 @@ private struct UmiFilePaneHeader: View {
         let parent = url.deletingLastPathComponent()
         return parent.path == "/" ? nil : parent.lastPathComponent
     }
+}
 
-    @ViewBuilder private var menuItems: some View {
+/// The right side of a file pane's header, also shown in its stack's row (M-7): Preview / Source
+/// (E-2, for files with a preview), ⋯ (the pane menu) and close.
+struct UmiFilePaneControls: View {
+    let surfaceView: Ghostty.SurfaceView
+    @ObservedObject var doc: UmiDocument
+
+    var body: some View {
+        if doc.hasPreview { UmiModeToggle(doc: doc) }
+        Menu {
+            UmiFilePaneMenuItems(surfaceView: surfaceView, doc: doc)
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundColor(UmiTheme.textTertiary)
+        .help("More")
+        .accessibilityLabel("More actions")
+        UmiPaneHeaderButton(symbol: "xmark", help: "Close (⌘W)", label: "Close \(doc.name)", size: 8) {
+            UmiFilePanes.confirmClose(surfaceView)
+        }
+    }
+}
+
+/// The pane menu's items (UmiFilePaneMenu), for ⋯ and a right-click on the header.
+struct UmiFilePaneMenuItems: View {
+    let surfaceView: Ghostty.SurfaceView
+    @ObservedObject var doc: UmiDocument
+
+    var body: some View {
         ForEach(Array(UmiFilePaneMenu.items(for: surfaceView, doc: doc).enumerated()), id: \.offset) { _, item in
             if item.separated { Divider() }
             Button(item.title, action: item.action).disabled(!item.enabled)

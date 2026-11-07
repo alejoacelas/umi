@@ -463,6 +463,17 @@ A "live session" is a pane with a running program, its scrollback and its state.
   another pane (the middle third each way; "Stack here" shows) joins it in its place, on show and
   focused; its old place closes. Any panes can stack: terminals, file panes, agent sessions.
   - A strip along the top of the place names each member; clicking one shows it, its ✕ closes it.
+    The strip is the place's one header row (Alejo's choice of 2026-11-07, "S1": "the strip
+    replaces that pane's bar, so a stack never costs two rows"): 30 points, the drag grip (it
+    moves the member on show), the chips where a pane's own header has its folder and name, then
+    the shown member's own controls on the right, as its header has them (E-24, E-12; a terminal
+    or agent session adds none). The member on show draws no header of its own; a pane that
+    leaves a stack, or whose stack dissolves, gets its header back. A chip's tooltip is what the
+    header named: the file's path, the page's address, the terminal's folder; a file's chip, and a
+    hosted page's, shows its unsaved dot. A right-click on the
+    row opens the shown file's pane menu (E-24). Chips are at most 300 points wide; when they
+    don't fit, each shortens to 140, and past that they scroll sideways, keeping the shown one in
+    view.
   - ⌘[ and ⌘] show the previous and next member of the focused pane's stack. In a pane that isn't
     stacked they go to the previous and next pane, as before.
   - Members not on show keep running. Focusing one (`pane focus`, the palette, `jump`) shows it.
@@ -865,7 +876,9 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   preview for Markdown. In a preview: Maximize pane, Refresh file (asks first when there are unsaved
   changes), Open in editor (the source view), Copy file path. A right-click in the source text offers
   Cut, Copy and Paste. As Warp's (Warp parity, 2026-11-05), a stack chip (M-7) for a file shows
-  the file type's colored icon and the same dot, and is at most 300 points wide.
+  the file type's colored icon and the same dot, and is at most 300 points wide. In a stack the
+  header is the stack's row (M-7): the chips take the place of the folder and name, and the
+  controls on the right stay as here; the right-hand close closes the member on show.
 ### The Markdown preview as Warp's (Warp parity, 2026-11-05)
 
 Compared with Warp on macOS, default settings, default Dark theme. Front matter, comments (E-11)
