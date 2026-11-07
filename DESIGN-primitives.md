@@ -247,7 +247,10 @@ New pieces for moving attention and panes around (prototypes in `design/prototyp
 - **Moving panes from the keyboard with a preview.** A key lifts the focused pane; arrows move it
   over the sidebar's tabs while a preview shows where it would land in each (and which pane there
   would be hidden); Enter commits, Esc puts everything back. Targets include a new tab, bucket
-  tabs and the tab it came from. Being explored in `keyboard-move.html`. Today ⌃⌘←/→ moves a
+  tabs and the tab it came from. *Decided* (`move-literal.html`, option A): the window shows the
+  target tab exactly as it would look with the pane landed, and the sidebar comes out with every
+  row listing its tab's panes and their indicators, the target row showing where the pane lands.
+  Which keys drive it is open. Today ⌃⌘←/→ moves a
   pane to the previous or next tab at once, with no preview.
 - **Split a tab by project.** A palette command groups a tab's panes by git repository and gives
   each group its own tab.
