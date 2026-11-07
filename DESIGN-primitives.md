@@ -99,7 +99,7 @@ Key–value pairs on panes, tabs and windows. Three sources:
 
 - **Yours**, written by you or your scripts: `priority=high`, `project=impact-ops`, `note="waiting on Ben"`, `url=…`.
 - **Agent**, written by the hook plugin: `agent.kind`, `agent.status`, `agent.title`, `agent.summary`, `agent.done`.
-- **App**, computed and read-only: `kind`, `cwd`, `branch`, `command`, `focused`, `shown`, `parked`, `seen_at`, `changed_at`, `status_since`, `idle_for`.
+- **App**, computed and read-only: `kind`, `cwd`, `branch`, `command`, `focused`, `shown`, `hidden`, `seen_at`, `changed_at`, `status_since`, `idle_for`.
 
 With `seen_at` and `changed_at` as plain facts, today's mark stops being a separate concept:
 "unseen" is `changed_at > seen_at`, and "needs you" is `agent.status=needs_input`.
@@ -121,7 +121,7 @@ A query picks panes by attribute and orders them:
 
 ```
 agent.status=needs_input
-priority=high and not parked | sort -priority, status_since
+priority=high and not hidden | sort -priority, status_since
 project=impact-ops | sort -changed_at | limit 5
 ```
 
@@ -174,9 +174,9 @@ palette. Scripts and agent skills, such as "Organize into tabs", are started fro
 | Approach | How | Good for | Cost |
 |---|---|---|---|
 | **External script** | a program reads `umi events` and calls `umi …` | anything; any language; easy to change | runs a few hundred ms late; must be kept running (launchd); can miss events while it's down |
-| **Conditions on an action** | `umi pane park P --until 'agent.done=false'` or `--until 2h` | one-off "come back when…" | each condition must be checkable by the app |
-| **Rules in config** | `on agent.stop where … do unpark` | rules that must survive restarts and run instantly | the config grows into a programming language |
-| **Policy command** | the app runs your command at a decision point and uses its answer, e.g. `park.done-check = ~/bin/is-done` | one rich decision without a language | a slow or broken command delays the app; needs a timeout |
+| **Conditions on an action** | `umi pane hide P --until 'agent.done=false'` or `--until 2h` | one-off "come back when…" | each condition must be checkable by the app |
+| **Rules in config** | `on agent.stop where … do show` | rules that must survive restarts and run instantly | the config grows into a programming language |
+| **Policy command** | the app runs your command at a decision point and uses its answer, e.g. `hide.done-check = ~/bin/is-done` | one rich decision without a language | a slow or broken command delays the app; needs a timeout |
 
 ### 3.6 Worked examples
 
@@ -188,7 +188,7 @@ them. `landing = important` after 15 minutes away. `key.ctrl+cmd+] = go --next i
 (`umi pane move --tab Later`); a rule moves panes back to their project's tab when they need you.
 
 **Hide until not done.** `umi pane hide --until 'agent.done=false or agent.status=needs_input'`.
-The Stop hook sets `agent.done` from the last message (by the `park.done-check` policy command, or a
+The Stop hook sets `agent.done` from the last message (by the `hide.done-check` policy command, or a
 regex). A pane that comes back gets `seen_at` older than `changed_at`, so it is in `unseen` and
 `jump` reaches it.
 
