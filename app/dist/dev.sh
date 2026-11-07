@@ -81,7 +81,7 @@ if [[ "$build" == 1 ]]; then
     # (app/macos/UmiSyntax) in their own folders and can't find their module maps.
     # No index store: Xcode 27 fails to make its folder for the grammars' C sources.
     (cd "$root/macos" && xcodebuild -target Ghostty -configuration Debug -arch arm64 build SYMROOT="$root/macos/build" COMPILER_INDEX_STORE_ENABLE=NO \
-        CODE_SIGN_IDENTITY="$umi_sign_identity" UMI_SIGN_IDENTITY="$umi_sign_identity" > "$log" 2>&1) \
+        CODE_SIGN_IDENTITY="$umi_sign_identity" CODE_SIGN_STYLE=Manual UMI_SIGN_IDENTITY="$umi_sign_identity" > "$log" 2>&1) \
         || { grep -E "error:" "$log" | head -20 >&2; echo "dev.sh: the build failed ($log)" >&2; exit 1; }
     echo "built in $((SECONDS - start)) s"
 fi
