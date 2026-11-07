@@ -474,7 +474,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
     row opens the shown file's pane menu (E-24). A chip is never cut off. Chips are at most 300
     points wide; when they don't all fit, names shorten (the shown chip's last, to no less than
     120 points, the others to 90); past that, the chips farthest from the shown one give way to a
-    "+N" chip whose menu lists them and shows the one picked. The shown chip always shows.
+    "+N" chip whose menu lists them and shows the one picked. The shown chip always shows; with
+    less room than its minimum it leaves out its ✕, since the row's ✕ closes the same pane.
   - ⌘[ and ⌘] show the previous and next member of the focused pane's stack. In a pane that isn't
     stacked they go to the previous and next pane, as before.
   - Members not on show keep running. Focusing one (`pane focus`, the palette, `jump`) shows it.

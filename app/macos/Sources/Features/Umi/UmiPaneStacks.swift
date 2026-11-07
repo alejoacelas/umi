@@ -342,7 +342,8 @@ private struct UmiStackChips: View {
             HStack(spacing: UmiStackChipPlan.gap) {
                 ForEach(Array(named.enumerated()), id: \.element.id) { index, member in
                     if let width = plan.widths[index] {
-                        UmiStackChip(member: member, shown: member === surfaceView, width: width)
+                        UmiStackChip(member: member, shown: member === surfaceView, width: width,
+                                     squeezed: plan.squeezed && index == shownIndex)
                     }
                 }
                 if !hidden.isEmpty {
@@ -369,7 +370,7 @@ private struct UmiStackChips: View {
 
     static func overflowWidth(_ title: String) -> CGFloat {
         let font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        return ceil((title as NSString).size(withAttributes: [.font: font]).width + 16 + 2)
+        return ceil((title as NSString).size(withAttributes: [.font: font]).width + 8 + 2)
     }
 }
 
@@ -382,8 +383,8 @@ enum UmiStackChipPlan {
     /// `widths[i]` is chip i's width, nil when it waits in the "+N" menu. `extra` members are in
     /// that menu whatever the room.
     static func make(width: CGFloat, naturals: [CGFloat], shown: Int, extra: Int,
-                     overflowWidth: (Int) -> CGFloat) -> (widths: [CGFloat?], hidden: Int) {
-        guard !naturals.isEmpty else { return ([], extra) }
+                     overflowWidth: (Int) -> CGFloat) -> (widths: [CGFloat?], hidden: Int, squeezed: Bool) {
+        guard !naturals.isEmpty else { return ([], extra, false) }
         var visible = Array(naturals.indices)
         func minimum(_ i: Int) -> CGFloat { min(naturals[i], i == shown ? minShown : minOther) }
         var room: CGFloat = 0
@@ -404,7 +405,7 @@ enum UmiStackChipPlan {
         if slack < 0 {
             // Only the shown chip, and less room than its minimum: it takes what there is.
             widths[visible[0]] = max(0, room)
-            return (widths, naturals.count - visible.count + extra)
+            return (widths, naturals.count - visible.count + extra, true)
         }
         // The shown chip gets its whole name first, then the others share what's left evenly.
         if let current = widths[shown] {
@@ -422,7 +423,7 @@ enum UmiStackChipPlan {
             }
             growing = growing.filter { widths[$0]! < naturals[$0] - 0.01 }
         }
-        return (widths, naturals.count - visible.count + extra)
+        return (widths, naturals.count - visible.count + extra, false)
     }
 }
 
@@ -443,7 +444,7 @@ private struct UmiStackOverflowChip: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .foregroundColor(UmiTheme.textTertiary)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 4)
         .frame(height: 22)
         .help("\(members.count) more: pick one, or go through all with ⌘[ and ⌘]")
         .accessibilityLabel("\(members.count) more")
@@ -468,6 +469,8 @@ private struct UmiStackChip: View {
     @ObservedObject var member: Ghostty.SurfaceView
     let shown: Bool
     let width: CGFloat
+    /// Narrower than its minimum (only a shown chip can be).
+    var squeezed = false
     @State private var hovering = false
     @ObservedObject private var files = UmiFilePanes.shared
     @ObservedObject private var web = UmiWebPanes.shared
@@ -494,15 +497,19 @@ private struct UmiStackChip: View {
                 // The tooltip on the name only: SwiftUI gives a modifier's tooltip to every part of a
                 // view, and the chip's accessibility element would then repeat it per part.
                 .help(tooltip(doc: doc, page: page))
-            Button {
-                UmiFilePanes.confirmClose(member)
-            } label: {
-                Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
+            // A shown chip squeezed below its minimum leaves its ✕ to the row's, which closes the
+            // same pane, so the name keeps that room.
+            if !squeezed {
+                Button {
+                    UmiFilePanes.confirmClose(member)
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
+                }
+                .buttonStyle(.plain)
+                .opacity(hovering || shown ? 1 : 0)
+                .help("Close")
+                .accessibilityLabel("Close \(UmiStacks.label(of: member))")
             }
-            .buttonStyle(.plain)
-            .opacity(hovering || shown ? 1 : 0)
-            .help("Close")
-            .accessibilityLabel("Close \(UmiStacks.label(of: member))")
         }
         .foregroundColor(shown ? UmiTheme.textPrimary : UmiTheme.textTertiary)
         .padding(.horizontal, 8)
