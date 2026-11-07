@@ -44,10 +44,26 @@ A skill an agent runs to take the manager role, so ⌃⌘M brings it up in the d
 
 ## Hide until it needs me
 
-A palette command bound to a key: `umi pane hide . --until 'agent.done=false or
-agent.status=needs_input'`. The pane comes back to its tab, without taking focus, when the agent
-ends a turn without `Status: done` or asks for something. Variant with a time limit:
-`--until 2h`.
+⌃⌘H hides the focused pane and brings it back by itself. It's one config line plus the condition:
+
+```
+key.ctrl+cmd+h = pane hide . --until 'agent.done=false or agent.status=needs_input'
+```
+
+- The pane leaves the layout, stays in its tab's strip, and keeps running.
+- It comes back to its tab, without taking focus and with its indicator showing why, when the agent
+  asks for something or ends a turn without `Status: done`.
+- When the agent finishes with `Status: done`, it stays hidden; its chip in the strip shows it
+  finished.
+
+Variants, each its own key or palette command:
+
+- back when the turn ends, done or not: `--until 'agent.status=idle or agent.status=needs_input'`;
+- back after a time limit as well: add `--until 2h` (whichever holds first);
+- for a pane with no agent, back when its command finishes: a script that waits for the prompt
+  (`umi wait --pane P --idle 5`) and then runs `umi pane show P`.
+
+⌃⌘H is free in Umi and macOS.
 
 ## Delegate to the manager
 
