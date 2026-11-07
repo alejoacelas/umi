@@ -14,6 +14,8 @@ tabs on, as written down in the "Warp parity" requirements of `acceptance/SPEC.m
 | [warp-differences.md](warp-differences.md) | Every way Umi behaves differently from that Warp, and why |
 | [primitives.md](primitives.md) | Pane data, queries, slots, actions and logs: what scripts and agents build on |
 | [attention-ui.md](attention-ui.md) | The pane strip, the pane indicator, the drawer and keyboard moves |
-| [spec-cleanup.md](spec-cleanup.md) | What leaves the current spec, decided and proposed |
+| [spec-cleanup.md](spec-cleanup.md) | What leaves the current spec |
+| [cli.md](cli.md) | The proposed `umi` CLI contract |
+| [plan.md](plan.md) | The implementation steps and how each is checked |
 
 Prototypes for the visual choices are in `prototypes/`.
