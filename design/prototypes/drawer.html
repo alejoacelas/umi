@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Umi Drawer</title>
+<style>
+  :root {
+    --bg: #000;
+    --page: #0a0a0a;
+    --side: #0d0d0d;
+    --ink: #e6e6e6;
+    --dim: #8a8a8a;
+    --faint: #5a5a5a;
+    --line: #1c1c1c;
+    --line2: #262626;
+    --cyan: #3ad1e0;
+    --amber: #e0b04a;
+    --green: #6cc28a;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 40px 0 6px; }
+  p.lead, p.sub { color: var(--dim); margin: 0 0 16px; max-width: 760px; }
+  a { color: var(--cyan); }
+  code, pre { font-family: var(--mono); font-size: 12px; }
+  pre { margin: 0; white-space: pre-wrap; color: #cfcfcf; }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; color: var(--dim); }
+
+  .optbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 12px; align-items: center; }
+  .optbar button { background: transparent; color: var(--dim); border: 1px solid var(--line2); border-radius: 6px; padding: 6px 10px; font: 13px var(--sans); cursor: pointer; }
+  .optbar button[aria-selected="true"] { color: var(--ink); border-color: #555; background: #141414; }
+  .optbar button.act { background: #141414; color: var(--ink); }
+  .optbar button:hover { border-color: #555; }
+  .optbar .spacer { flex: 1; }
+  .keys { color: var(--faint); font-size: 12px; margin-bottom: 10px; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  .win { position: relative; background: var(--bg); border: 1px solid #222; border-radius: 10px; overflow: hidden; height: 520px; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  .titlebar { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: var(--side); flex: none; }
+  .titlebar i { width: 11px; height: 11px; border-radius: 50%; background: #2a2a2a; }
+  .wbody { flex: 1; display: flex; min-height: 0; }
+  .sidebar { width: 210px; background: var(--side); flex: none; display: flex; flex-direction: column; padding: 4px 0 8px; border-right: 1px solid #111; }
+  .row { position: relative; display: flex; gap: 9px; padding: 9px 12px; margin: 1px 6px; border-radius: 6px; }
+  .row.sel { background: rgba(255,255,255,.07); }
+  .row .ic { width: 16px; flex: none; font: 12px var(--mono); color: var(--dim); text-align: center; padding-top: 1px; }
+  .row .tx { min-width: 0; flex: 1; }
+  .row .l1 { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .l1 .br { color: var(--faint); font-size: 11.5px; margin-left: 5px; }
+  .row .l2 { font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pinsep { height: 1px; background: #1a1a1a; margin: 4px 14px; }
+
+  .content { flex: 1; display: flex; min-width: 0; position: relative; overflow: hidden; }
+  .panes { flex: 1; display: flex; min-width: 0; }
+  .pane { flex: 1; min-width: 0; position: relative; padding: 14px 14px 10px; font: 11.5px/1.6 var(--mono); color: #d8d8d8; overflow: hidden; border-left: 1px solid #1a1a1a; transition: flex-basis .28s ease; }
+  .pane:first-child { border-left: none; }
+  .pane.focus::before, .drawer.focus::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--cyan); z-index: 2; }
+  .pane.arrive { animation: arrive .35s ease-out; }
+  @keyframes arrive { from { opacity: 0; transform: translateX(10px); } }
+  .p-b { color: #f0f0f0; } .p-d { color: var(--faint); font-style: italic; } .p-a { color: var(--amber); } .p-g { color: var(--green); }
+  .p-h { color: #fff; font-weight: 600; font-family: var(--sans); font-size: 15px; }
+  .p-m { color: #bbb; font-family: var(--sans); font-size: 12.5px; line-height: 1.55; }
+  .caret { display: inline-block; width: 1px; height: 1.15em; background: transparent; vertical-align: -2px; margin-left: 1px; }
+  .has-focus .caret { background: var(--ink); animation: blink 1s steps(1) infinite; }
+  .typing .caret { animation: none; }
+  @keyframes blink { 50% { background: transparent; } }
+
+  /* the drawer, shared parts */
+  .drawer { position: absolute; z-index: 5; background: #060606; display: flex; flex-direction: column; font: 11.5px/1.6 var(--mono); color: #d8d8d8; }
+  .dhead { flex: none; height: 26px; display: flex; gap: 2px; padding: 3px 6px 0; border-bottom: 1px solid #161616; align-items: stretch; }
+  .dchip { font: 11.5px var(--sans); padding: 3px 10px; border-radius: 5px 5px 0 0; color: var(--dim); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .dchip.on { color: var(--ink); background: #111; }
+  .dhead .hint { margin-left: auto; font: 10.5px var(--sans); color: var(--faint); align-self: center; padding-right: 4px; white-space: nowrap; }
+  .dbody { flex: 1; padding: 12px 14px; overflow: hidden; position: relative; }
+  .dinput { flex: none; border-top: 1px solid #1c1c1c; margin: 0 14px 12px; padding-top: 6px; color: var(--dim); min-height: 24px; }
+  .dinput .you { color: #e8e8e8; }
+  .sdot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex: none; }
+  .s-needs { background: var(--amber); } .s-work { border: 1px solid var(--dim); } .s-idle { background: #555; }
+
+  /* A: right drawer */
+  .o-A .drawer { top: 0; bottom: 0; right: 0; width: 44%; border-left: 1px solid #222; box-shadow: -18px 0 40px rgba(0,0,0,.6); transform: translateX(102%); transition: transform .26s ease; }
+  .o-A .drawer.open { transform: none; }
+  /* B: bottom drawer */
+  .o-B .drawer { left: 0; right: 0; bottom: 0; height: 52%; border-top: 1px solid #222; box-shadow: 0 -18px 40px rgba(0,0,0,.6); transform: translateY(102%); transition: transform .26s ease; }
+  .o-B .drawer.open { transform: none; }
+  /* C: corner card that expands */
+  .o-C .drawer { right: 12px; bottom: 12px; width: 300px; height: 190px; border: 1px solid #2a2a2a; border-radius: 9px; box-shadow: 0 14px 40px rgba(0,0,0,.7); opacity: 0; transform: translateY(12px) scale(.97); pointer-events: none;
+                 transition: opacity .2s ease, transform .2s ease, width .28s ease, height .28s ease, right .28s ease, bottom .28s ease, border-radius .28s ease; overflow: hidden; }
+  .o-C .drawer.open { opacity: 1; transform: none; pointer-events: auto; }
+  .o-C .drawer.big { right: 0; bottom: 0; width: 44%; height: 100%; border-radius: 0; border-width: 0 0 0 1px; }
+  /* D: pinned column that narrows the tab */
+  .o-D .drawer { position: relative; flex: none; width: 0; border-left: 1px solid #222; transition: width .28s ease; overflow: hidden; }
+  .o-D .drawer.open { width: 40%; }
+  .o-D .drawer > * { min-width: 260px; }
+
+  /* quiet marks while the drawer is put away */
+  .mark { position: absolute; z-index: 4; opacity: 0; transition: opacity .3s ease; pointer-events: none; }
+  .mark.on { opacity: 1; }
+  .mark-A { top: 30%; right: 0; width: 4px; height: 70px; background: var(--amber); border-radius: 3px 0 0 3px; opacity: 0; }
+  .mark-A.on { opacity: .85; }
+  .mark-A span, .mark-B span, .mark-D span { position: absolute; font: 10.5px var(--sans); color: var(--amber); white-space: nowrap; }
+  .mark-A span { right: 10px; top: 26px; }
+  .mark-B { left: 0; right: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, transparent, var(--amber) 70%); opacity: 0; }
+  .mark-B.on { opacity: .8; }
+  .mark-B span { right: 12px; bottom: 7px; }
+  .mark-C { right: 12px; bottom: 12px; font: 11px var(--sans); color: var(--ink); background: #111; border: 1px solid #3a3020; border-radius: 12px; padding: 3px 10px 3px 8px; display: flex; gap: 6px; align-items: center; }
+  .mark-D { top: 30%; right: 0; width: 4px; height: 70px; background: var(--amber); border-radius: 3px 0 0 3px; }
+  .mark-D span { right: 10px; top: 26px; }
+
+  .hud { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9; font: 13px var(--mono); color: var(--ink); background: rgba(30,30,30,.92); border: 1px solid #333; border-radius: 7px; padding: 5px 12px; opacity: 0; transition: opacity .15s; pointer-events: none; }
+  .hud.on { opacity: 1; }
+  .readout { margin-top: 8px; color: var(--dim); font-size: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .readout b { color: var(--ink); font-weight: 500; }
+
+  .notes { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px; font-size: 12.5px; }
+  .notes h3 { margin: 0 0 4px; font-size: 14px; }
+  .notes .one { color: var(--dim); margin: 0 0 10px; }
+  .notes h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; }
+  .notes ul { margin: 0; padding-left: 16px; }
+  .notes li { margin: 2px 0; }
+  .notes pre { background: #0d0d0d; border-radius: 4px; padding: 8px; font-size: 11px; }
+  .log { margin-top: 12px; color: var(--dim); font-size: 12px; min-height: 36px; border-top: 1px solid var(--line); padding-top: 8px; }
+
+  @media (max-width: 900px) { .stage { grid-template-columns: minmax(0, 1fr); } .sidebar { width: 160px; } }
+  @media (max-width: 560px) { .sidebar { display: none; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>The drawer</h1>
+  <p class="lead">A drawer holds panes that float over the current tab without changing its layout. One key shows it and puts it away. It takes keyboard focus only when you summon it, and putting it away returns focus exactly where it was. Four ways it could look; each is complete on its own. Syntax is illustrative, content is made up. Related: <a href="where-panes-live.html">Where panes live</a> · <a href="resurfacing.html">Resurfacing</a> · <a href="keyboard-move.html">Moving panes from the keyboard</a>.</p>
+
+  <div class="optbar" id="optbar"></div>
+  <div class="keys" id="keys"></div>
+  <div class="stage">
+    <div>
+      <div class="win" id="win"></div>
+      <div class="readout" id="readout"></div>
+    </div>
+    <aside class="notes" id="notes"></aside>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+  const OPTIONS = [
+    { key: 'A', title: 'Right drawer',
+      one: 'Slides in from the right edge over the tab, about 40% of its width. The panes underneath keep their size.',
+      away: 'A short amber sliver on the right edge, labelled with what came back. Nothing else moves.',
+      dock: 'D docks the drawer\'s pane into the split as a new pane on the right; H hides it again in its tab. Either way the drawer closes.',
+      expr: `# config
+key.ctrl+cmd+m = drawer toggle 'role=manager'
+drawer.side    = right
+drawer.width   = 44%
+
+umi pane drawer P          # put P in the drawer
+umi drawer dock            # into the split
+umi pane hide P            # back to hidden`,
+      pros: ['Reads as "beside my work", like a chat panel', 'Covers the rightmost pane only, where reference material usually sits', 'Edge sliver is visible but tiny'],
+      cons: ['Hides the right pane while open', 'Narrow for wide output (tables, diffs)'] },
+    { key: 'B', title: 'Bottom drawer',
+      one: 'Rises from the bottom over half the tab\'s height, the full width of the panes.',
+      away: 'A thin amber line along the bottom edge, with a label at its right end.',
+      dock: 'D docks the pane into the split on the right; H hides it again. The drawer drops back down.',
+      expr: `# config
+key.ctrl+cmd+m = drawer toggle 'role=manager'
+drawer.side    = bottom
+drawer.height  = 50%`,
+      pros: ['Full width: good for logs and a manager\'s long summaries', 'Feels like a console you pull up and dismiss'],
+      cons: ['Covers the prompt lines of the panes underneath', 'Wide but short: fewer lines of conversation'] },
+    { key: 'C', title: 'Corner card',
+      one: 'Opens as a small card in the bottom-right corner. E expands it into a full-height drawer and back.',
+      away: 'A small pill in the corner: "● deploy-check". It sits where the card would open.',
+      dock: 'D docks the pane into the split; H hides it again. The card closes.',
+      expr: `# config
+key.ctrl+cmd+m = drawer toggle 'role=manager'
+drawer.style   = card     # E: expand
+drawer.card    = 300x190`,
+      pros: ['Smallest footprint: good for a quick question to the manager', 'Expands only when the answer is long', 'The pill is a natural place for "something came back"'],
+      cons: ['Two sizes to think about', 'Card is cramped for reading a transcript'] },
+    { key: 'D', title: 'Pinned column',
+      one: 'Opens as a column on the right that narrows the tab\'s panes instead of covering them. M moves focus into it and back; ⇧M closes or opens the column.',
+      away: 'While the column is closed, the same sliver as A. While it is open, the returning pane appears inside it with an amber dot.',
+      dock: 'D docks the pane into the split; H hides it again. The column stays open for the manager.',
+      expr: `# config
+key.ctrl+cmd+m       = drawer focus 'role=manager'
+key.ctrl+cmd+shift+m = drawer pin
+drawer.pinned        = true
+drawer.width         = 40%`,
+      pros: ['Nothing is covered: the manager is always in view', 'Good when you check in often', 'Returning panes are visible without a mark elsewhere'],
+      cons: ['Changes the layout when it opens or closes', 'Permanently takes 40% of the width'] },
+  ];
+
+  // ------------- state -------------
+  const NOTE_TEXT = 'The drawer should never take focus by itself; only the key does.';
+  const MGR_TEXT = 'how is deploy-check doing?';
+  let opt = 0;
+  let st, timers = [], typer = null;
+
+  function fresh() {
+    return {
+      focus: 'notes',            // 'notes' | 'drawer' | 'dock'
+      open: false,               // drawer shown
+      big: false,                // option C expanded
+      items: ['manager'],        // drawer contents
+      cur: 'manager',
+      deploy: null,              // null | 'needs'  (deploy-check came back)
+      markOn: false,
+      docked: null,              // id of a pane docked from the drawer
+      noteTyped: 'Rule: ',
+      mgrTyped: '',
+      mgrReply: false,
+      hidden: [],                // panes hidden from the drawer
+      log: '',
+    };
+  }
+
+  const ITEMS = {
+    manager: { name: 'manager', dot: 's-idle', lines: () => [
+      ['p-d', 'role=manager · watching 4 panes in Delegated'],
+      ['p-b', '● image-resize finished: Status: done. Left it hidden.'],
+      ['p-b', '● report draft is still working (8m).'],
+      ...(st.mgrReply ? [['', ''], ['p-b', '● deploy-check is waiting on you: it wants the DNS change for the apex record approved. I asked it to hold.']] : []),
+    ] },
+    deploy: { name: 'deploy-check', dot: 's-needs', lines: () => [
+      ['p-b', '● The preview deploy is up. The apex domain still points at the old host.'],
+      ['', ''],
+      ['p-a', 'Status: waiting on you: approve the DNS change for the apex record'],
+    ] },
+  };
+
+  // ------------- build -------------
+  function build() {
+    const O = OPTIONS[opt];
+    $('#optbar').innerHTML = OPTIONS.map((o, i) => `<button role="tab" aria-selected="${i === opt}" data-opt="${i}">${o.key} · ${o.title}</button>`).join('') +
+      `<span class="spacer"></span>
+       <button class="act" data-act="play">Play: summon the manager and come back</button>
+       <button class="act" data-act="back">A hidden agent comes back</button>
+       <button class="act" data-act="reset">Reset</button>`;
+    $('#keys').innerHTML = `<kbd>1</kbd>–<kbd>4</kbd> option · <kbd>P</kbd> play · <kbd>B</kbd> agent comes back · <kbd>M</kbd> show / put away the drawer (stands for ⌃⌘M) · <kbd>[</kbd> <kbd>]</kbd> switch drawer panes · <kbd>D</kbd> dock into the split · <kbd>H</kbd> hide it again` +
+      (O.key === 'C' ? ' · <kbd>E</kbd> expand the card' : '') + (O.key === 'D' ? ' · <kbd>⇧M</kbd> open / close the column' : '') + ' · <kbd>R</kbd> reset';
+    const tabs = [
+      ['✻', '~/best/projects/umi', 'main', 'Shared Markdown header', true],
+      ['✻', 'website', 'redesign', 'Projects page card grid', false, true],
+      ['✻', 'impact-ops', 'main', 'Q4 report'],
+      ['›_', 'Delegated', '', '4 panes · manager watching'],
+    ];
+    const rows = tabs.map(([ic, l1, br, l2, pin, sel], i) =>
+      `<div class="row${sel ? ' sel' : ''}"><div class="ic">${ic}</div><div class="tx"><div class="l1">${esc(l1)}<span class="br">${br}</span></div><div class="l2">${esc(l2)}</div></div></div>` + (pin ? '<div class="pinsep"></div>' : '')).join('');
+    $('#win').className = 'win o-' + O.key;
+    $('#win').innerHTML = `<div class="titlebar"><i></i><i></i><i></i></div>
+      <div class="wbody"><div class="sidebar">${rows}</div>
+        <div class="content" id="content">
+          <div class="panes" id="panes">
+            <div class="pane" id="p-notes">
+              <div class="p-h">Drawer notes</div>
+              <div class="p-m">What the drawer is for, in my words.</div>
+              <div class="p-m">&nbsp;</div>
+              <div class="p-m">Manager on a key. Agents that come back wait there.</div>
+              <div class="p-m">&nbsp;</div>
+              <div class="p-m"><span id="ntext"></span><span class="caret"></span></div>
+            </div>
+            <div class="pane" id="p-agent">
+              <div class="p-b">● Rebuilt the projects page with the new card grid.</div>
+              <div class="p-d">✻ Cooked for 2m 10s · done 18:42</div>
+              <div class="p-b">● Lighthouse: performance 97, accessibility 100.</div>
+              <div>&nbsp;</div>
+              <div class="p-b">Status: in progress: checking the mobile breakpoint next</div>
+            </div>
+          </div>
+          <div class="drawer" id="drawer">
+            <div class="dhead" id="dhead"></div>
+            <div class="dbody" id="dbody"></div>
+            <div class="dinput" id="dinput">❯ <span class="you" id="mtext"></span><span class="caret"></span></div>
+          </div>
+          <div class="mark mark-${O.key}" id="mark"></div>
+        </div>
+      </div>
+      <div class="hud" id="hud"></div>`;
+    update();
+  }
+
+  // ------------- update (no rebuild, so transitions run) -------------
+  function update() {
+    const O = OPTIONS[opt];
+    const drawer = $('#drawer');
+    drawer.classList.toggle('open', st.open);
+    drawer.classList.toggle('big', O.key === 'C' && st.big);
+    drawer.classList.toggle('focus', st.focus === 'drawer');
+    drawer.classList.toggle('has-focus', st.focus === 'drawer');
+    $('#p-notes').classList.toggle('focus', st.focus === 'notes');
+    $('#p-notes').classList.toggle('has-focus', st.focus === 'notes');
+    // docked pane
+    let dock = $('#p-dock');
+    if (st.docked && !dock) {
+      dock = document.createElement('div');
+      dock.className = 'pane arrive'; dock.id = 'p-dock';
+      $('#panes').appendChild(dock);
+    }
+    if (!st.docked && dock) dock.remove();
+    if (dock) {
+      dock.classList.toggle('focus', st.focus === 'dock');
+      dock.innerHTML = ITEMS[st.docked].lines().map(([c, t]) => `<div class="${c}">${t || '&nbsp;'}</div>`).join('');
+    }
+    // drawer content
+    const items = st.items;
+    if (!items.includes(st.cur)) st.cur = items[0];
+    $('#dhead').innerHTML = items.length ? items.map((id) => `<span class="dchip${id === st.cur ? ' on' : ''}"><span class="sdot ${ITEMS[id].dot}"></span>${ITEMS[id].name}</span>`).join('') +
+      `<span class="hint">${items.length > 1 ? '[ ] · ' : ''}D · H</span>` : '<span class="hint">empty</span>';
+    $('#dbody').innerHTML = items.length ? ITEMS[st.cur].lines().map(([c, t]) => `<div class="${c}">${t || '&nbsp;'}</div>`).join('') : '<div class="p-d">The drawer is empty.</div>';
+    $('#dinput').style.visibility = st.cur === 'manager' && items.length ? 'visible' : 'hidden';
+    $('#ntext').textContent = st.noteTyped;
+    $('#mtext').textContent = st.mgrTyped;
+    // quiet mark
+    const mark = $('#mark');
+    const showMark = st.markOn && !st.open;
+    mark.classList.toggle('on', showMark);
+    mark.innerHTML = O.key === 'C' ? `<span class="sdot s-needs"></span>deploy-check` : `<span>deploy-check · needs you</span>`;
+    // readout + notes
+    const where = st.focus === 'notes' ? `notes.md, after “${st.noteTyped.slice(-12)}”` : st.focus === 'drawer' ? `drawer (${ITEMS[st.cur] ? ITEMS[st.cur].name : 'empty'})` : `${ITEMS[st.docked].name}, docked into the split`;
+    $('#readout').innerHTML = `<span>Keyboard focus: <b>${esc(where)}</b></span><span>Drawer: <b>${st.open ? (O.key === 'C' && st.big ? 'open, expanded' : 'open') : 'put away'}</b></span><span>Panes on show: <b>${st.docked ? 3 : 2}</b> ${st.docked ? '(docking added one)' : '(the drawer never changes this)'}</span>`;
+    $('#notes').innerHTML = `<h3>${O.key}. ${O.title}</h3><p class="one">${O.one}</p>
+      <h4>While it's put away and an agent comes back</h4><p style="margin:0">${O.away}</p>
+      <h4>Docking and hiding</h4><p style="margin:0">${O.dock}</p>
+      <h4>Expressed as</h4><pre>${esc(O.expr)}</pre>
+      <h4>For</h4><ul>${O.pros.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <h4>Against</h4><ul>${O.cons.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <div class="log" id="log">${esc(st.log)}</div>`;
+  }
+  function log(m) { st.log = m; const el = $('#log'); if (el) el.textContent = m; }
+
+  // ------------- actions -------------
+  let returnTo = 'notes';
+  function hud(k) { const h = $('#hud'); h.textContent = k; h.classList.add('on'); clearTimeout(hud.t); hud.t = setTimeout(() => h.classList.remove('on'), 650); }
+
+  function toggle() {
+    const O = OPTIONS[opt];
+    hud('⌃⌘M');
+    if (O.key === 'D') {
+      // column: M moves focus in and out; opens the column if closed
+      if (st.focus === 'drawer') { st.focus = returnTo; log('Focus back where it was; the column stays open.'); }
+      else {
+        if (!st.open) st.open = true;
+        returnTo = st.focus; st.focus = 'drawer';
+        if (st.deploy) { st.cur = 'deploy'; st.markOn = false; }
+        log(st.deploy ? 'Focus in the column, on deploy-check, which needs you.' : 'Focus in the column, on the manager.');
+      }
+      return update();
+    }
+    if (st.open) {
+      st.open = false; st.big = false; st.focus = returnTo;
+      log('Drawer put away. Focus is back where it was, caret in place.');
+    } else {
+      st.open = true; returnTo = st.focus === 'drawer' ? 'notes' : st.focus; st.focus = 'drawer';
+      if (st.deploy) { st.cur = 'deploy'; st.markOn = false; }
+      log(st.deploy ? 'Drawer shown on deploy-check, which needs you. Focus is in the drawer.' : 'Drawer shown with the manager. Focus is in the drawer; the panes under it are untouched.');
+    }
+    update();
+  }
+  function pinColumn() {
+    if (OPTIONS[opt].key !== 'D') return;
+    hud('⌃⌘⇧M');
+    st.open = !st.open;
+    if (!st.open && st.focus === 'drawer') st.focus = returnTo;
+    log(st.open ? 'Column open: the panes ease narrower.' : 'Column closed: the panes take the width back.');
+    update();
+  }
+  function cycle(d) {
+    if (!st.open || st.items.length < 2) return;
+    const i = st.items.indexOf(st.cur);
+    st.cur = st.items[(i + d + st.items.length) % st.items.length];
+    hud(d > 0 ? '⌘]' : '⌘[');
+    update();
+  }
+  function expand() {
+    if (OPTIONS[opt].key !== 'C' || !st.open) return;
+    hud('E'); st.big = !st.big;
+    log(st.big ? 'Card expanded into a full-height drawer.' : 'Back to a card.');
+    update();
+  }
+  function dock() {
+    if (!st.open || !st.items.length) return;
+    if (st.docked) { log('One docked pane is enough for this demo; press R to reset.'); return; }
+    hud('D');
+    const id = st.cur;
+    st.docked = id;
+    st.items = st.items.filter((x) => x !== id);
+    if (id === 'deploy') st.deploy = null;
+    if (OPTIONS[opt].key !== 'D') { st.open = false; st.big = false; }
+    st.focus = 'dock';
+    log(`${ITEMS[id].name} docked into the split as a third pane; focus goes with it because you asked for it.`);
+    update();
+  }
+  function hideCur() {
+    if (!st.open || !st.items.length) return;
+    hud('H');
+    const id = st.cur;
+    st.items = st.items.filter((x) => x !== id);
+    if (id === 'deploy') st.deploy = null;
+    if (OPTIONS[opt].key !== 'D') { st.open = false; st.big = false; }
+    st.focus = returnTo;
+    log(`${ITEMS[id].name} hidden in its tab again; it comes back when it isn't done. Focus back where it was.`);
+    update();
+  }
+
+  // typing is simulated: it goes wherever keyboard focus is
+  function startTyping(text, target, ms, done) {
+    stopTyping();
+    let i = 0;
+    const el = target === 'notes' ? $('#p-notes') : $('#drawer');
+    el.classList.add('typing');
+    typer = setInterval(() => {
+      if (st.focus !== target) return;     // focus moved: typing pauses, nothing is lost
+      if (i >= text.length) { stopTyping(); el.classList.remove('typing'); done && done(); return; }
+      if (target === 'notes') st.noteTyped += text[i]; else st.mgrTyped += text[i];
+      i++;
+      if (target === 'notes') $('#ntext').textContent = st.noteTyped; else $('#mtext').textContent = st.mgrTyped;
+      const r = $('#readout b'); if (r && st.focus === 'notes') r.textContent = `notes.md, after “${st.noteTyped.slice(-12)}”`;
+    }, ms);
+  }
+  function stopTyping() { if (typer) clearInterval(typer); typer = null; document.querySelectorAll('.typing').forEach((e) => e.classList.remove('typing')); }
+  function later(ms, f) { timers.push(setTimeout(f, ms)); }
+  function clearAll() { timers.forEach(clearTimeout); timers = []; stopTyping(); }
+
+  function play() {
+    clearAll(); st = fresh(); build();
+    const O = OPTIONS[opt];
+    log('You are typing in notes.md.');
+    const part1 = 'The drawer should never ';
+    startTyping(part1, 'notes', 65);
+    later(part1.length * 65 + 400, () => {
+      toggle();
+      later(500, () => startTyping(MGR_TEXT, 'drawer', 55, () => {
+        later(400, () => { hud('⏎'); st.mgrTyped = ''; st.mgrReply = true; update(); log('The manager answers in the drawer.'); });
+        later(2600, () => {
+          toggle();
+          later(450, () => startTyping('take focus by itself; only the key does.', 'notes', 65, () => log('Done: you never left notes.md, and the panes never moved.')));
+        });
+      }));
+    });
+  }
+
+  function comesBack() {
+    if (st.deploy) { log('deploy-check already came back; press R to reset.'); return; }
+    clearAll();
+    if (st.focus !== 'notes' && !(st.focus === 'drawer' && st.open)) st.focus = 'notes';
+    update();
+    log('You keep typing in notes.md. A hidden agent, deploy-check, is about to end its turn without “Status: done”.');
+    if (st.focus === 'notes') startTyping(' Agents wait quietly.', 'notes', 70);
+    later(1300, () => {
+      st.deploy = 'needs';
+      st.items = st.items.includes('deploy') ? st.items : ['deploy', ...st.items];
+      const O = OPTIONS[opt];
+      if (st.open) {
+        log(O.key === 'D' ? 'deploy-check appeared in the open column as a chip with an amber dot. The column stays on what it showed; focus stays put.' : 'deploy-check came back into the open drawer as a new chip with an amber dot. The drawer stays on what you were reading; focus stays put.');
+      } else {
+        st.markOn = true;
+        log(`deploy-check came back into the drawer, which stays put away. ${O.key === 'C' ? 'A pill' : 'A quiet mark'} shows it; M opens the drawer on it. Typing was never interrupted.`);
+      }
+      update();
+    });
+  }
+
+  function reset() { clearAll(); st = fresh(); build(); }
+
+  // ------------- events -------------
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-opt],[data-act]');
+    if (!t) return;
+    if (t.dataset.opt) { opt = +t.dataset.opt; reset(); return; }
+    if (t.dataset.act === 'play') return play();
+    if (t.dataset.act === 'back') return comesBack();
+    if (t.dataset.act === 'reset') return reset();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (k >= '1' && k <= '4') { opt = +k - 1; reset(); }
+    else if (k === 'm' || k === 'M') { if (e.shiftKey) pinColumn(); else toggle(); }
+    else if (k === '[') cycle(-1);
+    else if (k === ']') cycle(1);
+    else if (k === 'd' || k === 'D') dock();
+    else if (k === 'h' || k === 'H') hideCur();
+    else if (k === 'e' || k === 'E') expand();
+    else if (k === 'p' || k === 'P') play();
+    else if (k === 'b' || k === 'B') comesBack();
+    else if (k === 'r' || k === 'R') reset();
+    else return;
+    e.preventDefault();
+  });
+
+  st = fresh();
+  build();
+})();
+</script>
+</body>
+</html>

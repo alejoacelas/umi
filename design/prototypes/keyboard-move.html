@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keyboard Pane Moves</title>
+<style>
+  :root {
+    --bg: #000;
+    --page: #0a0a0a;
+    --side: #0d0d0d;
+    --ink: #e6e6e6;
+    --dim: #8a8a8a;
+    --faint: #5a5a5a;
+    --line: #1c1c1c;
+    --line2: #262626;
+    --cyan: #3ad1e0;
+    --amber: #e0b04a;
+    --green: #6cc28a;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  p.lead { color: var(--dim); margin: 0 0 16px; max-width: 760px; }
+  a { color: var(--cyan); }
+  code, pre { font-family: var(--mono); font-size: 12px; }
+  pre { margin: 0; white-space: pre-wrap; color: #cfcfcf; }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; color: var(--dim); }
+
+  .optbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 12px; align-items: center; }
+  .optbar button { background: transparent; color: var(--dim); border: 1px solid var(--line2); border-radius: 6px; padding: 6px 10px; font: 13px var(--sans); cursor: pointer; }
+  .optbar button[aria-selected="true"] { color: var(--ink); border-color: #555; background: #141414; }
+  .optbar button.act { background: #141414; color: var(--ink); }
+  .optbar button:hover { border-color: #555; }
+  .optbar .spacer { flex: 1; }
+  .keys { color: var(--faint); font-size: 12px; margin-bottom: 10px; min-height: 18px; }
+  .keys b { color: var(--dim); font-weight: 500; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  .win { position: relative; background: var(--bg); border: 1px solid #222; border-radius: 10px; overflow: hidden; height: 520px; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  .titlebar { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: var(--side); flex: none; }
+  .titlebar i { width: 11px; height: 11px; border-radius: 50%; background: #2a2a2a; }
+  .wbody { flex: 1; display: flex; min-height: 0; position: relative; }
+  .sidebar { width: 230px; background: var(--side); flex: none; display: flex; flex-direction: column; padding: 4px 0 8px; border-right: 1px solid #111; position: relative; z-index: 3; }
+  .row { position: relative; padding: 9px 12px; margin: 1px 6px; border-radius: 6px; transition: background .15s; }
+  .row.sel { background: rgba(255,255,255,.07); }
+  .row.target { background: rgba(58,209,224,.08); box-shadow: inset 0 0 0 1px rgba(58,209,224,.35); }
+  .row.src { opacity: .45; }
+  .row .top { display: flex; gap: 9px; }
+  .row .ic { width: 16px; flex: none; font: 12px var(--mono); color: var(--dim); text-align: center; padding-top: 1px; }
+  .row .tx { min-width: 0; flex: 1; }
+  .row .l1 { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 6px; align-items: baseline; }
+  .row .l1 .br { color: var(--faint); font-size: 11.5px; }
+  .row .l2 { font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tag { font: 10px var(--sans); color: var(--cyan); border: 1px solid rgba(58,209,224,.45); border-radius: 7px; padding: 0 5px; line-height: 14px; }
+  .tag.bucket { color: var(--dim); border-color: #333; }
+  .row.newtab .l1 { color: var(--dim); }
+  .pinsep { height: 1px; background: #1a1a1a; margin: 4px 14px; }
+  .prev { max-height: 0; overflow: hidden; transition: max-height .2s ease, margin .2s ease; }
+  .row.target .prev { max-height: 90px; margin-top: 8px; }
+
+  /* mini layout preview */
+  .mini { display: flex; gap: 3px; height: 54px; padding: 3px; border: 1px solid #262626; border-radius: 4px; background: #000; }
+  .mini .b { flex: 1; min-width: 0; border-radius: 2px; background: #161616; font: 9.5px var(--sans); color: var(--dim); padding: 3px 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; transition: flex .2s; }
+  .mini .b.me { background: #10292c; outline: 1px solid var(--cyan); color: var(--ink); }
+  .mini .b.out { background: transparent; border: 1px dashed #444; color: var(--faint); flex: .55; }
+  .mini.empty { align-items: center; justify-content: center; font: 10.5px var(--sans); color: var(--dim); }
+  .prevnote { font-size: 10.5px; color: var(--faint); margin-top: 4px; white-space: normal; }
+
+  .content { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .panes { flex: 1; display: flex; min-height: 0; transition: transform .25s ease, opacity .25s ease; transform-origin: center; }
+  .pane { flex: 1 1 0; min-width: 0; position: relative; padding: 14px 14px 10px; font: 11.5px/1.6 var(--mono); color: #d8d8d8; overflow: hidden; border-left: 1px solid #1a1a1a; transition: flex-grow .25s ease, opacity .2s, padding .25s; }
+  .pane:first-child { border-left: none; }
+  .pane.focus::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--cyan); }
+  .pane.lifted { opacity: .18; outline: 1px dashed #555; outline-offset: -6px; }
+  .pane.leaving { flex-grow: 0.0001; padding-left: 0; padding-right: 0; opacity: 0; }
+  .pane .nm { font: 10.5px var(--sans); color: var(--faint); margin-bottom: 6px; }
+  .p-b { color: #f0f0f0; } .p-d { color: var(--faint); font-style: italic; } .p-g { color: var(--green); }
+  .p-h { color: #fff; font-weight: 600; font-family: var(--sans); font-size: 15px; }
+  .p-m { color: #bbb; font-family: var(--sans); font-size: 12.5px; line-height: 1.55; }
+
+  /* A: the lifted pane hovering beside the sidebar */
+  .ghost { position: absolute; left: 238px; z-index: 6; width: 190px; background: #0b0b0b; border: 1px solid var(--cyan); border-radius: 7px; padding: 8px 10px; font: 10.5px/1.5 var(--mono); color: #cfcfcf; box-shadow: 0 12px 34px rgba(0,0,0,.7); transition: top .18s ease, opacity .18s, transform .18s; transform: rotate(-1.2deg); pointer-events: none; }
+  .ghost .gn { font: 11.5px var(--sans); color: var(--ink); margin-bottom: 4px; }
+  .ghost.off { opacity: 0; transform: translateX(-8px); }
+
+  /* B: chooser */
+  .chooser { position: absolute; left: 50%; top: 60px; transform: translateX(-50%); z-index: 8; width: 600px; max-width: calc(100% - 32px); background: #111; border: 1px solid #2c2c2c; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.8); display: none; }
+  .chooser.on { display: block; }
+  .chooser input { width: 100%; background: transparent; border: none; border-bottom: 1px solid #222; color: var(--ink); font: 14px var(--sans); padding: 12px 14px; outline: none; }
+  .chooser .cols { display: grid; grid-template-columns: minmax(0, 1fr) 230px; }
+  .chooser .list { padding: 6px; max-height: 300px; overflow: auto; }
+  .chooser .it { padding: 6px 10px; border-radius: 6px; font-size: 13px; display: flex; gap: 8px; align-items: center; color: var(--dim); }
+  .chooser .it.on { background: rgba(58,209,224,.1); color: var(--ink); }
+  .chooser .it .sub { margin-left: auto; font-size: 11px; color: var(--faint); }
+  .chooser .side { border-left: 1px solid #222; padding: 12px; font-size: 11.5px; color: var(--dim); }
+  .chooser .side .mini { height: 80px; margin: 6px 0; }
+  .chooser .foot { border-top: 1px solid #222; padding: 6px 12px; font-size: 11px; color: var(--faint); }
+
+  /* C: overview */
+  .overview { position: absolute; inset: 0; z-index: 7; background: #000; padding: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-content: start; opacity: 0; transform: scale(1.06); pointer-events: none; transition: opacity .22s ease, transform .22s ease; }
+  .overview.on { opacity: 1; transform: none; pointer-events: auto; }
+  .overview .card { border: 1px solid #222; border-radius: 7px; padding: 8px; background: #050505; }
+  .overview .card.on { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(58,209,224,.15); }
+  .overview .card.src { opacity: .5; }
+  .overview .card .cn { font-size: 12px; margin-bottom: 6px; display: flex; gap: 6px; align-items: baseline; }
+  .overview .card .mini { height: 70px; }
+  .overview .hd { grid-column: 1 / -1; font-size: 12px; color: var(--dim); display: flex; justify-content: space-between; }
+  .content.zoomed .panes { transform: scale(.92); opacity: .1; }
+
+  .hud { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9; font: 13px var(--mono); color: var(--ink); background: rgba(30,30,30,.92); border: 1px solid #333; border-radius: 7px; padding: 5px 12px; opacity: 0; transition: opacity .15s; pointer-events: none; white-space: nowrap; }
+  .hud.on { opacity: 1; }
+  .readout { margin-top: 8px; color: var(--dim); font-size: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .readout b { color: var(--ink); font-weight: 500; }
+
+  .notes { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px; font-size: 12.5px; }
+  .notes h3 { margin: 0 0 4px; font-size: 14px; }
+  .notes .one { color: var(--dim); margin: 0 0 10px; }
+  .notes h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; }
+  .notes ul { margin: 0; padding-left: 16px; }
+  .notes li { margin: 2px 0; }
+  .notes pre { background: #0d0d0d; border-radius: 4px; padding: 8px; font-size: 11px; }
+  .log { margin-top: 12px; color: var(--dim); font-size: 12px; min-height: 36px; border-top: 1px solid var(--line); padding-top: 8px; }
+
+  @media (max-width: 900px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 560px) { .sidebar { width: 170px; } .ghost { left: 176px; width: 140px; } .chooser .cols { grid-template-columns: minmax(0, 1fr); } .chooser .side { display: none; } .overview { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Moving panes from the keyboard</h1>
+  <p class="lead">Three ways to move the focused pane to another tab without the mouse, each showing what will happen before it happens. In every option Enter moves it and you stay where you are, ⇧Enter moves it and follows it, Esc puts everything back. The focused pane, <b>q4-notes</b>, came here from impact-ops, so impact-ops is marked "back". Today ⌃⌘← / ⌃⌘→ moves a pane to the previous or next tab at once, with no preview. Syntax is illustrative, content is made up. Related: <a href="where-panes-live.html">Where panes live</a> · <a href="resurfacing.html">Resurfacing</a> · <a href="drawer.html">The drawer</a>.</p>
+
+  <div class="optbar" id="optbar"></div>
+  <div class="keys" id="keys"></div>
+  <div class="stage">
+    <div>
+      <div class="win" id="win"></div>
+      <div class="readout" id="readout"></div>
+    </div>
+    <aside class="notes" id="notes"></aside>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+  const OPTIONS = [
+    { key: 'A', title: 'Lift and hover',
+      start: '↑', startLabel: '⌃⌘↑ / ⌃⌘↓',
+      one: 'The key lifts the pane out of the layout. ↑/↓ carry it over the sidebar\'s tab rows; the row under it opens into a small picture of that tab with the pane in place.',
+      keys: '<kbd>↑</kbd> <kbd>↓</kbd> lift, then choose the tab (stands for ⌃⌘↑ ⌃⌘↓) · <kbd>←</kbd> <kbd>→</kbd> landing spot · <kbd>Enter</kbd> move · <kbd>⇧Enter</kbd> move and follow · <kbd>Esc</kbd> cancel',
+      expr: `# config
+key.ctrl+cmd+up   = pane lift --up
+key.ctrl+cmd+down = pane lift --down
+
+umi pane move P --tab impact-ops --at 1
+umi pane move P --back         # where it came from
+umi pane move P --new-tab`,
+      pros: ['The answer to "where will it go" sits on the tab row itself', 'One gesture: the same keys start and steer the move', 'Shows which pane the target tab would hide'],
+      cons: ['Sidebar rows grow while you steer, so the list shifts a little', 'Only as good as tab names: two "~/best/desk" rows look alike'] },
+    { key: 'B', title: '"Move to…" chooser',
+      start: '.', startLabel: '⌃⌘.',
+      one: 'A chooser like the palette: type to filter tabs by name, folder or branch; the preview beside the list shows the landing spot.',
+      keys: '<kbd>.</kbd> open (stands for ⌃⌘.) · type to filter · <kbd>↑</kbd> <kbd>↓</kbd> tab · <kbd>←</kbd> <kbd>→</kbd> landing spot · <kbd>Enter</kbd> move · <kbd>⇧Enter</kbd> follow · <kbd>Esc</kbd> cancel',
+      expr: `# config
+key.ctrl+cmd+period = pane move --choose
+
+# the chooser runs this when you press Enter
+umi pane move P --tab "Delegated"`,
+      pros: ['Fastest with many tabs: three letters find any of them', 'Familiar from ⌘P and ⇧⌘P', 'Room for more targets later (a window, a bucket)'],
+      cons: ['Covers the window while open', 'Reading names instead of seeing the sidebar you know'] },
+    { key: 'C', title: 'Zoom out',
+      start: 'z', startLabel: '⌃⌘Z',
+      one: 'The window zooms out to every tab as a small card. The pane sits in the chosen card; arrows move it between cards.',
+      keys: '<kbd>Z</kbd> zoom out (stands for ⌃⌘Z) · <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> tab card · <kbd>[</kbd> <kbd>]</kbd> landing spot · <kbd>Enter</kbd> move · <kbd>⇧Enter</kbd> follow · <kbd>Esc</kbd> cancel',
+      expr: `# config
+key.ctrl+cmd+z = window overview --move
+
+umi window overview      # without moving anything`,
+      pros: ['Shows every tab\'s layout at once, so you also see where things are', 'Same view could serve rearranging several panes in a row'],
+      cons: ['Most motion of the three', 'Cards get small with many tabs'] },
+  ];
+
+  // ------------- model -------------
+  const BODIES = {
+    'redesign': [['p-b', '● Rebuilt the projects page.'], ['p-d', '✻ done 18:42'], ['p-b', 'Status: in progress: mobile breakpoint']],
+    'projects.md': [['p-h', 'Projects'], ['p-m', 'Things I have built and still use.']],
+    'q4-notes': [['p-h', 'Q4 notes'], ['p-m', 'Hours by client, from the calls.'], ['p-m', 'Impact Ops: 22 h · 80k: 0 h']],
+    'report draft': [['p-b', '● Drafting the Q4 report.'], ['p-d', '✻ Working… 6m 40s']],
+    'desk shell': [['p-d', '~/best/desk'], ['', '$ git pull']],
+    'call prep': [['p-h', 'Call prep'], ['p-m', 'Questions for Thursday.']],
+    'umi build': [['p-d', '~/best/projects/umi'], ['', '$ app/dist/dev.sh']],
+    'inbox': [['p-d', '~/best/inbox'], ['', '$ ./run-daily']],
+  };
+  function fresh() {
+    return {
+      tabs: [
+        { id: 'umi', name: '~/best/projects/umi', br: 'main', ic: '✻', l2: 'Shared Markdown header', pinned: true, panes: ['umi build'], lru: ['umi build'] },
+        { id: 'website', name: 'website', br: 'redesign', ic: '✻', l2: 'Projects page card grid', panes: ['redesign', 'projects.md', 'q4-notes'], lru: ['projects.md', 'redesign', 'q4-notes'] },
+        { id: 'impact-ops', name: 'impact-ops', br: 'main', ic: '✻', l2: 'Q4 report', panes: ['report draft'], lru: ['report draft'] },
+        { id: 'desk', name: '~/best/desk', br: 'main', ic: '›_', l2: 'git pull', panes: ['desk shell', 'call prep', 'inbox'], lru: ['call prep', 'inbox', 'desk shell'] },
+        { id: 'delegated', name: 'Delegated', br: '', ic: '›_', l2: '4 panes · manager watching', bucket: true, panes: [], lru: [] },
+      ],
+      cur: 'website',
+      focus: 'q4-notes',
+      from: { 'q4-notes': 'impact-ops' },
+      mode: null,          // null | 'lift' | 'choose' | 'zoom'
+      tgt: null,           // target tab id or 'new'
+      spot: 0,
+      filter: '',
+      log: '',
+    };
+  }
+  let opt = 0, st = fresh();
+  const tab = (id) => st.tabs.find((t) => t.id === id);
+  const targets = () => st.tabs.map((t) => t.id).filter((id) => id !== st.cur).concat('new');
+  const tname = (id) => id === 'new' ? 'New tab' : tab(id).name;
+
+  // What the target tab would look like with the pane in it
+  function plan(tid) {
+    if (tid === 'new') return { shown: [], out: null, max: 0 };
+    const t = tab(tid);
+    if (t.bucket) return { bucket: true };
+    let shown = t.panes.slice(), out = null;
+    if (shown.length >= 3) { out = t.lru.find((p) => shown.includes(p)); shown = shown.filter((p) => p !== out); }
+    return { shown, out, max: shown.length };
+  }
+  function miniHTML(tid, spot) {
+    const p = plan(tid);
+    if (p.bucket) return `<div class="mini empty">hidden in Delegated · the manager takes it</div>`;
+    const boxes = p.shown.map((n) => `<div class="b">${esc(n)}</div>`);
+    boxes.splice(Math.min(spot, p.shown.length), 0, `<div class="b me">${esc(st.focus)}</div>`);
+    if (p.out) boxes.push(`<div class="b out">${esc(p.out)} → hidden</div>`);
+    return `<div class="mini">${boxes.join('')}</div>` + (p.out ? `<div class="prevnote">${esc(p.out)} (used least recently) would be hidden to keep three on show</div>` : '');
+  }
+
+  // ------------- build & render -------------
+  function build() {
+    const O = OPTIONS[opt];
+    $('#optbar').innerHTML = OPTIONS.map((o, i) => `<button role="tab" aria-selected="${i === opt}" data-opt="${i}">${o.key} · ${o.title}</button>`).join('') +
+      `<span class="spacer"></span><button class="act" data-act="demo">Show me: move q4-notes back</button><button class="act" data-act="reset">Reset</button>`;
+    $('#keys').innerHTML = O.keys + ' · <kbd>1</kbd>–<kbd>3</kbd> option · <kbd>R</kbd> reset';
+    $('#win').innerHTML = `<div class="titlebar"><i></i><i></i><i></i></div>
+      <div class="wbody"><div class="sidebar" id="sidebar"></div>
+        <div class="content" id="content"><div class="panes" id="panes"></div>
+          <div class="overview" id="overview"></div></div>
+        <div class="ghost off" id="ghost"></div>
+      </div>
+      <div class="chooser" id="chooser"><input id="cin" autocomplete="off" spellcheck="false"><div class="cols"><div class="list" id="clist"></div><div class="side" id="cside"></div></div>
+        <div class="foot">↑↓ tab · ←→ landing spot · Enter move · ⇧Enter move and follow · Esc cancel</div></div>
+      <div class="hud" id="hud"></div>`;
+    $('#cin').addEventListener('input', () => { st.filter = $('#cin').value; const l = chooserList(); st.tgt = l[0] || null; st.spot = 0; render(); });
+    render();
+    $('#notes').innerHTML = `<h3>${O.key}. ${O.title}</h3><p class="one">${O.one}</p>
+      <h4>Starts with</h4><p style="margin:0"><code>${O.startLabel}</code></p>
+      <h4>Expressed as</h4><pre>${esc(O.expr)}</pre>
+      <h4>For</h4><ul>${O.pros.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <h4>Against</h4><ul>${O.cons.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <div class="log" id="log"></div>`;
+    log(st.log);
+  }
+
+  function rowHTML(t, extra) {
+    const isT = st.mode === 'lift' && st.tgt === t.id;
+    const back = st.mode && st.from[st.focus] === t.id;
+    return `<div class="row${t.id === st.cur ? ' sel' : ''}${isT ? ' target' : ''}${st.mode === 'lift' && t.id === st.cur ? ' src' : ''}" data-row="${t.id}">
+      <div class="top"><div class="ic">${t.ic}</div><div class="tx"><div class="l1">${esc(t.name)}<span class="br">${t.br}</span>${back ? '<span class="tag">back</span>' : ''}${t.bucket ? '<span class="tag bucket">bucket</span>' : ''}</div><div class="l2">${esc(t.l2)}</div></div></div>
+      <div class="prev">${isT ? miniHTML(t.id, st.spot) : ''}</div></div>`;
+  }
+
+  function render() {
+    const O = OPTIONS[opt];
+    // sidebar
+    let side = '';
+    st.tabs.forEach((t) => { side += rowHTML(t); if (t.pinned) side += '<div class="pinsep"></div>'; });
+    if (st.mode === 'lift') {
+      const isT = st.tgt === 'new';
+      side += `<div class="row newtab${isT ? ' target' : ''}" data-row="new"><div class="top"><div class="ic">+</div><div class="tx"><div class="l1">New tab</div><div class="l2">just this pane</div></div></div>
+        <div class="prev">${isT ? `<div class="mini"><div class="b me">${esc(st.focus)}</div></div>` : ''}</div></div>`;
+    }
+    $('#sidebar').innerHTML = side;
+    // panes of the current tab (keep nodes so widths animate)
+    const t = tab(st.cur);
+    const panesEl = $('#panes');
+    const want = t.panes;
+    [...panesEl.children].forEach((el) => { if (!want.includes(el.dataset.p) && !el.classList.contains('leaving')) el.remove(); });
+    want.forEach((n, i) => {
+      let el = [...panesEl.children].find((c) => c.dataset.p === n);
+      if (!el) {
+        el = document.createElement('div'); el.className = 'pane'; el.dataset.p = n;
+        el.innerHTML = `<div class="nm">${esc(n)}</div>` + (BODIES[n] || []).map(([c, x]) => `<div class="${c}">${x || '&nbsp;'}</div>`).join('');
+        panesEl.appendChild(el);
+      }
+      el.style.order = i;
+      el.classList.toggle('focus', n === st.focus && !st.mode);
+      el.classList.toggle('lifted', n === st.focus && !!st.mode);
+    });
+    // ghost (A)
+    const g = $('#ghost');
+    if (st.mode === 'lift') {
+      const row = $(`[data-row="${st.tgt}"]`);
+      const sb = $('#sidebar').getBoundingClientRect(), rr = row.getBoundingClientRect();
+      g.style.top = (rr.top - sb.top + 4) + 'px';
+      g.innerHTML = `<div class="gn">${esc(st.focus)}</div>` + (BODIES[st.focus] || []).slice(0, 2).map(([, x]) => `<div>${x}</div>`).join('');
+      g.classList.remove('off');
+    } else g.classList.add('off');
+    // chooser (B)
+    const ch = $('#chooser');
+    ch.classList.toggle('on', st.mode === 'choose');
+    if (st.mode === 'choose') {
+      const list = chooserList();
+      $('#clist').innerHTML = list.length ? list.map((id) => {
+        const tt = id === 'new' ? null : tab(id);
+        const sub = id === 'new' ? 'just this pane' : (tt.bucket ? 'bucket' : `${tt.panes.length} pane${tt.panes.length === 1 ? '' : 's'}`) + (st.from[st.focus] === id ? ' · back' : '');
+        return `<div class="it${id === st.tgt ? ' on' : ''}">${id === 'new' ? '+' : esc(tt.ic)} ${esc(tname(id))}<span class="sub">${sub}</span></div>`;
+      }).join('') : '<div class="it">no tab matches</div>';
+      $('#cside').innerHTML = st.tgt ? `Lands in <b style="color:var(--ink)">${esc(tname(st.tgt))}</b>${st.tgt === 'new' ? '<div class="mini"><div class="b me">' + esc(st.focus) + '</div></div>' : miniHTML(st.tgt, st.spot)}` : 'Type to find a tab.';
+      $('#cin').placeholder = `Move ${st.focus} to…`;
+    }
+    // overview (C)
+    const ov = $('#overview');
+    ov.classList.toggle('on', st.mode === 'zoom');
+    $('#content').classList.toggle('zoomed', st.mode === 'zoom');
+    if (st.mode === 'zoom') {
+      ov.innerHTML = `<div class="hd"><span>Move ${esc(st.focus)} · ${esc(tname(st.tgt))}</span><span>Esc cancel</span></div>` + st.tabs.concat([{ id: 'new', name: 'New tab', br: '' }]).map((tt) => {
+        const isSrc = tt.id === st.cur, on = tt.id === st.tgt;
+        let mini;
+        if (on) mini = tt.id === 'new' ? `<div class="mini"><div class="b me">${esc(st.focus)}</div></div>` : miniHTML(tt.id, st.spot);
+        else if (tt.id === 'new') mini = `<div class="mini empty">+</div>`;
+        else if (tt.bucket) mini = `<div class="mini empty">bucket · ${tt.l2}</div>`;
+        else mini = `<div class="mini">${tt.panes.map((n) => `<div class="b${isSrc && n === st.focus ? ' me' : ''}"${isSrc && n === st.focus ? ' style="opacity:.35"' : ''}>${esc(n)}</div>`).join('')}</div>`;
+        return `<div class="card${on ? ' on' : ''}${isSrc ? ' src' : ''}"><div class="cn">${esc(tt.name)}${st.from[st.focus] === tt.id ? '<span class="tag">back</span>' : ''}${isSrc ? '<span class="tag bucket">here now</span>' : ''}</div>${mini}</div>`;
+      }).join('');
+    }
+    // readout
+    const plain = st.mode ? `choosing: ${tname(st.tgt || '…')}` : 'nothing in motion';
+    $('#readout').innerHTML = `<span>You are in: <b>${esc(tab(st.cur).name)}</b></span><span>Focus: <b>${esc(st.focus || 'none')}</b></span><span>Move: <b>${esc(plain)}</b></span>`;
+  }
+  function log(m) { st.log = m; const el = $('#log'); if (el) el.textContent = m; }
+  function hud(k) { const h = $('#hud'); h.textContent = k; h.classList.add('on'); clearTimeout(hud.t); hud.t = setTimeout(() => h.classList.remove('on'), 700); }
+
+  function chooserList() {
+    const f = st.filter.trim().toLowerCase();
+    return targets().filter((id) => !f || tname(id).toLowerCase().includes(f) || (id !== 'new' && tab(id).br.includes(f)));
+  }
+
+  // ------------- actions -------------
+  function begin(mode, dir) {
+    if (st.mode) return;
+    st.mode = mode; st.spot = 0; st.filter = '';
+    const list = targets();
+    if (mode === 'lift') {
+      // the first ↑/↓ lifts and moves to the neighbouring row
+      const order = st.tabs.map((t) => t.id).concat('new');
+      let i = order.indexOf(st.cur) + (dir || 1);
+      while (order[i] === st.cur) i += dir || 1;
+      if (i < 0 || i >= order.length) i = dir < 0 ? order.length - 1 : 0;
+      st.tgt = order[i];
+      hud(dir < 0 ? '⌃⌘↑' : '⌃⌘↓');
+      log(`${st.focus} lifted. It's over ${tname(st.tgt)}.`);
+    } else if (mode === 'choose') {
+      st.tgt = list[0]; hud('⌃⌘.');
+      log('Chooser open. Type to filter.');
+    } else {
+      st.tgt = st.from[st.focus] && list.includes(st.from[st.focus]) ? st.from[st.focus] : list[0]; hud('⌃⌘Z');
+      log('Zoomed out. The pane starts on the tab it came from.');
+    }
+    render();
+    if (mode === 'choose') { $('#cin').value = ''; $('#cin').focus(); }
+  }
+  function step(d) {
+    if (st.mode === 'lift') {
+      const order = st.tabs.map((t) => t.id).filter((id) => id !== st.cur).concat('new');
+      let i = order.indexOf(st.tgt) + d;
+      if (i < 0) i = order.length - 1; if (i >= order.length) i = 0;
+      st.tgt = order[i]; st.spot = 0;
+    } else if (st.mode === 'choose') {
+      const list = chooserList(); if (!list.length) return;
+      let i = list.indexOf(st.tgt) + d; if (i < 0) i = list.length - 1; if (i >= list.length) i = 0;
+      st.tgt = list[i]; st.spot = 0;
+    }
+    log(`Over ${tname(st.tgt)}${st.from[st.focus] === st.tgt ? ' (where it came from)' : ''}.`);
+    render();
+  }
+  function stepCard(d) {
+    const order = st.tabs.map((t) => t.id).concat('new');
+    let i = order.indexOf(st.tgt);
+    do { i = (i + d + order.length) % order.length; } while (order[i] === st.cur);
+    st.tgt = order[i]; st.spot = 0;
+    log(`On ${tname(st.tgt)}.`); render();
+  }
+  function moveSpot(d) {
+    if (!st.tgt || st.tgt === 'new') return;
+    const p = plan(st.tgt); if (p.bucket) return;
+    st.spot = Math.max(0, Math.min(p.max, st.spot + d));
+    log(`Landing spot ${st.spot + 1} of ${p.max + 1} in ${tname(st.tgt)}.`);
+    render();
+  }
+  function cancel() {
+    if (!st.mode) return;
+    hud('Esc'); st.mode = null; st.tgt = null; $('#cin').blur();
+    log('Cancelled. Everything is where it was.');
+    render();
+  }
+  function commit(follow) {
+    if (!st.mode || !st.tgt) return;
+    const name = st.focus, src = tab(st.cur);
+    let dest = st.tgt, outMsg = '';
+    hud(follow ? '⇧⏎' : '⏎'); $('#cin').blur();
+    if (dest === 'new') {
+      const id = 'tab' + Date.now();
+      st.tabs.splice(st.tabs.indexOf(src) + 1, 0, { id, name: name, br: '', ic: '›_', l2: 'moved from ' + src.name, panes: [], lru: [] });
+      dest = id;
+    }
+    const d = tab(dest);
+    const p = plan(dest);
+    if (!d.bucket) {
+      if (p.out) { d.panes = d.panes.filter((x) => x !== p.out); outMsg = ` ${p.out} was hidden in ${d.name} to make room.`; }
+      d.panes.splice(Math.min(st.spot, d.panes.length), 0, name);
+      d.lru = d.lru.filter((x) => x !== name).concat(name);
+    } else {
+      d.l2 = (parseInt(d.l2) + 1) + ' panes · manager watching';
+    }
+    st.from[name] = src.id;
+    // leave the source layout: animate the gap closing
+    const el = [...$('#panes').children].find((c) => c.dataset.p === name);
+    src.panes = src.panes.filter((x) => x !== name);
+    src.lru = src.lru.filter((x) => x !== name);
+    st.mode = null; st.tgt = null;
+    if (follow) {
+      st.cur = dest; st.focus = name;
+      $('#panes').innerHTML = '';
+      log(`${name} moved to ${d.name} and you followed it.${outMsg}`);
+    } else {
+      st.focus = src.lru[src.lru.length - 1] || src.panes[0] || null;
+      if (el) { el.classList.remove('lifted', 'focus'); el.classList.add('leaving'); setTimeout(() => el.remove(), 300); }
+      log(`${name} moved to ${d.name}${d.bucket ? '; the manager takes it from here' : ''}. You stay in ${src.name}; focus goes to ${st.focus || 'nothing'}.${outMsg}`);
+    }
+    render();
+  }
+
+  function demo() {
+    reset();
+    const seq = OPTIONS[opt].key === 'A' ? [['↓', () => begin('lift', 1)], ['', () => moveSpot(1)], ['', () => commit(false)]]
+      : OPTIONS[opt].key === 'B' ? [['', () => begin('choose')], ['', () => typeFilter('imp')], ['', () => commit(false)]]
+      : [['', () => begin('zoom')], ['', () => moveSpot(1)], ['', () => commit(false)]];
+    seq.forEach(([, f], i) => setTimeout(f, 700 + i * 1300));
+  }
+  function typeFilter(s) {
+    const inp = $('#cin'); let i = 0;
+    const t = setInterval(() => { inp.value += s[i++]; inp.dispatchEvent(new Event('input')); if (i >= s.length) clearInterval(t); }, 160);
+  }
+  function reset() { st = fresh(); $('#panes') && ($('#panes').innerHTML = ''); build(); }
+
+  // ------------- keys -------------
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-opt],[data-act]'); if (!t) return;
+    if (t.dataset.opt) { opt = +t.dataset.opt; reset(); return; }
+    if (t.dataset.act === 'demo') demo();
+    if (t.dataset.act === 'reset') reset();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key, O = OPTIONS[opt];
+    const inChooser = st.mode === 'choose';
+    if (inChooser) {
+      if (k === 'ArrowDown') step(1);
+      else if (k === 'ArrowUp') step(-1);
+      else if (k === 'ArrowRight') moveSpot(1);
+      else if (k === 'ArrowLeft') moveSpot(-1);
+      else if (k === 'Enter') commit(e.shiftKey);
+      else if (k === 'Escape') cancel();
+      else return;           // letters go to the filter
+      e.preventDefault(); return;
+    }
+    if (!st.mode) {
+      if (k >= '1' && k <= '3') { opt = +k - 1; reset(); }
+      else if (k === 'r' || k === 'R') reset();
+      else if (O.key === 'A' && (k === 'ArrowDown' || k === 'ArrowUp')) begin('lift', k === 'ArrowUp' ? -1 : 1);
+      else if (O.key === 'B' && k === '.') begin('choose');
+      else if (O.key === 'C' && (k === 'z' || k === 'Z')) begin('zoom');
+      else return;
+      e.preventDefault(); return;
+    }
+    if (st.mode === 'lift') {
+      if (k === 'ArrowDown') step(1); else if (k === 'ArrowUp') step(-1);
+      else if (k === 'ArrowRight') moveSpot(1); else if (k === 'ArrowLeft') moveSpot(-1);
+      else if (k === 'Enter') commit(e.shiftKey); else if (k === 'Escape') cancel();
+      else return;
+    } else if (st.mode === 'zoom') {
+      if (k === 'ArrowRight') stepCard(1); else if (k === 'ArrowLeft') stepCard(-1);
+      else if (k === 'ArrowDown') stepCard(3); else if (k === 'ArrowUp') stepCard(-3);
+      else if (k === ']') moveSpot(1); else if (k === '[') moveSpot(-1);
+      else if (k === 'Enter') commit(e.shiftKey); else if (k === 'Escape') cancel();
+      else return;
+    }
+    e.preventDefault();
+  });
+  document.addEventListener('mousedown', (e) => { if (st.mode === 'choose' && !e.target.closest('#chooser')) e.preventDefault(); });
+
+  build();
+})();
+</script>
+</body>
+</html>
