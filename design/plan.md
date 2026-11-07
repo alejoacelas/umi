@@ -57,11 +57,12 @@ same views (sidebar, split tree, title bar), so they run one after another.
 One worker per step, in its own worktree, supervised from a session that reviews each step against
 the design before merging. Steps run in order.
 
-## Decisions before starting
+## Decided
 
-1. Run the steps as a workflow (one worker per step, each reviewed before merge). Recommend: do.
-2. Release after steps 1, 3, 5 and 7, each with `release.sh` from this Mac and installed on both
-   Macs. Recommend: do.
-3. Merge `warp/parity` into main once 0.9.0 is out, as step 0. Recommend: do.
-4. If a step finds the design unclear or unworkable, the worker stops that point and it comes back
-   to Alejo in one list; the rest of the step carries on. Recommend: do.
+- The steps run as a workflow, one worker per step, each reviewed against the design before it
+  merges, orchestrated by a fresh session.
+- Releases after steps 1, 3, 5 and 7, installed on both Macs.
+- `warp/parity` merges into main once 0.9.0 is out, as step 0.
+- Where a step finds the design unclear or unworkable, it makes the closest reasonable choice,
+  records it in `design/build-log.md`, and keeps building. Alejo reviews the finished product and
+  that log at the end.
