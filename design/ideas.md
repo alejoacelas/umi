@@ -1,0 +1,130 @@
+# Things to build on the primitives
+
+Behaviour Alejo said he might want, written as skills, palette commands, key bindings, config and
+scripts on top of the design. None of it is built into Umi; each piece uses commands from
+[cli.md](cli.md). Skills go in `~/best/stash/dotfiles/skills/`; palette commands are executables in
+`~/.config/umi/commands/` (both kept in dotfiles); config lines go in `~/.config/umi/config`.
+
+| Idea | Built as | Needs from Umi beyond the design |
+|---|---|---|
+| Become the manager | skill | nothing |
+| Defer this pane | skill and palette command | nothing |
+| Hide until it needs me | palette command and key | nothing |
+| Delegate to the manager | palette command and key | nothing |
+| Important panes | config and key | nothing |
+| Review walk | config and key | nothing |
+| Status line from the agent | skill line and hook | nothing |
+| Organize into tabs | skill and palette command | nothing |
+| Split tab by project | palette command | nothing |
+| End-of-day focus report | script | nothing |
+| Return digest | script | an `app.activated` event |
+| Project focus | palette command | a way to dim or collapse tabs |
+| Links on panes | palette command | nothing |
+
+## Become the manager
+
+A skill an agent runs to take the manager role, so ⌃⌘M brings it up in the drawer.
+
+- `umi pane set role=manager` on its own pane (the role moves from whichever pane had it).
+- Its loop: `umi events --filter pane.changed` to notice delegated panes whose agent stopped;
+  `umi ls --where 'owner=manager'` to list them; `umi read` and `umi send` to answer what it can.
+- What it can't settle, it hands back: `umi pane show P` or `umi pane move P --back`, plus
+  `umi pane set P escalated=true`, which the user's `jump` list can include.
+- It reports in its own pane, so its indicator shows its state like any other.
+
+## Defer this pane
+
+"Move me out of the way": a skill an agent can run on itself, and a palette command for the user.
+
+- If no tab is named Deferred, `umi tab new Deferred --no-focus` (new tabs opened in the background
+  go last); then `umi pane move . --tab Deferred --no-focus`.
+- Optionally `umi pane set . deferred_at=now note="…"`, so the Deferred tab's panes can be listed and
+  sorted later.
+- `umi pane move P --back` returns one to where it was.
+
+## Hide until it needs me
+
+A palette command bound to a key: `umi pane hide . --until 'agent.done=false or
+agent.status=needs_input'`. The pane comes back to its tab, without taking focus, when the agent
+ends a turn without `Status: done` or asks for something. Variant with a time limit:
+`--until 2h`.
+
+## Delegate to the manager
+
+A palette command bound to a key: `umi pane set . owner=manager` and `umi pane hide .`. The manager
+skill handles the rest. Alternative without hiding: move the pane to a tab the manager watches.
+
+## Important panes
+
+```
+key.ctrl+cmd+i = pane set . priority=high      # toggled by a small command script instead, if preferred
+list.important = priority=high | sort -priority, status_since
+landing        = @important after 15m away
+key.ctrl+cmd+] = go --next @important
+```
+
+(`cli.md` doesn't fix the config syntax for slots yet; the `landing` line shows the intent.)
+
+## Review walk
+
+`key.ctrl+cmd+u = go --next @unseen` with `list.unseen = changed_at > seen_at | sort changed_at`.
+Each visit sets `seen_at`, so the list shrinks as you go; ⌃⌘K returns.
+
+## Status line from the agent
+
+A line in the user's CLAUDE.md or a small skill: "when you start a new phase of work, run
+`umi pane set . status='…'`". With the `sidebar.line2` slot set to `{status or agent.title or command or
+cwd}`, the sidebar shows it. A Stop hook can also write `agent.summary` from the agent's last line.
+
+## Organize into tabs
+
+A skill started from ⌘P. It reads `umi ls --json` (folders, branches, files, agent titles,
+attributes), proposes groups as a dry run the user approves, then applies them with `tab new`,
+`pane move` and `tab rename`.
+
+## Split tab by project
+
+A palette command, no agent needed: group the current tab's panes by git repository root (from
+each pane's `cwd`), keep the largest group, and move each other group into a new tab named after
+its repository. Panes outside any repository stay.
+
+## End-of-day focus report
+
+A script over `umi focus-log --since 6am --json`, grouping time by file, agent session or
+`project=`, and writing a short note (for example into the desk's day log). It counts keyboard
+focus only.
+
+## Return digest
+
+When Umi becomes active after a long absence, a script counts `@unseen`, `@needs-you` and
+`agent.status=working` and shows them with `umi notify` or in the drawer. **Needs:** an event when
+Umi becomes active (`app.activated`, with how long it was away); `cli.md` has none.
+
+## Project focus
+
+A palette command that shows only the tabs with a pane matching `project=X`. **Needs:** a way to
+dim, collapse or filter tabs in the sidebar. Tab search (`warp/parity`) filters by text; it could
+take a query instead.
+
+## Links on panes
+
+`umi pane set . pr=https://…` or `desk=…`; a palette command "Open link" opens the focused pane's
+`pr` or `desk` attribute.
+
+## How agents feed the indicator
+
+The indicator reads `agent.status`, which Umi's hook plugin writes from each agent's hooks. The two
+agents report different things:
+
+| State | Claude Code | Codex |
+|---|---|---|
+| working | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | the same three |
+| needs you: approval | `PermissionRequest` | `PermissionRequest` |
+| needs you: a question or an idle prompt | `Notification` | no matching hook in Umi's Codex plugin |
+| error | `StopFailure`, `PostToolUseFailure` | no matching hook |
+| finished | `Stop` | `Stop` |
+
+So with Codex, a question to the user or a failed turn may show as finished instead of "needs you".
+To check before relying on it: which Codex events cover questions and failures, and whether each
+agent's `Stop` hook input carries the last message (needed for `agent.done`) or only a transcript
+path to read it from.

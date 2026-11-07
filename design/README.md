@@ -17,5 +17,6 @@ tabs on, as written down in the "Warp parity" requirements of `acceptance/SPEC.m
 | [spec-cleanup.md](spec-cleanup.md) | What leaves the current spec |
 | [cli.md](cli.md) | The proposed `umi` CLI contract |
 | [plan.md](plan.md) | The implementation steps and how each is checked |
+| [ideas.md](ideas.md) | Skills, scripts and config to build on the primitives |
 
 Prototypes for the visual choices are in `prototypes/`.
