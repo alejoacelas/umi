@@ -124,9 +124,10 @@ struct UmiQuietTests {
 
     @Test func aRestartResumesTheConversationWithTheTypedFlags() {
         #expect(UmiTypedCommand.restartCommand(program: "claude", args: ["--dangerously-skip-permissions", "--model", "opus",
-                                                                        "--resume", "old", "--add-dir", "/a", "fix it"],
+                                                                        "--resume", "old", "--add-dir", "/a", "--verbose", "fix it"],
                                                kind: .claude, session: "s1")
-                == ["claude", "--model", "opus", "--dangerously-skip-permissions", "--add-dir", "/a", "--resume", "s1"])
+                == ["claude", "--model", "opus", "--dangerously-skip-permissions", "--add-dir", "/a", "--verbose",
+                    "--resume", "s1"])
         // Never prompted: a fresh conversation, as typed.
         #expect(UmiTypedCommand.restartCommand(program: "/x/claude-code/cli.js", args: ["--verbose"], kind: .claude, session: nil)
                 == ["claude", "--verbose"])
