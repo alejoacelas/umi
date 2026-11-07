@@ -1127,3 +1127,6 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   terminal, presses ⌘E there and requires the terminal's search to open with the file still
   rendered: what SPEC E-2 asks of ⌘E in a terminal. The Rendered / Raw checks are unchanged.
   **Requirements:** E-2.
+- **Added, `tests/test_markdown_warp.py` `test_cmd_e_in_a_source_only_file_uses_the_selection_for_find`**:
+  in a file with only a source view, ⌘E puts the selected text in the find query and the file
+  stays in source. **Requirements:** E-2.

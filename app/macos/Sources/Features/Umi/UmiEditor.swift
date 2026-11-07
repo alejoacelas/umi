@@ -940,10 +940,11 @@ final class UmiEditorContainerView: NSView {
         case ([.command], "v"):
             return NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
         case ([.command], "e"):
-            // Warp's key for Rendered / Raw (Warp parity, 2026-11-05). Only a file with both views
-            // takes it; elsewhere ⌘E keeps its menu meaning.
-            guard document?.hasPreview ?? false else { return super.performKeyEquivalent(with: event) }
-            document?.toggleMode()
+            // Warp's key for Rendered / Raw (Warp parity, 2026-11-05) in a file with both views;
+            // in a source-only file, Use Selection for Find. The menu item has no key of its own
+            // (Ghostty's ⌘E is a terminal binding), so the key comes here.
+            guard document != nil else { return super.performKeyEquivalent(with: event) }
+            selectionForFind(nil)
             return true
         default:
             return super.performKeyEquivalent(with: event)

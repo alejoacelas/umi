@@ -385,6 +385,25 @@ def test_rendered_and_raw_toggle_with_cmd_e(inst, win, doc, ui):
     assert doc_mode(inst, win, doc) == "preview", "⌘E in a terminal leaves the file alone"
 
 
+@pytest.mark.req("E-2")
+def test_cmd_e_in_a_source_only_file_uses_the_selection_for_find(inst, win, ui, tmp_path):
+    """A file with only a source view has no Rendered / Raw: ⌘E puts the selection in the find query."""
+    path = tmp_path / "sample.py"
+    path.write_text("def f():\n    return 1\n")
+    pane = inst.json("edit", str(path), "--pane", win["pane"])["documents"][0]["pane"]
+    editor = lambda: inst.rpc("debug.ui.editor", pane=pane)
+    inst.cli("pane", "focus", pane)
+    ui.activate()
+    wait_until(lambda: editor()["editor_focused"], 5, message="the editor has keyboard focus")
+    ui.key(126, ui.CMD)   # ⌘↑
+    wait_until(lambda: editor()["selection"] == [0, 0], 5, message="the caret at the start")
+    ui.key(124, ui.CMD | ui.SHIFT)   # ⇧⌘→: select the first line
+    wait_until(lambda: editor()["selection"] == [0, 8], 5, message="the first line selected")
+    ui.key(KEY_E, ui.CMD)
+    wait_until(lambda: editor()["find"]["query"] == "def f():", 5, message="⌘E uses the selection for find")
+    assert doc_mode(inst, win, str(path)) == "source"
+
+
 @pytest.mark.req("MD-5")
 def test_right_click_opens_warps_menu(inst, win, doc, ui):
     pane = shown(inst, win, doc)
