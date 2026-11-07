@@ -89,19 +89,21 @@ def test_an_agent_typed_in_a_pane_writes_its_state_on_the_pane(inst, pane, kind)
 @pytest.mark.req("AG-18", "T-4")
 def test_agent_status_changes_are_pane_changed_events(inst, pane):
     events = subprocess.Popen([inst.target.cli_path, "events", "--filter", "pane.changed", "--pane", pane],
-                              stdout=subprocess.PIPE, text=True, env=inst.env)
+                              stdout=subprocess.PIPE, env=inst.env)
     try:
         time.sleep(0.5)
         inst.hook(pane, "SessionStart")
         inst.hook(pane, "UserPromptSubmit", prompt="hello")
         inst.hook(pane, "Stop", last_assistant_message="hi")
-        seen = []
+        seen, buffer = [], b""
         deadline = time.time() + 10
+        fd = events.stdout.fileno()
         while time.time() < deadline and len(seen) < 3:
-            ready, _, _ = select.select([events.stdout], [], [], 0.5)
-            line = events.stdout.readline() if ready else ""
-            if line:
-                seen.append(json.loads(line))
+            ready, _, _ = select.select([fd], [], [], 0.5)
+            if ready:
+                buffer += os.read(fd, 65536)
+                *lines, buffer = buffer.split(b"\n")
+                seen += [json.loads(line) for line in lines if line.strip()]
         data = [e["data"] for e in seen]
         assert [(d["key"], d.get("old"), d["new"]) for d in data] == [("agent.status", None, "idle"),
                                                                       ("agent.status", "idle", "working"),

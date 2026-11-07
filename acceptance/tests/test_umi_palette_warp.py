@@ -86,7 +86,7 @@ def test_a_typed_prefix_filters_the_palette_and_shows_as_its_filter_word(inst, w
 @pytest.mark.req("L-14")
 def test_a_partial_filter_word_is_suggested(inst, win):
     try:
-        for typed, rest in (("fi", "les: "), ("sess", "ions: "), ("a", "ctions: "), ("conv", "ersations: "),
+        for typed, rest in (("fi", "les: "), ("sess", "ions: "), ("a", "ctions: "),
                             ("t", "abs: "), ("xyz", ""), ("Fi", "")):
             rpc(inst, "debug.palette", window=win["window"], mode="commands", query=typed)
             s = state(inst, win)

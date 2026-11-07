@@ -323,7 +323,7 @@ enum UmiUIDebug {
 
     private static func attention() -> [String: Any] {
         var panes: [String: Any] = [:]
-        for (id, agent) in UmiAttention.shared.panes {
+        for (id, agent) in UmiAttention.shared.openPanes {
             panes[id.uuidString.lowercased()] = ["kind": agent.kind.rawValue, "title": agent.title, "status": agent.status.rawValue,
                                                  "mark": agent.mark == .none ? "none" : (agent.mark == .finished ? "finished" : "needs_you"),
                                                  "unseen": agent.unseen, "attributes": agent.attributes]

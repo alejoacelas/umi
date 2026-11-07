@@ -171,8 +171,10 @@ enum UmiAgentHooks {
     /// (Claude Code says so with its SessionEnd hook too.)
     static func commandFinished(in pane: Ghostty.SurfaceView) {
         let attention = UmiAttention.shared
-        guard !attention.shuttingDown, let agent = attention.agent(forPane: pane.id), agent.running else { return }
-        if let pid = agent.pid, kill(pid, 0) == 0 { return }
+        // Only an agent whose process Umi knows (from its hooks), once that process is gone: any
+        // other command ending in the pane says nothing about the agent.
+        guard !attention.shuttingDown, let agent = attention.agent(forPane: pane.id), agent.running,
+              let pid = agent.pid, kill(pid, 0) != 0 else { return }
         attention.update(pane.id) {
             $0.status = .stopped
             $0.background = 0
@@ -337,14 +339,21 @@ enum UmiAgentHooks {
     }
 
     /// Esc or Ctrl-C while the agent worked: interrupts fire no hook, so a turn with no hook for
-    /// two seconds afterwards is taken as interrupted.
-    private static func interruptAsked(_ id: UUID) {
-        let asked = Date()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+    /// two seconds afterwards is taken as interrupted. A hook of the turn may still arrive just
+    /// after the key (it was on its way): the two seconds then count from it, for up to ten seconds
+    /// after the key.
+    private static func interruptAsked(_ id: UUID, asked: Date = Date(), at check: Date? = nil) {
+        let due = check ?? asked.addingTimeInterval(2)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0.05, due.timeIntervalSinceNow)) {
             MainActor.assumeIsolated {
                 let attention = UmiAttention.shared
-                guard let agent = attention.agent(forPane: id), agent.status == .working || agent.status == .needsInput,
-                      agent.lastHookAt <= asked else { return }
+                guard let agent = attention.agent(forPane: id), agent.status == .working || agent.status == .needsInput else { return }
+                // A hook since the key that this check doesn't account for yet: two seconds from it.
+                let next = agent.lastHookAt.addingTimeInterval(2)
+                if agent.lastHookAt > asked, next > due.addingTimeInterval(0.01) {
+                    if next < asked.addingTimeInterval(10) { interruptAsked(id, asked: asked, at: next) }
+                    return
+                }
                 attention.update(id) {
                     $0.status = .idle
                     $0.idleInferred = true

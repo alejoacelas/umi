@@ -150,7 +150,7 @@ final class UmiAttention: ObservableObject {
     }
 
     /// Panes in a window (not closed ones kept for reopening) and their agents.
-    private var openPanes: [(UUID, Agent)] {
+    var openPanes: [(UUID, Agent)] {
         let open = Set(UmiTopology.allSurfaces.map(\.id))
         return panes.filter { open.contains($0.key) }.map { ($0.key, $0.value) }
     }
