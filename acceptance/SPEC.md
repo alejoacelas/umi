@@ -325,7 +325,7 @@ the menu.
 - **L-19 [A]** Panes share the space equally, as in Warp. Panes in the same row (or column) share
   it equally after every split and close:
   - splitting a pane along its row adds a pane with an equal share: two panes are 50/50, a third
-    makes 33/33/33, a fourth 25/25/25/25, whichever pane is split. Panes the user resized keep
+    makes 33/33/33, a fourth (`split --no-stack`, M-7) 25/25/25/25, whichever pane is split. Panes the user resized keep
     their proportions and the new pane gets 1/(N+1);
   - splitting across the row (a column in a row) halves only that pane; the row is unchanged;
   - closing a pane shares its space among the rest of its row in proportion to their sizes
@@ -469,6 +469,15 @@ A "live session" is a pane with a running program, its scrollback and its state.
   - Closing the member on show, or moving it away, shows the next member in its place; a member
     whose program ends leaves its stack; a stack left with one pane is an ordinary pane again.
   - `ls` lists every member (M-7 fields in CLI.md); stacks survive a restart and undo.
+  - The fourth pane, in the user's words (2026-11-07): "when opening the forth pane on a tab it
+    should do the thing where only 3 panes show and the others you need to navigate to". A tab
+    shows at most three places (a stack counts once). A new pane made in a tab that already shows
+    three, by any route (a split by shortcut, menu or `split`, a file or web page, an agent
+    session's `--split`), joins the stack at the place of the pane it was made from: the pane
+    being split, the pane a file was opened from, or the tab's focused pane. It goes right after
+    the member on show, comes on show, and takes keyboard focus unless the route asks for none
+    (`--no-focus`, `edit`); a pane it covers that had keyboard focus passes it to the new pane.
+    Undo removes it as one step and redo brings it back. `split --no-stack` splits anyway.
 
 ## T. Terminal input and output, and events
 
@@ -743,9 +752,10 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   the file should show on a pane next to the pane that called to open it". A file opened from a
   pane (`<cli> edit FILE` in it, the palette, the file tree, a link in a preview) goes to the right
   of that pane, or of the given pane or the given tab's focused pane; several files go one after
-  another. When the tab already shows three panes (a stack counts once), the file gets a new tab
-  right after it. A file already open shows where it is, without a second pane. An explicitly named
-  pane or tab that doesn't exist is an error, never a fallback to another tab.
+  another. When the tab already shows three panes (a stack counts once), the file joins the stack
+  at that pane's place instead (M-7), as every new pane does (2026-11-07). A file already open
+  shows where it is, without a second pane. An explicitly named pane or tab that doesn't exist is
+  an error, never a fallback to another tab.
 - **E-10 [A]** A file opened from outside the app (Finder, `open FILE`, the app being the default
   for these types):
   - Markdown (asked 2026-11-05) opens in one shared tab, the docs tab (`docs: true` in `ls`, named

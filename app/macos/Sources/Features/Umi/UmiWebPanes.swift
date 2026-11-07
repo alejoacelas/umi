@@ -66,8 +66,8 @@ final class UmiWebPanes: ObservableObject {
 
     // MARK: Opening
 
-    /// Open a page in a pane of its own, placed as a file is (E-9): to the right of `anchor`, three
-    /// panes to a tab. A page already open (the same URL) shows where it is.
+    /// Open a page in a pane of its own, placed as a file is (E-9): to the right of `anchor`, or in
+    /// the stack at its place in a tab already showing three. A page already open (the same URL) shows where it is.
     @discardableResult
     static func open(_ url: URL, near anchor: Ghostty.SurfaceView,
                      focus: Bool) throws -> (pane: Ghostty.SurfaceView, page: UmiWebPage) {

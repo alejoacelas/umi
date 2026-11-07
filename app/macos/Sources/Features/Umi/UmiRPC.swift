@@ -158,7 +158,8 @@ enum UmiRPC {
             let target = try UmiTopology.pane(params.string("pane"), caller: caller)
             let direction = try UmiLayout.direction(params.string("direction"))
             return try UmiLayout.split(target, direction: direction, options: UmiLayout.PaneOptions(params),
-                                        ratio: params.double("ratio"), focus: params.bool("focus") ?? true)
+                                        ratio: params.double("ratio"), focus: params.bool("focus") ?? true,
+                                        stack: params.bool("stack") ?? true)
 
         case "pane.info":
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)

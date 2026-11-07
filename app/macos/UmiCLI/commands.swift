@@ -113,7 +113,7 @@ let commandTable: [CommandHelp] = [
                                         ask: [Ask(name: "W", prompt: "Window", option: "--window", kind: "window")])]),
     CommandHelp(section: "Layout", usage: """
         split [right|down|left|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R]
-              [--worktree W] [--no-focus]
+              [--worktree W] [--no-focus] [--no-stack]
         """,
                 actions: [PaletteAction(title: "Split Right", argv: ["split", "right"]),
                           PaletteAction(title: "Split Down", argv: ["split", "down"]),

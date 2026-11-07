@@ -78,8 +78,8 @@ final class UmiFilePanes: ObservableObject {
     // MARK: Opening
 
     /// Open a file in a pane of its own (E-1, E-9). A file already open shows where it is.
-    /// Otherwise its pane goes to the right of `anchor`, unless `anchor`'s tab already shows
-    /// three panes: then it gets a new tab right after that tab.
+    /// Otherwise its pane goes to the right of `anchor`, or joins the stack at `anchor`'s place
+    /// when its tab already shows three places (`newPane`).
     @discardableResult
     static func open(_ url: URL, mode: UmiDocument.Mode?, near anchor: Ghostty.SurfaceView,
                      focus: Bool) throws -> (pane: Ghostty.SurfaceView, doc: UmiDocument) {
@@ -103,38 +103,27 @@ final class UmiFilePanes: ObservableObject {
         return (placed.pane, doc)
     }
 
-    /// A new pane for something opened from `anchor` (E-9): to the right of `anchor`, unless
-    /// `anchor`'s tab already shows three panes: then in a new tab right after that tab. File
-    /// panes and web panes are placed this way.
+    /// A new pane for something opened from `anchor` (E-9): to the right of `anchor`, or, when
+    /// `anchor`'s tab already shows three places, on show in the stack at `anchor`'s place (M-7).
+    /// File panes and web panes are placed this way.
     static func newPane(near anchor: Ghostty.SurfaceView, cwd: String?,
                         for what: String) throws -> (pane: Ghostty.SurfaceView, tab: String, window: String) {
         guard let location = UmiTopology.locate(anchor) else { throw UmiError.notFound("the pane isn't in a window") }
         let window = location.window
         let tab = location.tab
-        let tree = window.tree(of: tab)
         // A stack member that isn't on show: the new pane goes beside the member that is.
-        let shownAnchor = tree.contains(anchor) ? anchor
+        let shownAnchor = window.tree(of: tab).contains(anchor) ? anchor
             : (tab.stack(of: anchor).flatMap { window.shownMember(of: $0, in: tab) } ?? anchor)
 
         var options = UmiLayout.PaneOptions()
         options.cwd = cwd
-        let created: [String: Any]
-        if (tree.root?.leaves().count ?? 0) < maxPanesPerTab {
-            created = try UmiLayout.split(shownAnchor, direction: .right, options: options, ratio: nil, focus: false)
-        } else {
-            let index = (window.index(of: tab) ?? window.tabs.count - 1) + 2   // 1-based, right after `tab`
-            created = try UmiLayout.newTab(in: window, options: options, tabName: nil, color: .none, index: index,
-                                            focus: false, inheritFrom: shownAnchor)
-        }
+        let created = try UmiLayout.split(shownAnchor, direction: .right, options: options, ratio: nil, focus: false)
         guard let id = created["pane"] as? String,
               let pane = UmiTopology.allSurfaces.first(where: { $0.umiID == id }) else {
             throw UmiError.failed("couldn't make a pane for \(what)")
         }
         return (pane, (created["tab"] as? String) ?? "", window.umiIDString)
     }
-
-    /// New files get a pane in the caller's tab while it shows fewer than this many panes.
-    static let maxPanesPerTab = 3
 
     // MARK: Closing
 

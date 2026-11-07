@@ -627,9 +627,10 @@ func layoutCommand(_ argv: [String]) {
 
     case "split":
         let args = parse(rest, ArgSpec(valued: creationSpec.union(["--pane", "--ratio"]),
-                                       boolean: ["--no-focus"], aliases: ["-p": "--pane"]))
+                                       boolean: ["--no-focus", "--no-stack"], aliases: ["-p": "--pane"]))
         guard args.positional.count <= 1 else { fail("split takes one direction: right, down, left or up") }
         var params = creationParams(args)
+        if args.has("--no-stack") { params["stack"] = false }
         params["direction"] = args.positional.first ?? "right"
         if let pane = args.value("--pane") { params["pane"] = pane }
         if let ratio = args.value("--ratio") {

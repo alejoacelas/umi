@@ -419,8 +419,9 @@ enum UmiEditor {
     }
 
     /// `edit FILE…`: each file in a pane of its own, the first beside the anchor pane and each
-    /// next one beside the one before, three panes to a tab (E-1, E-9). Keyboard focus stays
-    /// where it is.
+    /// next one beside the one before; past three places to a tab, each joins the stack at the
+    /// place it was opened from (E-1, E-9). Keyboard focus stays where it is, unless it was on a
+    /// pane a file now covers.
     static func handleOpen(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
         guard let paths = params.strings("paths"), !paths.isEmpty else { throw UmiError.badRequest("edit: name a file") }
         let mode = params.string("mode").flatMap(UmiDocument.Mode.init(rawValue:))

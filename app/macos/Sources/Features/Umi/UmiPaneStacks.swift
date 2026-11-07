@@ -47,6 +47,38 @@ extension TerminalController {
         return (replaced, replacement)
     }
 
+    /// Change a tab's tree and stacks as one undoable step. `stacks` are the tab's stacks after the
+    /// change, each with its members in strip order (an existing stack object keeps its identity).
+    /// Undo puts both back; panes it takes out of the tab stay alive for redo, as Ghostty keeps an
+    /// undone split's pane.
+    func replaceLayout(_ newTree: SplitTree<Ghostty.SurfaceView>, stacks: [(UmiPaneStack, [Ghostty.SurfaceView])],
+                       for tab: UmiTab, undoAction: String) {
+        let oldTree = tree(of: tab)
+        let oldStacks = tab.stacks.map { ($0, $0.members) }
+        let before = (oldTree.root?.leaves() ?? []) + oldStacks.flatMap(\.1)
+        let lostFocus = tab === selectedTab && focusedSurface.map { !newTree.contains($0) } ?? false
+        for (stack, members) in stacks { stack.members = members }
+        tab.stacks = stacks.map(\.0)
+        setTree(newTree, for: tab)
+        // Only the panes on show draw; members waiting in a stack, and panes taken out, don't.
+        let onShow = newTree.root?.leaves() ?? []
+        setOccluded(before.filter { pane in !onShow.contains { $0 === pane } }, occluded: true)
+        if tab === selectedTab { setOccluded(onShow, occluded: false) }
+        if tab.focusedSurface.map({ !newTree.contains($0) }) ?? false {
+            tab.focusedSurface = UmiFocusHistory.mostRecent(among: onShow) ?? onShow.first
+        }
+        if lostFocus, let next = tab.focusedSurface {
+            DispatchQueue.main.async { Ghostty.moveFocus(to: next) }
+        }
+        UmiState.shared.layoutDidChange()
+        guard let undoManager else { return }
+        undoManager.setActionName(undoAction)
+        undoManager.registerUndo(withTarget: self, expiresAfter: undoExpiration) { target in
+            guard !target.isClosed, target.tabs.contains(where: { $0 === tab }) else { return }
+            target.replaceLayout(oldTree, stacks: oldStacks, for: tab, undoAction: undoAction)
+        }
+    }
+
     /// A stack member that isn't on show went away (its program ended, or it was closed).
     func removeHiddenMember(_ view: Ghostty.SurfaceView, from tab: UmiTab) {
         guard let stack = tab.stack(of: view), !tree(of: tab).contains(view) else { return }
@@ -108,15 +140,21 @@ enum UmiStacks {
         return UmiTopology.Location(window: window, tab: tab, pane: pane)
     }
 
-    /// A new pane in `target`'s place, at `index` of its stack's order (a stack is made if `target`
-    /// had none). It isn't on show: `show` or `UmiLayout.focusPane` brings it up.
-    static func addMember(onto target: Ghostty.SurfaceView, cwd: String?, at index: Int) throws -> Ghostty.SurfaceView {
+    /// How many places a tab shows (a stack counts once). A new pane in a tab that already shows
+    /// this many joins a stack instead of taking a place of its own (E-9, M-7).
+    static let placesPerTab = 3
+
+    /// Whether a new pane in `tab` joins a stack: the tab already shows `placesPerTab` places.
+    static func isFull(_ tab: UmiTab, in window: TerminalController) -> Bool {
+        (window.tree(of: tab).root?.leaves().count ?? 0) >= placesPerTab
+    }
+
+    /// A new pane for `target`'s place, sized to it and not yet in any tree or stack.
+    private static func makePane(for target: Ghostty.SurfaceView, options: UmiLayout.PaneOptions,
+                                 config: Ghostty.SurfaceConfiguration?) throws -> Ghostty.SurfaceView {
         let ghostty = try UmiLayout.requireGhostty()
         guard let app = ghostty.app else { throw UmiError.failed("the terminal engine isn't ready") }
-        guard let location = UmiTopology.locate(target) else { throw UmiError.notFound("the pane isn't in a window") }
-        var options = UmiLayout.PaneOptions()
-        options.cwd = cwd
-        let config = try UmiLayout.surfaceConfig(options, inheritingFrom: target, context: GHOSTTY_SURFACE_CONTEXT_SPLIT)
+        let config = try config ?? UmiLayout.surfaceConfig(options, inheritingFrom: target, context: GHOSTTY_SURFACE_CONTEXT_SPLIT)
         let view = Ghostty.SurfaceView(app, baseConfig: config)
         UmiLayout.registerNewPane(view, options: options, config: config)
         // Start at the place's size, so its program sees the right columns and rows.
@@ -125,6 +163,64 @@ enum UmiStacks {
             view.frame = CGRect(origin: .zero, size: size)
             view.sizeDidChange(size)
         }
+        return view
+    }
+
+    /// A new pane in a full tab (E-9, M-7): it joins the stack at `target`'s place (made if there
+    /// is none), right after the member on show, and comes on show. With `focus` it takes keyboard
+    /// focus; without, it takes it only if the pane it covers had it, so focus never stays on a
+    /// pane that isn't on show. One undoable step ("New Pane"); the layout is saved as any stack's.
+    @discardableResult
+    static func addOnShow(onto target: Ghostty.SurfaceView, options: UmiLayout.PaneOptions,
+                          config: Ghostty.SurfaceConfiguration? = nil, focus: Bool) throws -> Ghostty.SurfaceView {
+        guard let location = UmiTopology.locate(target) else { throw UmiError.notFound("the pane isn't in a window") }
+        let window = location.window
+        let tab = location.tab
+        let tree = window.tree(of: tab)
+        let shown: Ghostty.SurfaceView
+        if tree.contains(target) {
+            shown = target
+        } else if let stack = tab.stack(of: target), let member = window.shownMember(of: stack, in: tab) {
+            shown = member
+        } else {
+            throw UmiError.notFound("the pane isn't in its tab")
+        }
+        guard let node = tree.root?.node(view: shown) else { throw UmiError.notFound("the pane isn't in its tab") }
+        let view = try makePane(for: shown, options: options, config: config)
+        let coveredHadFocus = (tab === window.selectedTab ? window.focusedSurface : tab.focusedSurface) === shown
+
+        var stacks = tab.stacks.map { ($0, $0.members) }
+        if let index = stacks.firstIndex(where: { $0.0.members.contains { $0 === shown } }) {
+            var members = stacks[index].1
+            let at = (members.firstIndex { $0 === shown } ?? members.count - 1) + 1
+            members.insert(view, at: at)
+            stacks[index].1 = members
+        } else {
+            stacks.append((UmiPaneStack(members: []), [shown, view]))
+        }
+        let newTree = try tree.replacing(node: node, with: .leaf(view: view))
+        let zoomed = tree.zoomed == node ? newTree.root?.node(view: view) : nil
+        // Focus that was on the covered pane moves to the new one (rather than to another pane).
+        if focus || coveredHadFocus { tab.focusedSurface = view }
+        window.replaceLayout(SplitTree(root: newTree.root, zoomed: zoomed), stacks: stacks, for: tab, undoAction: "New Pane")
+        UmiEvents.shared.emit("pane.created", ["pane": view.umiID, "tab": tab.idString, "window": window.umiIDString])
+        UmiEvents.shared.emit("pane.stacked", ["pane": view.umiID, "onto": shown.umiID,
+                                               "tab": tab.idString, "window": window.umiIDString])
+        if focus {
+            UmiLayout.focusPane(view, activate: true)
+        } else if coveredHadFocus, tab === window.selectedTab {
+            UmiLayout.focusPane(view, activate: false)
+        }
+        return view
+    }
+
+    /// A new pane in `target`'s place, at `index` of its stack's order (a stack is made if `target`
+    /// had none). It isn't on show: `show` or `UmiLayout.focusPane` brings it up.
+    static func addMember(onto target: Ghostty.SurfaceView, cwd: String?, at index: Int) throws -> Ghostty.SurfaceView {
+        guard let location = UmiTopology.locate(target) else { throw UmiError.notFound("the pane isn't in a window") }
+        var options = UmiLayout.PaneOptions()
+        options.cwd = cwd
+        let view = try makePane(for: target, options: options, config: nil)
         let tab = location.tab
         if let stack = tab.stack(of: target) {
             stack.members.insert(view, at: min(max(index, 0), stack.members.count))

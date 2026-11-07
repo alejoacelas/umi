@@ -315,3 +315,12 @@ gestures are out.
 
 Of the prototypes shown, Alejo picked "collapsed to one line": the front matter shows as one muted
 line with the title, the date and how many keys are left, and opens to a compact table.
+
+## 2026-11-07: the fourth pane joins a stack
+
+> when opening the forth pane on a tab it should do the thing where only 3 panes show and the others
+> you need to navigate to
+
+Alejo approved that the fourth and later panes join a stack (SPEC M-7) on the place of the pane that
+opened them, and that this holds for every kind of new pane in a tab: files, web pages, splits,
+new terminals and agent sessions, not only files (SPEC E-9, M-7).

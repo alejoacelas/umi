@@ -897,6 +897,12 @@ class TerminalController: BaseTerminalController {
         direction: SplitTree<Ghostty.SurfaceView>.NewDirection,
         baseConfig config: Ghostty.SurfaceConfiguration? = nil
     ) -> Ghostty.SurfaceView? {
+        // Umi: in a tab already showing three places, the new pane joins the stack at the split
+        // pane's place (E-9, M-7).
+        if let tab = tabs.first(where: { $0.contains(oldView) }), UmiStacks.isFull(tab, in: self) {
+            return try? UmiStacks.addOnShow(onto: oldView, options: UmiLayout.PaneOptions(), config: config,
+                                            focus: tab === selectedTab)
+        }
         guard let tab = hiddenTab(containing: oldView) else {
             return super.newSplit(at: oldView, direction: direction, baseConfig: config)
         }

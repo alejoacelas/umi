@@ -139,10 +139,16 @@ enum UmiLayout {
         return created(pane, tab: tab, window: window)
     }
 
+    /// A new pane beside `target`. In a tab that already shows three places, the new pane joins
+    /// the stack at `target`'s place instead (E-9, M-7), unless `stack` is false (`split --no-stack`).
     static func split(_ target: Ghostty.SurfaceView, direction: SplitTree<Ghostty.SurfaceView>.NewDirection,
-                      options: PaneOptions, ratio: Double?, focus: Bool) throws -> [String: Any] {
+                      options: PaneOptions, ratio: Double?, focus: Bool, stack: Bool = true) throws -> [String: Any] {
         let ghostty = try requireGhostty()
         guard let location = UmiTopology.locate(target) else { throw UmiError.notFound("the pane isn't in a window") }
+        if stack, UmiStacks.isFull(location.tab, in: location.window) {
+            let view = try UmiStacks.addOnShow(onto: target, options: options, focus: focus)
+            return created(view, tab: location.tab, window: location.window)
+        }
         guard let app = ghostty.app else { throw UmiError.failed("the terminal engine isn't ready") }
         let config = try surfaceConfig(options, inheritingFrom: target, context: GHOSTTY_SURFACE_CONTEXT_SPLIT)
         let window = location.window
