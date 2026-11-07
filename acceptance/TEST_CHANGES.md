@@ -1136,3 +1136,8 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   not one of its items (checked on mac-air-2: the NSMenu holds the 8 expected items, and a
   screenshot of a real right-click shows only those). The expected list, separator included, is
   unchanged. **Requirements:** MD-5.
+- **Fixed, `app/macos/UmiTests/verify_ui_paths.py` E-2 check**: before ⇧⌘M it focused the
+  terminal pane, but `edit FILE --pane P` opens the file in a pane of its own beside P, so the
+  focused pane had no document and Toggle Markdown Preview was rightly disabled (it failed on main
+  too). It now focuses the file's pane with `debug.editor.focus`, as the E-3 and E-5 checks do.
+  The check is unchanged. **Requirements:** E-2.
