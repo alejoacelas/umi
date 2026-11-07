@@ -117,7 +117,10 @@ final class UmiState: ObservableObject {
         // Panes closed for good take their agent with them (closed panes kept for reopening keep
         // theirs: only open panes count anywhere).
         if UmiAttention.shared.panes.count > 64 {
-            UmiAttention.shared.forget(Set(UmiAttention.shared.panes.keys).subtracting(UmiTopology.allSurfaces.map(\.id)))
+            let open = Set(UmiTopology.allSurfaces.map(\.id))
+            UmiAttention.shared.forget(Set(UmiAttention.shared.panes.keys.filter {
+                !open.contains($0) && !UmiReopen.shared.holds($0)
+            }))
         }
         guard paneNames.count + paneStartFolders.count > 256 else { return }
         let live = Set(UmiTopology.allSurfaces.map(\.id))
