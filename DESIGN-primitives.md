@@ -221,9 +221,11 @@ Nothing new is needed in Umi beyond a dry run you approve first.
 Every attribute or list that shows on screen goes through a small set of visual channels. Keeping
 the set small keeps Umi quiet. Today's channels: the cyan line on the focused pane's top edge, a
 tab's color tint, the agent icon and its quiet color, sidebar line 2, the stack strip, the Dock
-badge, the fade on tab switch. Candidates: a dot on a tab row, a count chip, dimming, a pane border,
-a pill on a bottom shelf, a glow on resurfacing. `style.<query>` picks among these only. The
-prototypes page renders each with how loud it is.
+badge, the fade on tab switch. Direction: one small colour-coded indicator per pane replaces the focus line and the agent
+marks. It shows focused, working, needs you, and finished but not seen, and appears wherever the
+pane is represented (on the pane, its strip chip, its tab's sidebar row). Where it sits and how
+it shows focus are open (`design/prototypes/pane-indicator.html`). The other candidates are
+dropped. `style.<query>` sets the indicator's state colours and nothing else.
 
 ### 3.8 Arranging panes
 
