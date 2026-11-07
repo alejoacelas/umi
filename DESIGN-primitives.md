@@ -52,7 +52,7 @@ Nothing writes to the sidebar today: its text is worked out from the tab's agent
 | Idle time: no typing or clicking in Umi | the app | only through `update --status` |
 | Process state: what runs in a terminal, whether it sits at the prompt | the app | partly, through `ls` |
 
-Umi keeps no record of where your attention went over time. §3.1 adds an attention log.
+Umi keeps no record of which panes had focus over time. §3.1 adds a focus log.
 
 ## 2. What Umi does on its own today
 
@@ -107,11 +107,13 @@ With `seen_at` and `changed_at` as plain facts, today's mark stops being a separ
 CLI shape: `umi pane set [PANE] priority=high`, `umi pane unset [PANE] priority`; attributes appear
 in `ls --json` and every change emits `pane.changed {pane, key, old, new}`.
 
-**Attention log.** The app also records each stretch of time a pane had your focus: start, end,
-the pane, its tab, and what it showed (file path, agent session and title, cwd, your attributes at
-the time). Time counts only while Umi is in front and you are active (no input for a few minutes
-or a locked screen ends the stretch). `umi history --since 9am --json` returns the stretches; an
-end-of-day report is a script that groups them by file, session or `project=`.
+**Focus log.** The app records each stretch during which a pane had keyboard focus in Umi's front
+window, while Umi was the active app, the screen was unlocked, and you had typed or clicked in Umi
+within the last few minutes. Each stretch has its start, its end, the pane, its tab, and what the
+pane showed (file path, agent session and title, cwd, your attributes at the time).
+`umi focus-log --since 9am --json` returns the stretches; an end-of-day report is a script that
+groups them by file, session or `project=`. It measures keyboard focus, not where you looked:
+reading a pane you aren't typing in doesn't count.
 
 ### 3.2 Selection: queries and named lists
 
@@ -137,11 +139,12 @@ list.important  = priority=high | sort -priority, status_since
 The existing verbs, plus a few new ones:
 
 - `set` / `unset` an attribute;
-- `park` (take a pane out of the layout; its program keeps running) and `unpark` (put it back where it was, or after the current tab);
+- `hide` (take a pane out of its tab's layout; it stays in that tab and its program keeps running; `--until CONDITION` brings it back by itself) and `show` (put it back in its tab). How it comes back is open: see decision 7;
+- `move` to a named tab, so a tab can serve as a bucket ("Later", "Needs you");
 - {==`seen` (mark looked at without focusing it);==}{>>is this a special case of attributes?<<}{#c2} this is only `set seen_at=now`, kept as a shorthand;
 - {==`go LIST` / `go --next LIST`==}{>>Is this kind of “put tab X in front of user?”<<}{#c3} / `go --back` (generalised `jump`): put the first pane of a list in front of you, that is select its tab, bring its window and Umi forward, and focus it. `--next` walks the list; `--back` returns to where the walk started.
 
-Every action takes a query as its target, so `umi pane park 'project=old'` parks a group.
+Every action takes a query as its target, so `umi pane hide 'project=old'` hides a group.
 
 ### 3.4 Bindings: slots the app fills from a list or template
 
@@ -161,7 +164,10 @@ Each slot is filled from a named list or a template:
 | `style.<query>` | border color, sidebar dot, dim, for panes matching the query |
 | `notify` | none |
 
-Plus `key.<keys> = <action>` so any list gets a shortcut.
+Plus `key.<keys> = <action>` so any list gets a shortcut, and palette commands: each executable in
+`~/.config/umi/commands/` (or a `command."Title" = <shell command>` line) is an entry in ⌘P. It
+runs with the calling pane, tab and window in its environment, and its output shows in the
+palette. Scripts and agent skills, such as "Organize into tabs", are started from there.
 
 ### 3.5 Rules: when something happens, do something
 
@@ -178,7 +184,10 @@ Plus `key.<keys> = <action>` so any list gets a shortcut.
 them. `landing = important` after 15 minutes away. `key.ctrl+cmd+] = go --next important`.
 {==`style.priority=high = sidebar-dot:orange`.==}{>>Yeah, something we have not mentioned is a palette of visual primitives for example, we have the blue thing for focused panes, there’s some things we might want to do with the sidebar we want to keep these things mimimal and not too distracting, but it’s good to think about the space of options here<<}{#c8}
 
-**Park until not done.** `umi pane park --until 'agent.done=false or agent.status=needs_input'`.
+**Tabs as buckets.** Name a tab "Later". A palette command moves the focused pane there
+(`umi pane move --tab Later`); a rule moves panes back to their project's tab when they need you.
+
+**Hide until not done.** `umi pane hide --until 'agent.done=false or agent.status=needs_input'`.
 The Stop hook sets `agent.done` from the last message (by the `park.done-check` policy command, or a
 regex). A pane that comes back gets `seen_at` older than `changed_at`, so it is in `unseen` and
 `jump` reaches it.
@@ -217,6 +226,8 @@ Each has a recommendation; your input changes what gets built.
    *Recommend:* named lists, bindings and styles in the config, because the app needs them
    instantly; anything triggered by events lives in your scripts, plus `--until` conditions and one
    or two policy commands. No general rules engine in the app until scripts prove too slow.
+   *Decided:* agent tools such as the manager and "Organize into tabs" are skills that call
+   `umi`, startable from ⌘P through palette commands.
 
 2. **The query syntax.** Options: a small syntax of our own (`key=value and …  | sort`), jq over
    `ls --json`, or an established expression language (CEL).
@@ -243,8 +254,11 @@ Each has a recommendation; your input changes what gets built.
    the config hook any internal decision.
 
 7. **Where a pane can be.** Today{==: on show, stacked behind another, parked (agents only), cl==}{>>let’s make prototypes for how to express what we have and different visual options. this is one of the most important UI decisions we have<<}{#c11}osed
-   for 60 s. *Recommend:* make `parked` an ordinary place any pane can be in, visible in `ls` and
-   the pane switcher, so `park`, `--until` and `landing` work for every pane kind.
+   for 60 s. *Decided:* any pane can be hidden, and a hidden pane stays inside its tab, visible
+   in `ls` and the pane switcher. *Open:* how hidden panes show (options A–E in
+   `design/prototypes/where-panes-live.html`), and how a pane comes back while you work in the same
+   tab: when the layout changes, how the pane enters, and what happens when the tab already shows
+   three panes (`design/prototypes/resurfacing.html`). Coming back never moves keyboard focus.
 
 8. **The CLI contract.** *{==Decided:* design the ==}{>>we can restart from scratch. I just want to get the best thing<<}{#c12}CLI from scratch around these
    primitives, then rewrite `acceptance/CLI.md` and its tests to match. Existing commands stay
