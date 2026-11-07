@@ -1859,7 +1859,8 @@ private struct UmiPalettePanel: View {
                                           size: UmiPaletteStyle.fontSize, weight: .bold, matchWeight: .bold)
                             .lineLimit(1)
                     }
-                    if entry.kind == .tab, let subtitle = entry.subtitle {
+                    // A tab's folder; a launch configuration's windows and tabs (L-21).
+                    if entry.kind == .tab || entry.id.hasPrefix("launch:"), let subtitle = entry.subtitle {
                         Text(subtitle).font(.system(size: UmiPaletteStyle.fontSize - 2)).foregroundColor(sub)
                             .lineLimit(1).padding(.leading, 8)
                     }
