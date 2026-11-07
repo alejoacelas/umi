@@ -374,11 +374,14 @@ def test_rendered_and_raw_toggle_with_cmd_e(inst, win, doc, ui):
     ui.key(KEY_E, ui.CMD)
     wait_until(lambda: doc_mode(inst, win, doc) == "preview", 5, message="⌘E shows it rendered again")
 
-    item = ui.shortcut("cmd+e")
-    assert item is not None and ui.label(item).startswith("Use Selection for Find"), "⌘E stays Ghostty's menu item"
-    focus_preview(inst, ui, win["pane"])
+    # In a terminal ⌘E stays Ghostty's Use Selection for Find: it searches for the selected text.
+    term = win["pane"]
+    assert inst.rpc("debug.terminal.action", pane=term, action="select_all")["ok"]
+    wait_until(lambda: inst.rpc("debug.selection", pane=term).get("text"), 5, message="a selection in the terminal")
+    focus_preview(inst, ui, term)
     ui.key(KEY_E, ui.CMD)
-    time.sleep(0.5)
+    wait_until(lambda: inst.rpc("debug.ui.search", window=win["window"])["terminal_search"], 5,
+               message="⌘E in a terminal searches for its selection")
     assert doc_mode(inst, win, doc) == "preview", "⌘E in a terminal leaves the file alone"
 
 

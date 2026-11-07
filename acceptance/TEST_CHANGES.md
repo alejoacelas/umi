@@ -1120,3 +1120,10 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   of reading them once at the moment the padding comes back. The terminal takes its new size on its
   own thread, so on mac-air-2 the read saw the full-screen column count (72 for 68). The required
   size is unchanged. **Requirements:** S-5, S-12.
+- **Changed, `tests/test_markdown_warp.py` `test_rendered_and_raw_toggle_with_cmd_e`**: it no
+  longer looks for a menu item with ⌘E. Ghostty's ⌘E (`search_selection`) is a performable
+  binding, and Ghostty leaves performable bindings off its menu items (its own test in
+  `src/config/CApi.zig` checks this), so no item ever had the key. The test now selects text in the
+  terminal, presses ⌘E there and requires the terminal's search to open with the file still
+  rendered: what SPEC E-2 asks of ⌘E in a terminal. The Rendered / Raw checks are unchanged.
+  **Requirements:** E-2.
