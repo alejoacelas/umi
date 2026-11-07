@@ -19,6 +19,8 @@ Details of Umi's own features are in [attention-ui.md](attention-ui.md) and
 | A pane on demand | None. | A bottom drawer that rises over the tab, for the manager pane or anything a binding sends there. |
 | Attention behaviour | Fixed. | Every decision (where "jump" goes, the Dock badge, which pane speaks for a tab) reads a list the user can redefine. |
 | Comments on Markdown files | None. | Comments stored in the file, as in Umi's editor today. |
+| Web pages in panes | None. | Pages from the user's own servers open in panes (web panes). |
+| Umi's own keys | — | ⌃⌘T / ⌃⌘N move the pane to a new tab / window; ⌃⇧⌘N moves the tab to a new window; ⌃⌘P pins the tab; ⌃⌘R renames it; ⌃⌘J / ⌃⌘K go to the next pane that needs you and back; ⌃⌘M shows the manager pane. Each is a binding the user can change. |
 | Agents | Warp runs its own agents. | Umi runs none; Claude Code and Codex run in panes, and a hook plugin reports their state. |
 
 ## Because Umi is built on Ghostty

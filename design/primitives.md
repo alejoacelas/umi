@@ -19,12 +19,22 @@ attributes have a single holder: `role=manager` can be on one pane only, and set
 Attention is facts, not flags: "unseen" is `changed_at > seen_at`, and "needs you" is
 `agent.status=needs_input`.
 
+- `seen_at` is set while the pane itself has keyboard focus in Umi's front window and Umi is the
+  active app. Looking at another pane of the same tab doesn't count.
+- `changed_at` is set when `agent.status` changes and when the pane is hidden or shown. Terminal
+  output doesn't set it.
+- `agent.done` is set at the end of each agent turn: true when the agent's last message reports the
+  task finished, by the `done-check` slot (default: its last line starts with `Status: done`).
+- `pinned` is a pane attribute the user sets (`umi pane set pinned=true`, or a key); pinned panes
+  are never hidden to make room.
+
 `umi pane set [PANE] key=value`, `umi pane unset [PANE] key`. Attributes appear in `ls --json`,
 and each change is an event.
 
 ## Queries and lists
 
-A query picks and orders panes, anywhere a selector is accepted:
+A query picks and orders panes, anywhere a selector is accepted. A selector containing `=`, `<`,
+`>`, `|`, ` and ` or `not ` is a query; anything else is an id, a name, `.` or `#N` as today:
 
 ```
 priority=high and not hidden | sort -priority, status_since
@@ -50,6 +60,7 @@ behaviour. The set is fixed and documented, and grows one slot at a time.
 | `sidebar.line2` | `{agent.title or command or cwd}` |
 | `strip.make-room` (which pane is hidden when one comes in) | least recently used, skipping `pinned` |
 | `indicator.<state>` | the quiet colours in [attention-ui.md](attention-ui.md) |
+| `done-check` (sets `agent.done`) | the last line of the agent's last message starts with `Status: done` |
 
 ## Actions
 
@@ -63,12 +74,26 @@ Every action takes a query as its target.
 - `drawer show|hide|toggle QUERY`.
 - Every layout action Umi has today.
 
+⌃⌘J runs `go --next jump` and ⌃⌘K runs `go --back`. Within each part of `jump`, the oldest
+first. When nothing matches, Umi says so and nothing moves.
+
 ## Keys and palette commands
 
 `key.<keys> = <action>` binds any action, list or command. Each executable in
 `~/.config/umi/commands/`, or a `command."Title" = …` line, is a ⌘P entry and can be bound to a key.
 It runs with the calling pane, tab and window in its environment. Skills such as a manager or
 "Organize into tabs" start from here.
+
+## Agent hook plugin
+
+Umi ships hooks for Claude Code and Codex and keeps them installed and current (`umi plugins`).
+Outside Umi they do nothing. Inside, each hook event calls `umi hook EVENT`, which writes `agent.*`
+on the pane the agent runs in. The status stays truthful: background work isn't "finished", an
+interrupt doesn't stay "working", a permission prompt is `needs_input`.
+
+When Umi relaunches (after a quit, a crash or an update), each pane that ran an agent starts it
+again with the flags it was typed with and resumes its conversation, using the session id its hooks
+reported.
 
 ## Rules
 

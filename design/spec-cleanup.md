@@ -5,9 +5,17 @@ plus the documents next to this one.
 
 ## Decided
 
-- **Agent sessions, AG-1 to AG-24,** and the orchestration parts of "How the product is used":
-  headless sessions, the read-only view, Take Over, `agent start/send/wait/…`. They move to scripts
-  and skills outside Umi. The hook plugin stays, writing `agent.*` attributes.
+- **Agent sessions, AG-1 to AG-17 and AG-20 to AG-23,** the orchestration parts of "How the
+  product is used", the "Core: agent sessions" tier and the delivery-phase history: headless
+  sessions, the read-only view, Take Over, `agent start/send/wait/…`. They move to scripts and
+  skills outside Umi. AG-18 and AG-19 stay, reworded: the hook plugin writes `agent.*` on its pane
+  and keeps its status truthful (see primitives.md).
+- **Anything that depends on Umi's own sessions:** I-4's quiet moment counts panes (each at its
+  prompt, or running an agent whose `agent.status` is idle with nothing typed), not sessions;
+  `doctor` reports whether the hook plugins are installed and current instead of requiring
+  `claude`, `codex` or `git`; R-3, R-6 and R-7 speak of panes, not sessions.
+- **Warp's coloured status badges and Warp's tab-wide "seen" rule** (on `warp/parity`): the pane
+  indicator and per-pane `seen_at` replace them.
 - **The hand-placed divider rules in L-19.** Panes share space as in Warp; a dragged divider stays
   where it is dropped, with no further rules.
 - **Keyboard resizing of splits** (⌃⌘ arrows).
