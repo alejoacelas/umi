@@ -371,7 +371,8 @@ def test_rendered_and_raw_toggle_with_cmd_e(inst, win, doc, ui):
     focus_preview(inst, ui, pane)
     ui.key(KEY_E, ui.CMD)
     wait_until(lambda: doc_mode(inst, win, doc) == "source", 5, message="⌘E shows the raw file")
-    focus_preview(inst, ui, pane)
+    # The raw view takes the keyboard from the preview it replaced, so ⌘E again switches back.
+    time.sleep(0.5)
     ui.key(KEY_E, ui.CMD)
     wait_until(lambda: doc_mode(inst, win, doc) == "preview", 5, message="⌘E shows it rendered again")
 

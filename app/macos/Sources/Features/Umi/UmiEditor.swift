@@ -879,6 +879,14 @@ final class UmiEditorContainerView: NSView {
             guard let pane else { return }
             UmiFilePanes.shared.editorFocused(pane: pane)
         }
+        // A view that replaces another in the focused file pane (Rendered / Raw, ⌘E or ⇧⌘M) takes
+        // the keyboard the one it replaced had, so ⌘E pressed again switches back.
+        DispatchQueue.main.async { [weak pane, weak focusTarget] in
+            guard let pane, let focusTarget, let window = focusTarget.window,
+                  UmiTopology.locate(pane)?.window.focusedSurface === pane,
+                  window.firstResponder == nil || window.firstResponder === window else { return }
+            window.makeFirstResponder(focusTarget)
+        }
     }
 
     @objc func saveDocument(_ sender: Any?) { document.map { UmiEditor.saveFromUser($0) } }

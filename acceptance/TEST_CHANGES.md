@@ -1155,3 +1155,8 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   terminal's right-click menu shows each item's key, ⌘V for Paste, ⌘K for Clear and ⌘C for Copy
   included. Those three showed no key: Ghostty gives its performable bindings no menu key (found
   walking the branch on mac-air-2). **Requirements:** L-31.
+- **Changed, `tests/test_markdown_warp.py` `test_rendered_and_raw_toggle_with_cmd_e`**: it no
+  longer gives the pane keyboard focus again between the two ⌘E presses. Switching views left the
+  keyboard with the window, so the second ⌘E did nothing for a person pressing it twice (found
+  walking the branch on mac-air-2); the test's extra focus hid that. Stricter than before.
+  **Requirements:** E-2.
