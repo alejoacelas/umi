@@ -96,7 +96,7 @@ relaunches with its windows, tabs, folders and agents as they were.
 ## Uninstall
 
 ```sh
-umi agent plugins remove
+umi plugins remove
 rm -rf /Applications/Umi.app ~/.local/bin/umi ~/Library/Application\ Support/Umi ~/.config/umi
 ```
 
