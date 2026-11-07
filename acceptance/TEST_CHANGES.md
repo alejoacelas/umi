@@ -1236,3 +1236,10 @@ its conversation; a Codex comes back after every process is killed while an exit
 the agents' OSC 9/777 notifications are dropped; the removed `agent` commands fail and say what
 to do. Swift: `UmiQuietTests` lost the session cases and gained agent-in-pane quiet rules, restart
 command lines and the done check.
+
+### After review (2026-11-07)
+
+- `checks/umi_verdicts.py`: the AG-5 verdict (the read-only view) is gone with AG-5.
+- Swift: `UmiJumpTests` is new (L-12: needs input first, then unseen panes whose agent finished or
+  failed; a failed pane drops out once looked at). `UmiQuietTests`' one-off check gained
+  `codex -m o3 exec …` and `codex --model=o3 e …` (one-offs) and `codex -m o3 "fix the bug"` (not).
