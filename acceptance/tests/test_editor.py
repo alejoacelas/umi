@@ -178,38 +178,47 @@ def tab_ids(inst, window_id):
     return [t["id"] for w in inst.tree()["windows"] if w["id"] == window_id for t in w["tabs"]]
 
 
-@pytest.mark.req("E-1", "E-9")
-def test_files_open_in_panes_beside_the_caller_three_to_a_tab(inst, win, tmp_path):
+@pytest.mark.req("E-1", "E-9", "M-7")
+def test_files_open_beside_the_caller_and_past_three_places_stack_on_their_opener(inst, win, tmp_path):
     names = ["one.md", "two.json", "three.csv", "four.txt"]
     paths = []
     for name in names:
         (tmp_path / name).write_text({"md": "# One\n", "json": '{"a": [1, 2]}\n', "csv": "a,b\n1,2\n",
                                       "txt": "four\n"}[name.split(".")[1]])
         paths.append(str(tmp_path / name))
+    tabs_before = tab_ids(inst, win["window"])
     inst.cli("edit", *paths[:3], "--pane", win["pane"])
     panes = panes_of(inst, win["tab"])
-    # The caller, then each file to the right of the one before; three panes fill the tab.
-    assert panes[0]["id"] == win["pane"] and "file" not in panes[0]
-    assert [os.path.basename(p.get("file", "")) for p in panes[1:]] == ["one.md", "two.json"]
-    assert [p["frame"]["x"] for p in panes] == sorted(p["frame"]["x"] for p in panes)
-    # The third goes to a new tab right after the caller's.
-    ids = tab_ids(inst, win["window"])
-    third_tab = ids[ids.index(win["tab"]) + 1]
-    assert [os.path.basename(p.get("file", "")) for p in panes_of(inst, third_tab)] == ["three.csv"]
-    # A fourth goes beside the third, in that tab.
-    inst.cli("edit", paths[3], "--tab", third_tab)
-    assert [os.path.basename(p.get("file", "")) for p in panes_of(inst, third_tab)] == ["three.csv", "four.txt"]
-    # Opening an open file again shows it where it is: no second pane.
-    before = sum(len(panes_of(inst, t)) for t in tab_ids(inst, win["window"]))
-    inst.cli("edit", paths[0], "--pane", win["pane"])
-    assert sum(len(panes_of(inst, t)) for t in tab_ids(inst, win["window"])) == before
+    by_name = {os.path.basename(p.get("file", "")): p["id"] for p in panes if p.get("file")}
+    # The caller, then each file to the right of the one before; three places fill the tab.
+    shown_panes = [p for p in panes if p.get("shown", True)]
+    assert shown_panes[0]["id"] == win["pane"] and "file" not in shown_panes[0]
+    assert [p["frame"]["x"] for p in shown_panes] == sorted(p["frame"]["x"] for p in shown_panes)
+    # The third joins the stack at the place of the one it was opened from (two.json), on show.
+    assert [os.path.basename(p.get("file", "")) for p in shown_panes[1:]] == ["one.md", "three.csv"]
+    assert next(p for p in panes if p["id"] == by_name["two.json"]).get("stack") == [by_name["two.json"], by_name["three.csv"]]
+    assert tab_ids(inst, win["window"]) == tabs_before, "no new tab"
     # Keyboard focus stayed in the caller.
     assert inst.tree().get("current_pane") == win["pane"]
+    # A fourth opened from the caller joins the stack at the caller's place, right after it.
+    inst.cli("edit", paths[3], "--pane", win["pane"])
+    panes = panes_of(inst, win["tab"])
+    four = next(p["id"] for p in panes if os.path.basename(p.get("file", "")) == "four.txt")
+    assert next(p for p in panes if p["id"] == win["pane"]).get("stack") == [win["pane"], four]
+    assert [p["id"] for p in panes if p.get("shown", True)][0] == four
+    assert tab_ids(inst, win["window"]) == tabs_before, "no new tab"
+    # Keyboard focus was on the caller, which four.txt now covers: four.txt has it.
+    assert inst.tree().get("current_pane") == four
+    # Opening an open file again shows it where it is: no second pane.
+    before = len(panes_of(inst, win["tab"]))
+    inst.cli("edit", paths[1], "--pane", win["pane"])
+    assert len(panes_of(inst, win["tab"])) == before
+    assert by_name["two.json"] in [p["id"] for p in panes_of(inst, win["tab"]) if p.get("shown", True)]
     # Modes: Markdown, JSON and CSV open as previews, other text as source; each document names its pane.
-    modes = {os.path.basename(d["path"]): d["mode"] for d in docs(inst, win["pane"]) + docs(inst, panes_of(inst, third_tab)[0]["id"])}
+    modes = {os.path.basename(d["path"]): d["mode"] for d in docs(inst, win["pane"])}
     assert modes == {"one.md": "preview", "two.json": "preview", "three.csv": "preview", "four.txt": "source"}
     assert all(d.get("pane") for d in docs(inst, win["pane"]))
-    proc = inst.cli("editor", "mode", "preview", paths[3], "--tab", third_tab, check=False)
+    proc = inst.cli("editor", "mode", "preview", paths[3], "--tab", win["tab"], check=False)
     assert proc.returncode != 0 and "source" in proc.stderr
 
 

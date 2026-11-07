@@ -1155,3 +1155,35 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   reads the new row. **Added** `frontMatterSummaryFallsBackToShortValues`: without `title` or
   `date` the summary shows the first values of up to 60 characters, escaped, and "Front matter"
   when none is short. **Requirements:** MD-6.
+
+## The fourth pane joins a stack (2026-11-07)
+
+Alejo asked that a tab show at most three places and that further panes stack (REQUESTS.md,
+2026-11-07); SPEC E-9 and M-7 now say so for every kind of new pane, and `split --no-stack` splits
+anyway (CLI.md).
+
+- **Changed, `tests/test_editor.py`** `test_files_open_in_panes_beside_the_caller_three_to_a_tab`
+  became `test_files_open_beside_the_caller_and_past_three_places_stack_on_their_opener`: the
+  third file opened from the caller (after two filled the tab) now joins the stack at the place of
+  the file it was opened from (two.json), on show, with no new tab, instead of going to a new tab;
+  a fourth opened from the caller joins the stack at the caller's place, right after it, and takes
+  keyboard focus because the caller had it and is no longer on show. Kept: the left-to-right order,
+  focus staying in the caller while nothing covers it, an open file showing where it is (now also
+  bringing a waiting stack member on show), the modes and the refusal of preview for a `.txt`.
+  **Requirements:** E-1, E-9, M-7.
+- **Changed, `tests/test_umi_panes_ui.py`** `test_splits_along_a_row_share_it_equally`,
+  `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row` and
+  `test_panes_sized_by_hand_keep_their_size_and_the_others_share`: their fourth and fifth splits
+  pass `--no-stack`, since they measure four real places in a row. The shares are unchanged.
+  **Requirements:** L-19.
+- **Changed, `tests/test_umi_panes_ui.py`** `test_the_split_menu_items_share_equally`: Split Down,
+  the tab's fourth pane, now stacks on the focused pane's place; the test requires that, and that
+  the three places keep their 33/33/33 (as before). **Requirements:** L-19, M-7.
+- **Added, `tests/test_umi_stacks.py`**: `test_a_fourth_split_joins_the_stack_at_the_split_pane`
+  (on show, focused, right after the member on show, the places' widths unchanged; a split from a
+  waiting member goes to its place; focus on a covered pane moves to the new one),
+  `test_without_focus_a_stacked_pane_leaves_focus_on_another_place`,
+  `test_split_no_stack_splits_a_fourth_time`, `test_a_stack_counts_as_one_place`,
+  `test_the_split_shortcut_stacks_a_fourth_pane` (Ghostty's `new_split` action, which ⌘D, the
+  menus and AppleScript use), `test_a_stacked_fourth_pane_can_be_undone_and_redone` and
+  `test_a_stacked_fourth_pane_survives_a_restart`. **Requirements:** M-7, L-1, M-3, R-3.

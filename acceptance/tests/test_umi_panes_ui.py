@@ -114,12 +114,13 @@ def test_splits_along_a_row_share_it_equally(inst, win):
     b = split(inst, "right", a)
     c = split(inst, "right", b)
     assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
-    d = split(inst, "left", a)
+    # A fourth and fifth place in the tab: past three, only `--no-stack` splits (M-7).
+    d = split(inst, "left", a, "--no-stack")
     order = [p["id"] for p in tab_of(inst, win["tab"])["panes"]]
     assert order == [d, a, b, c], "a split to the left goes before its pane"
     assert shares(inst, win["tab"], order) == pytest.approx([25, 25, 25, 25], abs=0.2)
     # A split across the row halves only that pane; the columns keep their widths.
-    e = split(inst, "down", b)
+    e = split(inst, "down", b, "--no-stack")
     f = frames(inst, win["tab"])
     assert shares(inst, win["tab"], [d, a, b, c]) == pytest.approx([25, 25, 25, 25], abs=0.2)
     assert close(f[b]["width"], f[e]["width"]) and close(f[b]["height"], f[e]["height"])
@@ -197,9 +198,14 @@ def test_the_split_menu_items_share_equally(inst, win, ui):
     wait_until(lambda: len(tab_of(inst, win["tab"])["panes"]) == 3, 5, message="Split Right")
     order = [p["id"] for p in tab_of(inst, win["tab"])["panes"]]
     assert shares(inst, win["tab"], order) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
+    # A fourth pane: Split Down stacks it on the focused pane's place (M-7); the places keep their shares.
+    focused = inst.tree().get("current_pane")
     ui.choose(ui.menu_item("Split Down"))
     wait_until(lambda: len(tab_of(inst, win["tab"])["panes"]) == 4, 5, message="Split Down")
-    assert shares(inst, win["tab"], order) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
+    on_show = [p["id"] for p in tab_of(inst, win["tab"])["panes"] if p.get("shown", True)]
+    assert len(on_show) == 3 and focused not in on_show
+    assert next(p for p in tab_of(inst, win["tab"])["panes"] if p["id"] == focused).get("stack", [None])[0] == focused
+    assert shares(inst, win["tab"], on_show) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
 
 
 @pytest.mark.req("L-19")
@@ -207,7 +213,7 @@ def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_i
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
-    d = split(inst, "down", b, "--ratio", "0.3")
+    d = split(inst, "down", b, "--ratio", "0.3", "--no-stack")   # a fourth place (M-7)
     # Dragging the divider between a and b to the middle: a gets half, b and c share the rest.
     rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.5)
     assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([50, 25, 25], abs=0.3)
@@ -232,7 +238,7 @@ def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
-    d = split(inst, "right", c)
+    d = split(inst, "right", c, "--no-stack")   # a fourth place (M-7)
     rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.28)
     assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([28, 24, 24, 24], abs=0.3)
     # The c|d divider (its split holds c and d, the last 48%) to 78%: a keeps its 28, d gets 22,
@@ -244,7 +250,7 @@ def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
     inst.cli("pane", "close", c)
     wait_until(lambda: len(tab_of(inst, win["tab"])["panes"]) == 3, 5, message="c closed")
     assert shares(inst, win["tab"], [a, b, d]) == pytest.approx([37.3, 33.3, 29.3], abs=0.5)
-    e = split(inst, "right", b)
+    e = split(inst, "right", b, "--no-stack")
     before = shares(inst, win["tab"], [a, b, e, d])
     assert before == pytest.approx([28, 25, 25, 22], abs=0.5)
     # e's divider (its split holds e and d, the last 47%) to its middle: a keeps its 28, b and e
