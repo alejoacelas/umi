@@ -7,6 +7,7 @@ accessibility tree.
 """
 
 import os
+import re
 import time
 
 import pytest
@@ -415,6 +416,14 @@ def test_right_click_opens_warps_menu(inst, win, doc, ui):
     ui.AX.AXUIElementPerformAction(web, "AXShowMenu")
     time.sleep(0.6)
     menu = ui.find(lambda e: ui.role(e) == "AXMenu", root=ui.app)
-    titles = [ui.label(i) for i in (ui.attr(menu, "AXChildren") or [])] if menu is not None else []
+    # The items drawn, each in its own row: the accessibility tree also lists an untitled, disabled
+    # element at the first item's place that the menu doesn't draw (not one of the menu's items).
+    rows, titles = set(), []
+    for item in (ui.attr(menu, "AXChildren") or []) if menu is not None else []:
+        place = tuple(re.findall(r"[xy]:(-?[\d.]+)", str(ui.attr(item, "AXPosition"))))
+        if place in rows:
+            continue
+        rows.add(place)
+        titles.append(ui.label(item))
     ui.key(ui.ESCAPE)
     assert titles == expected, titles

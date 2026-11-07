@@ -1130,3 +1130,9 @@ Two tests changed because two branches' behaviours met; what each checks is unch
 - **Added, `tests/test_markdown_warp.py` `test_cmd_e_in_a_source_only_file_uses_the_selection_for_find`**:
   in a file with only a source view, ⌘E puts the selected text in the find query and the file
   stays in source. **Requirements:** E-2.
+- **Changed, `tests/test_markdown_warp.py` `test_right_click_opens_warps_menu`**: it reads the
+  items drawn in their own rows. The accessibility tree of the preview's menu also lists an
+  untitled, disabled element at the first item's position that the menu doesn't draw and that is
+  not one of its items (checked on mac-air-2: the NSMenu holds the 8 expected items, and a
+  screenshot of a real right-click shows only those). The expected list, separator included, is
+  unchanged. **Requirements:** MD-5.
