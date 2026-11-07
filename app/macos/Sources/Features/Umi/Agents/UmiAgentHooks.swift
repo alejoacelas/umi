@@ -411,6 +411,47 @@ enum UmiAgentHooks {
         }
     }
 
+    /// Labeled migration, for the update from Umi 0.9 (which ran sessions of its own): its saved
+    /// layout names the session a pane showed (`agent`, a session id) instead of the command that
+    /// brings the pane's agent back. A session whose own interface ran in that pane (an agent the
+    /// user typed, or one taken over) is rebuilt from its record (`sessions/<id>/session.json`) as
+    /// the command Umi 0.9 would have run there. A session Umi ran headless had no process in the
+    /// pane and isn't brought back. Remove once no installed copy is older than 0.10.
+    static func restartRecord(fromSession id: String) -> [String: Any]? {
+        guard !id.contains("/"), !id.contains(".."),
+              let data = FileManager.default.contents(atPath: UmiPaths.path("sessions") + "/\(id)/session.json"),
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              json["live"] as? Bool == true,
+              let kind = (json["kind"] as? String).flatMap(UmiAgentKind.init(rawValue:)),
+              let session = json["harnessID"] as? String, !session.isEmpty else { return nil }
+        let conversation = kind == .codex || json["conversation"] as? Bool == true
+        var command = [kind.rawValue]
+        let model = json["model"] as? String
+        let effort = json["effort"] as? String
+        let mode = json["permissionMode"] as? String
+        let full = json["fullAccess"] as? Bool ?? false
+        switch kind {
+        case .claude:
+            if let model { command += ["--model", model] }
+            if let effort { command += ["--effort", effort] }
+            if full { command.append("--dangerously-skip-permissions") } else if let mode { command += ["--permission-mode", mode] }
+            command += json["harnessArgs"] as? [String] ?? []
+            if conversation { command += ["--resume", session] }
+        case .codex:
+            command += ["resume", session]
+            if let model { command += ["-m", model] }
+            if let effort { command += ["-c", "model_reasoning_effort=\(effort)"] }
+            if let profile = json["profile"] as? String { command += ["-p", profile] }
+            if full { command.append("--dangerously-bypass-approvals-and-sandbox") } else if let mode { command += ["-a", mode] }
+        }
+        var out: [String: Any] = ["kind": kind.rawValue, "session": session, "command": command, "conversation": conversation]
+        let env = (json["env"] as? [String: String] ?? [:]).filter { ["CLAUDE_CONFIG_DIR", "CODEX_HOME"].contains($0.key) }
+        if !env.isEmpty { out["env"] = env }
+        if let cwd = json["cwd"] as? String { out["cwd"] = cwd }
+        if let title = json["title"] as? String { out["title"] = title }
+        return out
+    }
+
     /// Panes whose agent is being typed again after a relaunch (an update waits for them).
     private(set) static var restoring: Set<UUID> = []
 

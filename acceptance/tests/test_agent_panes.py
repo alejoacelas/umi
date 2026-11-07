@@ -393,6 +393,42 @@ def test_a_codex_comes_back_after_a_crash_and_a_stopped_one_doesnt(target, fresh
     other.type_line(pane, "/exit")
 
 
+@pytest.mark.req("AG-18", "I-4")
+def test_an_agent_umi_09_ran_in_a_pane_comes_back_after_the_update(target, fresh):
+    """The update from 0.9: its saved layout names the session a pane showed. A session whose own
+    interface ran in that pane is typed again there, with its settings and on its conversation; a
+    session Umi 0.9 ran headless (shown read-only) isn't."""
+    if not target.restoration_safe:
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+    other = fresh(prefix="acc-from09-", restore=True, start_app=False)
+    harness_id = str(uuid.uuid4())
+    sessions = {"live-one": {"live": True, "conversation": True}, "headless-one": {}}
+    for sid, extra in sessions.items():
+        folder = os.path.join(other.dir, "sessions", sid)
+        os.makedirs(folder)
+        record = {"v": 1, "id": sid, "name": sid, "kind": "claude", "cwd": other.work, "model": "fake-model-09",
+                  "fullAccess": True, "env": {}, "harnessArgs": ["--add-dir", "/tmp"], "harnessID": harness_id,
+                  "createdAt": 0, **extra}
+        with open(os.path.join(folder, "session.json"), "w") as f:
+            json.dump(record, f)
+    panes = [str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()]
+    layout = {"version": 1, "windows": [{"id": str(uuid.uuid4()), "tabs": [{
+        "id": str(uuid.uuid4()), "pinned": False, "color": "none",
+        "tree": {"split": {"direction": "horizontal", "ratio": 0.5, "placed": False,
+                           "left": {"pane": {"id": panes[0], "cwd": other.work, "agent": "live-one"}},
+                           "right": {"pane": {"id": panes[1], "cwd": other.work, "agent": "headless-one"}}}}}],
+        "current": True}]}
+    with open(os.path.join(other.dir, "layout.json"), "w") as f:
+        json.dump(layout, f)
+    other.start_app()
+    live, headless = (p.lower() for p in panes)
+    wait_until(lambda: other.find_pane(live), 20, message="the pane restored")
+    typed = f"claude --model fake-model-09 --dangerously-skip-permissions --add-dir /tmp --resume {harness_id}"
+    wait_until(lambda: typed in other.screen(live), 20, message="the agent typed again in its pane")
+    time.sleep(2)
+    assert "claude" not in other.screen(headless), "a headless session's pane got nothing typed"
+
+
 # ---- S-3: no desktop notifications from agents ----------------------------------------------------
 
 @pytest.mark.req("S-3")
