@@ -223,8 +223,11 @@ the set small keeps Umi quiet. Today's channels: the cyan line on the focused pa
 tab's color tint, the agent icon and its quiet color, sidebar line 2, the stack strip, the Dock
 badge, the fade on tab switch. Direction: one small colour-coded indicator per pane replaces the focus line and the agent
 marks. It shows focused, working, needs you, and finished but not seen, and appears wherever the
-pane is represented (on the pane, its strip chip, its tab's sidebar row). Where it sits and how
-it shows focus are open (`design/prototypes/pane-indicator.html`). The other candidates are
+pane is represented (on the pane, its strip chip, its tab's sidebar row). *Decided*
+(`design/prototypes/pane-indicator.html`): it sits at the pane's bottom right, by the prompt.
+The focused pane's mark is a little larger and brighter and the pane itself slightly brighter,
+kept subtle so the other panes don't look dull. Colours are the quiet set: only "needs you"
+(amber) is in full colour, working and finished are muted. Nothing animates. The other candidates are
 dropped. `style.<query>` sets the indicator's state colours and nothing else.
 
 ### 3.8 Arranging panes
