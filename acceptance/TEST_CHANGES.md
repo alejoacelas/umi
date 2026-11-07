@@ -1136,3 +1136,11 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   not one of its items (checked on mac-air-2: the NSMenu holds the 8 expected items, and a
   screenshot of a real right-click shows only those). The expected list, separator included, is
   unchanged. **Requirements:** MD-5.
+
+## Removing the previous/next tab drop targets (2026-11-07)
+
+- **Removed, `tests/test_umi_panes_ui.py`** `test_a_pane_dropped_on_the_previous_or_next_tab_target_moves_there`
+  and `test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`, with the
+  `debug.ui.pane.tabdrop` hook they drove: Alejo asked for the targets to go (REQUESTS.md,
+  2026-11-07), and SPEC M-4 no longer has them. Dropping a pane on the sidebar keeps its tests.
+  **Requirements:** M-4.

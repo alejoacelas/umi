@@ -172,17 +172,6 @@ enum UmiUIDebug {
             location.window.performSplitAction(.drop(.init(payload: pane, destination: target, zone: zone)))
             return ["pane": pane.umiID]
 
-        case "debug.ui.pane.tabdrop":
-            // Dropping a dragged pane on the "previous tab" (top centre) or "next tab" (bottom
-            // centre) target over the panes.
-            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
-            guard let target: UmiPaneTabDropTargets.Target = ["previous": .previous, "next": .next][params.string("target") ?? ""] else {
-                throw UmiError.badRequest("target is previous or next")
-            }
-            guard let location = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
-            let moved = try UmiPaneTabDropTargets.move(pane, target, in: location.window)
-            return ["pane": pane.umiID, "tab": moved.tab.idString]
-
         case "debug.ui.split.divider":
             // The divider of the split right above a pane: double-click it, or drag it.
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)

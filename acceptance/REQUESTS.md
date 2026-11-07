@@ -303,3 +303,8 @@ gestures are out.
   "Save as New Config" in a sidebar row's right-click menu, `umi layout ls|save|open`. ⌃⌘T stays
   Umi's Move Pane to New Tab, so Warp's tab-configs menu key isn't added.
 - Agent status, attention, inbox, toasts and the update note (SPEC S-3, AG-24, I-4, L-9).
+
+## 2026-11-07: no previous/next tab targets over the panes
+
+> let's remove the drag and drop to the center top or bottom to put on next or previous tab but keep
+> the drop on sidebar
