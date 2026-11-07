@@ -1,8 +1,8 @@
 import AppKit
 
 /// Moving between tabs and panes from the keyboard, the menus and the CLI: next and previous
-/// tab in sidebar order, ⌘1–9, back through the tabs visited (L-11), the sessions that need
-/// the user (L-12), and moving tabs up and down (L-13).
+/// tab in sidebar order, ⌘1–9, back through the tabs visited (L-11), the panes whose agent
+/// needs the user (L-12), and moving tabs up and down (L-13).
 ///
 /// Everything here acts on Umi's own record of the current window, so it works whatever
 /// has keyboard focus (L-10).
@@ -106,7 +106,7 @@ enum UmiNavigation {
         return view
     }
 
-    /// ⌃⌘K: back to where the user was before jumping to sessions that need them.
+    /// ⌃⌘K: back to where the user was before jumping to panes that need them.
     @discardableResult
     static func jumpBack() -> Ghostty.SurfaceView? {
         guard let origin = jumpOrigin?.value, UmiTopology.locate(origin) != nil else { return nil }

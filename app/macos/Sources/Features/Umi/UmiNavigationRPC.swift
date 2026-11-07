@@ -1,6 +1,6 @@
 import AppKit
 
-/// Control methods for moving between tabs and sessions (L-11, L-12), shortcuts (L-17), and
+/// Control methods for moving between tabs and panes (L-11, L-12), shortcuts (L-17), and
 /// the internal `debug.*` methods that check the palettes, the tab order and the attention
 /// data without the accessibility tree.
 @MainActor
