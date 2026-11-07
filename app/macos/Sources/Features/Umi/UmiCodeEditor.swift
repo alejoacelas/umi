@@ -862,6 +862,11 @@ final class UmiCodeEditor: NSObject, NSTextStorageDelegate {
     }
 
     fileprivate func drawGutter(in ruler: NSRulerView, rect: NSRect) {
+        // The gutter is the pane's background, as Warp's: text scrolled sideways goes under it
+        // instead of showing through the line numbers (E-21).
+        // (Only within the gutter: AppKit no longer clips a view's drawing to its bounds.)
+        UmiCodeLook.background.setFill()
+        rect.intersection(ruler.bounds).fill()
         guard let textView, let layout = textView.layoutManager, let container = textView.textContainer else { return }
         let text = textView.string as NSString
         let visible = textView.visibleRect
