@@ -45,20 +45,17 @@ enum UmiDebug {
         owner.performActionForItem(at: index)
     }
 
-    /// Give keyboard focus to the editor's text (or preview) in a window.
+    /// Give keyboard focus to the editor's text (or preview) in a window: the selected tab's file
+    /// pane (its focused pane when that shows a file), focused the way the app focuses one.
     static func focusEditor(in controller: TerminalController, selectEnd: Bool = false) {
-        guard let window = controller.window, let content = window.contentView else { return }
-        func find(_ view: NSView) -> NSView? {
-            if view is UmiEditorContainerView {
-                if let scroll = view.subviews.first as? NSScrollView { return scroll.documentView }
-                return view.subviews.first
-            }
-            for sub in view.subviews { if let found = find(sub) { return found } }
-            return nil
-        }
-        guard let target = find(content) else { return }
-        window.makeFirstResponder(target)
-        if selectEnd, let text = target as? NSTextView {
+        guard let window = controller.window else { return }
+        let files = UmiFilePanes.shared
+        let tabPanes = controller.selectedTab.tree.root?.leaves() ?? []
+        let focused = controller.selectedTab.effectiveFocusedSurface
+        guard let pane = (focused.flatMap { files.document(of: $0) != nil ? $0 : nil })
+                ?? tabPanes.first(where: { files.document(of: $0) != nil }) else { return }
+        files.focusEditor(of: pane)
+        if selectEnd, let text = window.firstResponder as? NSTextView {
             text.setSelectedRange(NSRange(location: (text.string as NSString).length, length: 0))
         }
     }

@@ -429,6 +429,9 @@ enum UmiRPC {
         case "debug.editor.focus":
             let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
             UmiLayout.focusTab(tab, in: window)
+            // focusTab gives the tab's focused pane keyboard focus on a later turn of the main
+            // loop; the editor takes it after that, as a click on it would.
+            try? await Task.sleep(nanoseconds: 300_000_000)
             UmiDebug.focusEditor(in: window, selectEnd: params.bool("select_end") ?? false)
             return ["ok": true]
 
