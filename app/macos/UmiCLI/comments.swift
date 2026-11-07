@@ -37,7 +37,7 @@ func commentsCommand(_ argv: [String]) {
     }
     if words.first == "--help" || words.first == "-h" || argv.isEmpty {
         print(commentsHelp)
-        if argv.isEmpty { exit(2) }
+        if argv.isEmpty { exit(1) }
         return
     }
     let spec = ArgSpec(valued: ["--on", "--nth", "--by", "--note", "--timeout"], boolean: ["--all"])
