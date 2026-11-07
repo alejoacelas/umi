@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pane Indicator</title>
+<style>
+  :root {
+    --bg: #000;
+    --page: #0a0a0a;
+    --side: #0d0d0d;
+    --ink: #e6e6e6;
+    --dim: #8a8a8a;
+    --faint: #5a5a5a;
+    --line: #1c1c1c;
+    --line2: #262626;
+    --cyan: #3ad1e0;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    /* state colours, set per window by the palette option */
+    --c-working: #6cc28a;
+    --c-needs: #e0b04a;
+    --c-fin: #a78bfa;
+    --c-ring: #3ad1e0;
+    --c-idlefocus: #8a8a8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 48px 0 6px; }
+  p.lead, p.sub { color: var(--dim); margin: 0 0 16px; max-width: 780px; }
+  a { color: var(--cyan); }
+  code, pre { font-family: var(--mono); font-size: 12px; }
+  pre { margin: 0; white-space: pre-wrap; color: #cfcfcf; }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line2); border-radius: 4px; padding: 0 4px; color: var(--dim); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 16px; font-size: 12px; color: var(--dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  .optbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; align-items: center; }
+  .optbar button { background: transparent; color: var(--dim); border: 1px solid var(--line2); border-radius: 6px; padding: 6px 10px; font: 13px var(--sans); cursor: pointer; }
+  .optbar button.opt[aria-selected="true"] { color: var(--ink); border-color: #555; background: #141414; }
+  .optbar button.act { background: #141414; color: var(--ink); }
+  .optbar button:hover { border-color: #555; }
+  .optbar button.act[aria-pressed="true"] { border-color: #555; color: var(--ink); background: #1c1c1c; }
+  .optbar .spacer { flex: 1; }
+  .keys { color: var(--faint); font-size: 12px; margin-bottom: 10px; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  .winwrap { min-width: 0; }
+  .win { position: relative; background: var(--bg); border: 1px solid #222; border-radius: 10px; overflow: hidden; height: 400px; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.5); outline: none; transition: max-width .3s; max-width: 100%; }
+  .win.small { max-width: 600px; }
+  .win:focus-visible, .win.active { border-color: #3a3a3a; }
+  .titlebar { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: var(--side); flex: none; }
+  .titlebar i { width: 11px; height: 11px; border-radius: 50%; background: #2a2a2a; }
+  .titlebar .act-hint { margin-left: auto; font-size: 10.5px; color: var(--faint); }
+  .win.active .titlebar .act-hint { color: var(--dim); }
+  .body { flex: 1; display: flex; min-height: 0; }
+  .sidebar { width: 210px; background: var(--side); flex: none; display: flex; flex-direction: column; padding: 4px 0 8px; border-right: 1px solid #111; }
+  .win.small .sidebar { width: 150px; }
+  .row { position: relative; display: flex; gap: 9px; padding: 9px 12px; margin: 1px 6px; border-radius: 6px; }
+  .row.sel { background: rgba(255,255,255,.07); }
+  .row .ic { width: 14px; flex: none; display: flex; justify-content: center; padding-top: 5px; }
+  .row .tx { min-width: 0; flex: 1; }
+  .row .l1 { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .l1 .br { color: var(--faint); font-size: 11.5px; margin-left: 5px; }
+  .row .l2 { font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .content { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .tstrip { height: 26px; flex: none; display: flex; gap: 2px; padding: 3px 6px 0; border-bottom: 1px solid #141414; overflow: hidden; }
+  .tchip { font-size: 11.5px; padding: 3px 9px; border-radius: 5px 5px 0 0; color: var(--dim); display: flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+  .tchip span.n { overflow: hidden; text-overflow: ellipsis; }
+  .tchip.shown { color: var(--ink); background: #111; }
+  .tchip.hidden { color: var(--faint); font-style: italic; }
+  .panes { flex: 1; display: flex; min-height: 0; }
+  .pane { flex: 1; min-width: 0; position: relative; padding: 14px 14px 10px; font: 11.5px/1.6 var(--mono); color: #d8d8d8; overflow: hidden; border-left: 1px solid #1a1a1a; cursor: default; transition: background .2s, color .2s; }
+  .pane:first-child { border-left: none; }
+  .pane .p-b { color: #f0f0f0; }
+  .pane .p-d { color: var(--faint); font-style: italic; }
+  .pane .p-g { color: #6cc28a; }
+  .pane .prompt { position: absolute; left: 14px; right: 14px; bottom: 12px; border-top: 1px solid #222; padding-top: 6px; color: var(--dim); white-space: nowrap; overflow: hidden; }
+  .pane .caret { display: inline-block; width: 7px; height: 13px; background: #cfcfcf; vertical-align: -2px; opacity: 0; }
+  .pane.focused .caret { opacity: 1; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .pane.file { padding: 0; font-family: var(--sans); }
+  .fhead { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-bottom: 1px solid #161616; font-size: 12px; color: var(--ink); position: relative; }
+  .fhead .grip { color: var(--faint); font-size: 10px; letter-spacing: -1px; }
+  .fhead .fname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fhead .seg { display: flex; border: 1px solid #2a2a2a; border-radius: 5px; overflow: hidden; flex: none; }
+  .fhead .seg b { font-weight: 400; font-size: 10.5px; padding: 1px 7px; color: var(--dim); }
+  .fhead .seg b.on { background: #1d1d1d; color: var(--ink); }
+  .fbody { padding: 12px 14px; font-size: 12.5px; line-height: 1.55; color: #bbb; }
+  .fbody h4 { margin: 0 0 6px; font-size: 15px; color: #fff; }
+
+  /* focus treatment C: brighter pane, dimmer others */
+  .win.f-bright .pane { color: #8c8c8c; }
+  .win.f-bright .pane .fbody { color: #7c7c7c; }
+  .win.f-bright .pane .fhead { color: #8c8c8c; }
+  .win.f-bright .pane.focused { background: #0c0c0c; color: #e8e8e8; }
+  .win.f-bright .pane.focused .fbody { color: #c4c4c4; }
+  .win.f-bright .pane.focused .fhead { color: var(--ink); }
+
+  /* ---------- the indicator ---------- */
+  .ind { position: absolute; z-index: 2; width: 7px; height: 7px; border-radius: 50%; background: transparent; transition: background .25s, opacity .25s, width .2s, height .2s, box-shadow .2s; pointer-events: none; }
+  .ind.inline { position: relative; display: inline-block; flex: none; }
+  .ind.st-working { background: var(--c-working); }
+  .ind.st-needs { background: var(--c-needs); }
+  .ind.st-fin { background: var(--c-fin); }
+  .ind.st-idle { background: transparent; }
+  .ind.edge { width: 22px; height: 2px; border-radius: 1px; }
+  /* focus as size/brightness */
+  .win.f-size .ind:not(.side):not(.chipd) { opacity: .5; }
+  .win.f-size .ind.isfocus { opacity: 1; width: 9px; height: 9px; }
+  .win.f-size .ind.edge.isfocus { width: 30px; height: 3px; }
+  .win.f-size .ind.isfocus.st-idle { background: var(--c-idlefocus); }
+  /* focus as a ring */
+  .win.f-ring .ind.isfocus { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.2px var(--c-ring); }
+  .win.f-ring .ind.isfocus.st-idle { box-shadow: inset 0 0 0 1.3px var(--c-ring); }
+  .win.f-ring .ind.edge.isfocus { box-shadow: 0 2px 0 var(--c-ring); }
+  .win.f-ring .ind.edge.isfocus.st-idle { background: var(--c-ring); box-shadow: none; opacity: .7; }
+  /* pulse once when a pane starts needing you */
+  .ind.pulse::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; background: var(--c-needs); animation: pulse 1.1s ease-out 1; }
+  @keyframes pulse { from { opacity: .7; transform: scale(1); } to { opacity: 0; transform: scale(3.4); } }
+  .ind.edge.pulse::after { animation-name: pulse-edge; }
+  @keyframes pulse-edge { from { opacity: .7; transform: scaleY(1); } to { opacity: 0; transform: scaleY(5) scaleX(1.4); } }
+
+  /* positions */
+  .pos-tr .pane .ind.on-pane { top: 9px; right: 10px; }
+  .pos-tr .pane.file .ind.on-pane { top: 10.5px; right: 9px; }
+  .pos-tr .pane.file .fhead { padding-right: 26px; }
+  .pos-tl .pane .ind.on-pane { top: 9px; left: 7px; }
+  .pos-tl .pane:not(.file) { padding-left: 22px; }
+  .pos-tl .pane.file .ind.on-pane { top: 10.5px; left: 9px; }
+  .pos-tl .pane.file .fhead { padding-left: 24px; }
+  .pos-tl .pane .prompt { left: 22px; }
+  .pos-edge .pane .ind.on-pane { top: 0; left: 10px; }
+  .pos-br .pane .ind.on-pane { bottom: 17px; right: 12px; }
+  .pos-br .pane .prompt { right: 26px; }
+  .pos-br .pane.file .ind.on-pane { bottom: 12px; }
+
+  .notes { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px; font-size: 12.5px; }
+  .notes h3 { margin: 0 0 4px; font-size: 14px; }
+  .notes .one { color: var(--dim); margin: 0 0 10px; }
+  .notes h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; }
+  .notes ul { margin: 0; padding-left: 16px; }
+  .notes li { margin: 2px 0; }
+  .notes pre { background: #0d0d0d; border-radius: 4px; padding: 8px; font-size: 11px; }
+  .log { margin-top: 8px; color: var(--dim); font-size: 12px; min-height: 18px; }
+  .held { color: var(--faint); font-size: 12px; margin: -8px 0 10px; }
+
+  @media (max-width: 900px) {
+    .stage { grid-template-columns: minmax(0, 1fr); }
+    .sidebar { width: 160px; }
+  }
+  @media (max-width: 560px) {
+    .sidebar { width: 120px; }
+    .pane:nth-child(3) { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ind.pulse::after { animation: none; }
+    .pane.focused .caret { animation: none; }
+    .ind, .pane, .win { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pane indicator</h1>
+  <p class="lead">One small colour-coded mark per pane, in place of the cyan focus line and the agent marks. It says whether a pane is working, needs you, finished while you weren't looking, or is idle, and it also shows which pane has focus. The same mark appears on the pane's chip in the strip, and a tab's sidebar row shows the mark of its most urgent pane. Each section changes one thing; everything else stays at the stated default. Content is made up. See also: <a href="where-panes-live.html">Where panes live</a> · <a href="pane-strip.html">Pane strip</a> · <a href="resurfacing.html">Resurfacing</a> · <a href="drawer.html">Drawer</a> · <a href="keyboard-move.html">Keyboard moves</a>.</p>
+
+  <div class="legend" id="legend"></div>
+
+  <section id="s1"></section>
+  <section id="s2"></section>
+  <section id="s3"></section>
+</main>
+
+<script>
+const PALETTES = {
+  distinct: { working: '#6cc28a', needs: '#e0b04a', fin: '#a78bfa', ring: '#3ad1e0', idlefocus: '#8a8a8a' },
+  quiet:    { working: '#6f7f76', needs: '#e0a93e', fin: '#bdbdbd', ring: '#d0d0d0', idlefocus: '#6a6a6a' },
+};
+const STATE_NAME = { idle: 'idle', working: 'working', needs: 'needs you', fin: 'finished, not seen' };
+const CYCLE = ['idle', 'working', 'needs', 'fin'];
+const RANK = { needs: 3, fin: 2, working: 1, idle: 0 };
+
+document.getElementById('legend').innerHTML =
+  `<span><i class="sw" style="background:${PALETTES.distinct.working}"></i>working</span>` +
+  `<span><i class="sw" style="background:${PALETTES.distinct.needs}"></i>needs you (question or approval)</span>` +
+  `<span><i class="sw" style="background:${PALETTES.distinct.fin}"></i>finished, not seen yet</span>` +
+  `<span><i class="sw" style="border:1px dashed #444"></i>idle: no mark</span>` +
+  `<span>focus: shown by the mark itself (section 2)</span>` +
+  `<span style="color:var(--faint)">colours of the "Distinct" palette (section 3)</span>`;
+
+const SECTIONS = [
+  {
+    id: 's1', title: '1. Where the mark sits',
+    sub: 'The same three panes and the same states in each option. Toggle "Narrow" to see it at small pane sizes, beside the file pane\'s header.',
+    held: 'Held at: focus as a ring around the mark · Distinct palette · one soft pulse when a pane starts needing you.',
+    fixed: { focus: 'ring', palette: 'distinct', pulse: true },
+    key: 'pos',
+    options: [
+      { v: 'tr', label: 'Top-right corner', one: 'A dot in each pane\'s top-right corner. On a file pane it sits at the end of the header, after Preview/Source.',
+        pros: ['Where the eye goes to check a pane\'s status, away from where text starts', 'Matches the corner dot you liked'],
+        cons: ['On a file pane it crowds the Preview/Source toggle', 'Programs that draw in the top-right (a clock, a status line) can sit under it'],
+        cfg: 'pane.indicator = corner-top-right' },
+      { v: 'tl', label: 'Top-left corner', one: 'A dot before anything else at the pane\'s top-left. On a file pane it comes before the drag grip and file name.',
+        pros: ['Reads first, like a bullet before a title', 'On a file pane it joins the header line instead of competing with the toggle'],
+        cons: ['Terminals lose a little left padding to make room', 'Sits where your eye starts reading, so it\'s noticed even when you don\'t need it'],
+        cfg: 'pane.indicator = corner-top-left' },
+      { v: 'edge', label: 'Segment on the top edge', one: 'A short coloured line on the pane\'s top edge, at the left: what\'s left of the focus line, now carrying state.',
+        pros: ['Closest to today\'s look, so least new to learn', 'Takes no space inside the pane'],
+        cons: ['A 2px line is harder to tell apart by colour than a dot', 'Can be confused with the file header\'s border or the strip\'s edge'],
+        cfg: 'pane.indicator = top-edge' },
+      { v: 'chip', label: 'In the strip chip only', one: 'Nothing on the pane. The mark appears only before the pane\'s name in the strip along the top of the tab.',
+        pros: ['Panes stay completely clean', 'One place to look for every pane of the tab, hidden ones included'],
+        cons: ['You must match a chip to a pane on screen to know which pane it means', 'If the strip is hidden or folded away, the signal goes with it'],
+        cfg: 'pane.indicator = strip' },
+      { v: 'br', label: 'Bottom-right, by the prompt', one: 'A dot at the pane\'s bottom-right, beside where you type in a terminal or agent.',
+        pros: ['Next to where your eyes are while typing', 'Stays clear of headers at the top'],
+        cons: ['Far from the strip chip that carries the same mark', 'On a file pane there\'s no prompt, so it floats over the text'],
+        cfg: 'pane.indicator = corner-bottom-right' },
+    ],
+  },
+  {
+    id: 's2', title: '2. How focus shows without the focus line',
+    sub: 'Move focus with ← and → (or click a pane). "Focused + needs you" and "Focused + working" set the combinations that are hardest to read.',
+    held: 'Held at: top-right corner dot · Distinct palette · one soft pulse when a pane starts needing you.',
+    fixed: { pos: 'tr', palette: 'distinct', pulse: true },
+    key: 'focus',
+    options: [
+      { v: 'size', label: 'Larger, brighter mark', one: 'The focused pane\'s mark is a little larger and at full strength; the other panes\' marks are dimmed. An idle focused pane gets a grey dot.',
+        pros: ['One mark, no extra shapes', 'Focus moves with a visible "weight" from pane to pane'],
+        cons: ['Dimming the other marks also quiets a "needs you" elsewhere in the tab', 'A size difference of 2px is easy to miss'],
+        cfg: 'pane.focus = indicator-size' },
+      { v: 'ring', label: 'Ring around the mark', one: 'Focus is a thin ring around the mark; the fill is the state. An amber dot with a ring means focused and needs you. An idle focused pane shows an empty ring.',
+        pros: ['Focus and state never fight: both are always readable', 'Other panes keep their marks at full strength'],
+        cons: ['Two things to read in one tiny shape', 'The ring needs its own colour (cyan here), so focus keeps a colour of its own'],
+        cfg: 'pane.focus = indicator-ring' },
+      { v: 'bright', label: 'Brighter pane, mark only for state', one: 'The focused pane\'s text is at full brightness and its background slightly lifted; other panes are a little dimmer. The mark only ever shows state.',
+        pros: ['The mark has one meaning only', 'Focus is obvious from across the screen'],
+        cons: ['Dimming unfocused panes makes them harder to read side by side', 'Changes how every pane\'s content looks, which the other options don\'t'],
+        cfg: 'pane.focus = brighten' },
+    ],
+  },
+  {
+    id: 's3', title: '3. Colours and motion',
+    sub: 'Two palettes: Distinct gives each state its own hue; Quiet keeps only "needs you" in colour and leaves the rest near grey. Motion is at most one soft pulse when a pane starts needing you; looking at a finished pane clears its mark.',
+    held: 'Held at: top-right corner dot · focus as a ring.',
+    fixed: { pos: 'tr', focus: 'ring' },
+    key: 'pal',
+    options: [
+      { v: 'distinct-still', label: 'Distinct, no motion', palette: 'distinct', pulse: false,
+        one: 'Green working, amber needs you, violet finished; cyan ring for focus. Nothing moves.',
+        pros: ['Every state readable at a glance', 'Nothing ever moves on its own'], cons: ['Four colours to learn', 'A new "needs you" can go unnoticed in a busy tab'],
+        cfg: 'pane.colors = distinct\npane.motion = none' },
+      { v: 'distinct-pulse', label: 'Distinct, pulse on needs you', palette: 'distinct', pulse: true,
+        one: 'The same colours; when a pane starts needing you its mark gives one soft pulse, then stays still.',
+        pros: ['The one state you must act on gets noticed', 'A single pulse, not a repeating one'], cons: ['Any motion draws the eye away from what you\'re doing', 'Four colours to learn'],
+        cfg: 'pane.colors = distinct\npane.motion = pulse-on-needs' },
+      { v: 'quiet-still', label: 'Quiet, no motion', palette: 'quiet', pulse: false,
+        one: 'Only "needs you" is in colour (amber). Working is a dim grey-green, finished is light grey; the focus ring is light grey.',
+        pros: ['The calmest; only amber stands out', 'No accent colour for focus at all'], cons: ['Working and finished are hard to tell apart', 'A new "needs you" can go unnoticed'],
+        cfg: 'pane.colors = quiet\npane.motion = none' },
+      { v: 'quiet-pulse', label: 'Quiet, pulse on needs you', palette: 'quiet', pulse: true,
+        one: 'Quiet colours, plus one soft pulse when a pane starts needing you.',
+        pros: ['Calm until something needs you, then noticed once', 'Only one colour carries meaning'], cons: ['Working and finished are hard to tell apart'],
+        cfg: 'pane.colors = quiet\npane.motion = pulse-on-needs' },
+    ],
+  },
+];
+
+function freshPanes() {
+  return [
+    { id: 'sh', name: 'website · zsh', kind: 'term', state: 'idle' },
+    { id: 'ag', name: 'claude · seo pass', kind: 'agent', state: 'working' },
+    { id: 'md', name: 'launch-notes.md', kind: 'file', state: 'fin' },
+  ];
+}
+
+let activeSection = null;
+
+function mkSection(def) {
+  const el = document.getElementById(def.id);
+  const st = { opt: 0, focus: 0, panes: freshPanes(), hidden: { name: 'deploy-check', state: 'working' }, small: false, pulseIds: new Set(), log: '' };
+  el.innerHTML = `
+    <h2>${def.title}</h2>
+    <p class="sub">${def.sub}</p>
+    <div class="optbar" role="tablist"></div>
+    <div class="held">${def.held}</div>
+    <div class="keys">Click the window first, then: <kbd>1</kbd>–<kbd>${def.options.length}</kbd> option · <kbd>←</kbd> <kbd>→</kbd> move focus · <kbd>C</kbd> cycle the focused pane's state · <kbd>A</kbd> cycle the agent's state${def.id === 's1' ? ' · <kbd>N</kbd> narrow' : ''}${def.id === 's2' ? ' · <kbd>F</kbd> focused + needs you · <kbd>W</kbd> focused + working' : ''} · <kbd>R</kbd> reset</div>
+    <div class="stage"><div class="winwrap"><div class="win" tabindex="0" aria-label="${def.title} mock window"></div></div><aside class="notes"></aside></div>`;
+  const bar = el.querySelector('.optbar');
+  const win = el.querySelector('.win');
+  const notes = el.querySelector('.notes');
+
+  def.options.forEach((o, i) => {
+    const b = document.createElement('button');
+    b.className = 'opt'; b.setAttribute('role', 'tab'); b.textContent = `${i + 1} · ${o.label}`;
+    b.onclick = () => { st.opt = i; render(); };
+    bar.appendChild(b);
+  });
+  const sp = document.createElement('span'); sp.className = 'spacer'; bar.appendChild(sp);
+  const actions = [['Cycle agent state', () => cycle(1)]];
+  if (def.id === 's1') actions.push(['Narrow', () => { st.small = !st.small; render(); }, true]);
+  if (def.id === 's2') { actions.push(['Focused + needs you', () => combo('needs')]); actions.push(['Focused + working', () => combo('working')]); }
+  actions.push(['Reset', reset]);
+  const acts = actions.map(([t, fn, toggle]) => {
+    const b = document.createElement('button'); b.className = 'act'; b.textContent = t;
+    b.onclick = () => { fn(); win.focus(); };
+    if (toggle) b.dataset.toggle = '1';
+    bar.appendChild(b); return b;
+  });
+
+  function cfg() {
+    const o = def.options[st.opt];
+    return {
+      pos: def.fixed.pos || o.v,
+      focus: def.fixed.focus || o.v,
+      palette: o.palette || def.fixed.palette,
+      pulse: o.pulse !== undefined ? o.pulse : def.fixed.pulse,
+    };
+  }
+
+  function setState(i, s, why) {
+    const p = st.panes[i]; const was = p.state; p.state = s;
+    if (s === 'needs' && was !== 'needs' && cfg().pulse) st.pulseIds.add(p.id);
+    st.log = `${p.name}: ${STATE_NAME[s]}${why ? ' (' + why + ')' : ''}.`;
+  }
+  function cycle(i) {
+    const p = st.panes[i];
+    setState(i, CYCLE[(CYCLE.indexOf(p.state) + 1) % CYCLE.length]);
+    render();
+  }
+  function combo(s) {
+    st.focus = 1; setState(1, s); st.log = `Focus on the agent, which is ${STATE_NAME[s]}.`; render();
+  }
+  function moveFocus(d) {
+    st.focus = (st.focus + d + st.panes.length) % st.panes.length;
+    const p = st.panes[st.focus];
+    st.log = `Focus: ${p.name}.`;
+    if (p.state === 'fin') {
+      const id = p.id;
+      setTimeout(() => { const q = st.panes.find(x => x.id === id); if (q && q.state === 'fin' && st.panes[st.focus].id === id) { q.state = 'idle'; st.log = `${q.name}: seen, mark cleared.`; render(); } }, 700);
+    }
+    render();
+  }
+  function reset() { st.panes = freshPanes(); st.focus = 0; st.small = false; st.pulseIds.clear(); st.log = ''; render(); }
+
+  function ind(state, opts) {
+    const cls = ['ind', 'st-' + state];
+    if (opts.focus) cls.push('isfocus');
+    if (opts.edge) cls.push('edge');
+    if (opts.inline) cls.push('inline');
+    if (opts.extra) cls.push(opts.extra);
+    if (opts.pulse) cls.push('pulse');
+    return `<i class="${cls.join(' ')}" aria-label="${STATE_NAME[state]}${opts.focus ? ', focused' : ''}"></i>`;
+  }
+
+  function paneBody(p, i, c, focused, pulse) {
+    const onPane = c.pos !== 'chip' ? ind(p.state, { focus: focused, edge: c.pos === 'edge', extra: 'on-pane', pulse }) : '';
+    const caret = '<span class="caret"></span>';
+    if (p.kind === 'file') {
+      return `<div class="pane file ${focused ? 'focused' : ''}" data-i="${i}">${onPane}
+        <div class="fhead"><span class="grip">⋮⋮</span><span class="fname">launch-notes.md</span><span class="seg"><b class="on">Preview</b><b>Source</b></span></div>
+        <div class="fbody"><h4>Launch notes</h4>Ship the new pricing page Thursday. Open questions: copy for the annual plan, and whether the FAQ moves above the fold.</div></div>`;
+    }
+    if (p.kind === 'agent') {
+      const tail = p.state === 'needs' ? '<span style="color:var(--c-needs)">? Allow edit to src/pages/pricing.astro</span>'
+        : p.state === 'working' ? '<span class="p-d">· rewriting meta descriptions (4/11)</span>'
+        : p.state === 'fin' ? '<span class="p-g">✓ Done. 11 pages updated.</span>' : '<span class="p-d">waiting for a message</span>';
+      return `<div class="pane ${focused ? 'focused' : ''}" data-i="${i}">${onPane}
+        <div class="p-b">✻ Claude Code</div><div class="p-d">~/sites/website</div><br>
+        <div>&gt; tighten SEO on the marketing pages</div><div>${tail}</div>
+        <div class="prompt">&gt; ${caret}</div></div>`;
+    }
+    const tail = p.state === 'working' ? '<span class="p-d">building… 61%</span>' : '<span class="p-g">✓ built in 2.4 s</span>';
+    return `<div class="pane ${focused ? 'focused' : ''}" data-i="${i}">${onPane}
+      <div class="p-d">~/sites/website main</div><div class="p-b">$ npm run build</div><div>${tail}</div>
+      <div class="prompt">~/sites/website ❯ ${caret}</div></div>`;
+  }
+
+  function render() {
+    const c = cfg(); const o = def.options[st.opt];
+    [...bar.querySelectorAll('.opt')].forEach((b, i) => b.setAttribute('aria-selected', String(i === st.opt)));
+    acts.forEach(b => { if (b.dataset.toggle) b.setAttribute('aria-pressed', String(st.small)); });
+    const pal = PALETTES[c.palette];
+    for (const k of Object.keys(pal)) win.style.setProperty('--c-' + k, pal[k]);
+    win.className = `win pos-${c.pos} f-${c.focus}${st.small ? ' small' : ''}${activeSection === def.id ? ' active' : ''}`;
+    const pulseNow = new Set(st.pulseIds); st.pulseIds.clear();
+    const strongest = st.panes.concat([st.hidden]).reduce((a, b) => RANK[b.state] > RANK[a.state] ? b : a, { state: 'idle' });
+    const sideInd = (s) => ind(s, { inline: true, extra: 'side' });
+    const chips = st.panes.map((p, i) => `<div class="tchip shown" data-i="${i}">${ind(p.state, { inline: true, focus: i === st.focus, extra: 'chipd', pulse: c.pos === 'chip' && pulseNow.has(p.id) })}<span class="n">${p.name}</span></div>`).join('')
+      + `<div class="tchip hidden">${ind(st.hidden.state, { inline: true, extra: 'chipd' })}<span class="n">${st.hidden.name}</span></div>`;
+    win.innerHTML = `
+      <div class="titlebar"><i></i><i></i><i></i><span class="act-hint">${activeSection === def.id ? 'keys go here' : 'click to use keys here'}</span></div>
+      <div class="body">
+        <div class="sidebar">
+          <div class="row sel"><div class="ic">${sideInd(strongest.state)}</div><div class="tx"><div class="l1">website<span class="br">main</span></div><div class="l2">${st.panes[1].state === 'needs' ? 'Allow edit to pricing.astro?' : 'tighten SEO on the marketing pages'}</div></div></div>
+          <div class="row"><div class="ic">${sideInd('fin')}</div><div class="tx"><div class="l1">impact-ops<span class="br">q4</span></div><div class="l2">draft board update</div></div></div>
+          <div class="row"><div class="ic">${sideInd('working')}</div><div class="tx"><div class="l1">umi<span class="br">pane-strip</span></div><div class="l2">zig build test</div></div></div>
+          <div class="row"><div class="ic">${sideInd('idle')}</div><div class="tx"><div class="l1">~/best/desk</div><div class="l2">git status</div></div></div>
+        </div>
+        <div class="content">
+          <div class="tstrip">${chips}</div>
+          <div class="panes">${st.panes.map((p, i) => paneBody(p, i, c, i === st.focus, c.pos !== 'chip' && pulseNow.has(p.id))).join('')}</div>
+        </div>
+      </div>`;
+    win.querySelectorAll('.pane, .tchip.shown').forEach(n => n.addEventListener('mousedown', () => {
+      const i = +n.dataset.i; if (i !== st.focus) { st.focus = i; moveFocus(0); }
+    }));
+    notes.innerHTML = `<h3>${o.label}</h3><p class="one">${o.one}</p>
+      <h4>Good</h4><ul>${o.pros.map(x => `<li>${x}</li>`).join('')}</ul>
+      <h4>Costs</h4><ul>${o.cons.map(x => `<li>${x}</li>`).join('')}</ul>
+      <h4>Config</h4><pre>${o.cfg}</pre>
+      <div class="log">${st.log || '&nbsp;'}</div>`;
+  }
+
+  win.addEventListener('focus', () => { setActive(def.id); });
+  win.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= def.options.length) { st.opt = n - 1; render(); }
+    else if (e.key === 'ArrowRight') moveFocus(1);
+    else if (e.key === 'ArrowLeft') moveFocus(-1);
+    else if (k === 'c') cycle(st.focus);
+    else if (k === 'a') cycle(1);
+    else if (k === 'r') reset();
+    else if (k === 'n' && def.id === 's1') { st.small = !st.small; render(); }
+    else if (k === 'f' && def.id === 's2') combo('needs');
+    else if (k === 'w' && def.id === 's2') combo('working');
+    else return;
+    e.preventDefault();
+  });
+  st.render = render;
+  return st;
+}
+
+const states = {};
+function setActive(id) {
+  if (activeSection === id) return;
+  activeSection = id;
+  for (const k in states) states[k].render();
+  document.getElementById(id).querySelector('.win').focus({ preventScroll: true });
+}
+for (const d of SECTIONS) states[d.id] = mkSection(d);
+for (const k in states) states[k].render();
+</script>
+</body>
+</html>
