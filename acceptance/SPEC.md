@@ -201,8 +201,8 @@ the menu.
     draws it. The fade never holds up typing or clicks.
 
 - **L-12 [A+W]** ⌃⌘J (`<cli> jump`) goes to the next pane whose agent needs the user: panes whose
-  `agent.status` is `needs_input` first, then panes whose agent finished while the pane wasn't looked
-  at (S-3), oldest first in each. The pane gets focused (its tab selected, its window in front).
+  `agent.status` is `needs_input` first, then panes whose agent finished or failed (`error`) while the
+  pane wasn't looked at (S-3), oldest first in each. The pane gets focused (its tab selected, its window in front).
   Pressed again, it goes to the next one. ⌃⌘K (`<cli> jump back`)
   goes back to the pane the user was in before the first of those jumps. When nothing needs the
   user, `jump` fails with a message saying so.

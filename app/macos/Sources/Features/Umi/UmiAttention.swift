@@ -163,12 +163,16 @@ final class UmiAttention: ObservableObject {
         openPanes.filter { $0.1.status == .needsInput }.count
     }
 
-    /// Where ⌃⌘J goes, in order: panes whose agent needs input (oldest first), then finished and
-    /// unseen ones (oldest first).
-    func targetsNeedingYou() -> [UUID] {
-        let all = openPanes
+    /// Where ⌃⌘J goes, in order: panes whose agent needs input (oldest first), then unseen ones
+    /// whose agent finished or failed (oldest first).
+    func targetsNeedingYou() -> [UUID] { Self.jumpOrder(openPanes) }
+
+    /// `targetsNeedingYou` for given panes. "Unseen" is `changedAt > seenAt` (primitives.md), so a
+    /// pane whose agent failed drops out once the user has looked at it; a working one isn't a
+    /// place to jump to.
+    static func jumpOrder(_ all: [(UUID, Agent)]) -> [UUID] {
         let needs = all.filter { $0.1.status == .needsInput }.sorted { $0.1.statusSince < $1.1.statusSince }
-        let unseen = all.filter { $0.1.status != .needsInput && $0.1.mark != .none }
+        let unseen = all.filter { $0.1.status != .needsInput && $0.1.status != .working && $0.1.unseen }
             .sorted { $0.1.changedAt < $1.1.changedAt }
         return (needs + unseen).map(\.0)
     }
