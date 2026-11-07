@@ -42,7 +42,8 @@ One small mark per pane replaces the cyan focus line and the agent marks.
 ## The drawer [drawer.html, option B]
 
 A place that rises over the lower half of the tab without changing its layout, shown and put away
-by a key. It holds whatever a binding sends it, such as the manager pane. A pane waiting for the
+by a key. It holds whatever a binding sends it. ⌃⌘M shows and hides the manager pane (the pane
+with `role=manager`) in the drawer by default: `key.ctrl+cmd+m = drawer toggle 'role=manager'`. A pane waiting for the
 drawer shows as a thin line along the window's bottom edge with a short label. A drawer pane can be
 moved into the tab's layout or hidden.
 
@@ -61,4 +62,4 @@ moved into the tab's layout or hidden.
 
 1. What the indicator shows for a pane with no agent (a long-running command, a file with unsaved
    changes).
-2. Which keys show, hide and cycle the drawer.
+2. Keys for sending other panes to the drawer and cycling through them.
