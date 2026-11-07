@@ -532,7 +532,7 @@ func resolveWorktree(_ name: String, base: String, baseRef: String?) -> String {
     return path
 }
 
-/// Common creation options shared by window/tab/split and interactive agents.
+/// Common creation options shared by window, tab and split.
 ///
 /// `--worktree` is resolved in the repository of `--cwd`, else of the pane named with
 /// `--pane` (the new pane starts from it), else of the folder the CLI runs in.
@@ -594,8 +594,8 @@ func printTree(_ result: Any) {
                 if let name = pane["name"] as? String { row += "  \(bold(name))" }
                 row += "  \(abbreviateHome(pane["cwd"] as? String ?? ""))"
                 if pane["zoomed"] as? Bool ?? false { row += "  (zoomed)" }
-                if let agent = pane["agent"] as? String {
-                    row += "  [session \(shortID(agent))\((pane["showing"] as? String) == "live" ? ", live" : "")]"
+                if let attributes = pane["attributes"] as? [String: String], let kind = attributes["agent.kind"] {
+                    row += "  [\(kind) \(attributes["agent.status"] ?? "?")]"
                 }
                 print(row)
             }
@@ -740,13 +740,13 @@ func layoutCommand(_ argv: [String]) {
         let args = parse(rest, ArgSpec())
         let back = args.positional.first == "back"
         guard args.positional.count <= 1, back || args.positional.first ?? "next" == "next" else {
-            fail("jump: use `jump` (the next session that needs you) or `jump back`")
+            fail("jump: use `jump` (the next pane whose agent needs you) or `jump back`")
         }
         let result = callDict(back ? "jump.back" : "jump.next")
         if jsonOutput {
             printJSON(result)
         } else {
-            print(result["pane"] as? String ?? result["session"] as? String ?? "")
+            print(result["pane"] as? String ?? "")
         }
 
     case "shortcuts", "shortcut":
@@ -1276,7 +1276,7 @@ func makeDefaultMarkdownApp(dryRun: Bool) {
     if jsonOutput { printJSON(["app": app, "default": true]) } else { print("\(productName) now opens Markdown, text, JSON, CSV, TSV and YAML files") }
 }
 
-// MARK: - Interactive agents
+// MARK: - Shell words
 
 /// Quote a word for a POSIX shell, the way a person would type it.
 func shellQuote(_ word: String) -> String {
@@ -1310,8 +1310,8 @@ func updateCommand(_ argv: [String]) {
         }
         return
     }
-    // --force: install now (or go back) even while managed-agent turns run (they're interrupted
-    // and continue after the relaunch); without it, `--now` refuses while turns run (AG-22).
+    // --force: install now (or go back) even while agents in panes are working (their turns are
+    // cut off; the agents come back on their conversations); without it, `--now` refuses (I-4).
     let method = args.has("--rollback") ? "update.rollback" : (args.has("--now") ? "update.install_now" : "update.download")
     let result = callDict(method, args.has("--force") ? ["force": true] : [:])
     if jsonOutput {
@@ -1376,8 +1376,8 @@ func updateStatusLine(_ result: [String: Any]) -> String {
     return line
 }
 
-/// `update --status`: what a quiet moment still waits for (which pane, session or other
-/// thing), and what can be gone back to.
+/// `update --status`: what a quiet moment still waits for (which pane or other thing), and what
+/// can be gone back to.
 func updateWaitLines(_ result: [String: Any]) -> [String] {
     var lines: [String] = []
     let mode = result["mode"] as? String ?? "install"
@@ -1395,8 +1395,6 @@ func updateWaitLines(_ result: [String: Any]) -> [String] {
                     var where_ = "pane \(String((reason["pane"] as? String ?? "?").prefix(8)))"
                     if let tab = reason["tab"] as? String { where_ += " (tab \"\(tab)\")" }
                     lines.append("  \(where_): \(text)")
-                case "session":
-                    lines.append("  session \(reason["name"] as? String ?? reason["session"] as? String ?? "?"): \(text)")
                 default:
                     lines.append("  \(text)")
                 }
@@ -1432,14 +1430,7 @@ func doctor() {
     let app = ownAppBundle()
     line(app != nil, "app", app ?? "this \(cliName) isn't inside \(productName).app", required: false)
 
-    let tools = loginWhich(["claude", "codex", "git", cliName])
-    for tool in ["claude", "codex", "git"] {
-        if let path = tools[tool] {
-            line(true, tool, path)
-        } else {
-            line(false, tool, "not found on the login shell's PATH (agents and worktrees need it)")
-        }
-    }
+    let tools = loginWhich([cliName])
     if let path = tools[cliName] {
         line(true, "\(cliName) on PATH", path, required: false)
     } else {
@@ -1451,6 +1442,25 @@ func doctor() {
         line(true, "running instance", "version \(info["version"] ?? "?"), state \(abbreviateHome(dir))", required: false)
     } else {
         line(false, "running instance", "\(productName) isn't running for \(abbreviateHome(dir))", required: false)
+    }
+
+    // The hook plugins that report agents in panes: installed and current, where the agent is.
+    if let client = Client(path: socketPath(for: dir)), let plugins = try? client.call("plugins", [:]) as? [String: Any] {
+        for kind in ["claude", "codex"] {
+            guard let info = plugins[kind] as? [String: Any] else { continue }
+            let name = kind == "claude" ? "Claude Code plugin" : "Codex plugin"
+            if info["agent_installed"] as? Bool == false {
+                line(true, name, "\(kind) isn't installed; nothing to report", required: false)
+            } else if info["current"] as? Bool == true {
+                line(true, name, "installed, \(info["version"] as? String ?? "current")")
+            } else if info["installed"] as? Bool == true {
+                line(false, name, "installed but not current (`\(cliName) plugins install` updates it)")
+            } else {
+                line(false, name, "not installed (`\(cliName) plugins install` installs it)")
+            }
+        }
+    } else {
+        line(false, "agent plugins", "can't tell without a running \(productName)", required: false)
     }
 
     if jsonOutput { printJSON(["ok": problems == 0, "checks": report]) }
@@ -1484,14 +1494,20 @@ func main() {
         editorCommand(rest)
     case "comments", "comment":
         commentsCommand(rest)
-    case "claude", "codex":
-        agentShortcut(command, rest)
     case "update":
         updateCommand(rest)
     case "doctor":
         doctor()
+    case "hook":
+        hookCommand(rest)
+    case "plugins", "plugin":
+        pluginsCommand(rest)
     case "agent", "agents":
-        agentCommand(rest)
+        // Plugins installed by Umi before 0.10 run `agent hook` until Umi brings them up to date
+        // at its next launch; every other `agent` command is gone.
+        if rest.first == "hook" { hookCommand(Array(rest.dropFirst())) }
+        fail("`agent` commands were removed: \(productName) runs no agents of its own. Run claude or codex in a pane; "
+             + "`\(cliName) ls --json` shows each pane's agent.* attributes, and `\(cliName) plugins` manages the hooks that report them.")
     case "ping":
         let result = callDict("system.ping")
         if jsonOutput { printJSON(result) } else { print("\(productName) \(result["version"] ?? "?") pid \(result["pid"] ?? "?")") }

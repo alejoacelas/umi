@@ -255,10 +255,9 @@ enum UmiScreenshot {
         (window.backgroundColor ?? .black).setFill()
         bounds.fill()
         image.draw(in: bounds)
-        // (A pane showing a session's read-only view is drawn by its AppKit view, already in the capture.)
         // (A file pane is drawn by its editor's views, also in the capture; a web pane by its page's snapshot.)
         for pane in controller.surfaceTree.root?.leaves() ?? [] where pane.window === window && !pane.isHiddenOrHasHiddenAncestor
-            && !UmiAgentUI.shared.isShowingAgent(pane.id) && !UmiFilePanes.shared.isFilePane(pane.id)
+            && !UmiFilePanes.shared.isFilePane(pane.id)
             && !UmiWebPanes.shared.isWebPane(pane.id) {
             guard let paneImage = pane.terminalImage() else { continue }
             let frame = pane.convert(pane.bounds, to: content)

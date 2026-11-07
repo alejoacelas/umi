@@ -1,5 +1,5 @@
 {
-  "description": "Umi: session state",
+  "description": "Umi: the agent's state on its pane",
   "hooks": {
     "SessionStart": [
       {

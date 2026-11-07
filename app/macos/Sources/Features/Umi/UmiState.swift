@@ -54,8 +54,6 @@ final class UmiState: ObservableObject {
     /// The folder each pane was started in, until its shell reports one.
     private(set) var paneStartFolders: [UUID: String] = [:]
 
-    /// Agents launched as typed (`umi claude`), by pane.
-
     private var pendingBump = false
 
     // MARK: Layout changes
@@ -77,10 +75,6 @@ final class UmiState: ObservableObject {
             UmiWebPanes.shared.prune()
             // New panes get the zoom's font size (L-33).
             UmiZoom.shared.apply()
-            // Panes opened, closed or moved: Window > Agent Sessions marks the shown sessions,
-            // and `agent ls` says where each session is.
-            UmiAgentMenu.shared.setNeedsRebuild()
-            UmiAgentUI.publishShownPanes()
         }
     }
 
@@ -120,6 +114,11 @@ final class UmiState: ObservableObject {
     /// Forget per-pane state of panes that no longer exist (except while undo could still
     /// bring them back: a pane in no window but still alive keeps its state).
     private func prune() {
+        // Panes closed for good take their agent with them (closed panes kept for reopening keep
+        // theirs: only open panes count anywhere).
+        if UmiAttention.shared.panes.count > 64 {
+            UmiAttention.shared.forget(Set(UmiAttention.shared.panes.keys).subtracting(UmiTopology.allSurfaces.map(\.id)))
+        }
         guard paneNames.count + paneStartFolders.count > 256 else { return }
         let live = Set(UmiTopology.allSurfaces.map(\.id))
         paneNames = paneNames.filter { live.contains($0.key) }

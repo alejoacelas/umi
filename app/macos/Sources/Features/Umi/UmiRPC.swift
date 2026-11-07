@@ -22,6 +22,12 @@ enum UmiRPC {
                 "app": Bundle.main.bundlePath,
             ]
 
+        // MARK: Agent hooks (Umi's plugins for Claude Code and Codex)
+        case "hook", "agent.hook":
+            return UmiAgentHooks.handle(params, caller: caller)
+        case "plugins", "agent.plugins":
+            return await UmiAgentPlugins.rpc(params)
+
         case "system.activate":
             if UmiTopology.windows.isEmpty, let ghostty = UmiLayout.ghostty {
                 _ = TerminalController.newWindow(ghostty)
@@ -245,14 +251,14 @@ enum UmiRPC {
             let text = params.string("text") ?? ""
             let enter = params.bool("enter") ?? false
             try await UmiInput.send(text: text, to: pane, enter: enter)
-            UmiAgentUI.shared.inputSent(pane: pane, text: text, keys: enter ? ["enter"] : [])
+            UmiAgentHooks.inputSent(pane: pane, text: text, keys: enter ? ["enter"] : [])
             return ["pane": pane.umiID]
 
         case "pane.keys", "keys":
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
             let keys = params.strings("keys") ?? []
             try UmiInput.send(keys: keys, to: pane)
-            UmiAgentUI.shared.inputSent(pane: pane, text: "", keys: keys)
+            UmiAgentHooks.inputSent(pane: pane, text: "", keys: keys)
             return ["pane": pane.umiID]
 
         case "pane.read", "read":
@@ -445,15 +451,10 @@ enum UmiRPC {
             UmiQuiet.clockOffset += TimeInterval(params.int("advance") ?? 0)
             return UmiQuiet.report()
 
-        case "debug.agent.pane", "debug.agent.type", "debug.agent.press":
-            return try UmiAgentDebug.handle(method, params, caller: caller)
-
         case "debug.ui.comments":
             return try await UmiCommentsUI.debug(params)
         case "debug.ui.markdown":
             return try await UmiMarkdownScript.debug(params)
-        case let inbox where inbox.hasPrefix("debug.ui.inbox"):
-            return try UmiInboxDebug.handle(method, params, caller: caller)
         case let ui where ui.hasPrefix("debug.ui."):
             return try UmiUIDebug.handle(method, params, caller: caller)
 
@@ -463,9 +464,6 @@ enum UmiRPC {
             }
             if UmiLaunchConfigs.methods.contains(method) {
                 return try UmiLaunchConfigs.handle(method, params)
-            }
-            if method.hasPrefix("agent.") {
-                return try await UmiAgentRPC.handle(method: method, params: params, caller: caller, connection: connection)
             }
             throw UmiError.badRequest("unknown method \(method)")
         }

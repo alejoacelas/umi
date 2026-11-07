@@ -844,14 +844,6 @@ extension Ghostty {
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result { focusDidChange(true) }
-            // Umi: while a pane shows a session's read-only view, its keyboard focus is
-            // that view.
-            if result, UmiAgentUI.shared.isShowingAgent(id) {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    UmiAgentUI.shared.focusAgentView(of: self)
-                }
-            }
             // Umi: a file pane's keyboard focus is its editor.
             if result, UmiFilePanes.shared.isFilePane(id) {
                 DispatchQueue.main.async { [weak self] in
@@ -1148,12 +1140,10 @@ extension Ghostty {
             // On any keyDown event we unset our bell state
             bell = false
 
-            // Umi: typing into a session's live interface (a draft there holds back
-            // messages for it; Esc/Ctrl-C may interrupt its turn, which fires no hook).
-            UmiAgentUI.shared.noteKey(pane: self)
-            if UmiAgentUI.shared.livePanes.contains(id) {
-                UmiAgentUI.shared.keyTyped(pane: self, event: event)
-            }
+            // Umi: typing into the pane's agent (a draft there holds back an update; Esc/Ctrl-C
+            // may interrupt its turn, which fires no hook).
+            UmiAgentHooks.noteKey(pane: self)
+            UmiAgentHooks.keyTyped(pane: self, event: event)
 
             // We need to translate the mods (maybe) to handle configs such as option-as-alt
             let translationModsGhostty = Ghostty.eventModifierFlags(
@@ -1677,11 +1667,9 @@ extension Ghostty {
 
         @IBAction func paste(_ sender: Any?) {
             guard let surface = self.surface else { return }
-            // Umi: pasted into a session's live interface, it's a draft there.
-            UmiAgentUI.shared.noteKey(pane: self)
-            if UmiAgentUI.shared.livePanes.contains(id) {
-                UmiAgentUI.shared.pasted(pane: self, text: NSPasteboard.general.string(forType: .string))
-            }
+            // Umi: pasted into the pane's agent, it's a draft there.
+            UmiAgentHooks.noteKey(pane: self)
+            UmiAgentHooks.pasted(pane: self, text: NSPasteboard.general.string(forType: .string))
             let action = "paste_from_clipboard"
             // Umi: and into the panes synced with this one (L-32).
             umiSyncPaste = true
@@ -1693,11 +1681,9 @@ extension Ghostty {
 
         @IBAction func pasteAsPlainText(_ sender: Any?) {
             guard let surface = self.surface else { return }
-            // Umi: pasted into a session's live interface, it's a draft there.
-            UmiAgentUI.shared.noteKey(pane: self)
-            if UmiAgentUI.shared.livePanes.contains(id) {
-                UmiAgentUI.shared.pasted(pane: self, text: NSPasteboard.general.string(forType: .string))
-            }
+            // Umi: pasted into the pane's agent, it's a draft there.
+            UmiAgentHooks.noteKey(pane: self)
+            UmiAgentHooks.pasted(pane: self, text: NSPasteboard.general.string(forType: .string))
             let action = "paste_from_clipboard"
             if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action, privacy: .public)")
@@ -1706,11 +1692,9 @@ extension Ghostty {
 
         @IBAction func pasteSelection(_ sender: Any?) {
             guard let surface = self.surface else { return }
-            // Umi: pasted into a session's live interface, it's a draft there.
-            UmiAgentUI.shared.noteKey(pane: self)
-            if UmiAgentUI.shared.livePanes.contains(id) {
-                UmiAgentUI.shared.pasted(pane: self, text: nil)
-            }
+            // Umi: pasted into the pane's agent, it's a draft there.
+            UmiAgentHooks.noteKey(pane: self)
+            UmiAgentHooks.pasted(pane: self, text: nil)
             let action = "paste_from_selection"
             if !ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8))) {
                 AppDelegate.logger.warning("action failed action=\(action, privacy: .public)")
@@ -2168,8 +2152,8 @@ extension Ghostty.SurfaceView: NSTextInputClient {
         // events so programs treat it as typed input, never as a paste.
         if !chars.isEmpty {
             // Umi: text a session's live interface gets without a key (dictation) is a draft there.
-            UmiAgentUI.shared.noteKey(pane: self)
-            if UmiAgentUI.shared.livePanes.contains(id) { UmiAgentUI.shared.pasted(pane: self, text: chars) }
+            UmiAgentHooks.noteKey(pane: self)
+            UmiAgentHooks.pasted(pane: self, text: chars)
             _ = committedTextAction(GHOSTTY_ACTION_PRESS, text: chars)
         }
     }
@@ -2361,8 +2345,8 @@ extension Ghostty.SurfaceView {
 
         if let content {
             // Umi: dropped into a session's live interface, it's a draft there.
-            UmiAgentUI.shared.noteKey(pane: self)
-            if UmiAgentUI.shared.livePanes.contains(id) { UmiAgentUI.shared.pasted(pane: self, text: content) }
+            UmiAgentHooks.noteKey(pane: self)
+            UmiAgentHooks.pasted(pane: self, text: content)
             DispatchQueue.main.async {
                 self.surfaceModel?.sendText(content)
             }

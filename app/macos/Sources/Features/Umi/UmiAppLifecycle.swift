@@ -9,9 +9,9 @@ enum UmiAppLifecycle {
     static func willTerminate() {
         guard !done else { return }
         done = true
-        // Managed sessions: running turns are interrupted cleanly (they continue at the next
-        // launch) and every harness and what it started is stopped (R-1, R-10).
-        UmiAgents.shared.shutdown(reason: UmiUpdater.shared.isQuittingForUpdate ? "update" : "quit")
+        // Agents in panes end with their terminals: their ends aren't recorded, so the layout
+        // saved below brings each one back on its conversation.
+        UmiAttention.shared.shuttingDown = true
         // Never lose editor edits: save them, or keep a recovery copy (E-3).
         UmiEditor.saveAllDirtyDocuments()
         // Windows, tabs, pins and names come back next time (R-3).

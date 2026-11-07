@@ -1,6 +1,6 @@
 {
   "name": "umi",
-  "description": "Reports a Claude Code session's state to Umi when it runs inside Umi, and teaches the session to read and answer the user's comments on documents (umi comments).",
-  "version": "1.0.2",
+  "description": "Writes a Claude Code session's state on its Umi pane when it runs inside Umi, and teaches the session to read and answer the user's comments on documents (umi comments).",
+  "version": "1.1.0",
   "author": { "name": "Umi" }
 }

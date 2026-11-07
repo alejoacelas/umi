@@ -129,7 +129,8 @@ final class UmiPersistence {
         case .leaf(let view):
             var pane: [String: Any] = ["id": view.umiID, "cwd": UmiTopology.cwd(of: view)]
             if let name = UmiState.shared.paneName(view.id) { pane["name"] = name }
-            if let session = UmiAgentUI.shared.session(forPane: view.id) { pane["agent"] = session }
+            // Its agent comes back after a quit, a crash or an update (UmiAgentHooks.restore).
+            if let agent = UmiAttention.shared.agent(forPane: view.id)?.restartRecord { pane["agent_restart"] = agent }
             if let doc = UmiFilePanes.shared.document(of: view) {
                 pane["file"] = doc.url.path
                 pane["mode"] = doc.mode.rawValue
@@ -263,8 +264,8 @@ final class UmiPersistence {
             let view = Ghostty.SurfaceView(app, baseConfig: config, uuid: uuid)
             UmiState.shared.setStartFolder(view.id, config.workingDirectory ?? NSHomeDirectory())
             if let name = pane["name"] as? String { UmiState.shared.setPaneName(view.id, name) }
-            // A pane that showed a managed session shows it again (AP-11).
-            if let session = pane["agent"] as? String { UmiAgentUI.shared.attach(view.id, session: session) }
+            // A pane that ran an agent runs it again, on its conversation.
+            if let agent = pane["agent_restart"] as? [String: Any] { UmiAgentHooks.restore(agent, in: view) }
             // A file pane shows its file again (a file that's gone or unreadable leaves the shell).
             if let path = pane["file"] as? String {
                 let mode = (pane["mode"] as? String).flatMap(UmiDocument.Mode.init(rawValue:))

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Umi's plugins for Claude Code and Codex (AG-18): hooks that tell Umi what an agent in one
-/// of its panes is doing, the way Warp's plugins do. They ship in the app bundle
+/// Umi's plugins for Claude Code and Codex (AG-18): hooks that write what an agent in one of
+/// its panes is doing on that pane (`umi hook`), the way Warp's plugins do. They ship in the app bundle
 /// (`Contents/Resources/agent-plugins`, a marketplace for each agent) and are installed into
 /// the user's Claude Code and Codex with the agents' own plugin commands, then kept at the
 /// app's version. Outside Umi the hooks do nothing (`umi-hook.sh`).
@@ -12,9 +12,6 @@ import Foundation
 ///   plugin's own hooks are marked trusted through Codex's app server (`hooks/list`,
 ///   `config/batchWrite` of `hooks.state.<key>.trusted_hash`), because Codex runs no plugin
 ///   hook until it's trusted. Only hooks of `umi@umi` are ever touched.
-///
-/// Sessions Umi shows live load the bundled copy directly (`--plugin-dir`), so they report
-/// even before anything is installed.
 enum UmiAgentPlugins {
     static let pluginID = "umi@umi"
 
@@ -23,8 +20,6 @@ enum UmiAgentPlugins {
         let root = resources + "/agent-plugins"
         return FileManager.default.fileExists(atPath: root + "/.claude-plugin/marketplace.json") ? root : nil
     }
-
-    static var bundledClaudePlugin: String? { bundledRoot.map { $0 + "/claude" } }
 
     static func bundledVersion(_ kind: UmiAgentKind) -> String? {
         guard let root = bundledRoot else { return nil }
@@ -342,7 +337,7 @@ enum UmiAgentPlugins {
 
     private static func log(_ line: String) {
         let path = UmiPaths.path("plugins.log")
-        let text = "\(UmiAgentTime.iso(Date())) \(line)\n"
+        let text = "\(ISO8601DateFormatter().string(from: Date())) \(line)\n"
         if let handle = FileHandle(forWritingAtPath: path) {
             handle.seekToEndOfFile()
             handle.write(Data(text.utf8))
@@ -395,5 +390,25 @@ final class UmiLineReader: @unchecked Sendable {
             if !lock.wait(until: deadline) { return nil }
         }
         return lines.isEmpty ? nil : lines.removeFirst()
+    }
+}
+
+extension UmiAgentPlugins {
+    /// The control socket's `plugins` method (`umi plugins [status|install [--force]|remove]`).
+    static func rpc(_ params: UmiParams) async -> [String: Any] {
+        let action = params.string("action") ?? "status"
+        let force = params.bool("force") ?? false
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var out: [String: Any]
+                switch action {
+                case "install": out = install(force: force)
+                case "remove": out = remove()
+                default: out = ["claude": status(.claude).json, "codex": status(.codex).json]
+                }
+                if let root = bundledRoot { out["bundled"] = root }
+                continuation.resume(returning: out)
+            }
+        }
     }
 }

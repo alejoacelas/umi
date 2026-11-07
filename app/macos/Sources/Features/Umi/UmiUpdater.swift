@@ -139,7 +139,7 @@ final class UmiUpdater: ObservableObject {
         // note shows once. A rollback (an older version) shows nothing.
         if let attempt = lastAttempt, attempt.ok, Self.compare(attempt.version, attempt.from) == .orderedDescending {
             let notes = lastAttemptNotes
-            DispatchQueue.main.async { UmiInbox.shared.showUpdateNote(version: attempt.version, notes: notes) }
+            DispatchQueue.main.async { UmiUpdateNote.shared.show(version: attempt.version, notes: notes) }
         }
     }
 
@@ -910,11 +910,11 @@ final class UmiUpdater: ObservableObject {
     }
 
     private func refuseWhileTurnsRun(force: Bool, doing: String = "Installing now") throws {
-        // An update cuts running agent turns off only if the user agrees (AG-22).
-        let turns = UmiAgents.shared.runningTurns()
+        // An update cuts off agents working in panes only if the user agrees (I-4).
+        let turns = UmiAttention.shared.workingCount
         guard turns > 0 && !force else { return }
-        throw UmiError.failed("\(turns) managed-agent turn\(turns == 1 ? " is" : "s are") running. \(doing) interrupts "
-            + "\(turns == 1 ? "it" : "them") (\(turns == 1 ? "it continues" : "they continue") after the relaunch): pass --force to do that, "
+        throw UmiError.failed("\(turns) agent turn\(turns == 1 ? " is" : "s are") running. \(doing) interrupts "
+            + "\(turns == 1 ? "it" : "them") (\(turns == 1 ? "its agent comes" : "their agents come") back on the same conversation after the relaunch): pass --force to do that, "
             + "or let the update install \(installsWhen).")
     }
 
@@ -925,9 +925,9 @@ final class UmiUpdater: ObservableObject {
         if let problem = installTargetProblem { throw UmiError.failed(problem) }
         if staged == nil { _ = try await download() }
         // A turn may have started during the download.
-        let turnsNow = UmiAgents.shared.runningTurns()
+        let turnsNow = UmiAttention.shared.workingCount
         if turnsNow > 0 && !force {
-            throw UmiError.failed("\(turnsNow) managed-agent turn\(turnsNow == 1 ? " is" : "s are") running; the update is downloaded "
+            throw UmiError.failed("\(turnsNow) agent turn\(turnsNow == 1 ? " is" : "s are") running; the update is downloaded "
                 + "and installs \(installsWhen) (or pass --force to install now and interrupt them).")
         }
         guard let staged else {
@@ -972,7 +972,7 @@ final class UmiUpdater: ObservableObject {
             let blocked: Bool
             switch check {
             case .none: blocked = false
-            case .noTurns: blocked = UmiAgents.shared.runningTurns() > 0
+            case .noTurns: blocked = UmiAttention.shared.workingCount > 0
             case .quietExceptInput: blocked = UmiQuiet.reasons().contains { $0.kind != .input }
             case .quiet: blocked = !UmiQuiet.reasons().isEmpty
             }
@@ -1283,9 +1283,9 @@ final class UmiUpdater: ObservableObject {
         if !blockers.isEmpty {
             text += "\n\nRight now: " + blockers.prefix(5).map(\.line).joined(separator: "; ") + "."
         }
-        let turns = UmiAgents.shared.runningTurns()
+        let turns = UmiAttention.shared.workingCount
         if turns > 0 {
-            text += " \(turns) managed-agent turn\(turns == 1 ? " is" : "s are") running: installing now interrupts \(turns == 1 ? "it" : "them"), and \(turns == 1 ? "it continues" : "they continue") after the relaunch."
+            text += " \(turns) agent turn\(turns == 1 ? " is" : "s are") running: installing now interrupts \(turns == 1 ? "it" : "them"); \(turns == 1 ? "its agent comes" : "their agents come") back on the same conversation after the relaunch."
         }
         alert.informativeText = text
         alert.addButton(withTitle: "Install and Relaunch")

@@ -8,7 +8,7 @@ enum UmiNavigationRPC {
     static let methods: Set<String> = [
         "tab.back", "tab.next", "tab.prev", "jump.next", "jump.back",
         "shortcuts.list", "shortcuts.set", "shortcuts.reset",
-        "debug.attention.set", "debug.attention.background", "debug.navigation",
+        "debug.attention.set", "debug.navigation",
         "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.shortcuts_page", "debug.key",
     ]
 
@@ -29,16 +29,10 @@ enum UmiNavigationRPC {
             return tabResult(tab, in: window)
 
         case "jump.next":
-            switch UmiNavigation.jumpToNextNeedingYou() {
-            case .pane(let pane)?:
-                var result = UmiTopology.paneInfoJSON(pane)
-                result["pane"] = pane.umiID
-                return result
-            case .session(let session)?:
-                return ["session": session]
-            case nil:
-                throw UmiError.notFound("no session needs you")
-            }
+            guard let pane = UmiNavigation.jumpToNextNeedingYou() else { throw UmiError.notFound("no pane needs you") }
+            var result = UmiTopology.paneInfoJSON(pane)
+            result["pane"] = pane.umiID
+            return result
 
         case "jump.back":
             guard let pane = UmiNavigation.jumpBack() else { throw UmiError.notFound("there's nowhere to jump back to") }
@@ -82,38 +76,13 @@ enum UmiNavigationRPC {
         // MARK: Internal checks
 
         case "debug.attention.set":
-            // Stand in for the agent engine: what the chrome knows about a pane's agent.
+            // Stand in for a pane's agent hooks: what Umi knows about a pane's agent.
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
-            if params.bool("clear") ?? false {
-                UmiAttention.shared.set(nil, forPane: pane.id)
-                return ["pane": pane.umiID, "agent": NSNull()]
-            }
-            let mark: UmiAttention.Mark
-            switch params.string("mark") ?? "none" {
-            case "finished": mark = .finished
-            case "needs_you", "needs-you": mark = .needsYou
-            default: mark = .none
-            }
-            let stopped = params.double("stopped_ago").map { Date().addingTimeInterval(-$0) }
-            let agent = UmiAttention.Agent(session: params.string("session"),
-                                            kind: params.string("kind") == "codex" ? .codex : .claude,
-                                            title: params.string("title") ?? "agent", status: params.string("status") ?? "idle",
-                                            live: params.bool("live") ?? false, mark: mark, lastStop: stopped)
-            UmiAttention.shared.set(agent, forPane: pane.id)
-            return ["pane": pane.umiID]
-
-        case "debug.attention.background":
-            let items = (params.raw["items"] as? [[String: Any]] ?? []).map { item in
-                (session: item["session"] as? String ?? "", title: item["title"] as? String ?? "",
-                 since: Date().addingTimeInterval(-((item["since_ago"] as? NSNumber)?.doubleValue ?? 0)))
-            }
-            UmiAttention.shared.setBackground(items)
-            if params.bool("record_shows") ?? false {
-                UmiAttention.shared.showSession = { session in
-                    UmiNavigationRPC.shownSessions.append(session)
-                }
-            }
-            return ["count": items.count, "shown": shownSessions]
+            let clear = params.bool("clear") ?? false
+            try UmiAttention.shared.standIn(forPane: pane.id, kind: clear ? nil : (params.string("kind") == "codex" ? .codex : .claude),
+                                            title: params.string("title") ?? "agent", status: params.string("status"),
+                                            mark: params.string("mark"), ago: params.double("stopped_ago"))
+            return clear ? ["pane": pane.umiID, "agent": NSNull()] : ["pane": pane.umiID]
 
         case "debug.navigation":
             return [
@@ -121,7 +90,6 @@ enum UmiNavigationRPC {
                 "focus_history": UmiFocusHistory.recentFirst.map(\.umiID),
                 "can_go_back": UmiTabHistory.canGoBack,
                 "can_jump_back": UmiNavigation.canJumpBack,
-                "shown_sessions": shownSessions,
                 "key_monitor": UmiShortcuts.monitorInstalled,
                 "app_active": NSApp.isActive,
             ]
@@ -130,7 +98,7 @@ enum UmiNavigationRPC {
             let window = try UmiTopology.window(params.string("window"), caller: caller)
             let name = params.string("mode") ?? "commands"
             guard let mode = UmiPaletteModel.Mode(rawValue: name == "sessions" ? "panes" : name) else {
-                throw UmiError.badRequest("mode is commands, actions, panes (sessions), files, tabs, conversations or launch_configs")
+                throw UmiError.badRequest("mode is commands, actions, panes (sessions), files, tabs or launch_configs")
             }
             let entries = await window.palette.preview(mode, query: params.string("query") ?? "", in: window)
             return ["entries": entries.map(\.json), "presented": window.palette.isPresented,
@@ -220,9 +188,6 @@ enum UmiNavigationRPC {
         for (scalar, code) in arrows { codes[String(UnicodeScalar(scalar)!)] = code }
         return codes
     }()
-
-    /// Sessions the "show a session" hook was asked to show (debug.attention.background).
-    static var shownSessions: [String] = []
 
     private static func tabResult(_ tab: UmiTab, in window: TerminalController) -> [String: Any] {
         ["tab": tab.idString, "window": window.umiIDString, "index": (window.index(of: tab) ?? 0) + 1, "title": tab.title]

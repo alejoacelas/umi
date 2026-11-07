@@ -1243,7 +1243,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
             guard let pane = group?.pane, let location = UmiTopology.locate(pane) else { return NSSound.beep() }
             let shown = location.window.tree(of: location.tab).root?.leaves() ?? []
             let terminals = shown.filter {
-                $0 !== pane && UmiFilePanes.shared.document(of: $0) == nil && UmiAgentUI.shared.session(forPane: $0.id) == nil
+                $0 !== pane && UmiFilePanes.shared.document(of: $0) == nil
                     && !UmiWebPanes.shared.isWebPane($0.id)
             }
             guard let target = UmiFocusHistory.mostRecent(among: terminals) ?? terminals.first,

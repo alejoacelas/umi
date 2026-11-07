@@ -120,7 +120,6 @@ private struct TerminalSplitLeaf: View {
                 surfaceView: surfaceView,
                 isSplit: isSplit)
             // Umi: a managed session shown in this pane is drawn over its terminal.
-            .overlay { UmiAgentPaneOverlay(surfaceView: surfaceView) }
             // Umi: so is a file's editor, in a file pane (E-1).
             .overlay { UmiFilePaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
             // Umi: and a page, in a web pane (E-12).
