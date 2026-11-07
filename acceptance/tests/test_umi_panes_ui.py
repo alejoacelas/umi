@@ -274,7 +274,7 @@ def test_a_dragged_middle_divider_shares_both_sides(inst, win):
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
-    d = split(inst, "right", c)
+    d = split(inst, "right", c, "--no-stack")   # a fourth place (M-7)
     # The divider between b and c (its split holds b, c and d, the last 3/4 of the row) to 56%
     # (every pane stays above Warp's 190-point minimum).
     rpc(inst, "debug.ui.split.divider", pane=b, action="move", ratio=(0.56 - 0.25) / 0.75)

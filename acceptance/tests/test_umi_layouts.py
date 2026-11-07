@@ -238,7 +238,8 @@ def test_save_captures_every_window_merges_rows_and_leaves_out_file_panes(clean,
     wait_prompt(inst, first["pane"])
     pc = inst.cli("split", "right", "--pane", first["pane"], "--cwd", c).stdout.strip()
     pd = inst.cli("split", "down", "--pane", pc, "--cwd", d).stdout.strip()
-    pb = inst.cli("split", "right", "--pane", first["pane"], "--cwd", b).stdout.strip()
+    # The tab's fourth place: past three, only `--no-stack` splits (M-7).
+    pb = inst.cli("split", "right", "--pane", first["pane"], "--cwd", b, "--no-stack").stdout.strip()
     inst.cli("pane", "focus", pb)
     pe = inst.cli("tab", "new", "--window", first["window"], "--cwd", e, "--no-focus").stdout.strip()
     file_tab = inst.find_pane(pe)[1]["id"]

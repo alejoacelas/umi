@@ -1172,10 +1172,14 @@ anyway (CLI.md).
   bringing a waiting stack member on show), the modes and the refusal of preview for a `.txt`.
   **Requirements:** E-1, E-9, M-7.
 - **Changed, `tests/test_umi_panes_ui.py`** `test_splits_along_a_row_share_it_equally`,
-  `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row` and
-  `test_panes_sized_by_hand_keep_their_size_and_the_others_share`: their fourth and fifth splits
-  pass `--no-stack`, since they measure four real places in a row. The shares are unchanged.
+  `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row`,
+  `test_panes_sized_by_hand_keep_their_size_and_the_others_share` and
+  `test_a_dragged_middle_divider_shares_both_sides`: their fourth and fifth splits pass
+  `--no-stack`, since they measure four real places in a row. The shares are unchanged.
   **Requirements:** L-19.
+- **Changed, `tests/test_umi_layouts.py`** `test_save_captures_every_window_merges_rows_and_leaves_out_file_panes`:
+  the split that makes b, the first tab's fourth pane, passes `--no-stack`; the test saves a
+  layout of four real panes. The saved YAML it expects is unchanged. **Requirements:** L-21.
 - **Changed, `tests/test_umi_panes_ui.py`** `test_the_split_menu_items_share_equally`: Split Down,
   the tab's fourth pane, now stacks on the focused pane's place; the test requires that, and that
   the three places keep their 33/33/33 (as before). **Requirements:** L-19, M-7.
