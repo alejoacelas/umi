@@ -239,17 +239,30 @@ def test_cmd_f_opens_the_editors_own_find(inst, win, code, ui):
 
 @pytest.mark.req("E-22")
 def test_cmd_f_in_a_terminal_still_searches_the_terminal(inst, win, ui):
-    inst.cli("pane", "focus", win["pane"])
-    ui.activate()
+    # The terminal's search starts from the shared find pasteboard (Ghostty's search syncs its query
+    # with it), where an earlier ⌘E may have left text; with a query, Ghostty's first Esc only gives
+    # the keyboard back to the terminal. Start from an empty one, as a fresh session would.
+    import AppKit
+    find = AppKit.NSPasteboard.pasteboardWithName_(AppKit.NSPasteboardNameFind)
+    saved = find.stringForType_(AppKit.NSPasteboardTypeString)
+    find.clearContents()
+    find.setString_forType_("", AppKit.NSPasteboardTypeString)
+    try:
+        inst.cli("pane", "focus", win["pane"])
+        ui.activate()
 
-    def fields():
-        return ui.find_all(lambda e: ui.role(e) == "AXTextField")
+        def fields():
+            return ui.find_all(lambda e: ui.role(e) == "AXTextField")
 
-    before = len(fields())
-    ui.key(K_F, CMD)
-    wait_until(lambda: len(fields()) > before, 5, message="⌘F opens the terminal's search field")
-    ui.key(K_ESC)
-    wait_until(lambda: len(fields()) == before, 5, message="Esc closes it")
+        before = len(fields())
+        ui.key(K_F, CMD)
+        wait_until(lambda: len(fields()) > before, 5, message="⌘F opens the terminal's search field")
+        ui.key(K_ESC)
+        wait_until(lambda: len(fields()) == before, 5, message="Esc closes it")
+    finally:
+        if saved is not None:
+            find.clearContents()
+            find.setString_forType_(saved, AppKit.NSPasteboardTypeString)
 
 
 @pytest.mark.req("E-22")

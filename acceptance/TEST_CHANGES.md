@@ -1141,3 +1141,9 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   focused pane had no document and Toggle Markdown Preview was rightly disabled (it failed on main
   too). It now focuses the file's pane with `debug.editor.focus`, as the E-3 and E-5 checks do.
   The check is unchanged. **Requirements:** E-2.
+- **Fixed, `tests/test_umi_editor_warp.py` `test_cmd_f_in_a_terminal_still_searches_the_terminal`**:
+  it empties the shared find pasteboard first and puts its text back afterwards. Ghostty's search
+  starts with the pasteboard's text as its query, and with a query its first Esc only moves the
+  keyboard back to the terminal (a second Esc closes it), so the test failed whenever an earlier
+  test (the ⌘E ones) had left text there. Checked by hand on mac-air-2: with an empty query one
+  Esc closes the search. Its assertions are unchanged. **Requirements:** E-22.
