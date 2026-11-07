@@ -12,7 +12,7 @@ Details of Umi's own features are in [attention-ui.md](attention-ui.md) and
 | More panes than fit | Every pane is on show. | A tab shows at most three panes; the others are hidden, listed in the pane strip, and keep running. |
 | Pane chrome | Split terminal panes get a header with title, menu and close; the active pane gets an accent mark. | No pane headers for terminals. The pane strip in the window's title bar names every pane and is its drag handle. |
 | Active pane and attention | An accent mark on the active pane; an 8 px unread dot on tab rows. | One small mark per pane, at its bottom right, for working, needs you, and finished but not seen. The focused pane's mark and the pane itself are slightly brighter. The same mark shows on strip chips and tab rows. |
-| ⌘[ and ⌘] | Move to the previous or next pane. | They walk the panes on show, then the hidden ones; stopping on a hidden pane brings it in, and walking on past it leaves the layout as it was. |
+| ⌘[ and ⌘] | Move to the previous or next pane. | They walk the panes on show, then the hidden ones; releasing ⌘ on a hidden pane brings it in, and releasing it back on a pane that was on show leaves the layout as it was. |
 | Moving panes between tabs | Drag a pane onto a tab row. | Hold ⌃⌘ and use the arrows, with the target tab shown as it would look and the sidebar listing every tab's panes. Dragging chips still works. |
 | Moving tabs | ⌃⇧← / ⌃⇧→. | ⌃⇧↑ / ⌃⇧↓. |
 | Resizing panes from the keyboard | ⌃⌘ arrows move a divider. | Not offered; ⌃⌘ arrows move panes. Dividers still drag. |

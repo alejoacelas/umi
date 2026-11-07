@@ -22,9 +22,9 @@ when the condition holds. Coming back never moves keyboard focus.
 - A pane's chip is its drag handle. File and web headers lose their grip; terminals lose
   Ghostty's hover handle.
 - ⌘[ and ⌘] walk every pane of the tab: those on show, then the hidden ones. Stepping onto a
-  hidden pane shows it in the place it would take, and stopping there keeps it. Stepping on puts
-  it back and shows the next one; walking on until you're back on the panes on show leaves the
-  layout as it was. A pane brought in with ⌘] appears on the right, with ⌘[ on the left. The
+  hidden pane shows it in the place it would take; releasing ⌘ there keeps it. Stepping on puts
+  it back and shows the next one; releasing ⌘ back on a pane that was on show leaves the layout as
+  it was. A pane brought in with ⌘] appears on the right, with ⌘[ on the left. The
   `strip.make-room` slot picks the pane that leaves.
 
 ## The pane indicator [pane-indicator.html]
