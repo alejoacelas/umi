@@ -296,9 +296,16 @@ Each has a recommendation; your input changes what gets built.
 7. **Where a pane can be.** Today{==: on show, stacked behind another, parked (agents only), cl==}{>>let’s make prototypes for how to express what we have and different visual options. this is one of the most important UI decisions we have<<}{#c11}osed
    for 60 s. *Decided:* any pane can be hidden, and a hidden pane stays inside its tab, visible
    in `ls` and the pane switcher. *Decided:* hidden panes show, and come back, through a pane strip along the top of the tab
-   (option C in `design/prototypes/where-panes-live.html`). *Open:* the strip's order, where it sits
-   among the other things at the top, and how ⌘[ and ⌘] move through it
-   (`design/prototypes/pane-strip.html`). Coming back never moves keyboard focus.
+   (option C in `design/prototypes/where-panes-live.html`). *Decided* (`design/prototypes/pane-strip.html`):
+   - The strip sits in the window's title bar, which is empty today, so it adds no height.
+   - Chips keep their places. The only time chips change places is when a hidden pane is brought
+     in and takes the place of another: the two swap.
+   - ⌘[ and ⌘] walk the panes on show; stepping past the last one peeks at the next hidden pane
+     over the place it would take; Enter brings it in, Esc or another step leaves everything as
+     it was. A pane brought in with ⌘] appears on the right, with ⌘[ on the left; the pane on show
+     used least recently makes room.
+   - A pane's chip is its drag handle, so file and web headers lose their grip and terminal panes
+     lose Ghostty's hover handle. Coming back never moves keyboard focus.
 
 8. **The CLI contract.** *{==Decided:* design the ==}{>>we can restart from scratch. I just want to get the best thing<<}{#c12}CLI from scratch around these
    primitives, then rewrite `acceptance/CLI.md` and its tests to match. Existing commands stay
