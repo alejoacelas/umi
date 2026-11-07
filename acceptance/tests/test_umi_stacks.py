@@ -290,7 +290,8 @@ def test_a_stack_shows_one_row_with_its_chips_and_the_shown_files_controls_ui(in
                      and ui.label(e) not in ("plan.md", "Preview", "Source", "More actions")]
     assert terminal_chip, "a chip for the terminal too"
     help_text = ui.attr(chip, "AXHelp") or ""
-    assert os.path.realpath(help_text) == os.path.realpath(path), f"the chip's tooltip is the path: {help_text!r}"
+    # The chip reads as one element, whose help joins its parts' tooltips: the name's first, then its ✕'s.
+    assert os.path.realpath(help_text.split(", ")[0]) == os.path.realpath(path), f"the chip's tooltip is the path: {help_text!r}"
     more = ui.find(lambda e: ui.label(e) == "More actions", strip)
     preview, source = ui.button("Preview", strip), ui.button("Source", strip)
     close = rightmost(ui, "Close plan.md", strip)
@@ -374,7 +375,7 @@ def test_a_narrow_stacks_chips_are_never_cut_off_and_the_rest_wait_in_a_menu_ui(
         for name, e in chips.items():
             x, y, w, h = frame(ui, e)
             assert sx + 22 <= x and x + w <= right_edge + 0.5, f"{name} whole, left of the controls: {x}..{x + w} in {sx}..{right_edge}"
-            assert w >= 60, f"{name} keeps a usable width: {w}"
+            assert w >= 60, f"{name} keeps a usable width: {w} (row {sx}+{sw}, controls from {right_edge}, chips {[(n, frame(ui, c)) for n, c in chips.items()]}, {ui.texts(strip)})"
         overflow = ui.find(lambda e: re.fullmatch(r"\d+ more", ui.label(e) or "") is not None, strip)
         assert overflow is not None, f"a +N chip for the rest: {ui.texts(strip)}"
         ox, _, ow, _ = frame(ui, overflow)

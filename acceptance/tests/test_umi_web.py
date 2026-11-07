@@ -368,7 +368,8 @@ def test_a_stacked_web_pane_shows_its_controls_in_the_stacks_row_ui(web):
     title = pane(inst, page)["title"]
     chip = ui.find(lambda e: ui.label(e) == title and ui.role(e) != "AXStaticText", strip)
     assert chip is not None, ui.texts(strip)
-    assert ui.attr(chip, "AXHelp") == site + "/hosted", ui.attr(chip, "AXHelp")
+    # The chip reads as one element, whose help joins its parts' tooltips: the name's first, then its ✕'s.
+    assert (ui.attr(chip, "AXHelp") or "").split(", ")[0] == site + "/hosted", ui.attr(chip, "AXHelp")
     assert frame(ui, ui.button("Reload", strip))[0] > frame(ui, chip)[0] + frame(ui, chip)[2], "controls right of the chips"
     closes = ui.find_all(lambda e: ui.label(e) == f"Close {title}", strip)
     ui.press(max(closes, key=lambda e: frame(ui, e)[0]))
