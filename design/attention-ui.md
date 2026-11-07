@@ -5,9 +5,7 @@ brackets.
 
 ## Panes per tab
 
-A tab always has at least two panes on show: a new tab opens with two, and closing a pane that
-would leave one opens a new terminal in its place. A tab shows at most three; the others are
-hidden.
+A tab shows at most three panes; the others are hidden.
 
 ## Hidden panes
 
@@ -63,5 +61,3 @@ moved into the tab's layout or hidden.
 1. What the indicator shows for a pane with no agent (a long-running command, a file with unsaved
    changes).
 2. Which keys show, hide and cycle the drawer.
-3. What hiding does when it would leave a tab with one pane on show: bring in a hidden one, or open
-   a new terminal.

@@ -9,7 +9,6 @@ Details of Umi's own features are in [attention-ui.md](attention-ui.md) and
 
 | Area | Warp | Umi |
 |---|---|---|
-| Panes per tab | A tab can hold one pane. | A tab always has at least two panes on show. A new tab opens with two. Closing a pane that would leave one opens a new terminal in its place. |
 | More panes than fit | Every pane is on show. | A tab shows at most three panes; the others are hidden, listed in the pane strip, and keep running. |
 | Pane chrome | Split terminal panes get a header with title, menu and close; the active pane gets an accent mark. | No pane headers for terminals. The pane strip in the window's title bar names every pane and is its drag handle. |
 | Active pane and attention | An accent mark on the active pane; an 8 px unread dot on tab rows. | One small mark per pane, at its bottom right, for working, needs you, and finished but not seen. The focused pane's mark and the pane itself are slightly brighter. The same mark shows on strip chips and tab rows. |
