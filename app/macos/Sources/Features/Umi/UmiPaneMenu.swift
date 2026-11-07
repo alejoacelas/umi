@@ -82,6 +82,9 @@ enum UmiPaneMenu {
         let shortcuts = Ghostty.MenuShortcutManager()
         let selectedBefore = pane.umiSelectedBeforeRightClick
         pane.umiSelectedBeforeRightClick = nil
+        // Ghostty gives no menu key for its performable bindings (Copy's ⌘C, Paste's ⌘V, Clear's
+        // ⌘K); those items show the key bound in effect, as `umi shortcuts` lists it.
+        lazy var bindings = UmiGhosttyBindings.effective()
         for entry in entries(for: pane, selectedBefore: selectedBefore) {
             guard let entry else {
                 menu.addItem(.separator())
@@ -96,6 +99,15 @@ enum UmiPaneMenu {
             // The key shows in the menu (as in Warp); a context menu's keys don't act on their own.
             if let config, !entry.shortcutAction.isEmpty {
                 shortcuts.syncMenuShortcut(config, action: entry.shortcutAction, menuItem: item)
+                // (A key a menu can show: Ghostty also binds the Copy and Paste keys some
+                // keyboards have.)
+                if item.keyEquivalent.isEmpty,
+                   let shortcut = bindings.lazy.filter({
+                       $0.action == entry.shortcutAction || $0.action.hasPrefix(entry.shortcutAction + ":")
+                   }).compactMap(\.shortcut).first(where: { $0.modifiers.contains(.command) }) {
+                    item.keyEquivalent = shortcut.keyEquivalent
+                    item.keyEquivalentModifierMask = shortcut.modifiers
+                }
             }
             menu.addItem(item)
         }

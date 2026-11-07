@@ -1151,3 +1151,7 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   a file with a line longer than the pane opens with its text starting right of the 94-point
   gutter. It opened scrolled 94 points sideways, its first characters under the line numbers
   (found walking the branch on mac-air-2). **Requirements:** E-21.
+- **Added, `tests/test_umi_warp_panes.py` `test_the_pane_menu_shows_each_items_key_ui`**: the
+  terminal's right-click menu shows each item's key, ⌘V for Paste, ⌘K for Clear and ⌘C for Copy
+  included. Those three showed no key: Ghostty gives its performable bindings no menu key (found
+  walking the branch on mac-air-2). **Requirements:** L-31.

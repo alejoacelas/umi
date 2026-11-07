@@ -220,6 +220,35 @@ def test_right_clicking_a_pane_opens_warps_menu_ui(inst, win, ui):
     wait_until(lambda: [p["id"] for p in tab_of(inst, win["tab"])["panes"]] == [b], 10, message="Close Pane")
 
 
+@pytest.mark.ui
+@pytest.mark.req("L-31")
+def test_the_pane_menu_shows_each_items_key_ui(inst, win, ui):
+    """Each item shows its key, Copy, Paste and Clear included (Ghostty's performable bindings,
+    which Ghostty's menus leave without a key)."""
+    from test_umi_panes_ui import _frame, _right_click
+    a = win["pane"]
+    split(inst, "right", a)
+    inst.cli("pane", "focus", a)
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+    time.sleep(0.5)
+    window = ui.attr(ui.app, "AXFocusedWindow")
+    pane = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Left pane", root=window), 5, message="the left pane")
+    _right_click(_frame(ui, pane))
+    menus = wait_until(lambda: ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the pane's menu")
+    keys = {ui.label(e): ((ui.attr(e, "AXMenuItemCmdChar") or "").upper(), ui.attr(e, "AXMenuItemCmdModifiers"))
+            for m in menus for e, _ in ui.walk(m) if ui.role(e) == "AXMenuItem" and ui.label(e)}
+    ui.key(ui.ESCAPE)
+    wait_until(lambda: not ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="the menu closed")
+    # AXMenuItemCmdModifiers: 0 is ⌘ alone, 1 ⇧⌘.
+    expected = {"Paste": ("V", 0), "Clear": ("K", 0), "Split Pane Right": ("D", 0), "Split Pane Down": ("D", 1),
+                "Close Pane": ("W", 0)}
+    if "Copy" in keys:
+        expected["Copy"] = ("C", 0)
+    for title, key in expected.items():
+        assert keys.get(title) == key, f"{title} shows {keys.get(title)}, not {key}"
+
+
 def _window_of(ui, element):
     while element is not None and ui.role(element) != "AXWindow":
         element = ui.attr(element, "AXParent")
