@@ -43,7 +43,7 @@ enum UmiCommentsScript {
       padding-left: 6px; white-space: pre-wrap; word-wrap: break-word; }
     .umi-note { color: var(--umi-fg3); font-size: 11.5px; margin-top: 4px; }
     .umi-reply { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--umi-line); }
-    .umi-card textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 7px; min-height: 52px; resize: vertical;
+    .umi-card textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 7px; min-height: 52px; max-height: 240px; resize: none; overflow-y: auto;
       font: inherit; color: var(--umi-fg); background: var(--umi-input); border: 1px solid var(--umi-line-strong);
       border-radius: 6px; padding: 6px 7px; outline: none; }
     .umi-card textarea:focus { border-color: var(--umi-accent); }
@@ -253,7 +253,15 @@ enum UmiCommentsScript {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(t.value); }
           else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
         });
-        t.addEventListener('input', () => { if (small) { t.classList.toggle('umi-small', !t.value); layout(); } });
+        // The box grows with its text up to the CSS max-height, then scrolls. An empty small box
+        // (the reply box) keeps its one-line height from .umi-small.
+        const fit = () => {
+          if (small && !t.value) { t.style.height = ''; return; }
+          t.style.height = 'auto';
+          t.style.height = (t.scrollHeight + t.offsetHeight - t.clientHeight) + 'px';
+        };
+        t.addEventListener('input', () => { if (small) t.classList.toggle('umi-small', !t.value); fit(); layout(); });
+        if (t.value) setTimeout(() => { fit(); layout(); }, 0);
         return t;
       }
       function comment(c, thread, isRoot) {
