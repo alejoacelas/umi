@@ -115,6 +115,13 @@ pane showed (file path, agent session and title, cwd, your attributes at the tim
 groups them by file, session or `project=`. It measures keyboard focus, not where you looked:
 reading a pane you aren't typing in doesn't count.
 
+**Activity log.** Beyond focus, the app keeps every change it makes or sees, with its cause: a pane
+created, moved (from which tab and place, to which), hidden, shown, closed; an attribute set (by
+you, a hook or a script); an agent's status change. Each entry says who caused it (a key, the
+palette, a script, a hook, Umi itself). `umi log --since … --json` returns it and `umi events`
+streams it. Scripts and agents use it to undo, to explain ("why did this pane move?"), and to
+learn habits; "send back" reads a pane's last move from it.
+
 ### 3.2 Selection: queries and named lists
 
 A query picks panes by attribute and orders them:
@@ -217,6 +224,32 @@ tab's color tint, the agent icon and its quiet color, sidebar line 2, the stack 
 badge, the fade on tab switch. Candidates: a dot on a tab row, a count chip, dimming, a pane border,
 a pill on a bottom shelf, a glow on resurfacing. `style.<query>` picks among these only. The
 prototypes page renders each with how loud it is.
+
+### 3.8 Arranging panes
+
+New pieces for moving attention and panes around (prototypes in `design/prototypes/`):
+
+- **Drawer.** A place that floats over the current tab without changing its layout, shown and put
+  away by a key. Holds the manager pane (`key.ctrl+cmd+m = drawer toggle 'role=manager'`), a pane
+  that resurfaces, or a pane you want for a moment. A pane can be docked from the drawer into the
+  tab's split, or hidden again. Being explored in `drawer.html`.
+- **Send back.** A pane moved to another tab can return to the tab and place it came from, read
+  from the activity log.
+- **Bucket tabs.** A tab you don't watch (such as `Delegated`, handled by the manager) can be
+  collapsed at the bottom of the sidebar.
+- **Moving panes from the keyboard with a preview.** A key lifts the focused pane; arrows move it
+  over the sidebar's tabs while a preview shows where it would land in each (and which pane there
+  would be hidden); Enter commits, Esc puts everything back. Targets include a new tab, bucket
+  tabs and the tab it came from. Being explored in `keyboard-move.html`. Today ⌃⌘←/→ moves a
+  pane to the previous or next tab at once, with no preview.
+- **Split a tab by project.** A palette command groups a tab's panes by git repository and gives
+  each group its own tab.
+- **More panes than places.** A tab holds more panes than it shows. A switcher within the tab
+  (most recent first) brings one in; the visible pane used least recently is hidden to make room,
+  unless pinned in place. The limit of visible panes is per tab, three by default. The same rule
+  decides where a resurfacing pane goes.
+
+Selecting several panes at once is left out for now, to keep visual actions few.
 
 ## 4. Big design decisions
 
