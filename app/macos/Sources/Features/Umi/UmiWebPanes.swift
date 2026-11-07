@@ -505,13 +505,16 @@ private struct UmiWebPageView: NSViewRepresentable {
 
 /// What passes between Umi and a page from a listed origin that knows it can be hosted (the agent
 /// server's file page, `/o?p=PATH`). Umi marks the page as hosted before its own scripts run
-/// (`<html data-umi="1">`), so the page hides its own header row; the page posts its state to the
-/// `umi` message handler on load and on every change, and Umi's header shows that state and calls
+/// (`window.umiHosted` and `<html data-umi="1">`), so the page hides its own header row; the page
+/// posts its state to the `umi` message handler on load and on every change, and Umi's header
+/// shows that state and calls
 /// `window.umiPage.setMode('preview' | 'source')` to switch. Umi never navigates on what a page
 /// says; it only opens the GitHub address in the browser when the user asks.
 enum UmiHostedPage {
     static let handlerName = "umi"
-    static let marker = "document.documentElement.dataset.umi = '1';"
+    /// Run before the page's own scripts. The document element may not exist yet at that moment,
+    /// so the page also reads `window.umiHosted` and marks itself.
+    static let marker = "window.umiHosted = true; if (document.documentElement) document.documentElement.dataset.umi = '1';"
 
     enum Mode: String { case preview, source }
 

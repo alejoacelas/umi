@@ -36,7 +36,7 @@ PAGES = {
     # and GitHub link, and switches when Umi calls window.umiPage.setMode. Its title reports what
     # it saw: whether Umi marked it as hosted, and its mode.
     "/hosted": "<title>Hosted</title><script>"
-               "const hosted = document.documentElement.dataset.umi === '1';"
+               "const hosted = window.umiHosted === true;"
                "let mode = 'preview';"
                "function tell() {"
                "  document.title = 'Hosted ' + mode + (hosted ? ' in umi' : '');"

@@ -10,6 +10,9 @@ import OSLog
 /// cell padding in the secondary text color with row lines only, a 3 px rule and checkboxes
 /// filled with the accent. Colors are Warp's default Dark theme (Light on a light background):
 /// `surface_3` is the foreground at 15% over the background, secondary text 60%, main text 90%.
+/// The agent server's file page (`/o?p=PATH`, `desk-pipeline/open.py` in the private clerk
+/// repository) copies `css()` and the pane header's look so it reads as a Umi pane in a browser;
+/// change it there too.
 enum UmiMarkdownStyle {
     /// Roboto, embedded in the page (the preview loads nothing from outside): its Latin and
     /// Latin Extended subsets, upright and italic, every weight (a variable font).

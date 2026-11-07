@@ -798,7 +798,7 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   pane counts as quiet for updates (I-4): the pages it is for keep unsaved drafts in their local
   storage, which survives the relaunch.
   Hosted pages (2026-11-07): Umi marks every page from a listed origin as hosted before its scripts
-  run (`<html data-umi="1">`) and gives it a message handler, `umi`. A page that posts
+  run (`window.umiHosted = true` and `<html data-umi="1">`) and gives it a message handler, `umi`. A page that posts
   `{path, mode: "preview"|"source", hasModes, github: URL|null, dirty}` (on load and on every
   change), as the agent server's file page does, hides its own header row, and the pane's header
   becomes the file pane's (E-24): a globe, then "folder / name" from `path` with the unsaved dot
