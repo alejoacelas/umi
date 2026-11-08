@@ -236,6 +236,8 @@ def test_save_captures_every_window_merges_rows_and_leaves_out_file_panes(clean,
     a, b, c, d, e, f, g = folders(tmp_path, "a", "b", "c", "d", "e", "f", "g")
     first = inst.json("window", "new", "--cwd", a)
     wait_prompt(inst, first["pane"])
+    # Four places on show: the tab's limit raised from three (H-1), so none is hidden.
+    inst.cli("tab", "set", "--tab", first["tab"], "visible_limit=4")
     pc = inst.cli("split", "right", "--pane", first["pane"], "--cwd", c).stdout.strip()
     pd = inst.cli("split", "down", "--pane", pc, "--cwd", d).stdout.strip()
     pb = inst.cli("split", "right", "--pane", first["pane"], "--cwd", b).stdout.strip()

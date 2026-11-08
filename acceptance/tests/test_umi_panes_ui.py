@@ -99,6 +99,12 @@ def new_tab(inst, win, *extra):
     return pane, inst.json("pane", "info", pane)["tab"]
 
 
+def room_for(inst, tab, n):
+    """Let a tab show n panes (its `visible_limit`; three by default, H-1), for checks of how panes
+    share a row of more than three."""
+    inst.cli("tab", "set", "--tab", tab, f"visible_limit={n}")
+
+
 def ready(inst, *panes):
     """Wait for the panes' shells to show a prompt (until then, closing one asks first)."""
     for pane in panes:
@@ -110,6 +116,7 @@ def ready(inst, *panes):
 
 @pytest.mark.req("L-19", "L-1")
 def test_splits_along_a_row_share_it_equally(inst, win):
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
@@ -155,6 +162,7 @@ def test_ratio_sets_the_new_panes_share_of_its_row(inst, win):
 
 @pytest.mark.req("L-19", "M-1")
 def test_moves_and_drops_share_rows_equally(inst, win):
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "down", b)
@@ -188,6 +196,7 @@ def test_splits_in_a_background_tab_share_equally_too(inst, win):
 def test_the_split_menu_items_share_equally(inst, win, ui):
     """⌘D / ⇧⌘D are the menu's Split Right / Split Down, on the focused pane (needs the app in
     front, so it's a UI test)."""
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     inst.cli("pane", "focus", b)
@@ -204,6 +213,7 @@ def test_the_split_menu_items_share_equally(inst, win, ui):
 
 @pytest.mark.req("L-19")
 def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row(inst, win):
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
@@ -228,6 +238,7 @@ def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_i
 def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
     """Alejo: "only the panes that have not been manually resized shrink/grow in response to
     other pane resizing." """
+    room_for(inst, win["tab"], 6)
     # The numbers keep every pane above Warp's 190-point minimum (L-19) in the suite's window.
     a = win["pane"]
     b = split(inst, "right", a)
@@ -265,6 +276,7 @@ def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
 
 @pytest.mark.req("L-19")
 def test_a_dragged_middle_divider_shares_both_sides(inst, win):
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
