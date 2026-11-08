@@ -169,9 +169,11 @@ extension Ghostty {
             trackingAreas.forEach { removeTrackingArea($0) }
 
             // Add our tracking area for mouse events
+            // Umi: and mouse moves, so a chip that appeared under a resting pointer (no "entered")
+            // still holds the window still at the pointer's first move.
             addTrackingArea(NSTrackingArea(
                 rect: bounds,
-                options: [.mouseEnteredAndExited, .activeInActiveApp],
+                options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp],
                 owner: self,
                 userInfo: nil
             ))
@@ -184,6 +186,11 @@ extension Ghostty {
         override func mouseEntered(with event: NSEvent) {
             umiHoldWindowStill(true)
             onHoverChanged?(true)
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            umiHoldWindowStill(true)
+            super.mouseMoved(with: event)
         }
 
         override func mouseExited(with event: NSEvent) {
