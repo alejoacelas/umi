@@ -12,11 +12,12 @@ extension UmiTopology {
 
     /// Every open pane in `ls` order: windows by index, tabs in sidebar order, panes on show in layout
     /// order, then hidden ones.
+    /// The window's drawer panes come after its tabs' panes, placed in the tab the drawer is over.
     static var placedPanes: [Placed] {
         windows.flatMap { window in
             window.tabs.flatMap { tab in
                 (panes(of: tab, in: window) + window.hiddenPanes(of: tab)).map { Placed(pane: $0, tab: tab, window: window) }
-            }
+            } + window.drawer.panes.map { Placed(pane: $0, tab: window.selectedTab, window: window) }
         }
     }
 

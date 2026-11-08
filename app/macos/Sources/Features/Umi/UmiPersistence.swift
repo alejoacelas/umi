@@ -96,6 +96,8 @@ final class UmiPersistence {
             }
         }
         if window === UmiTopology.currentWindow { json["current"] = true }
+        // The drawer's panes (it comes back closed).
+        if let drawer = UmiDrawer.json(of: window, encode: { self.encode(node: .leaf(view: $0)) }) { json["drawer"] = drawer }
         return json
     }
 
@@ -242,6 +244,13 @@ final class UmiPersistence {
                 group.color = (json["color"] as? String).flatMap(UmiTopology.color(named:)) ?? .none
                 group.collapsed = json["collapsed"] as? Bool ?? false
                 return group
+            }
+            if let drawerJSON = windowJSON["drawer"] as? [String: Any] {
+                let panes = (drawerJSON["panes"] as? [[String: Any]] ?? []).compactMap { json -> Ghostty.SurfaceView? in
+                    if let node = decode(node: json, app: app), case .leaf(let view) = node { return view }
+                    return nil
+                }
+                UmiDrawer.restore(panes, json: drawerJSON, in: controller)
             }
             if windowJSON["current"] as? Bool == true { current = controller }
             restored += 1

@@ -180,6 +180,12 @@ extension TerminalView {
                         UmiPaneTabDropTargets(controller: controller, draggingPane: draggingPane ?? draggingChip)
                     }
                 }
+                .overlay {
+                    // Umi: the window's drawer over its panes, or the line of a drawer pane waiting.
+                    if let controller = viewModel as? TerminalController {
+                        UmiDrawerOverlay(controller: controller, drawer: controller.drawer)
+                    }
+                }
                 .environmentObject(ghostty)
                 .ghosttyLastFocusedSurface(lastFocusedSurface)
                 .focused($focused)

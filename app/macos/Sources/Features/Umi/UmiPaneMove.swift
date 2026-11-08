@@ -35,6 +35,12 @@ final class UmiPaneMove {
     /// `debug.key` with `hold`: the next steps count as made with ⌃⌘ held, until `debug.release`.
     static var debugHold = false
     private static var monitor: Any?
+    private static var observers: [NSObjectProtocol] = []
+    /// Above zero while the move itself changes the window (previews, putting it back, landing), so
+    /// tree changes it makes aren't taken for the pane closing.
+    private static var busy = 0
+    /// The tab and focus histories are paused for this move (UmiTabHistory.paused).
+    private var pausedHistories = false
 
     weak var window: TerminalController?
     let pane: Ghostty.SurfaceView
@@ -139,8 +145,22 @@ final class UmiPaneMove {
         return itemIDs.contains { UmiShortcuts.item(id: $0)?.shortcut == pressed }
     }
 
-    /// Letting go of ⌃⌘ lands the move; so does a click.
+    /// Letting go of ⌃⌘ lands the move; so does a click. So does Umi going to the background or
+    /// another window becoming key (⌃⌘ could be let go where Umi doesn't see it). The pane closing
+    /// mid-move cancels it (`treeDidChange`).
     private static func startMonitoring() {
+        if observers.isEmpty {
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { current?.land() }
+            })
+            observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { note in
+                MainActor.assumeIsolated {
+                    guard let move = current, let window = note.object as? NSWindow, window === move.window?.window else { return }
+                    move.land()
+                }
+            })
+        }
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .leftMouseDown, .rightMouseDown]) { event in
             MainActor.assumeIsolated {
@@ -171,6 +191,10 @@ final class UmiPaneMove {
 
     private func begin() {
         guard let window else { return }
+        // The preview steps through tabs the pane only passes over: only the landing is recorded.
+        UmiTabHistory.paused += 1
+        UmiFocusHistory.paused += 1
+        pausedHistories = true
         if !sidebarWasVisible { UmiEvents.shared.muted { window.sidebarVisible = true } }
         publish()
     }
@@ -228,6 +252,8 @@ final class UmiPaneMove {
     /// Show the target as it would be with the pane landed.
     private func preview() {
         guard let window else { return }
+        UmiPaneMove.busy += 1
+        defer { UmiPaneMove.busy -= 1 }
         restore()
         openGroup()
         if let destination = destination() {
@@ -247,9 +273,16 @@ final class UmiPaneMove {
         publish()
     }
 
-    /// Put the window back as it was when the move began (the pane focused in its tab).
-    private func restore() {
+    /// Put the window back as it was when the move began (the pane focused in its tab). With
+    /// `dropping`, the pane closed meanwhile: everything else goes back, without it.
+    private func restore(dropping: Bool = false) {
         guard let window else { return }
+        UmiPaneMove.busy += 1
+        defer { UmiPaneMove.busy -= 1 }
+        if dropping {
+            restoreWithout(window)
+            return
+        }
         UmiEvents.shared.muted {
             UmiHidden.quietly {
                 UmiHidden.withoutMakingRoom {
@@ -291,11 +324,66 @@ final class UmiPaneMove {
         }
     }
 
+    /// The window as it was without the pane, which closed during the move.
+    private func restoreWithout(_ window: TerminalController) {
+        UmiEvents.shared.muted {
+            UmiHidden.quietly {
+                UmiHidden.withoutMakingRoom {
+                    let known = Set(start.map { ObjectIdentifier($0.tab) })
+                    for tab in window.tabs where !known.contains(ObjectIdentifier(tab)) {
+                        window.detachTab(tab, focusNeighbor: false, keepWindow: true)
+                    }
+                    var kept: [UmiTab] = []
+                    for state in start {
+                        var tree = state.tree
+                        if let node = tree.root?.node(view: pane) { tree = tree.removing(node) }
+                        var hidden = state.hidden.filter { $0 !== pane }
+                        if tree.isEmpty, let first = hidden.first {
+                            hidden.removeFirst()
+                            tree = SplitTree(view: first)
+                        }
+                        guard !tree.isEmpty else { continue }
+                        state.tab.hidden = hidden
+                        state.tab.tree = SplitTree(root: tree.root, zoomed: nil)
+                        if let focused = state.focused, focused !== pane, tree.contains(focused) { state.tab.focusedSurface = focused }
+                        kept.append(state.tab)
+                    }
+                    guard !kept.isEmpty else { return }
+                    let selected = kept.contains { $0 === startSelected } ? startSelected : kept[0]
+                    let focus = selected.effectiveFocusedSurface
+                    window.restoreTabs(kept, selected: selected, focusedPane: focus)
+                    for tab in kept { window.setOccluded(tab.hidden, occluded: true) }
+                    window.setOccluded(selected.panes, occluded: false)
+                    if let focus, window.window?.isKeyWindow ?? false { Ghostty.moveFocus(to: focus) }
+                }
+            }
+        }
+    }
+
+    /// A tab's tree changed: if the moving pane is in no tab any more (it closed), the move is over
+    /// and everything else goes back as it was.
+    static func treeDidChange() {
+        guard let move = current, busy == 0 else { return }
+        DispatchQueue.main.async {
+            guard UmiPaneMove.current === move, busy == 0, UmiTopology.locate(move.pane) == nil else { return }
+            move.abandon()
+        }
+    }
+
+    /// The pane closed mid-move: put the window back without it, then end the move.
+    func abandon() {
+        guard UmiPaneMove.current === self else { return }
+        restore(dropping: true)
+        finish()
+    }
+
     // MARK: Ending
 
     /// Land the pane where it is over.
     func land() {
         guard UmiPaneMove.current === self else { return }
+        UmiPaneMove.busy += 1
+        defer { UmiPaneMove.busy -= 1 }
         let destination = self.destination()
         restore()
         let landedGroup = openedGroup
@@ -303,7 +391,7 @@ final class UmiPaneMove {
             // Landing in an opened group keeps it open.
             openedGroup = nil
         }
-        finish()
+        finish(landing: true)
         guard let destination, UmiSnapshot.isAlive(pane) else { return }
         UmiCause.during(cause) {
             if (try? UmiLayout.move(pane, to: destination, focus: true)) == nil { NSSound.beep() }
@@ -317,9 +405,21 @@ final class UmiPaneMove {
         finish()
     }
 
-    /// The move is over: the sidebar and any group opened for it go back.
-    fileprivate func finish() {
+    /// The move is over: the sidebar and any group opened for it go back, and the histories record
+    /// again (with `landing`, where the pane landed, after the landing's own move).
+    fileprivate func finish(landing: Bool = false) {
         if UmiPaneMove.current === self { UmiPaneMove.current = nil }
+        if pausedHistories {
+            pausedHistories = false
+            let pane = self.pane
+            DispatchQueue.main.async {
+                UmiTabHistory.paused -= 1
+                UmiFocusHistory.paused -= 1
+                guard landing, let location = UmiTopology.locate(pane) else { return }
+                UmiFocusHistory.focused(pane)
+                if UmiTopology.currentWindow === location.window { UmiTabHistory.visited(location.tab) }
+            }
+        }
         if let window {
             if let group = openedGroup { UmiEvents.shared.muted { UmiTabGroups.setCollapsed(group, true, in: window) } }
             if !sidebarWasVisible { UmiEvents.shared.muted { window.sidebarVisible = false } }
@@ -487,5 +587,69 @@ struct UmiMoveNewTabRow: View {
         .padding(8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("New tab")
+    }
+}
+
+// MARK: - The moving pane in the window
+
+/// The moving pane's marker during a keyboard move (prototypes/move-literal.html, option A): a cyan
+/// inset outline and a "moving here" tag at its bottom left. Never takes clicks.
+struct UmiPaneMoveMarker: View {
+    let pane: Ghostty.SurfaceView
+    @ObservedObject private var display = UmiPaneMoveDisplay.shared
+
+    static let cyan = UmiMoveRowPanes.moving
+    static let cyanNS = NSColor(red: 0x3a / 255.0, green: 0xd1 / 255.0, blue: 0xe0 / 255.0, alpha: 1)
+    /// The tag's place from the pane's bottom-left corner, and its look.
+    static let tagInset = CGSize(width: 10, height: 10)
+    static let tagText = "moving here"
+    static let tagFont = NSFont.systemFont(ofSize: 10.5)
+
+    var body: some View {
+        if display.info?.pane === pane {
+            ZStack(alignment: .bottomLeading) {
+                Rectangle().strokeBorder(Self.cyan, lineWidth: 1)
+                Text(Self.tagText)
+                    .font(Font(Self.tagFont))
+                    .foregroundColor(Self.cyan)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(red: 3 / 255.0, green: 0x10 / 255.0, blue: 0x12 / 255.0)))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Self.cyan.opacity(0.5), lineWidth: 1))
+                    .padding(.leading, Self.tagInset.width)
+                    .padding(.bottom, Self.tagInset.height)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .allowsHitTesting(false)
+            .accessibilityElement()
+            .accessibilityLabel("moving here")
+        }
+    }
+
+    /// Draw the marker over the moving pane's terminal image (`screenshot`), as the view draws it.
+    static func drawForScreenshot(_ controller: TerminalController, content: NSView) {
+        guard let info = UmiPaneMoveDisplay.shared.info(for: controller) else { return }
+        let pane = info.pane
+        guard pane.window === controller.window, !pane.isHiddenOrHasHiddenAncestor,
+              controller.surfaceTree.contains(pane) else { return }
+        let frame = pane.convert(pane.bounds, to: content)
+        cyanNS.setStroke()
+        let outline = NSBezierPath(rect: frame.insetBy(dx: 0.5, dy: 0.5))
+        outline.lineWidth = 1
+        outline.stroke()
+        let attributes: [NSAttributedString.Key: Any] = [.font: tagFont, .foregroundColor: cyanNS]
+        let text = NSAttributedString(string: tagText, attributes: attributes)
+        let size = text.size()
+        let tagSize = CGSize(width: ceil(size.width) + 14, height: ceil(size.height) + 2)
+        let x = frame.minX + tagInset.width
+        let y = content.isFlipped ? frame.maxY - tagInset.height - tagSize.height : frame.minY + tagInset.height
+        let tag = NSRect(origin: CGPoint(x: x, y: y), size: tagSize)
+        let shape = NSBezierPath(roundedRect: tag.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+        NSColor(red: 3 / 255.0, green: 0x10 / 255.0, blue: 0x12 / 255.0, alpha: 1).setFill()
+        shape.fill()
+        cyanNS.withAlphaComponent(0.5).setStroke()
+        shape.lineWidth = 1
+        shape.stroke()
+        text.draw(at: CGPoint(x: tag.minX + 7, y: tag.minY + 1))
     }
 }

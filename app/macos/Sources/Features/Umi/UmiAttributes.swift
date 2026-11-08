@@ -91,12 +91,16 @@ final class UmiAttributes {
         switch key {
         case "kind": return Self.kind(of: pane)
         case "cwd": return UmiTopology.cwd(of: pane)
-        case "in_drawer": return "false"
+        case "in_drawer": return (place()?.inDrawer ?? false) ? "true" : "false"
         case "focused":
-            let isFocused = focused ?? (place().map { $0.tab.effectiveFocusedSurface === pane } ?? false)
+            let isFocused = focused ?? (place().map { location in
+                location.inDrawer
+                    ? location.window.drawer.showing === pane && UmiDrawer.hasFocus(pane, in: location.window)
+                    : location.tab.effectiveFocusedSurface === pane
+            } ?? false)
             return isFocused ? "true" : "false"
         case "hidden":
-            return (place()?.tab.isHidden(pane) ?? false) ? "true" : "false"
+            return (place().map { !$0.inDrawer && $0.tab.isHidden(pane) } ?? false) ? "true" : "false"
         case "branch":
             let cwd = UmiTopology.cwd(of: pane)
             guard !cwd.isEmpty else { return nil }

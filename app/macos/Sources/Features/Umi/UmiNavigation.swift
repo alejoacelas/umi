@@ -85,8 +85,13 @@ enum UmiTabHistory {
     private static var entries: [Weak<UmiTab>] = []
     private static let limit = 200
 
+    /// While above zero, nothing is recorded: a keyboard move's preview steps through tabs the pane
+    /// only passes over (UmiPaneMove records the landing).
+    static var paused = 0
+
     /// A tab became the one the user sees (the selected tab of the current window).
     static func visited(_ tab: UmiTab) {
+        guard paused == 0 else { return }
         entries.removeAll { $0.value == nil }
         if entries.last?.value === tab { return }
         entries.removeAll { $0.value === tab }
@@ -109,7 +114,11 @@ enum UmiFocusHistory {
     private static var entries: [Weak<Ghostty.SurfaceView>] = []
     private static let limit = 500
 
+    /// While above zero, nothing is recorded (a keyboard move's preview; see UmiTabHistory.paused).
+    static var paused = 0
+
     static func focused(_ pane: Ghostty.SurfaceView) {
+        guard paused == 0 else { return }
         entries.removeAll { $0.value == nil || $0.value === pane }
         entries.append(Weak(pane))
         if entries.count > limit { entries.removeFirst(entries.count - limit) }

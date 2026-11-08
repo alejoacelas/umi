@@ -135,7 +135,7 @@ enum UmiShortcuts {
                      guard let pane = UmiTopology.currentPane else { return }
                      do { try UmiHidden.hide(pane) } catch { NSSound.beep() }
                  },
-                 enabled: { (UmiTopology.currentWindow?.surfaceTree.root?.leaves().count ?? 0) > 1 }),
+                 enabled: { (UmiTopology.currentWindow?.surfaceTree.root?.leaves().count ?? 0) > 1 || UmiDrawer.currentIsShowing }),
             // Warp's previous and next tab in sidebar order (only the matching tabs while the
             // sidebar has a search query).
             Item(id: "tab.previous", title: "Show Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.up.square",
@@ -230,6 +230,25 @@ enum UmiShortcuts {
                  symbol: "arrow.uturn.backward.circle", menu: "Window",
                  action: { if (try? UmiGo.back()) == nil { NSSound.beep() } },
                  enabled: { UmiGo.canGoBack }),
+            // The drawer (attention-ui.md, "The drawer"): ⌃⌘M runs `drawer toggle @manager`.
+            Item(id: "drawer.manager", title: "Show or Hide Manager", key: "m", modifiers: [.command, .control],
+                 symbol: "person.crop.rectangle", menu: "Window", submenu: "Drawer",
+                 action: { UmiDrawer.toggleManager() }),
+            Item(id: "drawer.toggle", title: "Show or Hide Drawer", key: "", modifiers: [], symbol: "rectangle.bottomhalf.filled",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.toggleCurrent() },
+                 enabled: { UmiDrawer.currentHasPanes }),
+            Item(id: "drawer.move_pane", title: "Move Pane to Drawer", key: "", modifiers: [], symbol: "rectangle.bottomhalf.inset.filled",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.moveFocusedPane() },
+                 enabled: { UmiTopology.currentPane.map { UmiTopology.currentWindow?.drawer.contains($0) != true } ?? false }),
+            Item(id: "drawer.dock", title: "Dock Drawer Pane", key: "", modifiers: [], symbol: "rectangle.split.3x1",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.dockCurrent() },
+                 enabled: { UmiDrawer.currentHasPanes }),
+            Item(id: "drawer.next", title: "Next Drawer Pane", key: "", modifiers: [], symbol: "chevron.right",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.cycleCurrent(1) },
+                 enabled: { UmiDrawer.currentHasPanes }),
+            Item(id: "drawer.previous", title: "Previous Drawer Pane", key: "", modifiers: [], symbol: "chevron.left",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.cycleCurrent(-1) },
+                 enabled: { UmiDrawer.currentHasPanes }),
             // The note after an update (I-4).
             Item(id: "view.dismiss_toasts", title: "Dismiss Update Note", key: "u", modifiers: [.command, .control],
                  symbol: "xmark.circle", menu: "View", action: { UmiUpdateNote.shared.dismiss() },

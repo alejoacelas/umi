@@ -52,6 +52,8 @@ enum UmiLooking {
     }
 
     private static func pane(of controller: TerminalController) -> Ghostty.SurfaceView? {
+        // The drawer's pane while it has keyboard focus.
+        if let showing = controller.drawer.showing, UmiDrawer.hasFocus(showing, in: controller) { return showing }
         guard let pane = controller.focusedSurface, controller.surfaceTree.contains(pane) else { return nil }
         return pane
     }

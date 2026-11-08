@@ -42,6 +42,8 @@ enum UmiTopology {
     static var currentPane: Ghostty.SurfaceView? {
         guard let window = currentWindow else { return nil }
         if let focused = window.focusedSurface, window.surfaceTree.contains(focused) { return focused }
+        // The drawer's pane while it has keyboard focus.
+        if let showing = window.drawer.showing, UmiDrawer.hasFocus(showing, in: window) { return showing }
         return window.selectedTab.effectiveFocusedSurface
     }
 
@@ -55,14 +57,20 @@ enum UmiTopology {
 
     struct Location {
         let window: TerminalController
+        /// The pane's tab; for a pane in the drawer, the tab the drawer is over (the window's selected tab).
         let tab: UmiTab
         let pane: Ghostty.SurfaceView
+        /// The pane is in the window's drawer, not in `tab`.
+        var inDrawer = false
     }
 
     static func locate(_ pane: Ghostty.SurfaceView) -> Location? {
         for window in windows {
             if let tab = window.tab(containing: pane) {
                 return Location(window: window, tab: tab, pane: pane)
+            }
+            if window.drawer.contains(pane) {
+                return Location(window: window, tab: window.selectedTab, pane: pane, inDrawer: true)
             }
         }
         return nil
@@ -258,6 +266,7 @@ enum UmiTopology {
             "focused": window === currentWindow,
             "attributes": window.umiAttributes,
             "tabs": window.tabs.enumerated().map { tabJSON($0.element, index: $0.offset + 1, in: window) },
+            "drawer": UmiDrawer.lsJSON(window),
         ]
     }
 
@@ -310,8 +319,9 @@ enum UmiTopology {
             json["title"] = page.title
         }
         json["kind"] = UmiAttributes.kind(of: pane)
-        json["hidden"] = locate(pane)?.tab.isHidden(pane) ?? false
-        json["in_drawer"] = false
+        let location = locate(pane)
+        json["hidden"] = location.map { !$0.inDrawer && $0.tab.isHidden(pane) } ?? false
+        json["in_drawer"] = location?.inDrawer ?? false
         json["indicator"] = indicator(pane)
         // Every attribute: the user's and scripts', `agent.*`, and Umi's read-only ones.
         json["attributes"] = UmiAttributes.shared.all(pane, focused: focused)
@@ -348,7 +358,9 @@ enum UmiTopology {
         let tree = location.window.tree(of: location.tab)
         var zoomed = false
         if let node = tree.zoomed, case .leaf(let view) = node { zoomed = view === pane }
-        let focused = location.tab.effectiveFocusedSurface === pane
+        let focused = location.inDrawer
+            ? location.window.drawer.showing === pane && UmiDrawer.hasFocus(pane, in: location.window)
+            : location.tab.effectiveFocusedSurface === pane
         var json = paneJSON(pane, focused: focused, zoomed: zoomed)
         json["tab"] = location.tab.idString
         json["window"] = location.window.umiIDString

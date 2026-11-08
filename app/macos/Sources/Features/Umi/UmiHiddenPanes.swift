@@ -52,6 +52,9 @@ enum UmiHidden {
     /// room when the tab now shows more than its limit.
     static func treeDidChange(_ tab: UmiTab, in window: TerminalController,
                               from old: SplitTree<Ghostty.SurfaceView>, to new: SplitTree<Ghostty.SurfaceView>) {
+        // A drawer pane that is in a tree now has left its drawer.
+        UmiDrawer.treeDidChange(new)
+        UmiPaneMove.treeDidChange()
         let back = tab.hidden.filter { new.contains($0) }
         if !back.isEmpty {
             tab.hidden.removeAll { pane in back.contains { $0 === pane } }
@@ -104,6 +107,8 @@ enum UmiHidden {
     /// (design/cli.md, choice 13). A hidden pane stays hidden.
     static func hide(_ pane: Ghostty.SurfaceView) throws {
         guard let location = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
+        // A drawer pane goes back, hidden, to the tab it came from.
+        if location.inDrawer { return try UmiDrawer.hide(pane) }
         if location.tab.isHidden(pane) { return }
         let tree = location.window.tree(of: location.tab)
         guard tree.contains(pane) else { throw UmiError.notFound("the pane isn't in its tab") }
@@ -384,6 +389,11 @@ final class UmiPaneWalk {
     /// ⌘] (`offset` 1) or ⌘[ (-1).
     static func step(_ offset: Int) {
         guard let window = UmiTopology.currentWindow, let pane = UmiTopology.currentPane else { return }
+        // In the drawer, ⌘[ ⌘] go through the drawer's panes.
+        if window.drawer.showing === pane {
+            try? UmiDrawer.cycle(window, by: offset)
+            return
+        }
         let tab = window.selectedTab
         startMonitoring()
         if let walk = current, walk.window === window, walk.tab === tab, window.tree(of: tab).root == walk.expected.root,
@@ -541,11 +551,16 @@ private struct UmiStripChip: View {
     @ObservedObject private var web = UmiWebPanes.shared
     @ObservedObject private var attention = UmiAttention.shared
     @ObservedObject private var indicator = UmiIndicator.shared
+    @ObservedObject private var moveDisplay = UmiPaneMoveDisplay.shared
     @State private var dragging = false
     @State private var hovering = false
 
+    /// The chip of the pane a keyboard move carries: the prototype's cyan (move-literal.html, option A).
+    static let movingBackground = Color(red: 0x0e / 255.0, green: 0x22 / 255.0, blue: 0x24 / 255.0)
+
     var body: some View {
         let _ = attention.revision
+        let moving = moveDisplay.info?.pane === pane
         let doc = files.document(of: pane)
         let label = UmiHidden.label(of: pane)
         let state = UmiIndicator.state(of: pane)
@@ -569,11 +584,12 @@ private struct UmiStripChip: View {
                 .truncationMode(.middle)
                 .frame(width: UmiStripChip.textWidth(label))
         }
-        .foregroundColor(Color.white.opacity(focused ? 0.95 : (onShow ? 0.80 : 0.34)))
+        .foregroundColor(moving ? UmiPaneMoveMarker.cyan : Color.white.opacity(focused ? 0.95 : (onShow ? 0.80 : 0.34)))
         .padding(.horizontal, 8)
         .frame(height: 22)
         .fixedSize()
-        .background(RoundedRectangle(cornerRadius: 6).fill(focused ? UmiTheme.selectedFill : (hovering ? UmiTheme.hoverFill : .clear)))
+        .background(RoundedRectangle(cornerRadius: 6).fill(moving ? UmiStripChip.movingBackground
+            : (focused ? UmiTheme.selectedFill : (hovering ? UmiTheme.hoverFill : .clear))))
         // The chip is its pane's drag handle; a click without a drag shows or focuses the pane.
         .overlay {
             Ghostty.SurfaceDragSource(surfaceView: pane, isDragging: $dragging, isHovering: $hovering,
@@ -583,7 +599,7 @@ private struct UmiStripChip: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .modifier(UmiStripChipValue(doc: doc, place: (onShow ? (focused ? "on show, focused" : "on show") : "hidden")
-                                        + UmiStripChip.stateText(state)))
+                                        + (moving ? ", moving" : "") + UmiStripChip.stateText(state)))
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(focused ? .isSelected : [])
         .accessibilityAction { UmiStripChip.click(pane) }
