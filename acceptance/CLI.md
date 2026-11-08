@@ -12,8 +12,9 @@ events with their cause, `log` and `focus-log` ("Attributes", "Events and logs")
 queries in selectors and `ls --where`, named lists and `go`, slots, key bindings and palette commands
 from the config ("Selectors", "Queries", "Lists and `go`", "Configuration"). Step 4 brought hidden
 panes and the three-pane limit ("Hidden panes"; `hid` on `split`, `pane focus`, `pane move` and
-`edit`; the tab's `visible_limit` and `strip`) and removed stacks and the tab's `docs` field. Later
-steps bring the rest of `design/cli.md` (the drawer).
+`edit`; the tab's `visible_limit` and `strip`) and removed stacks and the tab's `docs` field. Step 6
+removed `tab back` (design/cli.md, choice 11) and gave `tab next|prev` and `tab move --up|--down`
+their keys. Later steps bring the rest of `design/cli.md` (the drawer).
 
 ## General
 
@@ -95,19 +96,18 @@ VALUE  := a word, or text in double quotes
 | `window focus\|close [WINDOW]` | |
 | `tab new [NAME] [--window W] [--pane P] [--cwd D] [--cmd C] [--name N] [--color C] [--index I] [--worktree W [--base REF]] [--no-focus]` | as `window new`; the tab opens right after the current tab, or last with `--no-focus`, or at `--index` (SPEC S-7) |
 | `tab focus\|close\|equalize [TAB]` | |
-| `tab back` | the tab visited before (again: the one before that), in any window; JSON `{"tab", "window", "index", "title"}`; fails when there is none |
-| `tab next\|prev [--window W]` | the next or previous tab in sidebar order (wraps); JSON as `tab back` |
+| `tab next\|prev [--window W]` | the next or previous tab in sidebar order, wrapping (⇧⌘] / ⇧⌘[ and ⌃Tab / ⌃⇧Tab); JSON `{"tab", "window", "index", "title"}` |
 | `tab rename [TAB] NAME` | `""` clears |
 | `tab color [TAB] COLOR` | red green yellow blue magenta cyan (Warp's six, from the theme's ANSI colors), purple pink orange teal graphite, none |
 | `tab pin\|unpin [TAB]` | |
-| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down`: one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
+| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down` (⌃⇧↑ / ⌃⇧↓): one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions. When the tab already shows its limit, `strip.make-room` hides one; JSON `{"pane", "tab", "window", "hid"?: id}` |
 | `pane focus [PANE]` | a hidden pane is brought in first (it takes the right end of the tab; `strip.make-room` hides one); JSON `{"pane", "tab", "window", "hid"?}` |
 | `pane close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window`; `close` closes every pane a query matches |
 | `pane rename [PANE] NAME` | |
 | `pane move [PANE] (--to PANE [--dir D] \| --tab T [--dir D] \| --window W [--dir D] \| --new-tab [--window W] \| --new-window) [--no-focus]` | the pane's program keeps running. A query moves every match in its order: the first goes where the options say, each next one beside the one before it (`--to`'s own pane stays put). A hidden pane moves too. Landing in a tab at its limit hides one there; JSON `{"pane", "panes", "tab", "window", "hid"?}` |
 | `pane swap [PANE] TARGET` | |
-| `pane resize [PANE] up\|down\|left\|right [AMOUNT]` | |
+| `pane resize [PANE] up\|down\|left\|right [AMOUNT]` | CLI only; no default keys (⌃⌘ and the arrows move panes, SPEC KM-1) |
 | `send [--pane P] [--enter\|-e] TEXT…` | no TEXT plus a piped stdin sends stdin |
 | `keys [--pane P] KEY…` | enter esc tab backspace up down left right ctrl+c shift+tab … |
 | `read [--pane P] [--scrollback] [--lines N]` | prints the text as the shell and programs printed it. With Umi's look (SPEC S-9 to S-12) a zsh prompt is two blank rows, the folder, and the command line; durations, lines and the folder box are drawn, not text |
@@ -353,5 +353,5 @@ Keys written by the hooks, in each pane's `attributes`:
 
 Removed (design/cli.md): every `agent …` command (an old one fails with exit 1 and says what to do),
 the `claude` and `codex` shortcuts, the Session, Report, Message, Request, Item and Startup objects,
-the `agent` pane field, `jump` (use `go --next jump` and `go --back`), `UMI_PANE_ID` (now
-`UMI_PANE`), and exit codes 2 and 3.
+the `agent` pane field, `jump` (use `go --next jump` and `go --back`), `tab back` (use `go --back`),
+`UMI_PANE_ID` (now `UMI_PANE`), and exit codes 2 and 3.

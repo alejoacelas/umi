@@ -1,7 +1,7 @@
 """Moving around Umi from the keyboard, menus, palettes and CLI (SPEC L-9 to L-18, S-7).
 
-Shortcuts work whatever has focus; ⌘⇧[ goes back through the tabs visited; ⌘⇧] walks the
-sidebar order; ⌃⌘J / ⌃⌘K go to the panes whose agent needs the user and back; ⌃⇧←/→ move tabs;
+Shortcuts work whatever has focus; ⇧⌘[ and ⇧⌘] walk the sidebar order; ⌃⌘J / ⌃⌘K go to the panes
+whose agent needs the user and back; ⌃⇧↑/↓ move tabs (test_moving_panes.py);
 ⌘P, ⇧⌘P and ⌘O open the command, pane and file palettes; ⌘, opens the config file in the editor,
 and `umi shortcuts` changes shortcuts; a close returns focus to the pane used before; tabs stay where the user put them:
 selecting one or an agent finishing its turn moves nothing, as in Warp (S-7).
@@ -76,13 +76,17 @@ def menu_item(inst, title):
 # ---- L-9, L-10: shortcuts are menu items and work whatever has focus --------------------------------
 
 NAV_SHORTCUTS = {
-    "Back to Previous Tab": ("[", ["shift", "cmd"]),
+    "Show Previous Tab": ("[", ["shift", "cmd"]),
     "Show Next Tab": ("]", ["shift", "cmd"]),
     "Cycle to Next Tab": ("\t", ["ctrl"]),
     "Cycle to Previous Tab": ("\t", ["ctrl", "shift"]),
     "Tab 1": ("1", ["cmd"]), "Tab 2": ("2", ["cmd"]), "Tab 8": ("8", ["cmd"]), "Last Tab": ("9", ["cmd"]),
-    "Move Tab Up": ("left", ["ctrl", "shift"]),
-    "Move Tab Down": ("right", ["ctrl", "shift"]),
+    "Move Tab Up": ("up", ["ctrl", "shift"]),
+    "Move Tab Down": ("down", ["ctrl", "shift"]),
+    "Move Pane Left": ("left", ["ctrl", "cmd"]),
+    "Move Pane Right": ("right", ["ctrl", "cmd"]),
+    "Move Pane to Tab Above": ("up", ["ctrl", "cmd"]),
+    "Move Pane to Tab Below": ("down", ["ctrl", "cmd"]),
     "Command Palette…": ("p", ["cmd"]),
     "Go to Pane…": ("p", ["shift", "cmd"]),
     "Open Quickly…": ("o", ["cmd"]),
@@ -140,44 +144,7 @@ def test_tab_keys_work_whatever_has_focus(inst, win, tmp_path, focus):
     assert result["handled"] or selected(inst, win["window"]) != before
 
 
-# ---- L-11: back through the tabs visited; next in sidebar order; ⌘1–9 -----------------------------
-
-@pytest.mark.req("L-11")
-def test_tab_back_follows_the_tabs_visited_across_windows(inst, win):
-    a2 = new_tab(inst, win)
-    other = inst.json("window", "new")
-    b1 = pane_info(inst, other["pane"])
-    # Visit: win's first tab, then the other window's tab, then win's second tab.
-    inst.cli("tab", "focus", win["tab"])
-    inst.cli("tab", "focus", b1["tab"])
-    inst.cli("tab", "focus", a2["tab"])
-    assert inst.tree()["current_tab"] == a2["tab"]
-    back = inst.json("tab", "back")
-    assert back["tab"] == b1["tab"] and back["window"] == other["window"]
-    assert inst.tree()["current_tab"] == b1["tab"]
-    # Pressed again: the tab before that, in the first window.
-    back = inst.json("tab", "back")
-    assert back["tab"] == win["tab"] and inst.tree()["current_tab"] == win["tab"]
-    # Visiting a tab another way ends the walk: back then returns to where the walk ended.
-    inst.cli("tab", "focus", a2["tab"])
-    assert inst.json("tab", "back")["tab"] == win["tab"]
-
-
-@pytest.mark.req("L-11")
-def test_tab_back_skips_closed_tabs_and_fails_clearly_at_the_start(fresh):
-    inst = fresh(prefix="acc-nav-")
-    win = inst.json("window", "new")
-    first = pane_info(inst, win["pane"])["tab"]
-    second = new_tab(inst, {"window": win["window"]})
-    third = new_tab(inst, {"window": win["window"]})
-    inst.cli("tab", "close", second["tab"])
-    wait_until(lambda: second["tab"] not in tab_ids(inst, win["window"]), 5, message="tab closed")
-    inst.cli("tab", "focus", third["tab"])
-    assert inst.json("tab", "back")["tab"] == first
-    proc = inst.cli("tab", "back", check=False)
-    if proc.returncode != 0:
-        assert "earlier tab" in proc.stderr
-
+# ---- L-11: previous and next in sidebar order; ⌘1–9 ------------------------------------------------
 
 @pytest.mark.req("L-11", "S-7")
 def test_next_and_prev_walk_the_sidebar_order_which_stays_put(inst, win):
@@ -307,7 +274,7 @@ def test_command_palette_offers_cli_commands_menu_actions_and_ghostty_actions(in
         described = [a["title"] for c in inst.json("help")["commands"] for a in c["actions"]]
         assert set(titles) >= set(described), "every CLI action is offered (as itself or as the menu action of that name)"
         assert len(titles) == len(set(titles)), "one entry per title"
-        assert "Toggle Sidebar" in titles and "Back to Previous Tab" in titles, "Umi's menu actions are offered"
+        assert "Toggle Sidebar" in titles and "Show Previous Tab" in titles, "Umi's menu actions are offered"
         assert any(e["kind"] == "action" and e.get("subtitle") is not None for e in entries) or len(entries) > len(cli)
         # A typed command line runs as typed.
         typed = rpc(inst, "debug.palette", window=win["window"], mode="commands", query="umi ls")["entries"]
@@ -458,8 +425,8 @@ def test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart(inst, win)
         assert inst.json("shortcuts")["shortcuts"][0] is not None
         assert {s["id"]: s for s in inst.json("shortcuts")["shortcuts"]}["tab.next"]["changed"]
         # Clearing removes it.
-        inst.cli("shortcuts", "clear", "tab.back")
-        assert menu_item(inst, "Back to Previous Tab")["key"] == ""
+        inst.cli("shortcuts", "clear", "tab.previous")
+        assert menu_item(inst, "Show Previous Tab")["key"] == ""
         # A Ghostty binding: written to Umi's own file, applied by reloading the config.
         inst.cli("shortcuts", "set", "ghostty:new_tab", "ctrl+cmd+y")
         conf = open(os.path.join(inst.dir, "keybindings.conf")).read()
@@ -478,7 +445,7 @@ def test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart(inst, win)
     finally:
         inst.cli("shortcuts", "reset")
     assert menu_item(inst, "Show Next Tab")["modifiers"] == ["shift", "cmd"]
-    assert menu_item(inst, "Back to Previous Tab")["key"] == "["
+    assert menu_item(inst, "Show Previous Tab")["key"] == "["
     wait_until(lambda: (lambda i: i and i["key"] == "t" and i["modifiers"] == ["cmd"])(menu_item(inst, "New Tab")), 5,
                message="New Tab back on ⌘T")
 
@@ -523,11 +490,11 @@ def test_selecting_a_tab_never_moves_it(inst, win):
             inst.cli("tab", "focus", target)
             assert_order(inst, window, order, f"tab focus {target}")
         assert selected(inst, window) == b
-        for command in (("tab", "next"), ("tab", "prev"), ("tab", "back"), ("tab", "back")):
+        for command in (("tab", "next"), ("tab", "prev"), ("tab", "prev"), ("tab", "next")):
             inst.json(*command)
             assert_order(inst, window, order, " ".join(command))
         for title in ("Tab 1", "Tab 3", "Last Tab", "Cycle to Next Tab", "Cycle to Previous Tab", "Show Next Tab",
-                      "Back to Previous Tab"):
+                      "Show Previous Tab"):
             rpc(inst, "debug.menu.perform", title=title)
             assert_order(inst, window, order, title)
         rpc(inst, "debug.key", window=window, keys="cmd+shift+]", focus="terminal")
@@ -679,7 +646,7 @@ def test_undo_and_redo_put_back_only_the_tabs_a_step_moved(inst, win):
 
 # ---- With real key presses (accessibility; take over the keyboard) --------------------------------
 
-KEYCODES = {"]": 30, "[": 33, ",": 43, "tab": 48, "return": 36, "esc": 53, "down": 125, "left": 123, "right": 124,
+KEYCODES = {"]": 30, "[": 33, ",": 43, "tab": 48, "return": 36, "esc": 53, "down": 125, "up": 126, "left": 123, "right": 124,
             "p": 35, "o": 31, "j": 38, "k": 40, "1": 18, "2": 19}
 
 
@@ -822,7 +789,7 @@ def test_jump_and_move_tab_keys(inst, win, ui):
         rpc(inst, "debug.attention.set", pane=waiting["id"], clear=True)
     order = tab_ids(inst, win["window"])
     index = order.index(win["tab"])
-    press(ui, "right", "ctrl", "shift")
-    assert tab_ids(inst, win["window"]).index(win["tab"]) == index + 1, "⌃⇧→ moved the tab down"
-    press(ui, "left", "ctrl", "shift")
+    press(ui, "down", "ctrl", "shift")
+    assert tab_ids(inst, win["window"]).index(win["tab"]) == index + 1, "⌃⇧↓ moved the tab down"
+    press(ui, "up", "ctrl", "shift")
     assert tab_ids(inst, win["window"]).index(win["tab"]) == index

@@ -84,10 +84,10 @@ agent in one, and focus in turn in a terminal, the editor and the sidebar's file
 press each shortcut and confirm what it does:
 - ⌘B toggles the sidebar; ⇧⌘E shows Files; ⌘O opens the quick file search; ⇧⌘M toggles the editor
   preview; ⌘P the command palette; ⇧⌘P the pane list; ⌘, Settings;
-- ⇧⌘[ goes back to the tab visited before (again: further back); ⇧⌘] and ⌃Tab the next tab in
-  sidebar order; ⌘1–9 a tab by number; ⌃⇧←/→ move the tab;
-- ⌃⌘T and ⌃⌘N move the pane to a new tab or window; ⌃⌘← and ⌃⌘→ move it into the previous or
-  next tab; ⌃⇧⌘N moves the tab to a new window; ⇧⌘T reopens what was closed;
+- ⇧⌘[ and ⌃⇧Tab the previous tab in sidebar order, ⇧⌘] and ⌃Tab the next; ⌘1–9 a tab by
+  number; ⌃⇧↑/↓ move the tab;
+- ⌃⌘T and ⌃⌘N move the pane to a new tab or window; ⌃⌘ held with the arrows moves it (KM-3);
+  ⌃⇧⌘N moves the tab to a new window; ⇧⌘T reopens what was closed;
 - ⌃⌘P pins; ⌃⌘R and ⌃⇧⌘R rename; ⌃⌘J goes to the pane whose agent needs you and ⌃⌘K back;
 - ⌘[ and ⌘] walk the tab's panes, those on show then the hidden ones (H-6).
 
@@ -134,6 +134,20 @@ had focus, the hidden one asking too; a second tab whose agent works. Compare wi
 - the strip's chips carry the same marks before their icons, the hidden chip too; each tab row's
   icon circle carries the mark of its summary pane (amber for the tab whose hidden pane asks);
 - click another pane: the brightness and the larger mark move with focus; nothing animates.
+
+**KM-3: moving a pane from the keyboard (by hand, and a screenshot).** Three tabs: one with three
+panes, one with two, one full with three and an agent that needs you; the sidebar hidden, one tab in
+a collapsed group. Compare with `design/prototypes/move-literal.html` (option A):
+- focus a pane of the first tab, hold ⌃⌘ and press → then ←: the pane changes place in its tab, the
+  sidebar slides out, every row lists its panes with their marks, the moving pane in the accent
+  colour, its own row outlined;
+- press ↓ twice (still holding): the window shows each tab with the pane landed at its right end;
+  over the full tab one pane is hidden in the preview and struck through "→ hidden" in its row; the
+  row the pane left is dimmed; the group opens while the pane is over its tab and closes after;
+- press ↓ to the end: a new tab row, with the pane alone in it; ↑ back;
+- let go of ⌃⌘: the pane lands as shown, the sidebar goes back; ⌘Z puts it back; once more, Esc
+  while holding leaves everything as it was;
+- ⌃⌘J, ⌃⌘R and the other ⌃⌘ letter shortcuts still do what they did.
 
 ## Warp's look for terminals
 

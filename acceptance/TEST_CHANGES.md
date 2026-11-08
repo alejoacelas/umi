@@ -1410,3 +1410,64 @@ which has a fourth state, `working` (before, `none` while the agent worked):
 - `test_umi_panes_ui.py::test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock`
   became `…_marks_the_row_and_counts_on_the_dock`: a working agent's row says `working` instead of
   `none`; the badge checks are unchanged.
+
+## Design step 6: moving panes and tabs (2026-11-08)
+
+⌃⌘ held with the arrows moves panes (SPEC KM-1 to KM-5); tabs move with ⌃⇧↑/↓ (L-13); ⇧⌘[ is
+Warp's previous tab and `tab back` is gone (L-11, design/cli.md choice 11); keyboard resizing of
+splits, ⌃⌘←/→ "move the pane to the previous or next tab" and L-19's hand-placed divider rules left.
+
+**Added.** `test_moving_panes.py`: ⌃⌘←/→ within the tab, landing on release with one `pane.moved`
+caused by the key and nothing from the previews; ⌃⌘ letters starting no move; ⌃⌘↓ showing the target
+tab with the pane at its right end, the sidebar out and every row's pane list (moving, source,
+target); over a full tab the pane `strip.make-room` would hide hidden in the preview and listed as
+hiding, landing as shown with one `pane.hidden`; ⌘Z undoing a landed move; Esc cancelling (layout,
+focus, sidebar, no events); the new tab as the last target and not offered to a lone pane; a
+collapsed group opening while the pane is over it; a menu step landing at once; no Ghostty keybinding
+resizing splits and the move items on ⌃⌘ arrows; ⌃⇧↑/↓ moving the tab; ⇧⌘[ and ⇧⌘] in sidebar order
+and `tab back` failing. UI (unlocked screen): real ⌃⌘ held with ↓ and ←, landing on release, Esc
+cancelling; the target row's accessibility value listing its panes. Swift:
+`UmiIndicatorTests/aLookAtAPaneShownSinceBumpsTheRevision` (step 5's review finding: a look that
+clears "shown, not seen" redraws the marks).
+
+**Removed with their features.**
+- `test_umi_nav.py::test_tab_back_follows_the_tabs_visited_across_windows` and
+  `::test_tab_back_skips_closed_tabs_and_fails_clearly_at_the_start`: `tab back` and ⇧⌘[ "back
+  through the tabs visited" are gone (L-11 rewritten; `test_moving_panes.py` checks ⇧⌘[ and that
+  `tab back` fails).
+- `test_umi_panes_ui.py::test_panes_sized_by_hand_keep_their_size_and_the_others_share`: L-19's
+  hand-placed divider rules are gone (design/spec-cleanup.md).
+- Swift `SplitTreeTests/aPaneSizedByHandKeepsItsSize`,
+  `panesNotSizedByHandShareTheStretchBetweenPlacedDividers`, `theEditorPanelIsTheRowsLastMember` and
+  `draggingTheEditorsDividerSharesAmongPanesNotSizedByHand`: the same rules, and the unused
+  trailing-panel code they covered.
+
+**Changed.**
+- `test_umi_panes_ui.py::test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row`
+  became `…_moves_only_its_two_neighbors_and_double_click_equalizes_its_row`: a drag now changes only
+  the two panes beside the divider, as in Warp (40/26.7/33.3 instead of each side shared equally); it
+  also checks that a split afterwards shares in proportion. The column's 70/30 and the double-click
+  checks are unchanged.
+- `test_umi_panes_ui.py::test_a_dragged_middle_divider_shares_both_sides` became
+  `…_leaves_the_other_panes_alone` (25/20/30/25: only the two neighbours change).
+- `test_umi_panes_ui.py::test_a_file_pane_shares_its_row_like_any_pane`: the drag goes to 40% and
+  expects 40/26.7/33.3 (the neighbours only); at 50% the middle pane would go below 190 points in the
+  suite's window and the drag would stop.
+- `test_umi_warp_panes.py::test_a_drag_stops_where_a_pane_beyond_the_divider_would_get_too_small`
+  became `…_where_the_pane_beside_the_divider_would_get_too_small`: the drag stops when the pane
+  beside the divider reaches 190 points and the far pane keeps its width (before, both shrank).
+- Swift `SplitTreeTests`: `draggingADividerSharesEachSideEqually` became
+  `draggingADividerChangesOnlyItsTwoNeighbors` and `draggingAMiddleDividerSharesBothSides` became
+  `draggingAMiddleDividerLeavesTheRestAlone`, with the neighbours-only numbers;
+  `aColumnInARowCountsAsOneAndKeepsItsInside` takes them too and no longer checks a placed flag;
+  `splitsAndClosesKeepTheDividersPlacedByHand` became `aSplitAfterADragSharesInProportion` (the same
+  split and close after a drag, checked by sizes); `aKeyboardResizeMovesOnlyTheTwoNeighbors` no longer
+  speaks of dividers placed by hand.
+- `test_umi_nav.py`: Back to Previous Tab is now Show Previous Tab (same ⇧⌘[) in
+  `NAV_SHORTCUTS`, the palette check, `test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart`
+  (clears `tab.previous`) and `test_selecting_a_tab_never_moves_it` (`tab prev`/`tab next` instead of
+  `tab back`); Move Tab Up/Down are on ⌃⇧↑/↓ and the four Move Pane items on ⌃⌘ arrows in
+  `NAV_SHORTCUTS`; `test_jump_and_move_tab_keys` presses ⌃⇧↓/↑.
+- `test_umi_sidebar_warp.py::test_move_tab_keys_keep_groups_whole_ui`: ⌃⇧↓/↑ instead of ⌃⇧→/←.
+- `test_layout.py::SHORTCUTS` (L-9): ⌃⌘←/→/↑/↓ are the Move Pane items; ⇧⌘[ is the previous tab in
+  sidebar order.
