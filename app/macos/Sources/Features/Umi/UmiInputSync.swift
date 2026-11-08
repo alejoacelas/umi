@@ -85,8 +85,8 @@ final class UmiInputSync {
     // MARK: Typing
 
     /// The other terminal panes that what's typed into `pane` goes to: every terminal pane of
-    /// every synced tab in its window, when its own tab is synced. Panes showing a file, a page
-    /// or a session's read-only view aren't terminals there.
+    /// every synced tab in its window, when its own tab is synced. Panes showing a file or a page
+    /// aren't terminals there.
     func peers(of pane: Ghostty.SurfaceView) -> [Ghostty.SurfaceView] {
         guard !states.isEmpty else { return [] }
         // Forget closed windows.
