@@ -19,8 +19,8 @@ tag's source isn't. Releases from main after this step don't have the problem.
 
 ## Step 1: take orchestration out
 
-**Status:** built on `design/step1-no-orchestration`, ready for review and the release. The UI half
-of the suite didn't run: mac-air-2's screen locked during the runs (see "Not verified").
+**Status:** built on `design/step1-no-orchestration`, review findings fixed, ready for the release.
+The UI half of the suite didn't run: mac-air-2's screen is locked (see "Not verified").
 
 **What changed**
 
@@ -53,42 +53,59 @@ of the suite didn't run: mac-air-2's screen locked during the runs (see "Not ver
 
 **Verified, and how**
 
-- Dev copy on mac-air-2 (the Debug build that `app/dist/dev.sh` makes, started the way dev.sh starts
-  it, plus the fakes' variables in its environment), driven by
-  `~/umi-test-design-step1-trial.py` there, 30 of 30 checks read back: `ls --json` (attributes, no
-  `agent` field), `umi agent ls` and `umi claude` failing with what to do, `help --json`, the menus
-  (no session or inbox items; ⌃⌘J and ⌃⌘U items), the palette (no session entries; chips files,
-  actions, sessions), `plugins`, `doctor`; a fake Claude typed in a pane writing `agent.*` (working,
-  then idle with title and summary), its sidebar row (Claude mark, line 2 = title); a second agent
-  at a permission prompt: Dock badge "1", row marked, ⌃⌘J to it and ⌃⌘K back (`debug.key`), its
-  finish unseen until its own pane is focused; `update --status` naming the pane with a draft;
-  `umi hook Stop` with "Status: done" giving `agent.done=true`; the update note dismissed by ⌃⌘U;
-  then quitting and restarting the dev copy: both agents typed again in their panes, same sessions,
-  `--model fake-trial --dangerously-skip-permissions --resume <id>` on the process, `RECALL`
-  showing the same conversation; `/exit` → `stopped`. Screenshots in
-  `~/umi-test-design-step1-shots` on mac-air-2.
-- Acceptance suite on mac-air-2, ReleaseLocal, under `lockf -k ~/umi-screen.lock`, full run at
-  `1f8bdf4af` with `UMI_SIGN_IDENTITY=-` (`~/umi-test-design-step1-final-suite.log`): 329 passed,
-  8 failed, 85 skipped. The 8 failures fail on origin/main too (below); 84 skips are the locked
-  screen, 1 a window too narrow for three panes. Every test of a file this step touched passed
-  at the head (`~/umi-test-design-step1-r2-mine.log`: 85 passed, 15
-  skipped for the locked screen). The update tests need `UMI_SIGN_IDENTITY=-` on mac-air-2 (it has
-  no signing identity; without it `release.sh`'s codesign fails silently and every update test
-  errors, on main too): with it, `test_umi_extra.py` and `test_install.py` passed 37 of 37,
-  including "an update installs itself at a quiet moment and everything comes back" with a typed
-  Claude coming back on its conversation (`~/umi-test-design-step1-r3-extra.log`).
-- Swift unit tests: 407 passed, 1 failed: `TerminalSplitDropZoneTests/centerSelectsLeft`, which
-  fails on origin/main too (`~/umi-test-design-step1-swift-base.log`).
+All runs are on mac-air-2, under `lockf -k ~/umi-screen.lock`, at `956d55395` (the app's code
+is the same at the head; the later commit only fixes a Swift test). Earlier runs (at `208e04bc0`
+and `1f8bdf4af`) are superseded by these.
+
+- Dev copy (the Debug build, started the way `app/dist/dev.sh` starts it, plus the fakes'
+  variables in its environment), driven by `~/umi-test-design-step1-trial.py`: 31 of 31 checks
+  read back (`~/umi-test-design-step1-r4-trial.log`). `ls --json` (attributes, no `agent` field),
+  `umi agent ls` and `umi claude` failing with what to do, `help --json`, the menus (no session or
+  inbox items; ⌃⌘J and ⌃⌘U items), the palette (no session entries), `plugins`, `doctor`; a fake
+  Claude typed in a pane writing `agent.*` (working, then idle with title and summary), its sidebar
+  row (Claude mark, line 2 = title); a second agent at a permission prompt: Dock badge "1", row
+  marked, ⌃⌘J to it and ⌃⌘K back (`debug.key`), its finish unseen until its own pane is focused;
+  `update --status` naming the pane with a draft; `umi hook Stop` with "Status: done" giving
+  `agent.done=true`; the update note shown, screenshotted and dismissed by ⌃⌘U; `umi comments`
+  with no arguments exiting 1; then quitting and restarting the dev copy: both agents typed again
+  in their panes, same sessions, `--model fake-trial --dangerously-skip-permissions --resume <id>`
+  on the process, `RECALL` showing the same conversation; `/exit` → `stopped`. Screenshots in
+  `~/umi-test-design-step1-shots`; `4-update-note.png` shows the note at the top right ("Umi
+  updated to 9.9.9", the notes, "⌃⌘U to dismiss").
+- Acceptance suite, ReleaseLocal, full run with `UMI_SIGN_IDENTITY=-`
+  (`~/umi-test-design-step1-r4-suite.log`): 328 passed, 9 failed, 85 skipped. The 9 failures fail
+  on origin/main too (below); 84 skips are the locked screen, 1 a window too narrow for three
+  panes. The update tests need `UMI_SIGN_IDENTITY=-` on mac-air-2 (it has no signing identity;
+  without it `release.sh`'s codesign fails silently and every update test errors, on main too).
+- Swift unit tests (`~/umi-test-design-step1-r5-swift.log`, at the head): 410 passed, 1 failed:
+  `TerminalSplitDropZoneTests/centerSelectsLeft`, which fails on origin/main too
+  (`~/umi-test-design-step1-swift-base.log`). `UmiJumpTests` (new) passed.
 
 **Not verified**
 
 - The `ui` tests (84 of them: real keys, menus and the accessibility tree) were skipped: mac-air-2's
-  screen locked early in the first run and stayed locked. They need someone to unlock it.
-- Failing on this branch and on origin/main alike (run on both, same Mac, same locked screen;
-  `~/umi-test-design-step1-r2-others.log` and `-r2-base.log`): `test_builds_from_a_path_with_spaces`
-  (the copied CLI folder lacks `../../dist/signing.sh`), `test_shift_cmd_f_leaves_a_terminal_search_open`,
-  `test_markdown_opens_in_one_docs_tab_most_recent_first`, four synchronized-input and pane-menu
+  screen is locked. They need someone to unlock it.
+- The update note in the live window. `umi screenshot` draws the terminals' Metal images over the
+  window's cached image, so it now draws the note again on top from the same SwiftUI view, as it
+  does for the palette. The screenshot shows the view's look, not that the window itself shows it
+  above the panes; that needs the screen unlocked.
+- Failing on this branch and on origin/main alike (`~/umi-test-design-step1-r2-others.log` and
+  `-r2-base.log`): `test_builds_from_a_path_with_spaces` (the copied CLI folder lacks
+  `../../dist/signing.sh`), `test_shift_cmd_f_leaves_a_terminal_search_open`,
+  `test_markdown_opens_in_one_docs_tab_most_recent_first`, five synchronized-input and pane-menu
   tests in `test_umi_warp_panes.py`, and `test_the_zoom_and_font_size_are_kept_across_restarts`.
+  `test_option_command_i_in_a_one_tab_window_leaves_tabs_opened_later_out` is flaky on both: run
+  three times each, it passed once of three on the branch and once of three on origin/main
+  (`~/umi-test-design-step1-r5-sync-*.log`).
+
+**After review**
+
+- Fixed: README's uninstall runs `umi plugins remove`; ⌃⌘J drops a failed pane once looked at
+  (choice 14); pruning agents keeps those of closed panes ⇧⌘T can still reopen; `codex -m o3 exec
+  …` is a one-off (choice 5); `umi comments` with no arguments exits 1 (design/cli.md has no exit
+  code 2); the AG-5 verdict and comments that still said "sessions" are gone; `umi screenshot`
+  shows the update note.
+- Logged instead of changed: keeping ⌃⌘U for the update note (choice 13).
 
 **Choices for Alejo to check**
 
