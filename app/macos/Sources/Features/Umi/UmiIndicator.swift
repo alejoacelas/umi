@@ -207,6 +207,22 @@ final class UmiIndicator: ObservableObject {
         return (focused, shown.count > 1)
     }
 
+    /// Draw a pane's lift and mark into the current graphics context, as `UmiPaneIndicatorOverlay`
+    /// draws them on screen (for `screenshot`, where terminals are drawn from their own images).
+    func draw(over frame: NSRect, of pane: Ghostty.SurfaceView, flipped: Bool) {
+        let place = Self.placement(of: pane)
+        if place.focused && place.split && focusLift > 0 {
+            NSColor.white.withAlphaComponent(focusLift).setFill()
+            frame.fill(using: .sourceOver)
+        }
+        guard let look = look(Self.state(of: pane), focused: place.focused, split: place.split) else { return }
+        let inset = UmiPaneIndicatorOverlay.inset
+        let cx = frame.maxX - inset.width
+        let cy = flipped ? frame.maxY - inset.height : frame.minY + inset.height
+        look.color.withAlphaComponent(look.opacity).setFill()
+        NSBezierPath(ovalIn: NSRect(x: cx - look.size / 2, y: cy - look.size / 2, width: look.size, height: look.size)).fill()
+    }
+
     /// One pane's mark as drawn on the pane (`debug.ui.indicator`).
     func json(_ pane: Ghostty.SurfaceView) -> [String: Any] {
         let state = Self.state(of: pane)

@@ -264,6 +264,12 @@ enum UmiScreenshot {
             paneImage.draw(in: frame)
         }
         for (webImage, frame) in webImages { webImage.draw(in: frame) }
+        // The pane indicator and the focused pane's lift sit above terminals and pages: draw them
+        // again over those images (a file pane's are in the capture already).
+        for pane in controller.surfaceTree.root?.leaves() ?? [] where pane.window === window && !pane.isHiddenOrHasHiddenAncestor
+            && !UmiFilePanes.shared.isFilePane(pane.id) {
+            UmiIndicator.shared.draw(over: pane.convert(pane.bounds, to: content), of: pane, flipped: content.isFlipped)
+        }
         // Overlays drawn above the terminals (the palettes) go on top again.
         if let ghostty = UmiLayout.ghostty,
            let note = UmiUpdateNote.shared.capturedImage(in: content, background: ghostty.config.backgroundColor) {
