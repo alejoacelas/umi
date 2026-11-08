@@ -1343,3 +1343,20 @@ commit changes only this log) on mac-air-2 under the screen lock (`~/umi-final-s
 window too narrow for three panes). Swift unit tests: 431 passed, 0 failed
 (`~/umi-final-step5-swift.log`). The first run with the UI tests failed 7 tests; the causes and
 fixes are in the steps' "After the UI tests ran" parts.
+
+### 0.12.0: steps 6–7
+
+Released from main after merging `design/step7-drawer` (`614896390`, which holds step 6 and
+main's step 4–5 fixes). Verified before release: the whole acceptance suite with the UI tests at
+`474b8debc` (later commits change only this log) on mac-air-2 under the screen lock
+(`~/umi-final-step7-final.log`): 519 passed, 1 failed (`test_builds_from_a_path_with_spaces`,
+failing on main too), 1 skipped (a window too narrow for three panes). Swift unit tests at
+`7f90eb4ae` (the same code): 432 passed, 0 failed (`~/umi-final-step7-swift.log`).
+
+### Installing on mac-air-2
+
+Its installed Umi is 0.6.3 and has downloaded the latest release, but holds the install for a
+quiet moment: two of its Umi-run Claude sessions may have unsent text. It wasn't forced
+(`umi update --now`), because 0.10.0 removes Umi-run sessions and those sessions belong to
+someone working there. **For Alejo:** let those sessions end or send their text, or run
+`umi update --now` there yourself.
