@@ -852,17 +852,23 @@ extension Ghostty {
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result { focusDidChange(true) }
-            // Umi: a file pane's keyboard focus is its editor.
+            // Umi: a file pane's keyboard focus is its editor, and a web pane's its page; handed on
+            // just after, unless another pane was focused meanwhile (two files opened one after the
+            // other: the second keeps the focus).
+            let umiRequests = UmiLayout.focusRequests
+            let umiStillFocused = { [weak self] () -> Bool in
+                guard let self else { return false }
+                return UmiLayout.focusRequests == umiRequests || UmiTopology.locate(self)?.tab.focusedSurface === self
+            }
             if result, UmiFilePanes.shared.isFilePane(id) {
                 DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
+                    guard let self, umiStillFocused() else { return }
                     UmiFilePanes.shared.focusEditor(of: self)
                 }
             }
-            // Umi: a web pane's keyboard focus is its page.
             if result, UmiWebPanes.shared.isWebPane(id) {
                 DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
+                    guard let self, umiStillFocused() else { return }
                     UmiWebPanes.shared.focusPage(of: self)
                 }
             }

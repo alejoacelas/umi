@@ -14,7 +14,8 @@ import uuid
 import pytest
 
 from harness import Instance, wait_until
-from test_umi_panes_ui import _frame, _mouse_drag, new_tab, ready, rpc, split, tab_of, type_and_wait
+from test_umi_panes_ui import (_frame, _mouse_drag, _park_pointer, _terminal_frames, _test_window, new_tab, ready, rpc,
+                               split, tab_of, type_and_wait)
 
 pytestmark = pytest.mark.layout
 
@@ -379,8 +380,8 @@ def test_launch_configurations_save_hidden_panes_and_open_the_rest_hidden(target
 
 # ---- H-5, H-6, H-8 with the real mouse and keyboard (unlocked screen) ------------------------------------
 
-def strip_chips(ui):
-    strip = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Pane strip"), 5, message="the pane strip")
+def strip_chips(ui, window=None):
+    strip = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Pane strip", root=window), 5, message="the pane strip")
     return [e for e in ui.find_all(lambda e: ui.role(e) == "AXButton" and ui.label(e), root=strip)]
 
 
@@ -390,27 +391,26 @@ def test_the_strip_names_every_pane_and_a_click_brings_a_hidden_one_in_ui(inst, 
     for pane, name in ((a, "chip-a"), (b, "chip-b"), (c, "chip-c")):
         inst.cli("pane", "rename", pane, name)
     inst.cli("pane", "hide", b)
-    inst.cli("window", "focus", win["window"])
-    ui.activate()
-    chips = wait_until(lambda: (lambda cs: cs if len(cs) == 3 else None)(strip_chips(ui)), 5, message="three chips")
+    window = _test_window(ui, inst, win)
+    chips = wait_until(lambda: (lambda cs: cs if len(cs) == 3 else None)(strip_chips(ui, window)), 5, message="three chips")
     assert [ui.label(e) for e in chips] == ["chip-a", "chip-c", "chip-b"], "on show in layout order, then hidden"
     values = {ui.label(e): ui.value(e) for e in chips}
     assert values["chip-b"] == "hidden" and values["chip-a"].startswith("on show")
     # The chips sit in the title bar, above the panes.
-    pane = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane"), 5, message="a pane")
-    assert _frame(ui, chips[0])[1] + _frame(ui, chips[0])[3] <= _frame(ui, pane)[1] + 1
+    panes = wait_until(lambda: (lambda fs: fs if len(fs) == 2 else None)(_terminal_frames(ui, window)), 5, message="two panes")
+    assert _frame(ui, chips[0])[1] + _frame(ui, chips[0])[3] <= min(f[1] for f in panes) + 1
     # A click on the hidden chip brings it in, focused.
     x, y, w, h = _frame(ui, next(e for e in chips if ui.label(e) == "chip-b"))
     _click((x + w / 2, y + h / 2))
     wait_until(lambda: b in shown(inst, win["tab"]), 5, message="the hidden pane came in")
     assert inst.tree()["current_pane"] == b
     # A click on a chip on show focuses its pane.
-    chips = strip_chips(ui)
+    chips = strip_chips(ui, window)
     x, y, w, h = _frame(ui, next(e for e in chips if ui.label(e) == "chip-a"))
     _click((x + w / 2, y + h / 2))
     wait_until(lambda: inst.tree()["current_pane"] == a, 5, message="a focused")
     # Panes have no grab handle at their top any more: the strip is the only one.
-    assert not ui.find(lambda e: ui.label(e) == "Drag to move this pane")
+    assert not ui.find(lambda e: ui.label(e) == "Drag to move this pane", root=window)
 
 
 @pytest.mark.req("H-6")
@@ -421,8 +421,7 @@ def test_real_cmd_brackets_walk_and_land_on_release_ui(inst, win, ui):
     inst.cli("pane", "focus", a)
     start_shown = shown(inst, win["tab"])
     order = start_shown + hidden(inst, win["tab"])
-    inst.cli("window", "focus", win["window"])
-    ui.activate()
+    _park_pointer(ui, _test_window(ui, inst, win))
     cmd = Quartz.kCGEventFlagMaskCommand
 
     def post(code, down, flags):
@@ -471,8 +470,7 @@ def test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui(i
 
     try:
         inst.cli("shortcuts", "set", "pane.stack_next", "ctrl+cmd+]")
-        inst.cli("window", "focus", win["window"])
-        ui.activate()
+        _park_pointer(ui, _test_window(ui, inst, win))
         post(55, True, cmd)              # ⌘ down
         post(59, True, cmd | ctrl)       # ⌃ down
         for _ in range(3):
@@ -484,12 +482,19 @@ def test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui(i
         post(30, False, cmd | ctrl)
         wait_until(lambda: inst.tree()["current_pane"] == order[4], 5, message="walked onto the second hidden pane")
         assert order[3] in hidden(inst, win["tab"]), "stepping on didn't put the layout back"
-        assert shown(inst, win["tab"])[:2] == start_shown[:2]
+        # The start layout with the next one brought in: one pane (never a, where the walk began)
+        # hidden for it and the others closed up in their order, the new one at the right end.
+        now = shown(inst, win["tab"])
+        assert len(now) == 3 and now[-1] == order[4] and a in now
+        assert now[:-1] == [p for p in start_shown if p in now], (now, start_shown)
+        assert [p for p in start_shown if p not in now] == [p for p in hidden(inst, win["tab"]) if p in start_shown]
         post(59, False, cmd)
         post(55, False, 0)               # ⌘ up: lands
         time.sleep(0.5)
         assert shown(inst, win["tab"])[-1] == order[4]
     finally:
+        post(59, False, 0)               # let go of ⌃ and ⌘ whatever happened
+        post(55, False, 0)
         inst.cli("shortcuts", "reset", "pane.stack_next")
 
 
@@ -498,12 +503,11 @@ def test_a_chip_dragged_onto_a_pane_edge_moves_its_pane_there_ui(inst, win, ui):
     a, b, c = three(inst, win)
     inst.cli("pane", "rename", c, "chip-drag")
     inst.cli("pane", "hide", c)
-    inst.cli("window", "focus", win["window"])
-    ui.activate()
-    chip = next(e for e in strip_chips(ui) if ui.label(e) == "chip-drag")
+    window = _test_window(ui, inst, win)
+    chip = next(e for e in strip_chips(ui, window) if ui.label(e) == "chip-drag")
     x, y, w, h = _frame(ui, chip)
-    pane = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane"), 5, message="a pane")
-    px, py, pw, ph = _frame(ui, pane)
+    panes = wait_until(lambda: (lambda fs: fs if len(fs) == 2 else None)(_terminal_frames(ui, window)), 5, message="two panes")
+    px, py, pw, ph = panes[0]
     # The left pane's left edge: the hidden pane lands before a.
     _mouse_drag((x + w / 2, y + h / 2), (px + 12, py + ph / 2))
     wait_until(lambda: shown(inst, win["tab"])[0] == c, 5, message="dropped on a's left edge")
@@ -512,17 +516,16 @@ def test_a_chip_dragged_onto_a_pane_edge_moves_its_pane_there_ui(inst, win, ui):
 
 @pytest.mark.req("H-8", "M-4")
 def test_a_hidden_chip_dragged_out_of_the_window_gets_a_window_of_its_own_ui(inst, win, ui):
-    from test_umi_panes_ui import _screen_point_outside, _window_of
+    from test_umi_panes_ui import _make_room_outside, _point_outside_windows
     a, b, c = three(inst, win)
     inst.cli("pane", "rename", c, "chip-out")
     inst.cli("pane", "hide", c)
-    inst.cli("window", "focus", win["window"])
-    ui.activate()
-    chip = next(e for e in strip_chips(ui) if ui.label(e) == "chip-out")
+    window = _test_window(ui, inst, win)
+    _make_room_outside(ui, window)
+    chip = next(e for e in strip_chips(ui, window) if ui.label(e) == "chip-out")
     x, y, w, h = _frame(ui, chip)
-    end = _screen_point_outside(_frame(ui, _window_of(ui, chip)))
-    if end is None:
-        pytest.skip("the window covers the screen; no room to drop outside it")
+    end = _point_outside_windows(ui)
+    assert end is not None, "no room outside the app's windows to drop, even with this one made smaller"
     before = {w["id"] for w in inst.tree()["windows"]}
     _mouse_drag((x + w / 2, y + h / 2), end)
 

@@ -1360,6 +1360,12 @@ centre zone, passes again unchanged.
   Docs tab's own panes started in, so the Docs tab was the closest tab and the check failed on main
   too (steps 1 to 3 list it as failing there); the text file now gets a folder of its own, which is
   what that check means.
+- `test_hidden_panes.py::test_real_cmd_brackets_walk_and_land_on_release_ui` and
+  `::test_a_rebound_next_pane_key_walks…` move the pointer to the middle of the test's window before
+  typing (`_park_pointer`): left over the window's green button by the strip test's clicks (the
+  sidebar hidden puts the first chip beside it), it opened macOS's Move & Resize menu, which took the
+  keys. The rebound test also lets go of ⌃ and ⌘ when it ends, so a failure can't leave them held
+  for the next test.
 - `test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`:
   drags the pane's strip chip instead of Ghostty's hover handle, which is gone (H-8); same targets.
 - `test_umi_editor_warp.py::test_header_shows_the_unsaved_dot_and_chips_show_type_icons`: the chips
@@ -1410,6 +1416,55 @@ which has a fourth state, `working` (before, `none` while the agent worked):
 - `test_umi_panes_ui.py::test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock`
   became `…_marks_the_row_and_counts_on_the_dock`: a working agent's row says `working` instead of
   `none`; the badge checks are unchanged.
+
+## Steps 4 and 5: after the UI tests ran (2026-11-08)
+
+The first run with an unlocked screen showed that UI tests written while the screen was locked
+looked for the test's panes in the wrong window. The `inst` fixture's first window stays open while
+each test's `win` window is shown, and both have a sidebar, a pane strip and terminals; a lone
+pane's element is "Terminal pane", but a split's panes are "Left pane"/"Right pane". So
+`ui.find(label == "Terminal pane")` found the first window's pane whenever the test's tab had a
+split. Nothing below changes what a test checks.
+
+- New helpers in `test_umi_panes_ui.py`: `_test_window` (after `window focus`, the window whose
+  sidebar lists the test's tab or, when the sidebar is hidden, the main window with a chip for each
+  pane of its shown tab; a new window takes the last window's sidebar choice, which earlier tests
+  leave hidden), `_terminal_frames` (that window's terminals, left to right) and
+  `_make_room_outside` (makes the window 900 by 560 points near the screen's top left, through
+  accessibility), `_point_outside_windows`. `strip_chips` takes the window to search.
+- `test_hidden_panes.py::test_the_strip_names_every_pane_and_a_click_brings_a_hidden_one_in_ui`:
+  the chips, the panes they must sit above and the "no grab handle" check are looked for in the
+  test's window. The chip's bottom is compared with the top of the window's own terminals (it was
+  compared with the other window's pane, 13 points higher on screen).
+- `::test_a_chip_dragged_onto_a_pane_edge_moves_its_pane_there_ui`: the drop point is the left edge
+  of the test window's left terminal (it was the other window's pane, so the drop missed).
+- `::test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui`: it asserted that
+  after stepping on, the first two panes on show are the first two at the start. That assumed the
+  pane hidden to make room is the last one; H-1 hides the pane `strip.make-room` picks (looked at
+  longest ago), and the walk has just looked at the others in turn, so it hides the second. The test
+  now checks what H-6 says, more closely than before: three on show, the next pane at the right end,
+  the pane the walk began on still there, the others in their starting order (closed up), and the
+  one taken out is among the hidden. "Stepping on put the layout back" (the first hidden pane hidden
+  again) is checked as before.
+- `::test_a_hidden_chip_dragged_out_of_the_window_gets_a_window_of_its_own_ui` and
+  `test_umi_panes_ui.py::test_dragging_a_tab_row_out_of_the_window_makes_a_window_ui`: they skipped
+  when a new window left no room on screen to drop outside it (always, on a 1440 by 900 display).
+  They now make the window smaller first and drop at a point outside every one of the app's
+  windows (`_point_outside_windows`): a point beside the test's window alone fell inside the
+  instance's first window, where the drop counts as a drop on that window. They fail, instead of
+  skipping, if there is still no room.
+- `test_hidden_panes.py::test_real_cmd_brackets_walk_and_land_on_release_ui` and
+  `::test_a_rebound_next_pane_key_walks…` move the pointer to the middle of the test's window before
+  typing (`_park_pointer`): left over the window's green button by the strip test's clicks (the
+  sidebar hidden puts the first chip beside it), it opened macOS's Move & Resize menu, which took the
+  keys. The rebound test also lets go of ⌃ and ⌘ when it ends, so a failure can't leave them held
+  for the next test.
+- `test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`:
+  the pane area and the strip are looked for in the test's window.
+- `test_pane_indicator.py::window_element` (used by both `_ui` tests there) is `_test_window`; it
+  captured the other window, whose pane has no mark, so every pixel read the background.
+  `::test_chips_and_rows_say_the_state_to_accessibility_ui` turns the test window's sidebar on before
+  reading its row (in a full run it was hidden, so there was no row) and looks for the row there.
 
 ## Design step 6: moving panes and tabs (2026-11-08)
 
