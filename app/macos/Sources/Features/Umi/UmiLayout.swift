@@ -392,6 +392,8 @@ enum UmiLayout {
             break
         }
 
+        // Where it was, for the event (and `pane move --back`, read from the activity log).
+        let fromIndex = (source.window.tree(of: source.tab).root?.leaves().firstIndex { $0 === pane } ?? 0) + 1
         // Keep its size when it gets a window of its own (M-5).
         let size = pane.bounds.size
         var result: UmiTopology.Location?
@@ -399,8 +401,11 @@ enum UmiLayout {
             result = try moveUngrouped(pane, from: source, to: destination, focus: focus, size: size)
         }
         guard let result else { throw UmiError.failed("the move didn't happen") }
+        let toIndex = (result.window.tree(of: result.tab).root?.leaves().firstIndex { $0 === pane } ?? 0) + 1
         UmiEvents.shared.emit("pane.moved", [
             "pane": pane.umiID,
+            "from": ["tab": source.tab.idString, "window": source.window.umiIDString, "index": fromIndex],
+            "to": ["tab": result.tab.idString, "window": result.window.umiIDString, "index": toIndex],
             "from_tab": source.tab.idString, "from_window": source.window.umiIDString,
             "tab": result.tab.idString, "window": result.window.umiIDString,
         ])
@@ -602,7 +607,8 @@ struct UmiSnapshot {
         let name: String?
         let color: TerminalTabColor
         let pinned: Bool
-        let isDocs: Bool
+        /// Its attributes (`role=docs` among them for the Docs tab).
+        let attributes: [String: String]
         let tree: WeakNode?
         let zoomed: Weak<Ghostty.SurfaceView>?
         let focused: Weak<Ghostty.SurfaceView>?
@@ -635,7 +641,7 @@ struct UmiSnapshot {
                 if let node = tree.zoomed, case .leaf(let view) = node { zoomed = Weak(view) }
                 let focused = (tab === controller.selectedTab ? controller.focusedSurface : nil) ?? tab.focusedSurface
                 return TabState(tab: Weak(tab), id: tab.id, name: tab.name, color: tab.color, pinned: tab.pinned,
-                                isDocs: tab.isDocs, tree: tree.root.map(WeakNode.init), zoomed: zoomed, focused: focused.map { Weak($0) },
+                                attributes: tab.attributes, tree: tree.root.map(WeakNode.init), zoomed: zoomed, focused: focused.map { Weak($0) },
                                 stacks: tab.stacks.map { $0.members.map { Weak($0) } }, groupID: tab.groupID)
             }
             states.append(WindowState(box: UmiSnapshot.box(for: controller), tabs: tabs, selected: controller.selectedTab.id,
@@ -728,7 +734,7 @@ struct UmiSnapshot {
                 tab.name = tabState.name
                 tab.color = tabState.color
                 tab.pinned = tabState.pinned
-                tab.isDocs = tabState.isDocs
+                tab.attributes = tabState.attributes
                 tab.groupID = tabState.groupID
                 var zoomedNode: SplitTree<Ghostty.SurfaceView>.Node?
                 if let z = tabState.zoomed?.value, let node = tabPlan.root.node(view: z) { zoomedNode = node }

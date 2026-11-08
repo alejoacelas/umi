@@ -285,10 +285,33 @@ enum UmiRPC {
         case "events.subscribe":
             var paneID: String?
             if let selector = params.string("pane") {
-                paneID = try UmiTopology.resolvePane(selector, caller: caller).umiID
+                paneID = try logPane(selector, caller: caller)
             }
-            UmiEvents.shared.addSubscriber(connection, filters: params.strings("filters") ?? [], pane: paneID)
+            let filters = params.strings("filters") ?? []
+            // `--since`: the activity log first, then the live stream. Both happen on this turn of the
+            // main actor, so no event falls between them.
+            if let since = params.double("since") {
+                for event in UmiActivityLog.shared.events(since: Date(timeIntervalSince1970: since), until: nil,
+                                                          filters: filters, pane: paneID) {
+                    connection.sendRaw(event)
+                }
+            }
+            UmiEvents.shared.addSubscriber(connection, filters: filters, pane: paneID)
             return ["subscribed": true]
+
+        case "log":
+            let pane = try params.string("pane").map { try logPane($0, caller: caller) }
+            let events = UmiActivityLog.shared.events(since: params.double("since").map(Date.init(timeIntervalSince1970:)),
+                                                      until: params.double("until").map(Date.init(timeIntervalSince1970:)),
+                                                      filters: params.strings("filters") ?? [], pane: pane)
+            return ["events": events]
+
+        case "focus_log":
+            let pane = try params.string("pane").map { try logPane($0, caller: caller) }
+            let stretches = UmiFocusLog.shared.stretches(since: params.double("since").map(Date.init(timeIntervalSince1970:)),
+                                                         until: params.double("until").map(Date.init(timeIntervalSince1970:)),
+                                                         pane: pane)
+            return ["stretches": stretches]
 
         case "notify":
             let pane = try? UmiTopology.pane(params.string("pane"), caller: caller)
@@ -441,6 +464,15 @@ enum UmiRPC {
             UmiDebug.focusEditor(in: window, selectEnd: params.bool("select_end") ?? false)
             return ["ok": true]
 
+        case "debug.focus_log":
+            // The focus log's idle limit and the screen lock, for scripted checks (isolated instances only).
+            guard UmiPaths.isIsolated else { throw UmiError.badRequest("only an isolated instance takes these") }
+            if let seconds = params.double("idle_after") { UmiFocusLog.shared.idleAfter = seconds }
+            if let locked = params.bool("locked") { UmiFocusLog.shared.assumeLocked = locked }
+            UmiFocusLog.shared.update()
+            return ["idle_after": UmiFocusLog.shared.idleAfter, "locked": UmiFocusLog.shared.assumeLocked,
+                    "last_input": UmiTime.iso(UmiFocusLog.shared.lastInput)]
+
         case "debug.update.input":
             // Someone typing or clicking in the app, as the event monitor sees it.
             UmiQuiet.userActed()
@@ -462,10 +494,25 @@ enum UmiRPC {
             if UmiNavigationRPC.methods.contains(method) {
                 return try await UmiNavigationRPC.handle(method, params, caller: caller)
             }
+            if UmiAttributesRPC.methods.contains(method) {
+                return try UmiAttributesRPC.handle(method, params, caller: caller)
+            }
             if UmiLaunchConfigs.methods.contains(method) {
                 return try UmiLaunchConfigs.handle(method, params)
             }
             throw UmiError.badRequest("unknown method \(method)")
+        }
+    }
+
+    /// A pane for the logs: an open pane's selector, or an id (or id prefix) of a pane that may be
+    /// gone, since the logs keep closed panes.
+    private static func logPane(_ selector: String, caller: UmiCaller) throws -> String {
+        do {
+            return try UmiTopology.resolvePane(selector, caller: caller).umiID
+        } catch let error as UmiError {
+            let lowered = selector.lowercased()
+            guard !lowered.isEmpty, lowered.allSatisfy({ $0.isHexDigit || $0 == "-" }) else { throw error }
+            return lowered
         }
     }
 

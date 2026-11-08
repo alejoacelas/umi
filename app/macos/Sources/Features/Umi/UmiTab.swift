@@ -16,8 +16,20 @@ final class UmiTab: ObservableObject, Identifiable {
     @Published var name: String?
     @Published var color: TerminalTabColor = .none
     @Published var pinned: Bool = false
-    /// The tab Markdown files opened from outside Umi share (`UmiDocsTab`).
-    @Published var isDocs: Bool = false
+    /// The tab's attributes (`umi tab set`, UmiAttributes).
+    @Published var attributes: [String: String] = [:]
+    /// The tab Markdown files opened from outside Umi share (`UmiDocsTab`): the tab with the
+    /// attribute `role=docs` (design/cli.md, choice 10).
+    var isDocs: Bool {
+        get { attributes["role"] == "docs" }
+        set {
+            if newValue {
+                attributes["role"] = "docs"
+            } else if attributes["role"] == "docs" {
+                attributes.removeValue(forKey: "role")
+            }
+        }
+    }
     /// The tab group it belongs to in its window (`UmiTabGroups`), if any.
     @Published var groupID: UUID?
 

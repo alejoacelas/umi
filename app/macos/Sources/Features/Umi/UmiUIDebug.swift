@@ -104,6 +104,7 @@ enum UmiUIDebug {
             // Without the screen the app can't become active: count it as active (and the
             // current window as key) for checks of what looking does.
             UmiLooking.assumeActive = params.bool("on") ?? true
+            UmiFocusLog.shared.update()
             return attention()
 
         case "debug.ui.drop":

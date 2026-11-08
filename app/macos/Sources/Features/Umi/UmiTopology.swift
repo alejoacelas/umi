@@ -241,6 +241,7 @@ enum UmiTopology {
             "index": windowNumber(window),
             "selected_tab": window.selectedTab.idString,
             "focused": window === currentWindow,
+            "attributes": window.umiAttributes,
             "tabs": window.tabs.enumerated().map { tabJSON($0.element, index: $0.offset + 1, in: window) },
         ]
     }
@@ -259,6 +260,7 @@ enum UmiTopology {
             "docs": tab.isDocs,
             "focused_pane": focused?.umiID ?? "",
             "window": window.umiIDString,
+            "attributes": UmiAttributes.shared.all(tab, in: window),
         ]
         // Zoom is per tab: mark the zoomed pane.
         var zoomedPane: Ghostty.SurfaceView?
@@ -291,14 +293,30 @@ enum UmiTopology {
             json["url"] = page.url.absoluteString
             json["title"] = page.title
         }
+        var shown = true
         if let location = locate(pane) {
-            json["shown"] = location.window.tree(of: location.tab).contains(pane)
+            shown = location.window.tree(of: location.tab).contains(pane)
+            json["shown"] = shown
             if let stack = location.tab.stack(of: pane) { json["stack"] = stack.members.map(\.umiID) }
         }
-        // `agent.*` from the pane's agent hooks (design/cli.md, "Attributes"; the other
-        // attributes arrive with pane data).
-        json["attributes"] = UmiAttention.shared.agent(forPane: pane.id)?.attributes ?? [:]
+        json["kind"] = UmiAttributes.kind(of: pane)
+        json["hidden"] = !shown
+        json["in_drawer"] = false
+        json["indicator"] = indicator(pane)
+        // Every attribute: the user's and scripts', `agent.*`, and Umi's read-only ones.
+        json["attributes"] = UmiAttributes.shared.all(pane, focused: focused)
         return json
+    }
+
+    /// The pane indicator's state (attention-ui.md): from its agent's status and whether it was seen.
+    static func indicator(_ pane: Ghostty.SurfaceView) -> String {
+        guard let agent = UmiAttention.shared.agent(forPane: pane.id) else { return "none" }
+        if agent.status == .working { return "working" }
+        switch agent.mark {
+        case .needsYou: return "needs_you"
+        case .finished: return "finished"
+        case .none: return "none"
+        }
     }
 
     /// Where each pane of a tab sits in the window's terminal area (points, top-left origin),

@@ -144,6 +144,7 @@ enum UmiQuiet {
     static func userActed() {
         lastInput = now
         UmiUpdater.shared.userActed()
+        UmiFocusLog.shared.userActed()
     }
 
     // MARK: Reading the app

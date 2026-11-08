@@ -86,6 +86,7 @@ final class UmiPersistence {
             json["frame"] = [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height]
         }
         if let name = window.windowName { json["name"] = name }
+        if !window.umiAttributes.isEmpty { json["attributes"] = window.umiAttributes }
         json["sidebar_width"] = Double(window.sidebarWidth)
         json["sidebar_visible"] = window.sidebarVisible
         if !window.sidebarModel.groups.isEmpty {
@@ -107,6 +108,7 @@ final class UmiPersistence {
         ]
         if let name = tab.name { json["name"] = name }
         if tab.isDocs { json["docs"] = true }
+        if !tab.attributes.isEmpty { json["attributes"] = tab.attributes }
         if let group = tab.groupID { json["group"] = group.uuidString.lowercased() }
         if let root = tree.root { json["tree"] = encode(node: root) }
         if let focused = (tab === window.selectedTab ? window.focusedSurface : nil) ?? tab.focusedSurface {
@@ -129,6 +131,7 @@ final class UmiPersistence {
         case .leaf(let view):
             var pane: [String: Any] = ["id": view.umiID, "cwd": UmiTopology.cwd(of: view)]
             if let name = UmiState.shared.paneName(view.id) { pane["name"] = name }
+            if let attributes = UmiAttributes.shared.panes[view.id], !attributes.isEmpty { pane["attributes"] = attributes }
             // Its agent comes back after a quit, a crash or an update (UmiAgentHooks.restore).
             if let agent = UmiAttention.shared.agent(forPane: view.id)?.restartRecord { pane["agent_restart"] = agent }
             if let doc = UmiFilePanes.shared.document(of: view) {
@@ -195,7 +198,8 @@ final class UmiPersistence {
                 let tab = UmiTab(id: id, tree: SplitTree(root: root, zoomed: zoomed))
                 tab.name = tabJSON["name"] as? String
                 tab.pinned = tabJSON["pinned"] as? Bool ?? false
-                tab.isDocs = tabJSON["docs"] as? Bool ?? false
+                tab.attributes = UmiPersistence.attributes(tabJSON["attributes"])
+                if tabJSON["docs"] as? Bool == true, tab.attributes["role"] == nil { tab.isDocs = true }
                 tab.groupID = (tabJSON["group"] as? String).flatMap(UUID.init(uuidString:))
                 tab.color = (tabJSON["color"] as? String).flatMap(UmiTopology.color(named:)) ?? .none
                 if let focusedID = tabJSON["focused_pane"] as? String {
@@ -227,6 +231,7 @@ final class UmiPersistence {
                 focus: !background, registerUndo: false)
             made.append(controller)
             controller.windowName = windowJSON["name"] as? String
+            controller.umiAttributes = UmiPersistence.attributes(windowJSON["attributes"])
             if let width = windowJSON["sidebar_width"] as? Double { controller.sidebarWidth = CGFloat(width) }
             if let visible = windowJSON["sidebar_visible"] as? Bool { controller.sidebarVisible = visible }
             controller.sidebarModel.groups = (windowJSON["tab_groups"] as? [[String: Any]] ?? []).compactMap { json in
@@ -254,6 +259,16 @@ final class UmiPersistence {
         return restored
     }
 
+    /// Saved attributes: strings only, names Umi accepts.
+    static func attributes(_ any: Any?) -> [String: String] {
+        guard let dict = any as? [String: Any] else { return [:] }
+        var out: [String: String] = [:]
+        for (key, value) in dict where UmiAttributes.isValidKey(key) && !UmiAttributes.readOnly.contains(key) {
+            if let string = value as? String { out[key] = string }
+        }
+        return out
+    }
+
     private func decode(node json: [String: Any], app: ghostty_app_t) -> SplitTree<Ghostty.SurfaceView>.Node? {
         if let pane = json["pane"] as? [String: Any] {
             var config = Ghostty.SurfaceConfiguration()
@@ -264,6 +279,7 @@ final class UmiPersistence {
             let view = Ghostty.SurfaceView(app, baseConfig: config, uuid: uuid)
             UmiState.shared.setStartFolder(view.id, config.workingDirectory ?? NSHomeDirectory())
             if let name = pane["name"] as? String { UmiState.shared.setPaneName(view.id, name) }
+            UmiAttributes.shared.restore(UmiPersistence.attributes(pane["attributes"]), pane: view.id)
             // A pane that ran an agent runs it again, on its conversation.
             if let agent = pane["agent_restart"] as? [String: Any] ?? (pane["agent"] as? String).flatMap(UmiAgentHooks.restartRecord(fromSession:)) {
                 UmiAgentHooks.restore(agent, in: view)

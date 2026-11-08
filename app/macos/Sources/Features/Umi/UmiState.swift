@@ -122,6 +122,10 @@ final class UmiState: ObservableObject {
                 !open.contains($0) && !UmiReopen.shared.holds($0)
             }))
         }
+        // Attributes live and die with their pane (closed panes' are never shown; they go here).
+        if UmiAttributes.shared.panes.count > 256 {
+            UmiAttributes.shared.prune(open: Set(UmiTopology.allSurfaces.map(\.id)))
+        }
         guard paneNames.count + paneStartFolders.count > 256 else { return }
         let live = Set(UmiTopology.allSurfaces.map(\.id))
         paneNames = paneNames.filter { live.contains($0.key) }

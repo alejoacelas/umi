@@ -18,6 +18,9 @@ class TerminalController: BaseTerminalController {
     let umiID = UUID()
     var umiIDString: String { umiID.uuidString.lowercased() }
 
+    /// Umi: the window's attributes (`umi window set`, UmiAttributes).
+    var umiAttributes: [String: String] = [:]
+
     /// When the window was created, for stable window numbering.
     let createdAt = Date()
 
