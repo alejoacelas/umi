@@ -56,7 +56,18 @@ final class UmiEvents {
     /// Events that aren't changes, kept out of the activity log: the update notice's countdown ticks.
     static let unlogged: Set<String> = ["update.countdown"]
 
+    /// Nesting depth of `muted`: while above zero, nothing is emitted or logged (the previews of a
+    /// keyboard move, which reports only where it lands).
+    private var mutedDepth = 0
+
+    func muted<T>(_ body: () throws -> T) rethrows -> T {
+        mutedDepth += 1
+        defer { mutedDepth -= 1 }
+        return try body()
+    }
+
     func emit(_ name: String, _ data: [String: Any] = [:]) {
+        guard mutedDepth == 0 else { return }
         let now = Date()
         let event: [String: Any] = [
             "event": name,

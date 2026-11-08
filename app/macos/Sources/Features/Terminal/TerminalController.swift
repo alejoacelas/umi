@@ -93,6 +93,9 @@ class TerminalController: BaseTerminalController {
     /// Umi's palette over this window: commands, panes and files (L-14, L-15, L-16).
     let palette = UmiPaletteModel()
 
+    /// Umi: the window's drawer, over its panes (UmiDrawer).
+    let drawer = UmiDrawerModel()
+
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil,
@@ -174,13 +177,15 @@ class TerminalController: BaseTerminalController {
     }
 
     /// Every pane of every tab in this window, hidden ones included.
-    var allSurfaces: [Ghostty.SurfaceView] { tabs.flatMap { tree(of: $0).root?.leaves() ?? [] } + tabs.flatMap { hiddenPanes(of: $0) } }
+    var allSurfaces: [Ghostty.SurfaceView] {
+        tabs.flatMap { tree(of: $0).root?.leaves() ?? [] } + tabs.flatMap { hiddenPanes(of: $0) } + drawer.panes
+    }
 
     /// A tab's hidden panes, in strip order (UmiHidden).
     func hiddenPanes(of tab: UmiTab) -> [Ghostty.SurfaceView] { tab.hidden }
 
     override func ownsSurface(_ surface: Ghostty.SurfaceView) -> Bool {
-        tabs.contains { $0.contains(surface) } || surfaceTree.contains(surface)
+        tabs.contains { $0.contains(surface) } || surfaceTree.contains(surface) || drawer.contains(surface)
     }
 
     func tab(containing surface: Ghostty.SurfaceView) -> UmiTab? {
@@ -825,6 +830,11 @@ class TerminalController: BaseTerminalController {
     @objc private func onCloseHiddenSurface(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard !surfaceTree.contains(target) else { return }   // the base class handles visible panes
+        // Umi: a drawer pane leaves the drawer.
+        if drawer.contains(target) {
+            UmiDrawer.remove(target, from: self)
+            return
+        }
         guard let tab = tabs.first(where: { $0.contains(target) }) else { return }
         // A hidden pane (in any tab) leaves its tab.
         if tab.isHidden(target) {

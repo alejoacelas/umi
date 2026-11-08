@@ -212,79 +212,42 @@ def test_the_split_menu_items_share_equally(inst, win, ui):
 
 
 @pytest.mark.req("L-19")
-def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row(inst, win):
+def test_a_dragged_divider_moves_only_its_two_neighbors_and_double_click_equalizes_its_row(inst, win):
     room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
     d = split(inst, "down", b, "--ratio", "0.3")
-    # Dragging the divider between a and b to the middle: a gets half, b and c share the rest.
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.5)
-    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([50, 25, 25], abs=0.3)
+    # Dragging the divider between a and b to 40%: a grows into b, c keeps its third (as in Warp).
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.4)
+    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([40, 26.7, 33.3], abs=0.3)
     # b's column counts as one pane of the row: b and d keep their 70/30.
     assert shares(inst, win["tab"], [b, d], key="height") == pytest.approx([70, 30], abs=0.3)
-    # The divider between b and c (its split holds b and c, half the row) to 78% of the row:
-    # a was sized by hand and keeps its 50; b takes the rest of its stretch, c gets 22 (every
-    # pane stays above Warp's 190-point minimum).
-    rpc(inst, "debug.ui.split.divider", pane=c, action="move", ratio=(0.78 - 0.5) / 0.5)
-    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([50, 28, 22], abs=0.3)
+    # The divider between b and c (its split holds b and c, the last 60% of the row) to 78% of the
+    # row: a keeps its 40, b and c share their 60 as dropped (every pane stays above Warp's
+    # 190-point minimum).
+    rpc(inst, "debug.ui.split.divider", pane=c, action="move", ratio=(0.78 - 0.4) / 0.6)
+    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([40, 38, 22], abs=0.3)
+    # A split after the drags shares in proportion: the new pane gets a quarter.
+    e = split(inst, "right", c)
+    assert shares(inst, win["tab"], [a, b, c, e]) == pytest.approx([30, 28.5, 16.5, 25], abs=0.4)
     # Double-clicking a column divider equalizes the columns only: b/d keep their 70/30.
     rpc(inst, "debug.ui.split.divider", pane=a, action="equalize")
-    assert shares(inst, win["tab"], [a, b, c]) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
+    assert shares(inst, win["tab"], [a, b, c, e]) == pytest.approx([25, 25, 25, 25], abs=0.2)
     assert shares(inst, win["tab"], [b, d], key="height") == pytest.approx([70, 30], abs=0.3)
 
 
 @pytest.mark.req("L-19")
-def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
-    """Alejo: "only the panes that have not been manually resized shrink/grow in response to
-    other pane resizing." """
-    room_for(inst, win["tab"], 6)
-    # The numbers keep every pane above Warp's 190-point minimum (L-19) in the suite's window.
-    a = win["pane"]
-    b = split(inst, "right", a)
-    c = split(inst, "right", b)
-    d = split(inst, "right", c)
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.28)
-    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([28, 24, 24, 24], abs=0.3)
-    # The c|d divider (its split holds c and d, the last 48%) to 78%: a keeps its 28, d gets 22,
-    # b and c (never sized) share the 50 between.
-    rpc(inst, "debug.ui.split.divider", pane=d, action="move", ratio=(0.78 - 0.52) / 0.48)
-    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([28, 25, 25, 22], abs=0.3)
-    # A split keeps a's divider placed: dragging the divider next to the new pane leaves a alone.
-    # (Closing c first keeps the row at four panes.)
-    inst.cli("pane", "close", c)
-    wait_until(lambda: len(tab_of(inst, win["tab"])["panes"]) == 3, 5, message="c closed")
-    assert shares(inst, win["tab"], [a, b, d]) == pytest.approx([37.3, 33.3, 29.3], abs=0.5)
-    e = split(inst, "right", b)
-    before = shares(inst, win["tab"], [a, b, e, d])
-    assert before == pytest.approx([28, 25, 25, 22], abs=0.5)
-    # e's divider (its split holds e and d, the last 47%) to its middle: a keeps its 28, b and e
-    # share the stretch up to the divider, d gets the rest.
-    rpc(inst, "debug.ui.split.divider", pane=e, action="move", ratio=0.5)
-    after = shares(inst, win["tab"], [a, b, e, d])
-    assert after[0] == pytest.approx(before[0], abs=0.2), (before, after)
-    assert after == pytest.approx([28, 24.25, 24.25, 23.5], abs=0.5), (before, after)
-    # Double-clicking a divider evens the row and forgets the sizes set by hand.
-    rpc(inst, "debug.ui.split.divider", pane=a, action="equalize")
-    assert shares(inst, win["tab"], [a, b, e, d]) == pytest.approx([25] * 4, abs=0.2)
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.25)
-    assert shares(inst, win["tab"], [a, b, e, d]) == pytest.approx([25] * 4, abs=0.2)
-    # d's divider to 77%: a (just sized again) keeps its 25, b and e share 52, d gets 23.
-    rpc(inst, "debug.ui.split.divider", pane=d, action="move", ratio=(0.77 - 0.5) / 0.5)
-    assert shares(inst, win["tab"], [a, b, e, d]) == pytest.approx([25, 26, 26, 23], abs=0.3)
-
-
-@pytest.mark.req("L-19")
-def test_a_dragged_middle_divider_shares_both_sides(inst, win):
+def test_a_dragged_middle_divider_leaves_the_other_panes_alone(inst, win):
     room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
     d = split(inst, "right", c)
-    # The divider between b and c (its split holds b, c and d, the last 3/4 of the row) to 56%
-    # (every pane stays above Warp's 190-point minimum).
-    rpc(inst, "debug.ui.split.divider", pane=b, action="move", ratio=(0.56 - 0.25) / 0.75)
-    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([28, 28, 22, 22], abs=0.3)
+    # The divider between b and c (its split holds b, c and d, the last 3/4 of the row) to 47%:
+    # only b and c change (b stays above Warp's 190-point minimum in the suite's window).
+    rpc(inst, "debug.ui.split.divider", pane=b, action="move", ratio=(0.47 - 0.25) / 0.75)
+    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([25, 22, 28, 25], abs=0.3)
 
 
 @pytest.mark.req("L-19")
@@ -309,8 +272,8 @@ def test_a_file_pane_shares_its_row_like_any_pane(inst, win, tmp_path):
     order = [p["id"] for p in tab_of(inst, win["tab"])["panes"]]
     assert len(order) == 3 and order[0] == a and order[2] == b
     assert shares(inst, win["tab"], order) == pytest.approx([33.3, 33.3, 33.3], abs=0.2)
-    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.5)
-    assert shares(inst, win["tab"], order) == pytest.approx([50, 25, 25], abs=0.3)
+    rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.4)
+    assert shares(inst, win["tab"], order) == pytest.approx([40, 26.7, 33.3], abs=0.3)
 
 
 @pytest.mark.req("L-7", "L-19")
@@ -484,6 +447,36 @@ def test_closed_items_expire_after_60_seconds_and_their_programs_end(inst, win):
             return True
     wait_until(ended, 20, message="the closed pane's shell ended once it couldn't come back")
 
+
+
+@pytest.mark.req("L-20")
+@pytest.mark.slow
+def test_a_closed_panes_program_ends_after_60_seconds_with_the_sidebar_hidden(inst, win):
+    """With the sidebar hidden nothing else updates the window's views; the closed pane's shell still
+    ends once it can't come back (found by design step 6)."""
+    inst.cli("sidebar", "off", "--window", win["window"])
+    try:
+        b = split(inst, "right", win["pane"])
+        inst.cli("send", "--pane", b, "-e", "echo SHELL-PID-$$")
+        out = inst.cli("wait", "--pane", b, "--pattern", r"^SHELL-PID-\d+", "--timeout", "10").stdout.strip()
+        pid = int(out.split("-")[-1])
+        inst.cli("pane", "close", b)
+        time.sleep(2)
+        os.kill(pid, 0)   # still running while it can be reopened
+        deadline = time.time() + 75
+        while time.time() < deadline and any(b in i["panes"] for i in inst.json("reopen", "--list")["items"]):
+            time.sleep(1)
+
+        def ended():
+            try:
+                os.kill(pid, 0)
+                return False
+            except ProcessLookupError:
+                return True
+        wait_until(ended, 20, message="the closed pane's shell ended once it couldn't come back")
+    finally:
+        # Hiding it also makes the shared instance's new windows start without one.
+        inst.cli("sidebar", "on", "--window", win["window"], check=False)
 
 # ---- S-3: rows (folder, then the agent's title; quiet marks) ------------------------------------
 

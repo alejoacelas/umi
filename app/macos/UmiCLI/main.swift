@@ -603,6 +603,13 @@ func printTree(_ result: Any) {
                 print(row)
             }
         }
+        if let drawer = window["drawer"] as? [String: Any], let panes = drawer["panes"] as? [[String: Any]], !panes.isEmpty {
+            print("  drawer\((drawer["open"] as? Bool ?? false) ? " (open)" : "")")
+            for pane in panes {
+                let here = (pane["id"] as? String) == currentPane
+                print("      \(here ? "●" : " ") pane \(dim(shortID(pane["id"])))  \(pane["title"] as? String ?? "")")
+            }
+        }
     }
 }
 
@@ -633,6 +640,9 @@ func layoutCommand(_ argv: [String]) {
 
     case "list", "lists":
         listCommand(rest)
+
+    case "drawer":
+        drawerCommand(rest)
 
     case "go":
         let args = parse(rest, ArgSpec(boolean: ["--next", "--back"]))
@@ -855,6 +865,59 @@ func printPanes(_ result: [String: Any]) {
     }
 }
 
+/// `drawer show|hide|toggle|next|prev|dock|ls` (design/cli.md, "Drawer").
+func drawerCommand(_ argv: [String]) {
+    let sub = argv.first ?? "ls"
+    let rest = Array(argv.dropFirst())
+    let args = parse(rest, ArgSpec(valued: ["--window"], aliases: ["-w": "--window"]))
+    var params: [String: Any] = [:]
+    if let window = args.value("--window") { params["window"] = window }
+    let words = args.positional + (args.rest ?? [])
+    func pane(_ usage: String) {
+        guard words.count <= 1 else { fail("\(usage) (quote a query: drawer \(sub) 'role=manager')") }
+        if let pane = words.first { params["pane"] = pane }
+    }
+    func printDrawer(_ result: [String: Any]) {
+        if jsonOutput {
+            printJSON(["open": result["open"] ?? false, "panes": result["panes"] ?? [], "window": result["window"] ?? "",
+                       "current": result["current"] ?? NSNull()])
+            return
+        }
+        let open = result["open"] as? Bool ?? false
+        print(open ? "drawer open" : "drawer closed")
+        for pane in result["panes"] as? [[String: Any]] ?? [] {
+            let onShow = pane["on_show"] as? Bool ?? false
+            var row = "  \(onShow ? "▸" : " ") pane \(dim(shortID(pane["id"])))  \(pane["title"] as? String ?? "")"
+            if let indicator = pane["indicator"] as? String, indicator != "none" { row += "  [\(indicator)]" }
+            print(row)
+        }
+    }
+    switch sub {
+    case "show", "toggle":
+        pane("drawer \(sub) [PANE] [--window W]")
+        let result = callDict("drawer.\(sub)", params)
+        if jsonOutput { printDrawer(result) }
+    case "hide", "next", "prev", "previous":
+        guard words.isEmpty else { fail("drawer \(sub) [--window W]") }
+        let result = callDict("drawer.\(sub == "previous" ? "prev" : sub)", params)
+        if jsonOutput { printDrawer(result) }
+    case "dock":
+        pane("drawer dock [PANE]")
+        let result = callDict("drawer.dock", params)
+        if jsonOutput {
+            printJSON(["pane": result["pane"] ?? "", "tab": result["tab"] ?? "", "window": result["window"] ?? "",
+                       "hid": result["hid"] ?? []])
+        } else {
+            for id in result["hid"] as? [String] ?? [] { print("hid \(id)") }
+        }
+    case "ls", "list":
+        guard words.isEmpty else { fail("drawer ls [--window W]") }
+        printDrawer(callDict("drawer.ls", params))
+    default:
+        fail("drawer: use show, hide, toggle, next, prev, dock or ls")
+    }
+}
+
 /// `list ls`, `list show NAME`: the named lists (`list.NAME = QUERY` in the config).
 func listCommand(_ argv: [String]) {
     let args = parse(argv, ArgSpec())
@@ -1059,7 +1122,7 @@ func tabCommand(_ argv: [String]) {
         if let tab = args.positional.first { params["tab"] = tab }
         let method = sub == "select" ? "focus" : sub
         printOK(call("tab.\(method)", params))
-    case "back", "next", "prev", "previous":
+    case "next", "prev", "previous":
         let args = parse(rest, ArgSpec(valued: ["--window"], aliases: ["-w": "--window"]))
         guard args.positional.isEmpty else { fail("tab \(sub) takes no tab: it goes from the selected one") }
         var params: [String: Any] = [:]

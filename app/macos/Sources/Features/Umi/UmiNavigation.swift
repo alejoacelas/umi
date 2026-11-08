@@ -1,8 +1,7 @@
 import AppKit
 
 /// Moving between tabs and panes from the keyboard, the menus and the CLI: next and previous
-/// tab in sidebar order, ⌘1–9, back through the tabs visited (L-11), and moving tabs up and down
-/// (L-13). The panes that need the user are `UmiGo`'s (`go --next jump`, L-12).
+/// tab in sidebar order and ⌘1–9 (L-11), and moving tabs up and down (L-13). The panes that need the user are `UmiGo`'s (`go --next jump`, L-12).
 ///
 /// Everything here acts on Umi's own record of the current window, so it works whatever
 /// has keyboard focus (L-10).
@@ -38,16 +37,6 @@ enum UmiNavigation {
         return tab
     }
 
-    // MARK: Back through the tabs visited
-
-    /// ⌘⇧[: the tab visited before this one, in any window. Pressed again, the one before that.
-    @discardableResult
-    static func tabBack() -> (TerminalController, UmiTab)? {
-        guard let (window, tab) = UmiTabHistory.back() else { return nil }
-        UmiLayout.focusTab(tab, in: window)
-        return (window, tab)
-    }
-
     // MARK: Moving tabs
 
     /// Whether a tab can move up (-1) or down (1), as Warp's `can_move_tab`: a tab in a group
@@ -72,7 +61,7 @@ enum UmiNavigation {
         return (delta < 0 ? members.first : members.last) ?? target
     }
 
-    /// ⌃⇧← / ⌃⇧→ (and the sidebar row menu): move a tab up (-1) or down (1) the sidebar,
+    /// ⌃⇧↑ / ⌃⇧↓ (and the sidebar row menu): move a tab up (-1) or down (1) the sidebar,
     /// within its pin group and its tab group, hopping over other groups whole. Returns false
     /// when it can't move that way.
     @discardableResult
@@ -89,72 +78,30 @@ enum UmiNavigation {
 
 // MARK: - Tab history
 
-/// The tabs the user visited, across windows, most recent last, each once. Going back walks
-/// down the list without reordering it, so pressing back again goes further back; visiting
-/// any tab another way ends the walk.
+/// The tabs the user visited, across windows, most recent last, each once (the palette's recent
+/// tabs).
 @MainActor
 enum UmiTabHistory {
     private static var entries: [Weak<UmiTab>] = []
-    /// While walking back: the entry shown now.
-    private static var cursor: Int?
     private static let limit = 200
+
+    /// While above zero, nothing is recorded: a keyboard move's preview steps through tabs the pane
+    /// only passes over (UmiPaneMove records the landing).
+    static var paused = 0
 
     /// A tab became the one the user sees (the selected tab of the current window).
     static func visited(_ tab: UmiTab) {
-        prune()
-        if let cursor, entries[cursor].value === tab { return }
-        if let cursor, let walked = entries[cursor].value {
-            // Leaving a tab reached by going back: that tab counts as visited.
-            entries.remove(at: cursor)
-            entries.append(Weak(walked))
-        }
-        cursor = nil
+        guard paused == 0 else { return }
+        entries.removeAll { $0.value == nil }
         if entries.last?.value === tab { return }
         entries.removeAll { $0.value === tab }
         entries.append(Weak(tab))
         if entries.count > limit { entries.removeFirst(entries.count - limit) }
     }
 
-    /// The tab before the current one, skipping tabs that are closed. Moves the walk there.
-    static func back() -> (TerminalController, UmiTab)? {
-        prune()
-        var index = (cursor ?? entries.count - 1) - 1
-        while index >= 0 {
-            if let tab = entries[index].value, let window = UmiTopology.locate(tab: tab) {
-                cursor = index
-                return (window, tab)
-            }
-            index -= 1
-        }
-        return nil
-    }
-
-    /// Whether going back would find a tab.
-    static var canGoBack: Bool {
-        prune()
-        var index = (cursor ?? entries.count - 1) - 1
-        while index >= 0 {
-            if let tab = entries[index].value, UmiTopology.locate(tab: tab) != nil { return true }
-            index -= 1
-        }
-        return false
-    }
-
-    /// The history, most recent first (for `debug.navigation`).
+    /// The history, most recent first (for the palette and `debug.navigation`).
     static var recentFirst: [UmiTab] {
-        prune()
-        return entries.reversed().compactMap(\.value)
-    }
-
-    private static func prune() {
-        var kept: [Weak<UmiTab>] = []
-        var newCursor: Int?
-        for (index, entry) in entries.enumerated() where entry.value != nil {
-            if index == cursor { newCursor = kept.count }
-            kept.append(entry)
-        }
-        entries = kept
-        cursor = newCursor
+        entries.reversed().compactMap(\.value)
     }
 }
 
@@ -167,7 +114,11 @@ enum UmiFocusHistory {
     private static var entries: [Weak<Ghostty.SurfaceView>] = []
     private static let limit = 500
 
+    /// While above zero, nothing is recorded (a keyboard move's preview; see UmiTabHistory.paused).
+    static var paused = 0
+
     static func focused(_ pane: Ghostty.SurfaceView) {
+        guard paused == 0 else { return }
         entries.removeAll { $0.value == nil || $0.value === pane }
         entries.append(Weak(pane))
         if entries.count > limit { entries.removeFirst(entries.count - limit) }

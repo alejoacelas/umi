@@ -96,6 +96,8 @@ final class UmiPersistence {
             }
         }
         if window === UmiTopology.currentWindow { json["current"] = true }
+        // The drawer's panes (it comes back closed).
+        if let drawer = UmiDrawer.json(of: window, encode: { self.encode(node: .leaf(view: $0)) }) { json["drawer"] = drawer }
         return json
     }
 
@@ -146,7 +148,6 @@ final class UmiPersistence {
             return ["split": [
                 "direction": split.direction == .horizontal ? "horizontal" : "vertical",
                 "ratio": split.ratio,
-                "placed": split.placed,
                 "left": encode(node: split.left),
                 "right": encode(node: split.right),
             ]]
@@ -244,6 +245,13 @@ final class UmiPersistence {
                 group.collapsed = json["collapsed"] as? Bool ?? false
                 return group
             }
+            if let drawerJSON = windowJSON["drawer"] as? [String: Any] {
+                let panes = (drawerJSON["panes"] as? [[String: Any]] ?? []).compactMap { json -> Ghostty.SurfaceView? in
+                    if let node = decode(node: json, app: app), case .leaf(let view) = node { return view }
+                    return nil
+                }
+                UmiDrawer.restore(panes, json: drawerJSON, in: controller)
+            }
             if windowJSON["current"] as? Bool == true { current = controller }
             restored += 1
         }
@@ -308,8 +316,7 @@ final class UmiPersistence {
                 let direction: SplitTree<Ghostty.SurfaceView>.Direction =
                     (split["direction"] as? String) == "vertical" ? .vertical : .horizontal
                 let ratio = split["ratio"] as? Double ?? 0.5
-                return .split(.init(direction: direction, ratio: ratio, left: l, right: r,
-                                    placed: split["placed"] as? Bool ?? false))
+                return .split(.init(direction: direction, ratio: ratio, left: l, right: r))
             case let (l?, nil): return l
             case let (nil, r?): return r
             default: return nil

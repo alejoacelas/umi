@@ -143,6 +143,7 @@ enum UmiLayout {
                       options: PaneOptions, ratio: Double?, focus: Bool) throws -> [String: Any] {
         let ghostty = try requireGhostty()
         guard let location = UmiTopology.locate(target) else { throw UmiError.notFound("the pane isn't in a window") }
+        if location.inDrawer { throw inDrawer }
         guard let app = ghostty.app else { throw UmiError.failed("the terminal engine isn't ready") }
         let config = try surfaceConfig(options, inheritingFrom: target, context: GHOSTTY_SURFACE_CONTEXT_SPLIT)
         let window = location.window
@@ -208,6 +209,11 @@ enum UmiLayout {
     static func focusPane(_ pane: Ghostty.SurfaceView, activate: Bool) {
         focusRequests &+= 1
         guard var location = UmiTopology.locate(pane) else { return }
+        // A drawer pane: its drawer opens on it.
+        if location.inDrawer {
+            try? UmiDrawer.show([pane], in: location.window, focus: true)
+            return
+        }
         if location.tab.isHidden(pane) {
             _ = try? UmiHidden.show(pane, focus: false)
             location = UmiTopology.locate(pane) ?? location
@@ -280,8 +286,18 @@ enum UmiLayout {
 
     // MARK: Closing
 
+    /// What refuses a layout action on a pane in the drawer.
+    static var inDrawer: UmiError {
+        UmiError.badRequest("the pane is in the drawer (put it in a tab first: `\(UmiPaths.cliName) drawer dock`)")
+    }
+
     static func closePane(_ pane: Ghostty.SurfaceView) throws {
         guard let location = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
+        if location.inDrawer {
+            // A drawer pane: it leaves the drawer and its program ends.
+            UmiDrawer.closePane(pane)
+            return
+        }
         let window = location.window
         let tab = location.tab
         let tree = window.tree(of: tab)
@@ -305,6 +321,7 @@ enum UmiLayout {
 
     static func toggleZoom(_ pane: Ghostty.SurfaceView) throws {
         guard let location = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
+        if location.inDrawer { throw inDrawer }
         let tree = location.window.tree(of: location.tab)
         guard let node = tree.root?.node(view: pane) else { throw UmiError.notFound("the pane isn't in its tab") }
         let newTree: SplitTree<Ghostty.SurfaceView>
@@ -320,6 +337,7 @@ enum UmiLayout {
 
     static func resize(_ pane: Ghostty.SurfaceView, direction: String, amount: Int) throws {
         guard let location = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
+        if location.inDrawer { throw inDrawer }
         let tree = location.window.tree(of: location.tab)
         guard let node = tree.root?.node(view: pane) else { throw UmiError.notFound("the pane isn't in its tab") }
         let spatial: SplitTree<Ghostty.SurfaceView>.Spatial.Direction
@@ -358,6 +376,7 @@ enum UmiLayout {
         guard let la = UmiTopology.locate(a), let lb = UmiTopology.locate(b) else {
             throw UmiError.notFound("both panes must be in windows")
         }
+        if la.inDrawer || lb.inDrawer { throw inDrawer }
         undoable("Swap Panes", windows: [la.window, lb.window]) {
             func swapped(_ node: SplitTree<Ghostty.SurfaceView>.Node) -> SplitTree<Ghostty.SurfaceView>.Node {
                 switch node {
@@ -367,7 +386,7 @@ enum UmiLayout {
                     return node
                 case .split(let split):
                     return .split(.init(direction: split.direction, ratio: split.ratio,
-                                        left: swapped(split.left), right: swapped(split.right), placed: split.placed))
+                                        left: swapped(split.left), right: swapped(split.right)))
                 }
             }
             let ta = la.window.tree(of: la.tab)
@@ -404,6 +423,14 @@ enum UmiLayout {
     @discardableResult
     static func move(_ pane: Ghostty.SurfaceView, to destination: PaneDestination, focus: Bool) throws -> UmiTopology.Location {
         guard var source = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
+        if case .besidePane(let target, _) = destination, UmiTopology.locate(target)?.inDrawer == true { throw inDrawer }
+        let fromDrawer = source.inDrawer
+        if fromDrawer {
+            // A drawer pane moves from the right end of the tab the drawer is over: it goes there
+            // first, quietly, then on (it leaves the drawer).
+            guard UmiDrawer.leaveForMove(pane) != nil else { throw UmiError.notFound("the pane isn't in a drawer") }
+            source = UmiTopology.locate(pane) ?? source
+        }
         let wasHidden = source.tab.isHidden(pane)
         if wasHidden {
             // A hidden pane moves from the end of its tab: it comes in there first, without
@@ -434,7 +461,7 @@ enum UmiLayout {
             result = try moveUngrouped(pane, from: source, to: destination, focus: focus, size: size)
             // A hidden pane moved within its own tab arrived without the tree noticing (it was in
             // it for the move): the tab makes room now.
-            if wasHidden, let result { UmiHidden.makeRoom(in: result.tab, window: result.window, keeping: [pane]) }
+            if wasHidden || fromDrawer, let result { UmiHidden.makeRoom(in: result.tab, window: result.window, keeping: [pane]) }
         }
         guard let result else { throw UmiError.failed("the move didn't happen") }
         let toIndex = (result.window.tree(of: result.tab).root?.leaves().firstIndex { $0 === pane } ?? 0) + 1
@@ -609,12 +636,12 @@ struct UmiSnapshot {
 
     indirect enum WeakNode {
         case leaf(Weak<Ghostty.SurfaceView>)
-        case split(SplitTree<Ghostty.SurfaceView>.Direction, Double, WeakNode, WeakNode, Bool)
+        case split(SplitTree<Ghostty.SurfaceView>.Direction, Double, WeakNode, WeakNode)
 
         init(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
             switch node {
             case .leaf(let view): self = .leaf(Weak(view))
-            case .split(let split): self = .split(split.direction, split.ratio, WeakNode(split.left), WeakNode(split.right), split.placed)
+            case .split(let split): self = .split(split.direction, split.ratio, WeakNode(split.left), WeakNode(split.right))
             }
         }
 
@@ -624,11 +651,11 @@ struct UmiSnapshot {
             case .leaf(let weak):
                 guard let view = weak.value, UmiSnapshot.isAlive(view) else { return nil }
                 return .leaf(view: view)
-            case .split(let direction, let ratio, let left, let right, let placed):
+            case .split(let direction, let ratio, let left, let right):
                 let l = left.resolve()
                 let r = right.resolve()
                 switch (l, r) {
-                case let (l?, r?): return .split(.init(direction: direction, ratio: ratio, left: l, right: r, placed: placed))
+                case let (l?, r?): return .split(.init(direction: direction, ratio: ratio, left: l, right: r))
                 case let (l?, nil): return l
                 case let (nil, r?): return r
                 default: return nil

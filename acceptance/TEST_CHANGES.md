@@ -1465,3 +1465,118 @@ split. Nothing below changes what a test checks.
   captured the other window, whose pane has no mark, so every pixel read the background.
   `::test_chips_and_rows_say_the_state_to_accessibility_ui` turns the test window's sidebar on before
   reading its row (in a full run it was hidden, so there was no row) and looks for the row there.
+
+## Design step 6: moving panes and tabs (2026-11-08)
+
+⌃⌘ held with the arrows moves panes (SPEC KM-1 to KM-5); tabs move with ⌃⇧↑/↓ (L-13); ⇧⌘[ is
+Warp's previous tab and `tab back` is gone (L-11, design/cli.md choice 11); keyboard resizing of
+splits, ⌃⌘←/→ "move the pane to the previous or next tab" and L-19's hand-placed divider rules left.
+
+**Added.** `test_moving_panes.py`: ⌃⌘←/→ within the tab, landing on release with one `pane.moved`
+caused by the key and nothing from the previews; ⌃⌘ letters starting no move; ⌃⌘↓ showing the target
+tab with the pane at its right end, the sidebar out and every row's pane list (moving, source,
+target); over a full tab the pane `strip.make-room` would hide hidden in the preview and listed as
+hiding, landing as shown with one `pane.hidden`; ⌘Z undoing a landed move; Esc cancelling (layout,
+focus, sidebar, no events); the new tab as the last target and not offered to a lone pane; a
+collapsed group opening while the pane is over it; a menu step landing at once; no Ghostty keybinding
+resizing splits and the move items on ⌃⌘ arrows; ⌃⇧↑/↓ moving the tab; ⇧⌘[ and ⇧⌘] in sidebar order
+and `tab back` failing. UI (unlocked screen): real ⌃⌘ held with ↓ and ←, landing on release, Esc
+cancelling; the target row's accessibility value listing its panes. Swift:
+`UmiIndicatorTests/aLookAtAPaneShownSinceBumpsTheRevision` (step 5's review finding: a look that
+clears "shown, not seen" redraws the marks).
+
+**Removed with their features.**
+- `test_umi_nav.py::test_tab_back_follows_the_tabs_visited_across_windows` and
+  `::test_tab_back_skips_closed_tabs_and_fails_clearly_at_the_start`: `tab back` and ⇧⌘[ "back
+  through the tabs visited" are gone (L-11 rewritten; `test_moving_panes.py` checks ⇧⌘[ and that
+  `tab back` fails).
+- `test_umi_panes_ui.py::test_panes_sized_by_hand_keep_their_size_and_the_others_share`: L-19's
+  hand-placed divider rules are gone (design/spec-cleanup.md).
+- Swift `SplitTreeTests/aPaneSizedByHandKeepsItsSize`,
+  `panesNotSizedByHandShareTheStretchBetweenPlacedDividers`, `theEditorPanelIsTheRowsLastMember` and
+  `draggingTheEditorsDividerSharesAmongPanesNotSizedByHand`: the same rules, and the unused
+  trailing-panel code they covered.
+
+**Changed.**
+- `test_umi_panes_ui.py::test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row`
+  became `…_moves_only_its_two_neighbors_and_double_click_equalizes_its_row`: a drag now changes only
+  the two panes beside the divider, as in Warp (40/26.7/33.3 instead of each side shared equally); it
+  also checks that a split afterwards shares in proportion. The column's 70/30 and the double-click
+  checks are unchanged.
+- `test_umi_panes_ui.py::test_a_dragged_middle_divider_shares_both_sides` became
+  `…_leaves_the_other_panes_alone` (25/22/28/25: only the two neighbours change; the drag is short
+  because the suite's window is about 930 points wide and a pane stops at 190).
+- `test_umi_panes_ui.py::test_a_file_pane_shares_its_row_like_any_pane`: the drag goes to 40% and
+  expects 40/26.7/33.3 (the neighbours only); at 50% the middle pane would go below 190 points in the
+  suite's window and the drag would stop.
+- `test_umi_warp_panes.py::test_a_drag_stops_where_a_pane_beyond_the_divider_would_get_too_small`
+  became `…_where_the_pane_beside_the_divider_would_get_too_small`: the drag stops when the pane
+  beside the divider reaches 190 points and the far pane keeps its width (before, both shrank).
+- Swift `SplitTreeTests`: `draggingADividerSharesEachSideEqually` became
+  `draggingADividerChangesOnlyItsTwoNeighbors` and `draggingAMiddleDividerSharesBothSides` became
+  `draggingAMiddleDividerLeavesTheRestAlone`, with the neighbours-only numbers;
+  `aColumnInARowCountsAsOneAndKeepsItsInside` takes them too and no longer checks a placed flag;
+  `splitsAndClosesKeepTheDividersPlacedByHand` became `aSplitAfterADragSharesInProportion` (the same
+  split and close after a drag, checked by sizes); `aKeyboardResizeMovesOnlyTheTwoNeighbors` no longer
+  speaks of dividers placed by hand.
+- `test_umi_nav.py`: Back to Previous Tab is now Show Previous Tab (same ⇧⌘[) in
+  `NAV_SHORTCUTS`, the palette check, `test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart`
+  (clears `tab.previous`) and `test_selecting_a_tab_never_moves_it` (`tab prev`/`tab next` instead of
+  `tab back`); Move Tab Up/Down are on ⌃⇧↑/↓ and the four Move Pane items on ⌃⌘ arrows in
+  `NAV_SHORTCUTS`; `test_jump_and_move_tab_keys` presses ⌃⇧↓/↑.
+- `test_umi_sidebar_warp.py::test_move_tab_keys_keep_groups_whole_ui`: ⌃⇧↓/↑ instead of ⌃⇧→/←.
+- `test_layout.py::SHORTCUTS` (L-9): ⌃⌘←/→/↑/↓ are the Move Pane items; ⇧⌘[ is the previous tab in
+  sidebar order.
+
+## Design step 7: the drawer (2026-11-08)
+
+**Added.**
+- `test_drawer.py` (DR-1 to DR-5): `drawer show` moving a pane in and opening the drawer over the
+  lower half of the panes (read back from `ls`, `debug.drawer` and a screenshot of the drawer pane's red
+  rows); `drawer hide` and focus going back; a tab left empty closing and the window's only pane
+  refused; ⌃⌘M toggling the `role=manager` pane, its menu item and the other Window ▸ Drawer items;
+  ⌘] and `drawer next|prev` in the drawer; the waiting line (amber pixels along the bottom edge, its
+  label); `drawer dock` making room; `pane hide` putting a drawer pane back hidden; split, zoom, swap and
+  resize refused, `pane focus`, `go`, `pane move` and `pane close` on a drawer pane; a drawer pane whose
+  program ends; drawer panes coming back after a relaunch; and the UI test
+  `test_real_ctrl_cmd_m_and_the_drawers_buttons_ui` (real ⌃⌘M, typing, Put away and Dock).
+- `test_moving_panes.py` (KM-3, KM-4; design step 6's review):
+  `test_the_moving_pane_is_outlined_and_tagged_in_the_window` (cyan outline and "moving here" tag in a
+  screenshot, the chip's `moving`), `test_previews_leave_the_tab_and_focus_histories_alone`,
+  `test_the_move_lands_when_umi_or_the_window_loses_the_keyboard` (two cases, through
+  `debug.move`'s `simulate`), `test_the_pane_closing_mid_move_puts_the_rest_back`.
+- `test_umi_panes_ui.py::test_a_closed_panes_program_ends_after_60_seconds_with_the_sidebar_hidden`
+  (L-20): the bug design step 6 found; with the sidebar on, the existing test already passed.
+
+**Changed.**
+- `test_umi_nav.py::NAV_SHORTCUTS` and `test_layout.py::SHORTCUTS` (L-9): ⌃⌘M is Show or Hide
+  Manager. Nothing else in them changed.
+
+
+**After review (step 7's follow-up).**
+- Added to `test_drawer.py`:
+  - `test_the_drawer_rises_and_goes_down_in_a_quarter_second` (DR-1): samples `debug.drawer` while
+    the drawer opens and closes. Its rise goes only up (then only down), is seen part way, and ends
+    within 0.2 to 1 s. Part way up, the panel's own frame is below its place. Going down, the picture
+    it slides as has the panel's size, its header on top and the terminal's red rows. Reopened half
+    way down, it rises from where it is.
+  - `test_closing_a_drawer_pane_ends_its_program` (DR-4, L-20): `pane close` of a drawer pane, with
+    the drawer open and closed; each shell's pid is gone, as in the L-20 tests. Neither pane is in
+    `reopen --list`, and `pane.closed` names the tab and window.
+  - `test_window_hide_pane_is_disabled_on_a_tabs_only_pane_while_the_drawer_is_open` (DR-4, H-2):
+    Window ▸ Hide Pane is on for a focused drawer pane, off for the tab's only pane (drawer open or
+    closed), and on again with a second pane on show.
+  - `test_real_clicks_on_a_chip_hide_and_the_waiting_line_ui` (DR-1, DR-3, DR-4): real mouse clicks
+    (CGEvents at the elements' frames, not accessibility presses) on a header chip, the Hide button
+    and the waiting line's label.
+- Added `test_queries.py::test_a_config_key_line_replaces_ctrl_cmd_m` (DR-2): with a
+  `key.ctrl+cmd+m` line, ⌃⌘M runs that line's command and the drawer stays shut and empty, though a
+  `role=manager` pane exists. Without the line, ⌃⌘M opens the drawer on the manager again.
+- Changed:
+  - `test_drawer_show_moves_the_pane_in_and_opens_the_drawer_over_the_tab` checks the panel's frame
+    once the slide has ended. Before, nothing slid, so it could read the frame at once. The checks
+    themselves are unchanged.
+  - `test_a_drawer_pane_that_needs_you_shows_a_line_along_the_bottom_edge` takes its "no line"
+    screenshot once the drawer has gone down.
+  - `test_a_drawer_panes_program_ending_takes_it_out` also checks that `pane.closed` has `tab`
+    (design/cli.md's event table).

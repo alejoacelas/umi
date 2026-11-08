@@ -270,6 +270,10 @@ enum UmiScreenshot {
             && !UmiFilePanes.shared.isFilePane(pane.id) {
             UmiIndicator.shared.draw(over: pane.convert(pane.bounds, to: content), of: pane, flipped: content.isFlipped)
         }
+        // A keyboard move marks its pane (cyan outline and tag), over its terminal's image.
+        UmiPaneMoveMarker.drawForScreenshot(controller, content: content)
+        // The drawer and its waiting line sit above the panes.
+        UmiDrawer.drawForScreenshot(controller, content: content, cached: image)
         // Overlays drawn above the terminals (the palettes) go on top again.
         if let ghostty = UmiLayout.ghostty,
            let note = UmiUpdateNote.shared.capturedImage(in: content, background: ghostty.config.backgroundColor) {

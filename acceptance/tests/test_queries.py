@@ -414,6 +414,39 @@ def test_a_key_binding_runs_its_command(configured):
     write_config(inst, "")
 
 
+@pytest.mark.req("DR-2", "Q-5")
+def test_a_config_key_line_replaces_ctrl_cmd_m(configured):
+    """SPEC DR-2: a `key.ctrl+cmd+m` line in the config replaces the default ⌃⌘M (`drawer toggle
+    @manager`); without it, ⌃⌘M is the drawer's again."""
+    inst = configured
+    pane, window = inst.win["pane"], inst.win["window"]
+    manager = inst.cli("split", "right", "--pane", pane, "--no-focus").stdout.strip()
+    inst.cli("pane", "set", manager, "role=manager")
+
+    def drawer():
+        return rpc(inst, "debug.drawer", window=window)
+    try:
+        write_config(inst, "key.ctrl+cmd+m = pane set mbound=yes\n")
+        inst.cli("pane", "focus", pane)
+        rpc(inst, "debug.key", window=window, keys="ctrl+cmd+m", focus="none")
+        wait_until(lambda: inst.attributes(pane).get("mbound") == "yes", 10, message="the config's ⌃⌘M ran")
+        time.sleep(0.5)
+        assert not drawer()["open"] and drawer()["panes"] == [], "the default ⌃⌘M didn't run too"
+        listed = [s for s in inst.json("shortcuts")["shortcuts"] if s.get("source") == "config"]
+        assert [(s["keys"], s["title"]) for s in listed] == [(["ctrl+cmd+m"], "pane set mbound=yes")], listed
+        # The line gone, ⌃⌘M shows the manager in the drawer again.
+        write_config(inst, "")
+        inst.cli("pane", "unset", pane, "mbound")
+        rpc(inst, "debug.key", window=window, keys="ctrl+cmd+m", focus="none")
+        wait_until(lambda: drawer()["open"] and drawer()["current"] == manager, 10, message="the default ⌃⌘M is back")
+        assert "mbound" not in inst.attributes(pane)
+        assert not [s for s in inst.json("shortcuts")["shortcuts"] if s.get("source") == "config"]
+    finally:
+        write_config(inst, "")
+        inst.cli("drawer", "hide", "--window", window, check=False)
+        inst.cli("pane", "close", manager, check=False)
+
+
 @pytest.mark.req("Q-6")
 def test_palette_commands_from_the_config_and_the_commands_folder(configured):
     inst = configured

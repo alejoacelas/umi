@@ -41,4 +41,21 @@ struct UmiIndicatorTests {
         #expect(indicator.look(.none, focused: true, split: false) == nil)
         #expect(indicator.look(.none, focused: false, split: true) == nil)
     }
+
+    /// A look that clears "came back on show and not seen" is a change for the views, even when
+    /// the agent's own mark doesn't change (the overlay, chips and rows redraw on `revision`).
+    @Test func aLookAtAPaneShownSinceBumpsTheRevision() throws {
+        let attention = UmiAttention.shared
+        let id = UUID()
+        try attention.standIn(forPane: id, kind: .claude, title: "t", status: "idle", mark: "none", ago: 5)
+        attention.placeChanged(id, shown: true)
+        let before = attention.revision
+        attention.looked(atPane: id)
+        #expect(attention.revision != before)
+        // Looking again changes nothing: no redraw.
+        let after = attention.revision
+        attention.looked(atPane: id)
+        #expect(attention.revision == after)
+        try attention.standIn(forPane: id, kind: nil, title: nil, status: nil, mark: nil, ago: nil)
+    }
 }

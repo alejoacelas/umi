@@ -209,7 +209,7 @@ enum UmiRPC {
                 }
             }
             for pane in panes {
-                if let location = UmiTopology.locate(pane), !location.tab.isHidden(pane) {
+                if let location = UmiTopology.locate(pane), !location.inDrawer, !location.tab.isHidden(pane) {
                     let shownCount = location.window.tree(of: location.tab).root?.leaves().count ?? 0
                     let hidingHere = panes.filter { location.tab.contains($0) && !location.tab.isHidden($0) }.count
                     if hidingHere >= shownCount {
@@ -572,6 +572,9 @@ enum UmiRPC {
         default:
             if UmiNavigationRPC.methods.contains(method) {
                 return try await UmiNavigationRPC.handle(method, params, caller: caller)
+            }
+            if UmiDrawer.methods.contains(method) {
+                return try UmiDrawer.handle(method, params, caller: caller)
             }
             if UmiListsRPC.methods.contains(method) {
                 return try await UmiListsRPC.handle(method, params, caller: caller)

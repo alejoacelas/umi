@@ -201,6 +201,10 @@ final class UmiIndicator: ObservableObject {
     /// The pane has focus in its tab, and how many panes its tab shows.
     static func placement(of pane: Ghostty.SurfaceView) -> (focused: Bool, split: Bool) {
         guard let location = UmiTopology.locate(pane) else { return (false, false) }
+        // A drawer pane stands alone; its mark grows while it has focus.
+        if location.inDrawer {
+            return (location.window.drawer.showing === pane && UmiDrawer.hasFocus(pane, in: location.window), false)
+        }
         let tab = location.tab
         let shown = location.window.tree(of: tab).root?.leaves() ?? []
         let focused = !tab.isHidden(pane) && tab.effectiveFocusedSurface === pane

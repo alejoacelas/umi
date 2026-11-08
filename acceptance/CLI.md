@@ -12,8 +12,10 @@ events with their cause, `log` and `focus-log` ("Attributes", "Events and logs")
 queries in selectors and `ls --where`, named lists and `go`, slots, key bindings and palette commands
 from the config ("Selectors", "Queries", "Lists and `go`", "Configuration"). Step 4 brought hidden
 panes and the three-pane limit ("Hidden panes"; `hid` on `split`, `pane focus`, `pane move` and
-`edit`; the tab's `visible_limit` and `strip`) and removed stacks and the tab's `docs` field. Later
-steps bring the rest of `design/cli.md` (the drawer).
+`edit`; the tab's `visible_limit` and `strip`) and removed stacks and the tab's `docs` field. Step 6
+removed `tab back` (design/cli.md, choice 11) and gave `tab next|prev` and `tab move --up|--down`
+their keys. Step 7 brought the drawer ("Drawer"; the window's `drawer` and the pane's `in_drawer`).
+This now covers all of `design/cli.md`.
 
 ## General
 
@@ -95,19 +97,18 @@ VALUE  := a word, or text in double quotes
 | `window focus\|close [WINDOW]` | |
 | `tab new [NAME] [--window W] [--pane P] [--cwd D] [--cmd C] [--name N] [--color C] [--index I] [--worktree W [--base REF]] [--no-focus]` | as `window new`; the tab opens right after the current tab, or last with `--no-focus`, or at `--index` (SPEC S-7) |
 | `tab focus\|close\|equalize [TAB]` | |
-| `tab back` | the tab visited before (again: the one before that), in any window; JSON `{"tab", "window", "index", "title"}`; fails when there is none |
-| `tab next\|prev [--window W]` | the next or previous tab in sidebar order (wraps); JSON as `tab back` |
+| `tab next\|prev [--window W]` | the next or previous tab in sidebar order, wrapping (⇧⌘] / ⇧⌘[ and ⌃Tab / ⌃⇧Tab); JSON `{"tab", "window", "index", "title"}` |
 | `tab rename [TAB] NAME` | `""` clears |
 | `tab color [TAB] COLOR` | red green yellow blue magenta cyan (Warp's six, from the theme's ANSI colors), purple pink orange teal graphite, none |
 | `tab pin\|unpin [TAB]` | |
-| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down`: one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
+| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down` (⌃⇧↑ / ⌃⇧↓): one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions. When the tab already shows its limit, `strip.make-room` hides one; JSON `{"pane", "tab", "window", "hid"?: id}` |
 | `pane focus [PANE]` | a hidden pane is brought in first (it takes the right end of the tab; `strip.make-room` hides one); JSON `{"pane", "tab", "window", "hid"?}` |
 | `pane close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window`; `close` closes every pane a query matches |
 | `pane rename [PANE] NAME` | |
 | `pane move [PANE] (--to PANE [--dir D] \| --tab T [--dir D] \| --window W [--dir D] \| --new-tab [--window W] \| --new-window) [--no-focus]` | the pane's program keeps running. A query moves every match in its order: the first goes where the options say, each next one beside the one before it (`--to`'s own pane stays put). A hidden pane moves too. Landing in a tab at its limit hides one there; JSON `{"pane", "panes", "tab", "window", "hid"?}` |
 | `pane swap [PANE] TARGET` | |
-| `pane resize [PANE] up\|down\|left\|right [AMOUNT]` | |
+| `pane resize [PANE] up\|down\|left\|right [AMOUNT]` | CLI only; no default keys (⌃⌘ and the arrows move panes, SPEC KM-1) |
 | `send [--pane P] [--enter\|-e] TEXT…` | no TEXT plus a piped stdin sends stdin |
 | `keys [--pane P] KEY…` | enter esc tab backspace up down left right ctrl+c shift+tab … |
 | `read [--pane P] [--scrollback] [--lines N]` | prints the text as the shell and programs printed it. With Umi's look (SPEC S-9 to S-12) a zsh prompt is two blank rows, the folder, and the command line; durations, lines and the folder box are drawn, not text |
@@ -124,7 +125,8 @@ VALUE  := a word, or text in double quotes
 | `layout open NAME [--no-focus]` | NAME is a configuration's name or file name (case doesn't matter; a file holding several configurations fails and lists their names); opens each of its windows as a new window, the active one in front (a tab with more panes than its limit, or panes marked `is_hidden`, opens the rest hidden); prints the windows' ids; JSON `{"name", "windows": [id], "panes": [id]}` |
 
 Objects in JSON:
-- **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab], "attributes": {…}}`
+- **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab], "drawer": {"open": bool, "panes":
+  [Pane], "current"?: id (the pane the drawer shows, or showed last)}, "attributes": {…}}`
 - **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "color"?, "group"?:
   its tab group's name, "focused_pane": id, "visible_limit": int, "strip": [id] (every pane's chip,
   in strip order), "panes": [Pane], "attributes": {…}}`
@@ -137,7 +139,8 @@ Objects in JSON:
   E-12)}`. `indicator` is the pane indicator's state (SPEC PI-1): `working` while its agent works,
   `needs_you` while it needs input or failed, `finished` while it finished (`idle`, `stopped`) and
   the pane is `unseen`, else `none`.
-  A tab's `panes` lists the panes on show in layout order, then the hidden ones in strip order.
+  A tab's `panes` lists the panes on show in layout order, then the hidden ones in strip order. A
+  pane in the drawer is in no tab: it is listed under its window's `drawer`, with `in_drawer: true`.
 
 Events: `pane.created` and `tab.created` carry `"reopened": true` when `reopen` brought them back;
 `sidebar.changed` is emitted when a window's sidebar is shown or hidden or its width changes. Events,
@@ -173,6 +176,29 @@ pinned; nothing reorders them on its own (SPEC S-7).
   it lands.
 - Closing the last pane on show of a tab with hidden panes brings in the hidden one used most
   recently; otherwise hidden panes never come in by themselves.
+
+## Drawer
+
+| Command | Notes |
+|---|---|
+| `drawer show [PANE] [--window W]` | moves each matching pane into the window's drawer (it leaves its tab; a tab left with no pane closes; the window's only pane fails with exit 1) and opens the drawer with the first on show and focused; without PANE, opens the drawer as it was (exit 1 when it is empty) |
+| `drawer hide [--window W]` | closes the drawer; its panes stay in it, keep running, and focus returns to the pane focused before it opened |
+| `drawer toggle [PANE] [--window W]` | `show` when closed or showing another pane, else `hide`. ⌃⌘M runs `drawer toggle @manager` (the default list `manager` is `role=manager`); with no such pane it only puts an open drawer away |
+| `drawer next\|prev [--window W]` | the next or previous pane in the drawer, on show and focused (⌘] / ⌘[ while a drawer pane is focused) |
+| `drawer dock [PANE]` | moves the pane (default: the calling drawer pane, else the one the drawer shows) from the drawer into the current tab's layout, to the right of the tab's focused pane, focused (`strip.make-room` applies); a pane not in a drawer fails with exit 1. JSON `{"pane", "tab", "window", "hid": [id]}` |
+| `drawer ls [--window W]` | JSON `{"open": bool, "panes": [Pane], "window", "current"?}` |
+
+`show`, `hide`, `toggle`, `next` and `prev` print the `drawer ls` JSON with `--json`. W defaults to the
+calling pane's window (a drawer pane's too), else the current one.
+
+- A pane in the drawer leaves the drawer when hidden: it goes back, hidden, to the tab it came from, or
+  the current tab when that tab is gone. `pane move` takes it to wherever it says; `pane close` (or its
+  program ending) ends it; `pane focus` and `go` open the drawer on it. `split`, `pane zoom`, `pane
+  swap` and `pane resize` fail with exit 1 for a drawer pane.
+- While the drawer is closed, a drawer pane whose indicator is `needs_you` shows a thin line along the
+  bottom edge of the window's panes with its title.
+- Events: `drawer.opened`, `drawer.closed` `{"window", "pane"?}`; a pane going into or out of a
+  drawer is a `pane.moved` whose `to` or `from` is `{"window", "drawer": true}`.
 
 ## Attributes
 
@@ -299,7 +325,7 @@ Slots:
   `tab.changed` / `window.changed` the same with `tab` / `window`: one per changed key. An agent's
   status change is `pane.changed` with key `agent.status`, before its other `agent.*` keys.
 - `pane.moved` has `from` and `to`: `{"tab", "window", "index"}` (the pane's place in its tab's
-  layout, from 1).
+  layout, from 1), or `{"window", "drawer": true}` for a window's drawer.
 - A focus stretch counts only while the app is active, the screen is unlocked, and the user typed or
   clicked in the app within the last 3 minutes; one that ends because the user stopped ends when the
   3 minutes passed.
@@ -353,5 +379,5 @@ Keys written by the hooks, in each pane's `attributes`:
 
 Removed (design/cli.md): every `agent …` command (an old one fails with exit 1 and says what to do),
 the `claude` and `codex` shortcuts, the Session, Report, Message, Request, Item and Startup objects,
-the `agent` pane field, `jump` (use `go --next jump` and `go --back`), `UMI_PANE_ID` (now
-`UMI_PANE`), and exit codes 2 and 3.
+the `agent` pane field, `jump` (use `go --next jump` and `go --back`), `tab back` (use `go --back`),
+`UMI_PANE_ID` (now `UMI_PANE`), and exit codes 2 and 3.

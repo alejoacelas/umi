@@ -82,7 +82,7 @@ enum UmiSidebarDrop {
     }
 
     /// The pane a pane dropped on a tab's row goes beside: the tab's focused pane, as with
-    /// ⌃⌘← / ⌃⌘→ and `pane move --tab`. Nil when the pane is already that tab's only pane.
+    /// `pane move --tab`. Nil when the pane is already that tab's only pane.
     static func anchor(in tab: UmiTab, of window: TerminalController, excluding pane: Ghostty.SurfaceView) -> Ghostty.SurfaceView? {
         let tree = window.tree(of: tab)
         let leaves = tree.root?.leaves() ?? []

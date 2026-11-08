@@ -569,7 +569,7 @@ def test_groups_are_restored_with_the_layout(target, fresh):
 # ---- With real key presses (accessibility) --------------------------------------------------------
 
 KEYCODES = {"]": 30, "[": 33, "\\": 42, "b": 11, "f": 3, "r": 15, "tab": 48, "return": 36, "esc": 53,
-            "left": 123, "right": 124}
+            "left": 123, "right": 124, "up": 126, "down": 125}
 
 
 def press(ui, key, *mods):
@@ -944,7 +944,7 @@ def test_a_click_outside_cancels_a_rename_in_the_row_ui(inst, win, ui):
 
 @pytest.mark.req("S-14", "L-13")
 def test_move_tab_keys_keep_groups_whole_ui(inst, win, ui):
-    """⌃⇧← / ⌃⇧→ (Move Tab Up / Down): the last tab of a group can't leave it downwards; the tab
+    """⌃⇧↑ / ⌃⇧↓ (Move Tab Up / Down): the last tab of a group can't leave it downwards; the tab
     below the group hops over all of it."""
     t1 = win["tab"]
     _, t2 = new_tab(inst, win)
@@ -957,17 +957,17 @@ def test_move_tab_keys_keep_groups_whole_ui(inst, win, ui):
     assert order() == [t1, t2, t3, t4]
     inst.cli("tab", "focus", t3)
     front(inst, win, ui)
-    press(ui, "right", "ctrl", "shift")
+    press(ui, "down", "ctrl", "shift")
     time.sleep(0.5)
     assert order() == [t1, t2, t3, t4], "the group's last tab stayed in its group"
     inst.cli("tab", "focus", t4)
     front(inst, win, ui)
-    press(ui, "left", "ctrl", "shift")
-    wait_until(lambda: order() == [t1, t4, t2, t3], 3, message="⌃⇧← hopped over the group")
+    press(ui, "up", "ctrl", "shift")
+    wait_until(lambda: order() == [t1, t4, t2, t3], 3, message="⌃⇧↑ hopped over the group")
     time.sleep(0.5)
     assert order() == [t1, t4, t2, t3]
-    press(ui, "right", "ctrl", "shift")
-    wait_until(lambda: order() == [t1, t2, t3, t4], 3, message="⌃⇧→ hopped back below it")
+    press(ui, "down", "ctrl", "shift")
+    wait_until(lambda: order() == [t1, t2, t3, t4], 3, message="⌃⇧↓ hopped back below it")
 
 
 @pytest.mark.req("S-4")

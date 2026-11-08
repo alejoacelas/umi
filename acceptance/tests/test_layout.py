@@ -496,14 +496,16 @@ def test_cli_inside_panes_defaults_to_this_pane(inst, win):
 SHORTCUTS = {
     "cmd+b": "toggle the sidebar", "cmd+shift+e": "show the project explorer", "cmd+o": "open a file",
     "cmd+shift+m": "toggle Markdown preview/source", "cmd+ctrl+t": "move the pane to a new tab",
-    "cmd+ctrl+n": "move the pane to a new window", "cmd+ctrl+left": "move the pane into the previous tab",
-    "cmd+ctrl+right": "move the pane into the next tab", "cmd+ctrl+shift+n": "move the tab to a new window",
+    "cmd+ctrl+n": "move the pane to a new window", "cmd+ctrl+left": "move the pane left (KM-1)",
+    "cmd+ctrl+right": "move the pane right", "cmd+ctrl+up": "move the pane to the tab above (KM-2)",
+    "cmd+ctrl+down": "move the pane to the tab below", "cmd+ctrl+shift+n": "move the tab to a new window",
     "cmd+ctrl+p": "pin or unpin the tab", "cmd+ctrl+r": "rename the tab", "cmd+ctrl+shift+r": "rename the pane",
     # L-9 as rewritten after the user's decisions (L-11 to L-17).
-    "cmd+shift+[": "back to the tab visited before", "cmd+shift+]": "the next tab in sidebar order",
+    "cmd+shift+[": "the previous tab in sidebar order", "cmd+shift+]": "the next tab in sidebar order",
     "cmd+1": "the first tab", "cmd+8": "the eighth tab", "cmd+9": "the last tab",
     "cmd+p": "the command palette", "cmd+shift+p": "the pane palette", "cmd+,": "Settings (the config file)",
     "cmd+ctrl+j": "the next pane whose agent needs the user", "cmd+ctrl+k": "back from that jump",
+    "cmd+ctrl+m": "show or hide the manager pane in the drawer (DR-2)",
     # L-20; I-4's update note.
     "cmd+shift+t": "reopen the last closed pane, tab or window",
     "cmd+ctrl+u": "dismiss the note after an update",

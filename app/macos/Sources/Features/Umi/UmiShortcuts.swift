@@ -39,6 +39,8 @@ enum UmiShortcuts {
 
     static let leftArrow = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
     static let rightArrow = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+    static let upArrow = String(UnicodeScalar(NSUpArrowFunctionKey)!)
+    static let downArrow = String(UnicodeScalar(NSDownArrowFunctionKey)!)
     static let tab = "\t"
 
     static var items: [Item] {
@@ -133,14 +135,18 @@ enum UmiShortcuts {
                      guard let pane = UmiTopology.currentPane else { return }
                      do { try UmiHidden.hide(pane) } catch { NSSound.beep() }
                  },
-                 enabled: { (UmiTopology.currentWindow?.surfaceTree.root?.leaves().count ?? 0) > 1 }),
-            Item(id: "tab.back", title: "Back to Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.uturn.backward",
-                 menu: "Window", action: {
-                     // While the sidebar has a search query: the previous matching tab, as Warp.
-                     if let searched = UmiSidebarSearch.cycleMatches(-1) { if searched == nil { NSSound.beep() }; return }
-                     if UmiNavigation.tabBack() == nil { NSSound.beep() }
-                 },
-                 enabled: { UmiTabHistory.canGoBack || UmiTopology.currentWindow.map(UmiSidebarSearch.filtersCycling) == true }),
+                 // A drawer pane can always be hidden (it goes back to its tab); a tab's pane only
+                 // when it isn't the last on show.
+                 enabled: {
+                     guard let pane = UmiTopology.currentPane else { return false }
+                     if UmiDrawer.window(holding: pane) != nil { return true }
+                     return (UmiTopology.currentWindow?.surfaceTree.root?.leaves().count ?? 0) > 1
+                 }),
+            // Warp's previous and next tab in sidebar order (only the matching tabs while the
+            // sidebar has a search query).
+            Item(id: "tab.previous", title: "Show Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.up.square",
+                 menu: "Window", action: { adjacentTab(-1) },
+                 enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
             Item(id: "tab.next", title: "Show Next Tab", key: "]", modifiers: [.command, .shift], symbol: "arrow.down.square",
                  menu: "Window", action: { adjacentTab(1) },
                  enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
@@ -157,9 +163,9 @@ enum UmiShortcuts {
         } + [
             Item(id: "tab.last", title: "Last Tab", key: "9", modifiers: [.command], symbol: "9.square", menu: "Window",
                  submenu: "Show Tab", action: { UmiNavigation.selectLastTab() }),
-            Item(id: "tab.move_up", title: "Move Tab Up", key: leftArrow, modifiers: [.control, .shift], symbol: "arrow.up",
+            Item(id: "tab.move_up", title: "Move Tab Up", key: upArrow, modifiers: [.control, .shift], symbol: "arrow.up",
                  menu: "Window", action: { moveSelectedTab(-1) }, enabled: { canMoveSelectedTab(-1) }),
-            Item(id: "tab.move_down", title: "Move Tab Down", key: rightArrow, modifiers: [.control, .shift], symbol: "arrow.down",
+            Item(id: "tab.move_down", title: "Move Tab Down", key: downArrow, modifiers: [.control, .shift], symbol: "arrow.down",
                  menu: "Window", action: { moveSelectedTab(1) }, enabled: { canMoveSelectedTab(1) }),
 
             // Moving panes and tabs, pins and names.
@@ -167,10 +173,20 @@ enum UmiShortcuts {
                  symbol: "rectangle.badge.plus", menu: "Window", action: { movePane(.newTab) }),
             Item(id: "pane.move_new_window", title: "Move Pane to New Window", key: "n", modifiers: [.command, .control],
                  symbol: "macwindow.badge.plus", menu: "Window", action: { movePane(.newWindow) }),
-            Item(id: "pane.move_previous_tab", title: "Move Pane to Previous Tab", key: leftArrow, modifiers: [.command, .control],
-                 symbol: "arrow.left.square", menu: "Window", action: { movePane(.adjacentTab(-1)) }),
-            Item(id: "pane.move_next_tab", title: "Move Pane to Next Tab", key: rightArrow, modifiers: [.command, .control],
-                 symbol: "arrow.right.square", menu: "Window", action: { movePane(.adjacentTab(1)) }),
+            // Moving the pane with ⌃⌘ held (UmiPaneMove): ←/→ within its tab, ↑/↓ to another tab,
+            // landing when ⌃⌘ is let go. From the menu, each step lands at once.
+            Item(id: "pane.move_left", title: "Move Pane Left", key: leftArrow, modifiers: [.command, .control],
+                 symbol: "arrow.left.square", menu: "Window", submenu: "Move Pane", action: { UmiPaneMove.step(.left) },
+                 enabled: { UmiPaneMove.canStart }),
+            Item(id: "pane.move_right", title: "Move Pane Right", key: rightArrow, modifiers: [.command, .control],
+                 symbol: "arrow.right.square", menu: "Window", submenu: "Move Pane", action: { UmiPaneMove.step(.right) },
+                 enabled: { UmiPaneMove.canStart }),
+            Item(id: "pane.move_up", title: "Move Pane to Tab Above", key: upArrow, modifiers: [.command, .control],
+                 symbol: "arrow.up.square", menu: "Window", submenu: "Move Pane", action: { UmiPaneMove.step(.up) },
+                 enabled: { UmiPaneMove.canStart }),
+            Item(id: "pane.move_down", title: "Move Pane to Tab Below", key: downArrow, modifiers: [.command, .control],
+                 symbol: "arrow.down.square", menu: "Window", submenu: "Move Pane", action: { UmiPaneMove.step(.down) },
+                 enabled: { UmiPaneMove.canStart }),
             Item(id: "tab.move_new_window", title: "Move Tab to New Window", key: "n", modifiers: [.command, .control, .shift],
                  symbol: "macwindow.on.rectangle", menu: "Window", action: { moveTabToNewWindow() }),
             Item(id: "tab.pin", title: "Pin or Unpin Tab", key: "p", modifiers: [.command, .control], symbol: "pin", menu: "Window",
@@ -220,6 +236,25 @@ enum UmiShortcuts {
                  symbol: "arrow.uturn.backward.circle", menu: "Window",
                  action: { if (try? UmiGo.back()) == nil { NSSound.beep() } },
                  enabled: { UmiGo.canGoBack }),
+            // The drawer (attention-ui.md, "The drawer"): ⌃⌘M runs `drawer toggle @manager`.
+            Item(id: "drawer.manager", title: "Show or Hide Manager", key: "m", modifiers: [.command, .control],
+                 symbol: "person.crop.rectangle", menu: "Window", submenu: "Drawer",
+                 action: { UmiDrawer.toggleManager() }),
+            Item(id: "drawer.toggle", title: "Show or Hide Drawer", key: "", modifiers: [], symbol: "rectangle.bottomhalf.filled",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.toggleCurrent() },
+                 enabled: { UmiDrawer.currentHasPanes }),
+            Item(id: "drawer.move_pane", title: "Move Pane to Drawer", key: "", modifiers: [], symbol: "rectangle.bottomhalf.inset.filled",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.moveFocusedPane() },
+                 enabled: { UmiTopology.currentPane.map { UmiTopology.currentWindow?.drawer.contains($0) != true } ?? false }),
+            Item(id: "drawer.dock", title: "Dock Drawer Pane", key: "", modifiers: [], symbol: "rectangle.split.3x1",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.dockCurrent() },
+                 enabled: { UmiDrawer.currentHasPanes }),
+            Item(id: "drawer.next", title: "Next Drawer Pane", key: "", modifiers: [], symbol: "chevron.right",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.cycleCurrent(1) },
+                 enabled: { UmiDrawer.currentHasPanes }),
+            Item(id: "drawer.previous", title: "Previous Drawer Pane", key: "", modifiers: [], symbol: "chevron.left",
+                 menu: "Window", submenu: "Drawer", action: { UmiDrawer.cycleCurrent(-1) },
+                 enabled: { UmiDrawer.currentHasPanes }),
             // The note after an update (I-4).
             Item(id: "view.dismiss_toasts", title: "Dismiss Update Note", key: "u", modifiers: [.command, .control],
                  symbol: "xmark.circle", menu: "View", action: { UmiUpdateNote.shared.dismiss() },
@@ -317,6 +352,13 @@ enum UmiShortcuts {
         UmiLaunchConfigs.installMenu(in: mainMenu)
         // Ghostty's own palette item is Umi's Command Palette… now.
         for existing in allItems(mainMenu) where existing.action == #selector(BaseTerminalController.toggleCommandPalette(_:)) {
+            existing.isHidden = true
+        }
+        // Keyboard resizing of splits is not offered (⌃⌘ arrows move panes): Ghostty's Move
+        // Divider items go.
+        let dividerActions = ["moveSplitDividerUp:", "moveSplitDividerDown:", "moveSplitDividerLeft:", "moveSplitDividerRight:"]
+            .map(NSSelectorFromString)
+        for existing in allItems(mainMenu) where existing.action.map(dividerActions.contains) == true {
             existing.isHidden = true
         }
         // Its font size items go: Umi's (same titles) set the size for every pane, with the zoom (L-33).
@@ -420,6 +462,8 @@ enum UmiShortcuts {
     }
 
     private static func dispatchKey(_ event: NSEvent) -> Bool {
+        // A keyboard move in progress takes Esc (cancel) and lands on any other key but its own.
+        if UmiPaneMove.intercept(event) { return true }
         // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing,
         // except ⌥⇧ keys an item has (⌥⇧> and ⌥⇧<, Warp's font size keys).
         let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false
@@ -467,7 +511,7 @@ enum UmiShortcuts {
 
     // MARK: Actions
 
-    enum PaneTarget { case newTab, newWindow, adjacentTab(Int) }
+    enum PaneTarget { case newTab, newWindow }
 
     private static func movePane(_ target: PaneTarget) {
         guard let window = UmiTopology.currentWindow, let pane = UmiTopology.currentPane else { return }
@@ -477,13 +521,6 @@ enum UmiShortcuts {
                 try UmiLayout.move(pane, to: .newTab(window, index: nil), focus: true)
             case .newWindow:
                 try UmiLayout.move(pane, to: .newWindow(), focus: true)
-            case .adjacentTab(let delta):
-                guard let index = window.index(of: window.selectedTab) else { return }
-                let targetIndex = index + delta
-                guard window.tabs.indices.contains(targetIndex) else { NSSound.beep(); return }
-                let tab = window.tabs[targetIndex]
-                guard let anchor = tab.effectiveFocusedSurface else { return }
-                try UmiLayout.move(pane, to: .besidePane(anchor, .right), focus: true)
             }
         } catch {
             NSSound.beep()

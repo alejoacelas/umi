@@ -44,7 +44,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, PI-1 to PI-4, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, PI-1 to PI-4, KM-1 to KM-5, DR-1 to DR-5, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
 
 ### Core: agents in panes
 These outcomes must hold every time, with both agents: the plugin's hooks report each agent's state
@@ -70,7 +70,10 @@ AG-1 to AG-17, AG-20 to AG-24 (sessions, the read-only view, Take Over, `agent` 
 toasts), and the delivery phases that built them. Their IDs are not reused. Design step 4
 (2026-11-08) replaced stacks (M-7) with hidden panes and the pane strip (H-1 to H-8). Design step 5
 (2026-11-08) replaced the cyan focus line and S-3's brighter agent logo with the pane indicator
-(PI-1 to PI-4).
+(PI-1 to PI-4). Design step 6 (2026-11-08) replaced ⌃⌘←/→ "move the pane to the previous or next
+tab", keyboard resizing of splits and L-19's hand-placed divider rules with keyboard moves (KM-1 to
+KM-5), and ⇧⌘[ "back through the tabs visited" with Warp's previous tab (L-11). Design step 7
+(2026-11-08) added the drawer (DR-1 to DR-5).
 
 ---------------------------------------------------------------------------------------------------
 
@@ -173,15 +176,16 @@ the menu.
   - ⇧⌘M toggles the Markdown preview and source;
   - ⌘P opens the command palette (L-14); ⇧⌘P lists panes (L-15); ⌘, opens the config file (L-17);
     ⌘/ opens the shortcuts page (L-17);
-  - ⇧⌘[ goes back to the tab visited before; ⇧⌘] shows the next tab in sidebar order; ⌃Tab and
-    ⌃⇧Tab cycle to the next and previous tab; ⌘1–⌘8 show that tab and ⌘9 the last one (L-11);
-  - ⌃⇧← / ⌃⇧→ move the tab up or down (L-13);
+  - ⇧⌘[ and ⇧⌘] show the previous and next tab in sidebar order; ⌃Tab and ⌃⇧Tab cycle to the
+    next and previous tab; ⌘1–⌘8 show that tab and ⌘9 the last one (L-11);
+  - ⌃⇧↑ / ⌃⇧↓ move the tab up or down (L-13);
   - ⌃⌘T / ⌃⌘N move the pane to a new tab or window;
-  - ⌃⌘← / ⌃⌘→ move the pane into the previous or next tab;
+  - ⌃⌘ held with the arrows moves the pane: ←/→ within its tab, ↑/↓ to another tab (KM-1 to KM-5);
   - ⌃⇧⌘N moves the tab to a new window;
   - ⌃⌘P pins or unpins the tab;
   - ⌃⌘R / ⌃⇧⌘R rename the tab or pane;
   - ⌃⌘J goes to the next pane whose agent needs the user, and ⌃⌘K goes back (L-12);
+  - ⌃⌘M shows and hides the manager pane in the drawer (DR-2);
   - ⌘[ and ⌘] walk the tab's panes, those on show then the hidden ones (H-6);
   - ⇧⌘T reopens the last closed pane, tab or window (L-20);
   - (Warp parity, 2026-11-05) ⌥⌘I and ⌥⇧⌘I synchronize input and stop it (L-32); ⌘= ⌘- ⌘0 zoom
@@ -194,12 +198,11 @@ the menu.
   or preview), the sidebar (its rename field and the file tree) or the palette. A terminal never takes one of these keys first.
 
 - **L-11 [A+W]** Moving between tabs:
-  - ⇧⌘[ (`<cli> tab back`) goes to the tab the user was in before, in any window. Pressed again,
-    it goes to the tab before that, and so on, like a browser's Back over the tabs visited. Tabs
-    closed since are skipped. Visiting a tab any other way ends the walk.
-  - ⇧⌘] (`<cli> tab next`) goes to the next tab in sidebar order, ⌃Tab too, and ⌃⇧Tab (`<cli> tab
-    prev`) to the previous one; both wrap around. Pressed several times in a row they walk down
-    (or up) the list, which stays as it is (S-7).
+  - ⇧⌘] (`<cli> tab next`) goes to the next tab in sidebar order, ⌃Tab too, and ⇧⌘[ and ⌃⇧Tab
+    (`<cli> tab prev`) to the previous one, as in Warp; they wrap around. Pressed several times in a
+    row they walk down (or up) the list, which stays as it is (S-7). (Design step 6, 2026-11-08:
+    ⇧⌘[ no longer goes back through the tabs visited, and `<cli> tab back` is gone; `<cli> go
+    --back` returns from a walk, L-12.)
   - ⌘1–⌘8 show the Nth tab of the window and ⌘9 its last tab.
   - Showing another tab fades its panes in from the window's background (about 140 ms, none with
     Reduce Motion), so a tab switch looks different from a window switch, which stays as macOS
@@ -212,7 +215,7 @@ the menu.
   --back`) goes back to the pane the user was in before the first of those steps. When the list is
   empty, `go` fails with "nothing in jump" and nothing moves (the key beeps).
 
-- **L-13 [A+W]** ⌃⇧← and ⌃⇧→ (`<cli> tab move [TAB] --up|--down`, and the sidebar row's menu) move
+- **L-13 [A+W]** ⌃⇧↑ and ⌃⇧↓ (`<cli> tab move [TAB] --up|--down`, and the sidebar row's menu) move
   a tab up or down the sidebar, within its group: a tab never crosses into or out of the pinned
   tabs. At the end of its group nothing moves (the CLI fails with a message).
 
@@ -285,27 +288,19 @@ the menu.
     (33/33/33 → 50/50; 40/40/20 → 67/33 when a 40 closes);
   - this holds for every way of making or removing panes: the shortcuts and menus, `split`,
     dragging and dropping panes, `pane move`, and closes;
-  - dragging a divider leaves it where it's dropped, and that divider now sizes its panes by hand.
-    A pane between dividers placed by hand (or one such divider and the end of its row or
-    column) keeps its size when another divider is dragged; only the panes not sized by hand
-    grow or shrink, sharing equally the stretch between the dragged divider and the nearest
-    divider placed by hand (or the row's end) on each side. In a row of three, dragging the first
-    divider gives the first pane the width dragged to and the other two half the rest each;
-    dragging the second divider then leaves the first pane as it is. In a row of four, dragging
-    the first divider to 28% and the last to 78% gives 28/25/25/22. A pane split the other way (a
-    column in a row) counts as one pane of the row and keeps its inside;
+  - dragging a divider leaves it where it's dropped and changes only the two panes beside it, as
+    in Warp; the rest of the row keeps its sizes. A pane split the other way (a column in a row)
+    counts as one pane of the row and keeps its inside. Splits and closes afterwards share space
+    as above, in proportion to the sizes the panes have then;
   - file panes (E-1) are panes like any other;
-  - keyboard resizes (Ghostty's `resize_split`) and `pane resize` still move one pane's edge,
-    changing only the two panes beside it, and that divider counts as placed by hand;
-  - splits and closes share space as above and keep the other dividers placed by hand (the
-    dividers beside the new or closed pane are not). Double-clicking a divider gives its row (or
-    column) equal shares, leaves the rest of the tab alone, and forgets which of its dividers
-    were placed by hand; ⌃⌘= and `tab equalize` equalize the whole tab and forget them all;
+  - `pane resize` moves one pane's edge the same way. Splits aren't resized from the keyboard:
+    ⌃⌘ and the arrows move panes (KM-1). Double-clicking a divider gives its row (or column) equal
+    shares and leaves the rest of the tab alone; ⌃⌘= and `tab equalize` equalize the whole tab;
   - `split --ratio R` gives the new pane R of its row (or column); the others keep their
     proportions;
   - (Warp parity, 2026-11-05) no pane gets smaller than 190 points along the axis a divider
     moves, Warp's minimum: a dragged divider stops where the next step would take a pane below
-    it, and a keyboard resize or `pane resize` that would is refused (the CLI says so). A pane
+    it, and a `pane resize` that would is refused (the CLI says so). A pane
     already smaller (a small window) may grow;
   - (Warp parity, 2026-11-05) dividers are Warp's: a 1-point line at the foreground's 15%
     (`#262626` on Umi's dark theme) that can be grabbed 4 points either side (9 in all).
@@ -399,8 +394,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
   in the sidebar to reorder them and onto another window's sidebar. Also, as in Warp:
   - a pane is dragged by its chip in the pane strip (H-8); Ghostty's hover handle at the top of a
     terminal and the grips of file and web headers are gone;
-  - a pane dropped on a tab's row moves into that tab (beside its focused pane, as ⌃⌘←/→ and
-    `pane move --tab` place it); dropped between rows (the top or bottom quarter of a row) or below
+  - a pane dropped on a tab's row moves into that tab (beside its focused pane, as `pane move
+    --tab` places it); dropped between rows (the top or bottom quarter of a row) or below
     the rows, it becomes a new tab at that position. A thin accent line shows where it lands;
   - a tab dropped on the top or bottom half of a row lands before or after it, with the same line;
   - a tab dragged out of its window and dropped where nothing takes it becomes a window of its own
@@ -508,6 +503,81 @@ replaces the cyan line that marked the focused pane of a split and the brighter 
   brighter the focused pane is: a percentage up to 20% (`0` for none), default `3%`. Changes to the
   config take effect within seconds; a value that doesn't read keeps the default and `slot ls`
   shows its error.
+
+## KM. Moving panes from the keyboard
+
+From design/attention-ui.md ("Moving panes") and prototypes/move-literal.html (option A: the sidebar
+lists every tab's panes during the move).
+
+- **KM-1 [A]** Holding ⌃⌘, the arrows move the focused pane; the move starts at the first arrow, so
+  ⌃⌘ shortcuts with letters are unaffected. ←/→ move it one place among the panes on show of the
+  tab it is over (the first place is before the first pane; at either end nothing moves). Each is a
+  menu item (Window ▸ Move Pane ▸ Move Pane Left / Right / to Tab Above / to Tab Below) and a
+  shortcut `<cli> shortcuts` changes; a step from the menu, or with ⌃⌘ no longer held, lands at
+  once.
+- **KM-2 [A]** ↑/↓ carry the pane to the tab above or below in sidebar order, wrapping around;
+  the targets are every tab of the window, the pane's own tab included, and a new tab last (not
+  offered for a pane alone in its tab). Over another tab the pane starts at its right end and ←/→
+  pick its place; back over its own tab it starts where it was.
+- **KM-3 [A+W]** While the move lasts, the window shows the target tab exactly as it would look with
+  the pane landed, its strip included, with the pane focused there; in a tab showing its
+  `visible_limit`, the pane `strip.make-room` would hide is hidden (H-1). The sidebar comes out for
+  the move, even when hidden, in the tabs view, and goes back afterwards. Every row lists its tab's
+  panes under its second line, each with its indicator (PI-2): those on show in layout order, the
+  moving pane in the accent colour, a pane the landing would hide struck through ("→ hidden"), then
+  the hidden ones in italics ("· hidden"). The target row is outlined in the accent colour and the
+  row the pane comes from is dimmed; while the target is a new tab, it is a row of its own at the
+  end, and otherwise a "New tab" row stands there. A collapsed tab group opens while the pane is
+  over one of its tabs and closes again when it moves on. Rows say their panes to accessibility.
+  In the window, the moving pane is outlined in the accent colour with a "moving here" tag at its
+  bottom left, and its strip chip is drawn in the accent colour.
+- **KM-4 [A]** Letting go of ⌃⌘ (or any other key, or a click) lands the pane where it was shown:
+  one `pane.moved` event (and `pane.hidden` for a pane hidden to make room), caused by the key; the
+  previews before it report nothing. The pane keeps keyboard focus, in its new tab. Esc cancels:
+  every tab as it was, the pane focused where it was, nothing reported. ⌘Z undoes a landed move
+  (M-3). The app going to the background or the window no longer being key lands the move too (⌃⌘
+  could be let go where the app doesn't see it). The pane closing mid-move ends the move with every
+  tab as it was, without the pane. The tabs and panes a preview passes over aren't recorded in the
+  recently-visited lists (L-15's order, L-18's focus order): only the landing is, and a cancelled move
+  leaves them as they were.
+- **KM-5 [A]** Landing on a new tab makes a tab of its own for the pane, last in the window. A
+  pane landed back in its place moves nothing.
+
+## DR. The drawer
+
+From design/attention-ui.md ("The drawer") and prototypes/drawer.html (option B: a bottom drawer).
+
+- **DR-1 [A+W]** Each window has a drawer: it rises over the lower half of the window's panes, at
+  their full width, without changing the tab's layout, and belongs to the window (it stays open
+  across tab switches). It slides up from the bottom edge over 0.26 s when it opens and back down
+  when put away (none with Reduce Motion on). Its header has a chip per drawer pane (its indicator and name; the one on
+  show highlighted, a click shows another) and Dock, Hide and Put away. `<cli> drawer show PANE`
+  moves the pane into the drawer and opens it there, focused: the pane leaves its tab (no strip chip,
+  no place among the tab's `visible_limit`), keeps running, and the tab's focus moves to its pane
+  used most recently; a tab left without panes closes; the window's only pane can't go (exit 1).
+  `drawer show` without a pane opens the drawer as it was; `drawer hide` closes it, its panes keep
+  running, and focus returns to the pane focused before it opened; `drawer toggle [PANE]` shows when
+  closed or showing another pane, else hides.
+- **DR-2 [A]** ⌃⌘M runs `drawer toggle @manager` (the list `manager` is `role=manager`): a menu item
+  (Window ▸ Drawer ▸ Show or Hide Manager) and a shortcut `<cli> shortcuts` changes; a `key.ctrl+cmd+m`
+  line in the config replaces it. With no pane holding `role=manager`, it puts an open drawer away and
+  otherwise moves nothing. Window ▸ Drawer also has Show or Hide Drawer, Move Pane to Drawer, Dock
+  Drawer Pane and Next / Previous Drawer Pane (no default keys); with a drawer pane focused, ⌘[ and
+  ⌘] go through the drawer's panes (`drawer next|prev`).
+- **DR-3 [A]** While the drawer is closed, a drawer pane whose indicator is "needs you" (PI-1) shows
+  as a thin amber line along the bottom edge of the window's panes, with a short label at its right
+  end ("NAME · needs you", "+N" when more wait); clicking the label shows that pane in the drawer.
+- **DR-4 [A]** `drawer dock [PANE]` moves a drawer pane into the current tab's layout, to the right
+  of its focused pane, focused; `strip.make-room` applies (H-1). Hiding a drawer pane (`pane hide`,
+  the Hide button) puts it back, hidden, in the tab it came from, or the current tab when that tab is
+  gone. `pane move` takes a drawer pane wherever it says; `pane close`, or its program ending, takes
+  it out for good; `pane focus` and `go` open the drawer on it. Split, zoom, swap and resize refuse a
+  drawer pane (exit 1).
+- **DR-5 [A]** `<cli> ls --json` lists each window's `drawer` (`open`, `panes`); a drawer pane is in
+  no tab, has `in_drawer: true` (the attribute too) and queries match it; `drawer ls` lists one
+  window's. Events: `drawer.opened` and `drawer.closed` (`window`, `pane`), and `pane.moved` with
+  `to.drawer` or `from.drawer` true. Drawer panes are saved with the layout and come back in the
+  drawer, closed, after a relaunch.
 
 ## T. Terminal input and output, and events
 

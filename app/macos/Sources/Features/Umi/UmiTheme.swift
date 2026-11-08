@@ -166,9 +166,14 @@ enum UmiTheme {
         minimum-contrast-colors = named
         bell-features = no-system,no-audio,no-attention,no-title,no-border
 
-        # ⌃⌘← / ⌃⌘→ move the pane into the previous or next tab.
+        # ⌃⌘ and the arrows move the pane (UmiPaneMove); splits aren't resized from the keyboard.
         keybind = super+ctrl+arrow_left=unbind
         keybind = super+ctrl+arrow_right=unbind
+        keybind = super+ctrl+arrow_up=unbind
+        keybind = super+ctrl+arrow_down=unbind
+        # ⌃⇧↑ / ⌃⇧↓ move the tab up and down; jump to prompt keeps ⇧⌘↑ / ⇧⌘↓.
+        keybind = ctrl+shift+arrow_up=unbind
+        keybind = ctrl+shift+arrow_down=unbind
 
         # ⇧⌘T reopens the last closed pane, tab or window (File menu), not Undo.
         keybind = super+shift+t=unbind

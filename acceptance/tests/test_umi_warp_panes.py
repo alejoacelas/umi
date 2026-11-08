@@ -779,19 +779,20 @@ def test_a_dragged_divider_between_rows_stops_at_190_points(inst, win):
 
 
 @pytest.mark.req("L-19")
-def test_a_drag_stops_where_a_pane_beyond_the_divider_would_get_too_small(inst, win):
-    """In a row of three, dragging the first divider shares the rest between the other two (L-19):
-    the drag stops when they reach 190 points, the far one included."""
+def test_a_drag_stops_where_the_pane_beside_the_divider_would_get_too_small(inst, win):
+    """In a row of three, dragging the first divider changes only its two neighbours (L-19): the drag
+    stops when the second pane reaches 190 points, and the third keeps its size."""
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
     total = sum(f["width"] for f in frames(inst, win["tab"]).values())
     if total < 3 * MINIMUM + 40:
         pytest.skip(f"the window is too narrow ({total} points) for three panes of {MINIMUM}")
+    before = frames(inst, win["tab"])
     rpc(inst, "debug.ui.split.divider", pane=a, action="move", ratio=0.98)
     f = frames(inst, win["tab"])
-    for p in (b, c):
-        assert MINIMUM - 1 <= f[p]["width"] <= MINIMUM + 6, f
+    assert MINIMUM - 1 <= f[b]["width"] <= MINIMUM + 6, f
+    assert f[c]["width"] == pytest.approx(before[c]["width"], abs=1), (before, f)
     assert f[a]["width"] > MINIMUM
 
 

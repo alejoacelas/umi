@@ -20,6 +20,8 @@ enum UmiDebug {
                 var key = item.keyEquivalent
                 if key == String(UnicodeScalar(NSLeftArrowFunctionKey)!) { key = "left" }
                 if key == String(UnicodeScalar(NSRightArrowFunctionKey)!) { key = "right" }
+                if key == String(UnicodeScalar(NSUpArrowFunctionKey)!) { key = "up" }
+                if key == String(UnicodeScalar(NSDownArrowFunctionKey)!) { key = "down" }
                 out.append(["title": item.title, "menu": path.joined(separator: " > "), "key": key,
                             "modifiers": mods, "enabled": item.isEnabled, "state": item.state == .on ? "on" : "off"])
                 if let submenu = item.submenu { walk(submenu, path: path + [item.title]) }

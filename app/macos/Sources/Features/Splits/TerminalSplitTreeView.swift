@@ -115,6 +115,8 @@ private struct TerminalSplitLeaf: View {
             // Umi: the pane indicator at the bottom right, and the focused pane of a split a
             // little brighter (attention-ui.md, "The pane indicator").
             .overlay { UmiPaneIndicatorOverlay(pane: surfaceView) }
+            // Umi: the pane a keyboard move carries is outlined and tagged "moving here".
+            .overlay { UmiPaneMoveMarker(pane: surfaceView) }
             .background {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly

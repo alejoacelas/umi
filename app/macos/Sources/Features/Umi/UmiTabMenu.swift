@@ -186,7 +186,7 @@ enum UmiTabMenu {
         controller.sidebarModel.renaming = target
     }
 
-    /// Moving a tab up or down stays within its group (pinned or not): the same as ⌃⇧←/→
+    /// Moving a tab up or down stays within its group (pinned or not): the same as ⌃⇧↑/↓
     /// (UmiNavigation), with its undo step, event and sidebar-order hold.
     static func canMove(_ tab: UmiTab, by delta: Int, in controller: TerminalController) -> Bool {
         UmiNavigation.canMoveTab(tab, by: delta, in: controller)

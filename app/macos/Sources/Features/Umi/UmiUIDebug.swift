@@ -118,7 +118,9 @@ enum UmiUIDebug {
                         let place = UmiIndicator.placement(of: pane)
                         let state = UmiIndicator.state(of: pane)
                         return ["pane": pane.umiID, "state": state.rawValue,
-                                "mark": lookJSON(indicator.look(state, focused: place.focused, split: false))]
+                                "mark": lookJSON(indicator.look(state, focused: place.focused, split: false)),
+                                // A keyboard move's pane: its chip is drawn in cyan.
+                                "moving": UmiPaneMoveDisplay.shared.info(for: window)?.pane === pane]
                     },
                     "rows": window.tabs.map { tab -> [String: Any] in
                         let row = UmiSidebarRowModel(tab: tab, in: window)

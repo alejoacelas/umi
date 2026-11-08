@@ -509,7 +509,7 @@ enum UmiLaunchConfigs {
                 guard let first = nodes.first else { return nil }
                 guard nodes.count > 1, let rest = chain(nodes.dropFirst()) else { return first }
                 return .split(.init(direction: horizontal ? .horizontal : .vertical, ratio: 1 / Double(nodes.count),
-                                    left: first, right: rest, placed: false))
+                                    left: first, right: rest))
             }
             return chain(built[...])
         }

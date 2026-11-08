@@ -1017,9 +1017,9 @@ class BaseTerminalController: NSWindowController,
     }
 
     private func splitDidResize(node: SplitTree<Ghostty.SurfaceView>.Node, to newRatio: Double) {
-        // Umi: the divider stays where it's dropped and the panes on each side of it in its
-        // row (or column) share that side equally (L-19); it stops before a pane would get
-        // smaller than Warp's minimum (190 points).
+        // Umi: as in Warp, the divider stays where it's dropped and only the two panes beside it
+        // in its row (or column) change size (L-19); it stops before a pane would get smaller
+        // than Warp's minimum (190 points).
         do {
             surfaceTree = try surfaceTree.movingDivider(of: node, to: newRatio, keepingMinimumIn: surfaceTree.viewBounds())
         } catch {
