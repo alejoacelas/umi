@@ -212,7 +212,12 @@ def test_go_walks_a_list_and_comes_back(inst, win):
 def test_ctrl_cmd_j_and_k_run_go_next_jump_and_go_back(inst, win):
     no_agents(inst)
     home = win["pane"]
-    asking, done = tab_new(inst, win), tab_new(inst, win)
+    # The finished pane shares a tab with the asking one and was focused there last: going to the
+    # asking pane must not count as looking at it.
+    done = tab_new(inst, win)
+    asking = split(inst, "right", done, "--no-focus")
+    rpc(inst, "debug.ui.assume_active", on=True)
+    inst.cli("pane", "focus", home)
     agent(inst, done, "working")
     agent(inst, done, "idle")             # finished, not looked at
     agent(inst, asking, "needs_input")
@@ -229,6 +234,7 @@ def test_ctrl_cmd_j_and_k_run_go_next_jump_and_go_back(inst, win):
                    if e["data"]["pane"] == asking]
         assert focused and focused[-1]["cause"] == {"kind": "key", "key": "ctrl+cmd+j"}, focused[-1:]
     finally:
+        rpc(inst, "debug.ui.assume_active", on=False)
         for pane in (asking, done):
             inst.cli("pane", "unset", pane, "agent.kind")
 

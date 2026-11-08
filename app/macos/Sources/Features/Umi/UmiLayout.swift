@@ -194,8 +194,10 @@ enum UmiLayout {
         if let zoomed = tree.zoomed, zoomed != tree.root?.node(view: pane) {
             window.setTree(SplitTree(root: tree.root, zoomed: nil), for: location.tab)
         }
-        window.selectTab(location.tab, focus: false)
+        // The tab comes up with this pane focused: selecting it first with its old focused pane
+        // would count that pane as looked at (its `seen_at`), clearing its unseen state.
         location.tab.focusedSurface = pane
+        window.selectTab(location.tab, focus: false)
         if window.surfaceTree.contains(pane) { window.focusedSurface = pane }
         UmiTopology.windowBecameCurrent(window)
         UmiLooking.focusChanged(in: window)
