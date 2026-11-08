@@ -419,6 +419,7 @@ enum UmiQuery {
         private let lists: (String) -> Query?
         /// Where `@NAME` was evaluated already (and being evaluated, against cycles).
         private var listMembers: [String: Set<UUID>] = [:]
+        private var listOrder: [String: [Item]] = [:]
         private var evaluating: Set<String> = []
         private(set) var unknownLists: Set<String> = []
 
@@ -433,7 +434,13 @@ enum UmiQuery {
             var out: [Item] = []
             var listed = Set<UUID>()
             for part in query.parts {
-                var matched = items.filter { matches(part.expr, $0) }
+                // A part that is just `@LIST` keeps the list's own order (`@needs-you then @unseen`).
+                var matched: [Item]
+                if case .list(let name) = part.expr, part.sort.isEmpty {
+                    matched = ordered(name)
+                } else {
+                    matched = items.filter { matches(part.expr, $0) }
+                }
                 if !part.sort.isEmpty {
                     matched = matched.enumerated().sorted { a, b in
                         for key in part.sort {
@@ -472,15 +479,23 @@ enum UmiQuery {
 
         private func members(of name: String) -> Set<UUID> {
             if let known = listMembers[name] { return known }
+            let ids = Set(ordered(name).map(\.id))
+            listMembers[name] = ids
+            return ids
+        }
+
+        /// A list's panes in its own order (empty for an unknown list, or one that names itself).
+        private func ordered(_ name: String) -> [Item] {
+            if let known = listOrder[name] { return known }
             guard !evaluating.contains(name), let query = lists(name) else {
                 if lists(name) == nil { unknownLists.insert(name) }
                 return []
             }
             evaluating.insert(name)
-            let ids = Set(run(query).map(\.id))
+            let found = run(query)
             evaluating.remove(name)
-            listMembers[name] = ids
-            return ids
+            listOrder[name] = found
+            return found
         }
     }
 

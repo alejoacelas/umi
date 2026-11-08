@@ -110,7 +110,8 @@ def test_a_tab_or_window_query_picks_the_one_holding_a_match(inst, win):
     c = tab_new(inst, win)
     inst.cli("pane", "set", c, "tabq=here")
     tab = inst.json("pane", "info", c)["tab"]
-    out = inst.json("tab", "set", "tabq=here", "picked=1")
+    # A KEY=VALUE first word is a pair (set's words), so the query goes in --tab.
+    out = inst.json("tab", "set", "--tab", "tabq=here", "picked=1")
     assert out["tabs"] == [tab], out
     inst.cli("tab", "focus", "tabq=here")
     assert inst.tree()["current_tab"] == tab
@@ -291,8 +292,15 @@ def test_the_config_redefines_lists_and_slots(configured):
     assert slots["badge"] == dict(slots["badge"], value="@mine", default=False)
     assert slots["done-check"]["value"] == "^Status: done" and slots["done-check"]["default"] is True
     pane = inst.win["pane"]
-    # The badge counts the slot's matches.
+    # A list keeps its own order: in `list show`, `go`, and alone in a part of a query.
+    second = inst.cli("split", "right", "--pane", pane, "--no-focus").stdout.strip()
+    inst.cli("pane", "set", second, "owner=me", "prio=9")
     inst.cli("pane", "set", pane, "owner=me", "prio=1")
+    assert [p["id"] for p in inst.json("list", "show", "mine")["panes"]] == [second, pane]
+    assert where(inst, "@mine") == [second, pane] and where(inst, "@mine then owner") == [second, pane]
+    assert inst.json("go", "mine")["pane"] == second
+    inst.cli("pane", "close", second)
+    # The badge counts the slot's matches.
     wait_until(lambda: inst.rpc("debug.dock_badge")["badge"] == "1", 5, message="the badge counts @mine")
     inst.cli("pane", "unset", pane, "owner")
     wait_until(lambda: inst.rpc("debug.dock_badge")["badge"] == "", 5, message="the badge clears")

@@ -69,6 +69,7 @@ VALUE  := a word, or text in double quotes
 - A bare `KEY` holds when the key is set and its value isn't `false`. `KEY != VALUE` holds for a pane
   without the key; the other comparisons don't.
 - `@NAME` holds for the panes of the named list `NAME`; a list that doesn't exist fails with exit 1.
+  A part that is only `@NAME` (no `sort`) keeps the list's own order.
 - Values compare as numbers when both sides read as numbers, as durations when both read as
   durations (`90s`, `5m`, `2h`, `1h30m`; a bare number beside a duration is seconds), as times when
   the attribute holds a time and the value is a time or a duration back from now (`status_since <
