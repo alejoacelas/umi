@@ -1497,3 +1497,31 @@ clears "shown, not seen" redraws the marks).
 - `test_umi_nav.py::NAV_SHORTCUTS` and `test_layout.py::SHORTCUTS` (L-9): ⌃⌘M is Show or Hide
   Manager. Nothing else in them changed.
 
+
+**After review (step 7's follow-up).**
+- Added to `test_drawer.py`:
+  - `test_the_drawer_rises_and_goes_down_in_a_quarter_second` (DR-1): samples `debug.drawer` while
+    the drawer opens and closes. Its rise goes only up (then only down), is seen part way, and ends
+    within 0.2 to 1 s. Part way up, the panel's own frame is below its place. Going down, the picture
+    it slides as has the panel's size, its header on top and the terminal's red rows. Reopened half
+    way down, it rises from where it is.
+  - `test_closing_a_drawer_pane_ends_its_program` (DR-4, L-20): `pane close` of a drawer pane, with
+    the drawer open and closed; each shell's pid is gone, as in the L-20 tests. Neither pane is in
+    `reopen --list`, and `pane.closed` names the tab and window.
+  - `test_window_hide_pane_is_disabled_on_a_tabs_only_pane_while_the_drawer_is_open` (DR-4, H-2):
+    Window ▸ Hide Pane is on for a focused drawer pane, off for the tab's only pane (drawer open or
+    closed), and on again with a second pane on show.
+  - `test_real_clicks_on_a_chip_hide_and_the_waiting_line_ui` (DR-1, DR-3, DR-4): real mouse clicks
+    (CGEvents at the elements' frames, not accessibility presses) on a header chip, the Hide button
+    and the waiting line's label.
+- Added `test_queries.py::test_a_config_key_line_replaces_ctrl_cmd_m` (DR-2): with a
+  `key.ctrl+cmd+m` line, ⌃⌘M runs that line's command and the drawer stays shut and empty, though a
+  `role=manager` pane exists. Without the line, ⌃⌘M opens the drawer on the manager again.
+- Changed:
+  - `test_drawer_show_moves_the_pane_in_and_opens_the_drawer_over_the_tab` checks the panel's frame
+    once the slide has ended. Before, nothing slid, so it could read the frame at once. The checks
+    themselves are unchanged.
+  - `test_a_drawer_pane_that_needs_you_shows_a_line_along_the_bottom_edge` takes its "no line"
+    screenshot once the drawer has gone down.
+  - `test_a_drawer_panes_program_ending_takes_it_out` also checks that `pane.closed` has `tab`
+    (design/cli.md's event table).
