@@ -14,8 +14,8 @@ import uuid
 import pytest
 
 from harness import Instance, wait_until
-from test_umi_panes_ui import (_frame, _mouse_drag, _terminal_frames, _test_window, new_tab, ready, rpc, split,
-                               tab_of, type_and_wait)
+from test_umi_panes_ui import (_frame, _mouse_drag, _park_pointer, _terminal_frames, _test_window, new_tab, ready, rpc,
+                               split, tab_of, type_and_wait)
 
 pytestmark = pytest.mark.layout
 
@@ -421,8 +421,7 @@ def test_real_cmd_brackets_walk_and_land_on_release_ui(inst, win, ui):
     inst.cli("pane", "focus", a)
     start_shown = shown(inst, win["tab"])
     order = start_shown + hidden(inst, win["tab"])
-    inst.cli("window", "focus", win["window"])
-    ui.activate()
+    _park_pointer(ui, _test_window(ui, inst, win))
     cmd = Quartz.kCGEventFlagMaskCommand
 
     def post(code, down, flags):
@@ -471,8 +470,7 @@ def test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui(i
 
     try:
         inst.cli("shortcuts", "set", "pane.stack_next", "ctrl+cmd+]")
-        inst.cli("window", "focus", win["window"])
-        ui.activate()
+        _park_pointer(ui, _test_window(ui, inst, win))
         post(55, True, cmd)              # ⌘ down
         post(59, True, cmd | ctrl)       # ⌃ down
         for _ in range(3):
@@ -495,6 +493,8 @@ def test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui(i
         time.sleep(0.5)
         assert shown(inst, win["tab"])[-1] == order[4]
     finally:
+        post(59, False, 0)               # let go of ⌃ and ⌘ whatever happened
+        post(55, False, 0)
         inst.cli("shortcuts", "reset", "pane.stack_next")
 
 

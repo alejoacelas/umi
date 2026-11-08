@@ -1039,17 +1039,37 @@ def _row_element(ui, title):
 
 def _test_window(ui, inst, win):
     """The test's window in the accessibility tree, brought to the front. The instance's first
-    window shows a pane, a strip and a sidebar too, so a search of every window can land there:
-    this window is the one whose sidebar lists the test's tab."""
+    window shows a pane, a strip and maybe a sidebar too, so a search of every window can land
+    there. This window is the one whose sidebar lists the test's tab or, with the sidebar hidden
+    (new windows take the last window's choice), the main window once `window focus` has brought it
+    forward, checked by its strip having a chip for each pane of the shown tab."""
     title = tab_of(inst, win["tab"])["title"]
     inst.cli("window", "focus", win["window"])
     ui.activate()
+
+    def chips(w):
+        strip = ui.find(lambda e: ui.label(e) == "Pane strip", root=w)
+        return [e for e in ui.find_all(lambda e: ui.role(e) == "AXButton" and ui.label(e), root=strip)] if strip else []
 
     def find():
         for w in ui.windows():
             if ui.find(lambda e: ui.role(e) == "AXButton" and ui.label(e) == title, root=w):
                 return w
+        panes = tab_of(inst, window_of(inst, win["window"])["selected_tab"])["panes"]
+        main = ui.attr(ui.app, "AXMainWindow")
+        if main is not None and not ui.find(lambda e: ui.label(e) == "Sidebar", root=main) and len(chips(main)) == len(panes):
+            return main
     return wait_until(find, 5, message="the test's window")
+
+
+def _park_pointer(ui, window):
+    """Move the pointer to the middle of the window. Left over the window's green button by an
+    earlier click, it opens macOS's Move & Resize menu, which then takes the keys a test types."""
+    import Quartz
+    x, y, w, h = _frame(ui, window)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventMouseMoved, (x + w / 2, y + h / 2), Quartz.kCGMouseButtonLeft))
+    time.sleep(0.5)
 
 
 def _terminal_frames(ui, window):

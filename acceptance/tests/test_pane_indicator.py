@@ -381,7 +381,9 @@ def test_chips_and_rows_say_the_state_to_accessibility_ui(inst, win, ui, agents)
     assert values["ind-b"].endswith(", working"), values
     assert values["ind-a"] == "on show, focused", values
     inst.cli("pane", "focus", c)
-    # The sidebar row (its value names the agent, which a chip's doesn't).
+    # The sidebar row (its value names the agent, which a chip's doesn't). A new window takes the
+    # last window's sidebar choice, which an earlier test may have left hidden.
+    inst.cli("sidebar", "on", "--window", win["window"])
     row = wait_until(lambda: ui.find(lambda e: ui.role(e) == "AXButton" and "claude" in (ui.value(e) or "")
-                                     and "needs you" in (ui.value(e) or "")), 5, message="the row says needs you")
+                                     and "needs you" in (ui.value(e) or ""), root=window), 5, message="the row says needs you")
     assert row is not None
