@@ -111,12 +111,28 @@ final class UmiReopen {
     /// the next one.
     private func prune() {
         let now = Date()
+        let expired = entries.filter { $0.expiresAt <= now }
         entries.removeAll { $0.expiresAt <= now }
+        if !expired.isEmpty { Self.endPrograms(of: expired.flatMap(\.heldPanes).map { Weak($0) }) }
         timer?.invalidate()
         timer = nil
         guard let next = entries.map(\.expiresAt).min() else { return }
         timer = Timer.scheduledTimer(withTimeInterval: max(next.timeIntervalSinceNow, 0.05), repeats: false) { _ in
             MainActor.assumeIsolated { UmiReopen.shared.prune() }
+        }
+    }
+
+    /// The programs of closed panes whose reopen period ended end now. Dropping the entry releases
+    /// the pane, and its terminal ends with the view; but SwiftUI can keep a closed pane's view until
+    /// the window's views next update, which with nothing else changing in the window (the sidebar
+    /// hidden, say) may be much later. So a pane that is still alive a moment later, in no window and
+    /// no tab, ends its terminal itself.
+    private static func endPrograms(of panes: [Weak<Ghostty.SurfaceView>]) {
+        guard !panes.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            for pane in panes.compactMap(\.value) where UmiTopology.locate(pane) == nil && !UmiReopen.shared.holds(pane.id) {
+                pane.umiEndTerminal()
+            }
         }
     }
 

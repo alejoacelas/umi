@@ -421,6 +421,14 @@ extension Ghostty {
             fatalError("init(coder:) is not supported for this view")
         }
 
+        /// Umi: end the terminal now (its program ends), as deinit would: for a closed pane whose
+        /// reopen period ended while something still holds its view (UmiReopen). Only for a view that
+        /// is in no window, so nothing draws it.
+        func umiEndTerminal() {
+            guard window == nil, superview == nil, surfaceModel != nil else { return }
+            surfaceModel = nil
+        }
+
         deinit {
             // Resolve clipboard callback state while surfaceModel is still
             // alive. The request's weak SurfaceView reference is already nil
