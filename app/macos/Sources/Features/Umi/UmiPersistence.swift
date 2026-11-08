@@ -5,7 +5,7 @@ import GhosttyKit
 /// per-bundle saved state or user defaults, which every instance of the app would share):
 ///
 /// - `layout.json`: windows, tabs (names, colors, pins, order), split trees with each pane's
-///   folder and name, each file pane's file and each tab's stacks;
+///   folder and name, each file pane's file and each tab's hidden panes;
 /// - `ui.json`: the sidebar's visibility and mode, and the width new windows start with
 ///   (each window's own width is in `layout.json`).
 ///
@@ -107,7 +107,6 @@ final class UmiPersistence {
             "color": UmiTopology.colorName(tab.color),
         ]
         if let name = tab.name { json["name"] = name }
-        if tab.isDocs { json["docs"] = true }
         if !tab.attributes.isEmpty { json["attributes"] = tab.attributes }
         if let group = tab.groupID { json["group"] = group.uuidString.lowercased() }
         if let root = tree.root { json["tree"] = encode(node: root) }
@@ -115,12 +114,15 @@ final class UmiPersistence {
             json["focused_pane"] = focused.umiID
         }
         if let zoomed = tree.zoomed, case .leaf(let view) = zoomed { json["zoomed_pane"] = view.umiID }
-        // Stacks (M-7): every member, in strip order; the one on show is also in the tree.
-        if !tab.stacks.isEmpty {
-            json["stacks"] = tab.stacks.map { stack in
-                stack.members.map { member -> [String: Any] in
-                    tree.contains(member) ? ["shown": member.umiID] : encode(node: .leaf(view: member))
+        // Hidden panes, in strip order, with their pending `--until` conditions.
+        if !tab.hidden.isEmpty {
+            json["hidden"] = tab.hidden.map { pane -> [String: Any] in
+                var node = encode(node: .leaf(view: pane))
+                if let conditions = UmiHidden.conditions[pane.id], var leaf = node["pane"] as? [String: Any] {
+                    leaf["until"] = conditions.map(\.json)
+                    node["pane"] = leaf
                 }
+                return node
             }
         }
         return json
@@ -205,17 +207,17 @@ final class UmiPersistence {
                 if let focusedID = tabJSON["focused_pane"] as? String {
                     tab.focusedSurface = root.leaves().first { $0.umiID == focusedID }
                 }
-                for stackJSON in tabJSON["stacks"] as? [[[String: Any]]] ?? [] {
-                    var members: [Ghostty.SurfaceView] = []
-                    for member in stackJSON {
-                        if let shown = member["shown"] as? String {
-                            if let view = root.leaves().first(where: { $0.umiID == shown }) { members.append(view) }
-                        } else if let node = decode(node: member, app: app), case .leaf(let view) = node {
-                            members.append(view)
-                        }
+                for hiddenJSON in tabJSON["hidden"] as? [[String: Any]] ?? [] {
+                    if let node = decode(node: hiddenJSON, app: app), case .leaf(let view) = node {
+                        tab.hidden.append(view)
+                        UmiHidden.restoreConditions((hiddenJSON["pane"] as? [String: Any])?["until"], for: view)
                     }
-                    if members.count > 1, members.contains(where: { root.leaves().contains($0) }) {
-                        tab.stacks.append(UmiPaneStack(members: members))
+                }
+                // Transition (remove once no layout is older than 0.10): a layout saved with
+                // stacks (M-7, before hidden panes) brings their members not on show back hidden.
+                for stackJSON in tabJSON["stacks"] as? [[[String: Any]]] ?? [] {
+                    for member in stackJSON where member["shown"] == nil {
+                        if let node = decode(node: member, app: app), case .leaf(let view) = node { tab.hidden.append(view) }
                     }
                 }
                 tabs.append(tab)

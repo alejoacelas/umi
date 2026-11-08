@@ -31,11 +31,15 @@ extension Ghostty {
         /// Binding that reflects whether the mouse is hovering over this view.
         @Binding var isHovering: Bool
 
+        /// Umi: a click that didn't become a drag (the pane strip's chips, which are drag handles).
+        var onClick: (() -> Void)? = nil
+
         var body: some View {
             SurfaceDragSourceViewRepresentable(
                 surfaceView: surfaceView,
                 isDragging: $isDragging,
-                isHovering: $isHovering)
+                isHovering: $isHovering,
+                onClick: onClick)
             .preference(key: DraggingSurfaceKey.self, value: isDragging ? surfaceView.id : nil)
         }
     }
@@ -46,10 +50,12 @@ extension Ghostty {
         let surfaceView: SurfaceView
         @Binding var isDragging: Bool
         @Binding var isHovering: Bool
+        var onClick: (() -> Void)?
 
         func makeNSView(context: Context) -> SurfaceDragSourceView {
             let view = SurfaceDragSourceView()
             view.surfaceView = surfaceView
+            view.onClick = onClick
             view.onDragStateChanged = { dragging in
                 isDragging = dragging
             }
@@ -63,6 +69,7 @@ extension Ghostty {
 
         func updateNSView(_ nsView: SurfaceDragSourceView, context: Context) {
             nsView.surfaceView = surfaceView
+            nsView.onClick = onClick
             nsView.onDragStateChanged = { dragging in
                 isDragging = dragging
             }
@@ -95,6 +102,10 @@ extension Ghostty {
         /// Used to update the hover state for visual feedback in the parent view.
         var onHoverChanged: ((Bool) -> Void)?
 
+        /// Umi: called on a mouse up that ended no drag.
+        var onClick: (() -> Void)?
+        private var umiDragged = false
+
         /// Whether we are currently in a mouse tracking loop (between mouseDown
         /// and either mouseUp or drag initiation). Used to determine cursor state.
         private var isTracking: Bool = false
@@ -121,6 +132,13 @@ extension Ghostty {
             // window's drag handler. This fixes issue #10110 where grab handles
             // would drag the window instead of initiating pane drags.
             // Don't call super - the drag will be initiated in mouseDragged.
+            umiDragged = false
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            // Umi: a click on a chip shows or focuses its pane.
+            if !umiDragged { onClick?() }
+            umiDragged = false
         }
 
         override func updateTrackingAreas() {
@@ -152,6 +170,7 @@ extension Ghostty {
 
         override func mouseDragged(with event: NSEvent) {
             guard !isTracking, let surfaceView = surfaceView else { return }
+            umiDragged = true
 
             // Create our dragging item from our transferable
             guard let pasteboardItem = surfaceView.pasteboardItem() else { return }

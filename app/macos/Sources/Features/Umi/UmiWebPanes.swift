@@ -4,7 +4,7 @@ import SwiftUI
 import WebKit
 
 /// Pages from the origins in the config's `umi-web-origin` open in panes of their own (E-12): a
-/// web pane is an ordinary pane (it splits, moves, stacks, closes and is restored like any other)
+/// web pane is an ordinary pane (it splits, moves, hides, closes and is restored like any other)
 /// whose terminal is covered by a web view, as a file pane's is by its editor. Links ⌘-clicked
 /// in a terminal and URLs given to `umi edit` open there; links to other origins go to the
 /// default browser.
@@ -66,15 +66,14 @@ final class UmiWebPanes: ObservableObject {
 
     // MARK: Opening
 
-    /// Open a page in a pane of its own, placed as a file is (E-9): to the right of `anchor`, three
-    /// panes to a tab. A page already open (the same URL) shows where it is.
+    /// Open a page in a pane of its own, placed as a file is (E-9): to the right of `anchor`; a tab at
+    /// its limit makes room. A page already open (the same URL) shows where it is.
     @discardableResult
     static func open(_ url: URL, near anchor: Ghostty.SurfaceView,
                      focus: Bool) throws -> (pane: Ghostty.SurfaceView, page: UmiWebPage) {
         if let existing = shared.open.first(where: { $0.page.url.absoluteString == url.absoluteString }) {
-            if let location = UmiTopology.locate(existing.pane),
-               !location.window.tree(of: location.tab).contains(existing.pane) {
-                try UmiStacks.show(existing.pane, focus: focus)
+            if let location = UmiTopology.locate(existing.pane), location.tab.isHidden(existing.pane) {
+                try UmiHidden.show(existing.pane, focus: focus)
             } else if focus {
                 UmiLayout.focusPane(existing.pane, activate: true)
             }
@@ -199,7 +198,7 @@ final class UmiWebPage: NSObject, ObservableObject, WKNavigationDelegate, WKUIDe
         webView.load(URLRequest(url: url))
     }
 
-    /// What the pane's header and its stack strip call it.
+    /// What the pane's header and its strip chip call it.
     var displayTitle: String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? (url.host ?? url.absoluteString) : trimmed
@@ -351,19 +350,10 @@ private struct UmiWebPaneContent: View {
 private struct UmiWebPaneHeader: View {
     let surfaceView: Ghostty.SurfaceView
     @ObservedObject var page: UmiWebPage
-    @State private var dragging = false
-    @State private var hovering = false
 
+    // No grip: the pane's chip in the pane strip is its drag handle.
     var body: some View {
         HStack(spacing: 6) {
-            ZStack {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(hovering ? UmiTheme.textSecondary : UmiTheme.textTertiary)
-                Ghostty.SurfaceDragSource(surfaceView: surfaceView, isDragging: $dragging, isHovering: $hovering)
-            }
-            .frame(width: 22, height: 18)
-            .help("Drag to move this pane")
             Image(systemName: "globe").font(.system(size: 10))
                 .foregroundColor(UmiTheme.textSecondary)
             Text(page.displayTitle)

@@ -161,12 +161,8 @@ extension Ghostty {
                     }
                 }
 
-                // Grab handle for dragging the window. We want this to appear at the very
-                // top Z-index os it isn't faded by the unfocused overlay.
-                SurfaceGrabHandle(
-                    surfaceView: surfaceView,
-                    dragHandle: ghostty.config.dragHandle,
-                )
+                // Umi: no hover grab handle. A pane's chip in the pane strip (the window's
+                // title bar) is its drag handle (attention-ui.md, "The pane strip").
             }
         }
     }

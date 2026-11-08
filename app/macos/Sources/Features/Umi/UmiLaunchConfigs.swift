@@ -53,7 +53,8 @@ enum UmiLaunchConfigs {
     }
 
     indirect enum Node {
-        case pane(cwd: String, commands: [String], focused: Bool)
+        /// `hidden`: Umi's `is_hidden: true`, a pane that opens hidden (Warp has no hidden panes).
+        case pane(cwd: String, commands: [String], focused: Bool, hidden: Bool = false)
         case split(horizontal: Bool, panes: [Node])
     }
 
@@ -191,7 +192,7 @@ enum UmiLaunchConfigs {
                           panes: try list.map { try node($0, place: place, fail: fail) })
         }
         return .pane(cwd: text(json["cwd"]) ?? "", commands: try commands(json["commands"], place: place, fail: fail),
-                     focused: json["is_focused"] as? Bool ?? false)
+                     focused: json["is_focused"] as? Bool ?? false, hidden: json["is_hidden"] as? Bool ?? false)
     }
 
     /// `commands:` is a list of `exec: COMMAND` (Warp's form) or of plain strings.
@@ -255,12 +256,23 @@ enum UmiLaunchConfigs {
     }
 
     /// One tab: its name, color and terminal panes (file and web panes are left out, as Warp
-    /// leaves out panes that aren't terminals). Nil when no pane is left.
+    /// leaves out panes that aren't terminals). Hidden panes are included, marked `is_hidden`, after
+    /// the panes on show in a row of their own. Nil when no pane is left.
     static func capture(tab: UmiTab, in controller: TerminalController) -> Tab? {
         let tree = controller.tree(of: tab)
         let focused = tab === controller.selectedTab ? (controller.focusedSurface ?? tab.focusedSurface) : tab.focusedSurface
-        guard let root = tree.root, let layout = capture(node: root, focused: focused) else { return nil }
-        return Tab(title: tab.name, color: tab.color, layout: layout)
+        let shown = tree.root.flatMap { capture(node: $0, focused: focused) }
+        let hidden: [Node] = tab.hidden.compactMap { view in
+            if UmiFilePanes.shared.document(of: view) != nil || UmiWebPanes.shared.page(of: view) != nil { return nil }
+            return .pane(cwd: UmiTopology.cwd(of: view), commands: [], focused: false, hidden: true)
+        }
+        guard let first = shown ?? hidden.first else { return nil }
+        if hidden.isEmpty { return Tab(title: tab.name, color: tab.color, layout: first) }
+        var panes: [Node]
+        if case .split(true, let inner) = first { panes = inner } else { panes = [first] }
+        if shown == nil { panes = [] }
+        panes += hidden
+        return Tab(title: tab.name, color: tab.color, layout: panes.count == 1 ? panes[0] : .split(horizontal: true, panes: panes))
     }
 
     private static func capture(node: SplitTree<Ghostty.SurfaceView>.Node, focused: Ghostty.SurfaceView?) -> Node? {
@@ -307,10 +319,11 @@ enum UmiLaunchConfigs {
 
     private static func yaml(_ node: Node) -> UmiYAML.Node {
         switch node {
-        case .pane(let cwd, let commands, let focused):
+        case .pane(let cwd, let commands, let focused, let hidden):
             var pairs: [(String, UmiYAML.Node)] = [("cwd", .string(abbreviate(cwd)))]
             if !commands.isEmpty { pairs.append(("commands", .list(commands.map { .map([("exec", .string($0))]) }))) }
             if focused { pairs.append(("is_focused", .bool(true))) }
+            if hidden { pairs.append(("is_hidden", .bool(true))) }
             return .map(pairs)
         case .split(let horizontal, let panes):
             return .map([("split_direction", .string(horizontal ? "horizontal" : "vertical")),
@@ -322,7 +335,8 @@ enum UmiLaunchConfigs {
         # Umi launch configuration: windows, tabs and panes to open together.
         # Open it from the launch configuration palette (⌃⌘L) or with `umi layout open NAME`.
         #
-        # A layout is a pane (`cwd:`, optional `commands:` of `- exec: COMMAND`, `is_focused:`)
+        # A layout is a pane (`cwd:`, optional `commands:` of `- exec: COMMAND`, `is_focused:`,
+        # `is_hidden:` for a pane that opens hidden)
         # or a split (`split_direction: horizontal` for side by side, `vertical` for one above
         # the other, and its `panes:`). A tab can have a `title:` and a `color:`.
 
@@ -404,12 +418,28 @@ enum UmiLaunchConfigs {
             var selected: UmiTab?
             for (t, template) in window.tabs.enumerated() {
                 var focused: Ghostty.SurfaceView?
-                guard let root = build(withTabCommands(template), app: app, focused: &focused) else { continue }
+                hiddenViews = []
+                guard let built = build(withTabCommands(template), app: app, focused: &focused) else { continue }
+                // Panes marked hidden, then those past the tab's limit (three), open hidden.
+                var tree = SplitTree(root: built, zoomed: nil)
+                var hidden: [Ghostty.SurfaceView] = []
+                for view in hiddenViews where (tree.root?.leaves().count ?? 0) > 1 {
+                    if let node = tree.root?.node(view: view) { tree = tree.removing(node); hidden.append(view) }
+                }
+                hiddenViews = []
+                while let leaves = tree.root?.leaves(), leaves.count > 3, let last = leaves.last,
+                      let node = tree.root?.node(view: last) {
+                    tree = tree.removing(node)
+                    hidden.insert(last, at: 0)
+                }
+                guard let root = tree.root else { continue }
                 let tab = UmiTab(tree: SplitTree(root: root, zoomed: nil))
+                tab.hidden = hidden
+                if let f = focused, hidden.contains(where: { $0 === f }) { focused = nil }
                 tab.name = template.title.flatMap { $0.isEmpty ? nil : $0 }
                 tab.color = template.color
                 if let focused { tab.focusedSurface = focused }
-                panes += root.leaves().map(\.umiID)
+                panes += root.leaves().map(\.umiID) + hidden.map(\.umiID)
                 tabs.append(tab)
                 if t == window.activeTabIndex { selected = tab }
             }
@@ -435,14 +465,14 @@ enum UmiLaunchConfigs {
         guard !tab.commands.isEmpty else { return tab.layout }
         func hasFocus(_ node: Node) -> Bool {
             switch node {
-            case .pane(_, _, let focused): return focused
+            case .pane(_, _, let focused, _): return focused
             case .split(_, let panes): return panes.contains(where: hasFocus)
             }
         }
         func add(_ node: Node) -> Node {
             switch node {
-            case .pane(let cwd, let commands, let focused):
-                return .pane(cwd: cwd, commands: commands + tab.commands, focused: focused)
+            case .pane(let cwd, let commands, let focused, let hidden):
+                return .pane(cwd: cwd, commands: commands + tab.commands, focused: focused, hidden: hidden)
             case .split(let horizontal, var panes):
                 let target = panes.firstIndex(where: hasFocus) ?? 0
                 panes[target] = add(panes[target])
@@ -452,10 +482,13 @@ enum UmiLaunchConfigs {
         return add(tab.layout)
     }
 
+    /// Panes built for `is_hidden` entries (by `build`, read by `open`).
+    private static var hiddenViews: [Ghostty.SurfaceView] = []
+
     private static func build(_ node: Node, app: ghostty_app_t,
                               focused: inout Ghostty.SurfaceView?) -> SplitTree<Ghostty.SurfaceView>.Node? {
         switch node {
-        case .pane(let cwd, let commands, let isFocused):
+        case .pane(let cwd, let commands, let isFocused, let hidden):
             var config = Ghostty.SurfaceConfiguration()
             let folder = (cwd as NSString).expandingTildeInPath
             var isDir = ObjCBool(false)
@@ -467,6 +500,7 @@ enum UmiLaunchConfigs {
             let view = Ghostty.SurfaceView(app, baseConfig: config)
             UmiState.shared.setStartFolder(view.id, config.workingDirectory ?? NSHomeDirectory())
             if isFocused && focused == nil { focused = view }
+            if hidden { hiddenViews.append(view) }
             return .leaf(view: view)
         case .split(let horizontal, let panes):
             let built = panes.compactMap { build($0, app: app, focused: &focused) }

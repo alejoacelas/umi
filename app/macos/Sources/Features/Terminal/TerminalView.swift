@@ -51,6 +51,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     @State private var lastFocusedSurface: Weak<Ghostty.SurfaceView>?
     /// Umi: the pane being dragged, if any (for the previous/next tab drop targets).
     @State private var draggingPane: Ghostty.SurfaceView.ID?
+    // Umi: a pane dragged by its chip in the pane strip.
+    @State private var draggingChip: Ghostty.SurfaceView.ID?
 
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
@@ -109,8 +111,17 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                                 .overlay(alignment: .trailing) { UmiSidebarResizeEdge(controller: controller) }
                         }
 
-                        terminals
-                            .padding(.top, topInset)
+                        VStack(spacing: 0) {
+                            // Umi: the pane strip, in the title bar band above the panes.
+                            if let controller {
+                                UmiPaneStrip(controller: controller, tab: controller.selectedTab,
+                                             leading: controller.sidebarVisible ? 8 : 78)
+                                    .frame(height: max(topInset, 22))
+                                    .onPreferenceChange(Ghostty.DraggingSurfaceKey.self) { draggingChip = $0 }
+                            }
+                            terminals
+                        }
+                        .padding(.top, controller == nil ? topInset : 0)
                         if let controller {
                             // Umi: the shortcuts page (⌘/), at the right as Warp's keybindings panel.
                             UmiShortcutsPageSlot(model: controller.palette.shortcutsPage,
@@ -166,7 +177,7 @@ extension TerminalView {
                 .onPreferenceChange(Ghostty.DraggingSurfaceKey.self) { draggingPane = $0 }
                 .overlay {
                     if let controller = viewModel as? TerminalController {
-                        UmiPaneTabDropTargets(controller: controller, draggingPane: draggingPane)
+                        UmiPaneTabDropTargets(controller: controller, draggingPane: draggingPane ?? draggingChip)
                     }
                 }
                 .environmentObject(ghostty)

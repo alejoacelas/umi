@@ -1117,7 +1117,7 @@ func tabCommand(_ argv: [String]) {
 }
 
 func paneCommand(_ argv: [String]) {
-    guard let sub = argv.first else { fail("pane: use set, unset, get, focus, close, info, zoom, rename, move, swap or resize") }
+    guard let sub = argv.first else { fail("pane: use set, unset, get, focus, close, info, zoom, rename, move, swap, resize, hide, show or until") }
     let rest = Array(argv.dropFirst())
     switch sub {
     case "set", "unset", "get":
@@ -1140,6 +1140,38 @@ func paneCommand(_ argv: [String]) {
             }
         } else {
             printOK(result)
+        }
+    case "hide":
+        let args = parse(rest, ArgSpec(valued: ["--until"]))
+        var params: [String: Any] = [:]
+        if let pane = args.positional.first { params["pane"] = pane }
+        let until = args.all("--until")
+        if !until.isEmpty { params["until"] = until }
+        let result = callDict("pane.hide", params)
+        if jsonOutput { printJSON(["panes": result["panes"] ?? []]) }
+    case "show":
+        let args = parse(rest, ArgSpec(boolean: ["--focus"]))
+        var params: [String: Any] = [:]
+        if let pane = args.positional.first { params["pane"] = pane }
+        if args.has("--focus") { params["focus"] = true }
+        let result = callDict("pane.show", params)
+        if jsonOutput {
+            printJSON(["panes": result["panes"] ?? [], "hid": result["hid"] ?? []])
+        } else {
+            for id in result["hid"] as? [String] ?? [] { print("hid \(id)") }
+        }
+    case "until":
+        let args = parse(rest, ArgSpec())
+        var params: [String: Any] = [:]
+        if let pane = args.positional.first { params["pane"] = pane }
+        let result = callDict("pane.until", params)
+        if jsonOutput {
+            printJSON(result)
+        } else {
+            for condition in result["until"] as? [[String: Any]] ?? [] {
+                if let query = condition["query"] as? String { print("until \(query)") }
+                if let at = condition["at"] as? String { print("until \(at)") }
+            }
         }
     case "rename", "name":
         let args = parse(rest, ArgSpec())

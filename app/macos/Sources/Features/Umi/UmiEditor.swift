@@ -419,8 +419,8 @@ enum UmiEditor {
     }
 
     /// `edit FILE…`: each file in a pane of its own, the first beside the anchor pane and each
-    /// next one beside the one before, three panes to a tab (E-1, E-9). Keyboard focus stays
-    /// where it is.
+    /// next one beside the one before; a tab at its limit makes room for each (E-1, E-9).
+    /// Keyboard focus stays where it is.
     static func handleOpen(_ params: UmiParams, caller: UmiCaller) throws -> [String: Any] {
         guard let paths = params.strings("paths"), !paths.isEmpty else { throw UmiError.badRequest("edit: name a file") }
         let mode = params.string("mode").flatMap(UmiDocument.Mode.init(rawValue:))
@@ -438,20 +438,23 @@ enum UmiEditor {
         var anchor = try anchorPane(params, caller: caller)
         var opened: [[String: Any]] = []
         var pages: [[String: Any]] = []
-        for path in paths {
-            if let url = webURL(path) {
-                let (pane, page) = try UmiWebPanes.open(url, near: anchor, focus: false)
-                pages.append(["url": page.url.absoluteString, "pane": pane.umiID])
+        // A tab at its limit makes room for each (`hid`).
+        let (_, hid) = try UmiHidden.collectingHidden {
+            for path in paths {
+                if let url = webURL(path) {
+                    let (pane, page) = try UmiWebPanes.open(url, near: anchor, focus: false)
+                    pages.append(["url": page.url.absoluteString, "pane": pane.umiID])
+                    anchor = pane
+                    continue
+                }
+                let (pane, doc) = try UmiFilePanes.open(URL(fileURLWithPath: path), mode: mode, near: anchor, focus: false)
+                opened.append(json(doc, pane: pane))
                 anchor = pane
-                continue
             }
-            let (pane, doc) = try UmiFilePanes.open(URL(fileURLWithPath: path), mode: mode, near: anchor, focus: false)
-            opened.append(json(doc, pane: pane))
-            anchor = pane
         }
         let location = UmiTopology.locate(anchor)
         return ["documents": opened, "pages": pages, "tab": location?.tab.idString ?? "",
-                "window": location?.window.umiIDString ?? ""]
+                "window": location?.window.umiIDString ?? "", "hid": hid.map(\.umiID)]
     }
 
     /// An http(s) URL given to `edit` in place of a file.
@@ -508,7 +511,10 @@ enum UmiEditor {
     static func json(_ doc: UmiDocument, pane: Ghostty.SurfaceView? = nil) -> [String: Any] {
         var json: [String: Any] = ["path": doc.url.path, "mode": doc.mode.rawValue, "dirty": doc.isDirty,
                                    "encoding": UmiTextFile.encodingName(doc.encoding), "changed_on_disk": doc.changedOnDisk]
-        if let pane { json["pane"] = pane.umiID }
+        if let pane {
+            json["pane"] = pane.umiID
+            json["hidden"] = UmiTopology.locate(pane)?.tab.isHidden(pane) ?? false
+        }
         return json
     }
 

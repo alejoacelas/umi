@@ -235,4 +235,10 @@ enum UmiTime {
         defer { lock.unlock() }
         return formatter.string(from: date)
     }
+
+    static func parseISO(_ text: String) -> Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return formatter.date(from: text)
+    }
 }

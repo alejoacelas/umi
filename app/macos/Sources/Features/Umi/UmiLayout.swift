@@ -177,14 +177,38 @@ enum UmiLayout {
         return created(view, tab: tab, window: window)
     }
 
+    /// A new pane at the right end of a tab (a file opened from a hidden pane, a Markdown file
+    /// opened in the Docs tab). A tab at its limit makes room.
+    static func addPaneAtEnd(of tab: UmiTab, in window: TerminalController, options: PaneOptions,
+                             inheritFrom source: Ghostty.SurfaceView?, focus: Bool) throws -> [String: Any] {
+        let ghostty = try requireGhostty()
+        guard let app = ghostty.app else { throw UmiError.failed("the terminal engine isn't ready") }
+        let config = try surfaceConfig(options, inheritingFrom: source ?? tab.effectiveFocusedSurface,
+                                       context: GHOSTTY_SURFACE_CONTEXT_SPLIT)
+        let view = Ghostty.SurfaceView(app, baseConfig: config)
+        registerNewPane(view, options: options, config: config)
+        let newTree = window.tree(of: tab).umiAppending(view, atStart: false)
+        if tab !== window.selectedTab {
+            let bounds = window.surfaceTree.viewBounds()
+            if bounds.width > 0, let frame = newTree.root?.frames(in: bounds).first(where: { $0.view === view })?.frame {
+                view.frame = CGRect(origin: .zero, size: frame.size)
+                view.sizeDidChange(view.frame.size)
+            }
+        }
+        window.replaceTree(newTree, for: tab, undoAction: "New Split")
+        if focus { focusPane(view, activate: true) }
+        UmiEvents.shared.emit("pane.created", ["pane": view.umiID, "tab": tab.idString, "window": window.umiIDString])
+        return created(view, tab: tab, window: window)
+    }
+
     // MARK: Focus
 
-    /// Show a pane's tab and give the pane keyboard focus, bringing its window forward.
+    /// Show a pane's tab and give the pane keyboard focus, bringing its window forward. A hidden
+    /// pane is brought in first, at the right end of its tab (its tab makes room).
     static func focusPane(_ pane: Ghostty.SurfaceView, activate: Bool) {
         guard var location = UmiTopology.locate(pane) else { return }
-        // A stack member that isn't on show comes on show (M-7).
-        if !location.window.tree(of: location.tab).contains(pane) {
-            try? UmiStacks.show(pane, focus: false)
+        if location.tab.isHidden(pane) {
+            _ = try? UmiHidden.show(pane, focus: false)
             location = UmiTopology.locate(pane) ?? location
         }
         let window = location.window
@@ -256,9 +280,9 @@ enum UmiLayout {
         let window = location.window
         let tab = location.tab
         let tree = window.tree(of: tab)
-        if !tree.contains(pane), tab.stack(of: pane) != nil {
-            // A stack member that isn't on show: it leaves its stack and its program ends.
-            window.removeHiddenMember(pane, from: tab)
+        if tab.isHidden(pane) {
+            // A hidden pane: it leaves its tab and its program ends.
+            UmiHidden.remove(pane, from: tab, in: window)
             return
         }
         guard let node = tree.root?.node(view: pane) else { throw UmiError.notFound("the pane isn't in its tab") }
@@ -375,9 +399,10 @@ enum UmiLayout {
     @discardableResult
     static func move(_ pane: Ghostty.SurfaceView, to destination: PaneDestination, focus: Bool) throws -> UmiTopology.Location {
         guard var source = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
-        if !source.window.tree(of: source.tab).contains(pane) {
-            // A stack member that isn't on show moves from its stack's place.
-            try UmiStacks.show(pane, focus: false)
+        if source.tab.isHidden(pane) {
+            // A hidden pane moves from the end of its tab: it comes in there first, without
+            // hiding another for it, then leaves.
+            UmiHidden.withoutMakingRoom { UmiHidden.quietly { _ = try? UmiHidden.show(pane, focus: false) } }
             source = UmiTopology.locate(pane) ?? source
         }
         if case .besidePane(let target, _) = destination, target === pane {
@@ -427,7 +452,7 @@ enum UmiLayout {
         case .besidePane(let target, let direction):
             guard let dest = UmiTopology.locate(target) else { throw UmiError.notFound("the target pane isn't in a window") }
             if dest.tab === source.tab {
-                let without = source.window.umiRemoving(node, from: sourceTree, in: source.tab).tree
+                let without = sourceTree.removing(node)
                 let newTree = try without.inserting(view: pane, at: target, direction: direction)
                 source.window.setTree(SplitTree(root: newTree.root, zoomed: nil), for: source.tab)
             } else {
@@ -462,11 +487,11 @@ enum UmiLayout {
         }
     }
 
-    /// Take a pane out of its tab (its stack's next member takes its place). A tab left empty
-    /// closes (and a window left without tabs).
+    /// Take a pane out of its tab. A tab left with no pane on show brings in a hidden one; a tab
+    /// left empty closes (and a window left without tabs).
     private static func removeFromSource(_ pane: Ghostty.SurfaceView, node: SplitTree<Ghostty.SurfaceView>.Node,
                                          source: UmiTopology.Location) {
-        let newTree = source.window.umiRemoving(node, from: source.window.tree(of: source.tab), in: source.tab).tree
+        let newTree = UmiHidden.refill(source.window.tree(of: source.tab).removing(node), tab: source.tab, window: source.window)
         if newTree.isEmpty {
             source.window.detachTab(source.tab, focusNeighbor: false)
             UmiEvents.shared.emit("tab.closed", ["tab": source.tab.idString, "window": source.window.umiIDString])
@@ -614,8 +639,8 @@ struct UmiSnapshot {
         let tree: WeakNode?
         let zoomed: Weak<Ghostty.SurfaceView>?
         let focused: Weak<Ghostty.SurfaceView>?
-        /// The tab's stacks (M-7), members in strip order.
-        let stacks: [[Weak<Ghostty.SurfaceView>]]
+        /// The tab's hidden panes, in strip order.
+        let hidden: [Weak<Ghostty.SurfaceView>]
         /// The tab group it was in (S-14).
         let groupID: UUID?
     }
@@ -644,7 +669,7 @@ struct UmiSnapshot {
                 let focused = (tab === controller.selectedTab ? controller.focusedSurface : nil) ?? tab.focusedSurface
                 return TabState(tab: Weak(tab), id: tab.id, name: tab.name, color: tab.color, pinned: tab.pinned,
                                 attributes: tab.attributes, tree: tree.root.map(WeakNode.init), zoomed: zoomed, focused: focused.map { Weak($0) },
-                                stacks: tab.stacks.map { $0.members.map { Weak($0) } }, groupID: tab.groupID)
+                                hidden: tab.hidden.map { Weak($0) }, groupID: tab.groupID)
             }
             states.append(WindowState(box: UmiSnapshot.box(for: controller), tabs: tabs, selected: controller.selectedTab.id,
                                       frame: controller.window?.frame,
@@ -688,6 +713,7 @@ struct UmiSnapshot {
             for tabState in state.tabs {
                 guard let root = tabState.tree?.resolve() else { continue }
                 for view in root.leaves() { placed.insert(ObjectIdentifier(view)) }
+                for weak in tabState.hidden { if let view = weak.value { placed.insert(ObjectIdentifier(view)) } }
                 tabs.append(TabPlan(state: tabState, root: root))
             }
             plans.append((state, tabs))
@@ -712,6 +738,7 @@ struct UmiSnapshot {
                     }
                     continue
                 }
+                existing.hidden.removeAll { placed.contains(ObjectIdentifier($0)) }
                 let tree = controller.tree(of: existing)
                 var newTree = tree
                 for leaf in tree.root?.leaves() ?? [] where placed.contains(ObjectIdentifier(leaf)) {
@@ -742,12 +769,9 @@ struct UmiSnapshot {
                 if let z = tabState.zoomed?.value, let node = tabPlan.root.node(view: z) { zoomedNode = node }
                 tab.tree = SplitTree(root: tabPlan.root, zoomed: zoomedNode)
                 if let f = tabState.focused?.value, tab.tree.contains(f) { tab.focusedSurface = f }
-                // Stacks: their live members, each stack still holding the member on show.
-                tab.stacks = tabState.stacks.compactMap { weak in
-                    let members = weak.compactMap { $0.value }.filter { UmiSnapshot.isAlive($0) }
-                    guard members.count > 1, members.contains(where: { tab.tree.contains($0) }) else { return nil }
-                    return UmiPaneStack(members: members)
-                }
+                // Its hidden panes that are still alive.
+                tab.hidden = tabState.hidden.compactMap { $0.value }
+                    .filter { UmiSnapshot.isAlive($0) && !tab.tree.contains($0) }
                 tabs.append(tab)
             }
             let live = state.box.controller.flatMap { c in

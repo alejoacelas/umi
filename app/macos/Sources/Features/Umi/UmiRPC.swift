@@ -172,17 +172,72 @@ enum UmiRPC {
         case "pane.split", "split":
             let target = try UmiTopology.pane(params.string("pane"), caller: caller)
             let direction = try UmiLayout.direction(params.string("direction"))
-            return try UmiLayout.split(target, direction: direction, options: UmiLayout.PaneOptions(params),
-                                        ratio: params.double("ratio"), focus: params.bool("focus") ?? true)
+            // A tab at its limit makes room (`hid`).
+            var (result, hid) = try UmiHidden.collectingHidden {
+                try UmiLayout.split(target, direction: direction, options: UmiLayout.PaneOptions(params),
+                                    ratio: params.double("ratio"), focus: params.bool("focus") ?? true)
+            }
+            if let first = hid.first { result["hid"] = first.umiID }
+            return result
 
         case "pane.info":
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
             return UmiTopology.paneInfoJSON(pane)
 
         case "pane.focus":
+            // A hidden pane is brought in first (at the right end; its tab makes room).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
-            UmiLayout.focusPane(pane, activate: true)
-            return ["pane": pane.umiID]
+            let (_, hid) = UmiHidden.collectingHidden { UmiLayout.focusPane(pane, activate: true) }
+            var result: [String: Any] = ["pane": pane.umiID]
+            if let location = UmiTopology.locate(pane) {
+                result["tab"] = location.tab.idString
+                result["window"] = location.window.umiIDString
+            }
+            if let first = hid.first { result["hid"] = first.umiID }
+            return result
+
+        case "pane.hide":
+            // Every pane a query matches (design/cli.md choice 3).
+            let panes = try UmiTopology.panes(params.string("pane"), caller: caller)
+            var conditions: [UmiHidden.Condition] = []
+            for text in params.strings("until") ?? [] {
+                if let seconds = UmiQuery.duration(text), seconds > 0 {
+                    conditions.append(UmiHidden.Condition(query: nil, at: Date().addingTimeInterval(seconds)))
+                } else {
+                    _ = try UmiTopology.parseQuery(text)
+                    conditions.append(UmiHidden.Condition(query: text, at: nil))
+                }
+            }
+            for pane in panes {
+                if let location = UmiTopology.locate(pane), !location.tab.isHidden(pane) {
+                    let shownCount = location.window.tree(of: location.tab).root?.leaves().count ?? 0
+                    let hidingHere = panes.filter { location.tab.contains($0) && !location.tab.isHidden($0) }.count
+                    if hidingHere >= shownCount {
+                        throw UmiError.failed("that would hide every pane on show in tab \(location.tab.idString.prefix(8)) (a tab shows at least one)")
+                    }
+                }
+            }
+            for pane in panes {
+                try UmiHidden.hide(pane)
+                if !conditions.isEmpty { UmiHidden.setConditions(conditions, for: pane) }
+            }
+            return ["pane": panes[0].umiID, "panes": panes.map(\.umiID)]
+
+        case "pane.show":
+            let panes = try UmiTopology.panes(params.string("pane"), caller: caller)
+            let focus = params.bool("focus") ?? false
+            var hid: [String] = []
+            for (index, pane) in panes.enumerated() {
+                let (_, made) = try UmiHidden.collectingHidden {
+                    try UmiHidden.show(pane, focus: focus && index == panes.count - 1)
+                }
+                hid += made.map(\.umiID)
+            }
+            return ["pane": panes[0].umiID, "panes": panes.map(\.umiID), "hid": hid]
+
+        case "pane.until":
+            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            return ["pane": pane.umiID, "until": (UmiHidden.conditions[pane.id] ?? []).map(\.json)]
 
         case "pane.close":
             // Every pane a query matches (design/cli.md choice 3).
@@ -246,11 +301,17 @@ enum UmiRPC {
             } else {
                 throw UmiError.badRequest("give one of --to PANE, --tab T, --window W, --new-tab or --new-window")
             }
-            var location = try UmiLayout.move(pane, to: destination, focus: focus && panes.count == 1)
-            for (index, next) in panes.enumerated().dropFirst() {
-                location = try UmiLayout.move(next, to: .besidePane(panes[index - 1], direction), focus: focus && index == panes.count - 1)
+            let (location, hid) = try UmiHidden.collectingHidden { () throws -> UmiTopology.Location in
+                var location = try UmiLayout.move(pane, to: destination, focus: focus && panes.count == 1)
+                for (index, next) in panes.enumerated().dropFirst() {
+                    location = try UmiLayout.move(next, to: .besidePane(panes[index - 1], direction), focus: focus && index == panes.count - 1)
+                }
+                return location
             }
-            return ["pane": pane.umiID, "panes": panes.map(\.umiID), "tab": location.tab.idString, "window": location.window.umiIDString]
+            var result: [String: Any] = ["pane": pane.umiID, "panes": panes.map(\.umiID), "tab": location.tab.idString,
+                                         "window": location.window.umiIDString]
+            if let first = hid.first(where: { UmiTopology.locate($0)?.tab === location.tab }) ?? hid.first { result["hid"] = first.umiID }
+            return result
 
         case "pane.swap":
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)

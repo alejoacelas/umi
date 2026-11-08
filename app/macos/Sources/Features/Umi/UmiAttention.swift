@@ -131,6 +131,22 @@ final class UmiAttention: ObservableObject {
     /// When each pane, with or without an agent, was last looked at.
     private var seen: [UUID: Date] = [:]
 
+    /// When each pane was last hidden or shown (part of its `changed_at`), and when it last came
+    /// back on show (it is unseen until looked at).
+    private var placeChanged: [UUID: Date] = [:]
+    private var shown: [UUID: Date] = [:]
+
+    func placeChangedAt(_ id: UUID) -> Date? { placeChanged[id] }
+    func shownAt(_ id: UUID) -> Date? { shown[id] }
+
+    /// A pane was hidden or shown (UmiHidden).
+    func placeChanged(_ id: UUID, shown isShown: Bool) {
+        let now = Date()
+        placeChanged[id] = now
+        shown[id] = isShown ? now : nil
+        changed()
+    }
+
     /// The app is quitting: agents ending now come back after the relaunch, so their ends aren't
     /// recorded (UmiAppLifecycle).
     var shuttingDown = false

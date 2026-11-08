@@ -538,8 +538,7 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
-    /// Umi: the tree without `node`. Overridden where panes can share a place (stacks, M-7):
-    /// then the next member takes the removed one's place and is returned.
+    /// Umi: the tree without `node` (a hook kept for subclasses; nothing takes the node's place).
     func umiTreeRemoving(_ node: SplitTree<Ghostty.SurfaceView>.Node)
         -> (tree: SplitTree<Ghostty.SurfaceView>, replacement: Ghostty.SurfaceView?) {
         (surfaceTree.removing(node), nil)
@@ -557,7 +556,6 @@ class BaseTerminalController: NSWindowController,
     ///
     /// This does no confirmation and assumes confirmation is already done.
     private func removeSurfaceNode(_ node: SplitTree<Ghostty.SurfaceView>.Node) {
-        // Umi: a stack's next member takes the closed one's place (M-7) and gets its focus.
         let removed = umiTreeRemoving(node)
         // Move focus if the closed surface was focused and we have a next target
         let nextFocus: Ghostty.SurfaceView? = if node.contains(
@@ -777,6 +775,12 @@ class BaseTerminalController: NSWindowController,
     @objc private func ghosttyDidToggleSplitZoom(_ notification: Notification) {
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        // Umi: a hidden pane's chip dragged out of the window: the pane gets a window of its own.
+        if surfaceTree.root?.node(view: target) == nil,
+           let tab = (self as? TerminalController)?.selectedTab, tab.isHidden(target) {
+            _ = try? UmiLayout.move(target, to: .newWindow, focus: true)
+            return
+        }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
 
         // Toggle the zoomed state
@@ -870,7 +874,7 @@ class BaseTerminalController: NSWindowController,
             focusedSurface = findNextFocusTargetAfterClosing(node: targetNode)
         }
 
-        // Remove the surface from our tree (Umi: its stack's next member takes its place)
+        // Remove the surface from our tree
         let removedTree = umiTreeRemoving(targetNode).tree
 
         // Create a new tree with the dragged surface and open a new window
@@ -1022,21 +1026,21 @@ class BaseTerminalController: NSWindowController,
         destination: Ghostty.SurfaceView,
         zone: TerminalSplitDropZone
     ) {
-        // Umi: the middle of a pane stacks the dropped pane there (M-7).
-        if zone == .center {
-            do { try UmiStacks.stack(source, onto: destination) } catch {
-                Ghostty.logger.warning("failed to stack surface during drop: \(error, privacy: .public)")
-            }
-            return
-        }
-
         // Map drop zone to split direction
         let direction: SplitTree<Ghostty.SurfaceView>.NewDirection = switch zone {
-        case .center: .right
         case .top: .up
         case .bottom: .down
         case .left: .left
         case .right: .right
+        }
+
+        // Umi: a hidden pane (dragged by its strip chip) is in no tree: UmiLayout takes it out of
+        // its tab's hidden panes.
+        if !NSApp.windows.contains(where: { ($0.windowController as? BaseTerminalController)?.surfaceTree.contains(source) ?? false }) {
+            do { try UmiLayout.move(source, to: .besidePane(destination, direction), focus: true) } catch {
+                Ghostty.logger.warning("failed to move a hidden surface during drop: \(error, privacy: .public)")
+            }
+            return
         }
 
         // Check if source is in our tree

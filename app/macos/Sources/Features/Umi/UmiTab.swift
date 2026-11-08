@@ -40,9 +40,16 @@ final class UmiTab: ObservableObject, Identifiable {
     /// The pane that has (or last had) focus in this tab.
     weak var focusedSurface: Ghostty.SurfaceView?
 
-    /// Panes sharing one place in the split tree (stacks). The tree shows one member of each;
-    /// the others are kept here, running, until the user switches to them.
-    @Published var stacks: [UmiPaneStack] = []
+    /// The tab's hidden panes (attention-ui.md, "Hidden panes"), in strip order: out of the
+    /// split tree, still in the tab, their programs running. `UmiHidden` keeps it.
+    @Published var hidden: [Ghostty.SurfaceView] = []
+
+    /// How many panes the tab shows at most: the tab attribute `visible_limit`, default 3, at
+    /// least 1 (design/cli.md, "Keys with a meaning to Umi").
+    var visibleLimit: Int {
+        guard let raw = attributes["visible_limit"], let n = Int(raw.trimmingCharacters(in: .whitespaces)) else { return 3 }
+        return max(n, 1)
+    }
 
     /// The files open in this tab's panes (each file is a pane of its own).
     private(set) lazy var editor = UmiTabFiles(tab: self)
@@ -64,15 +71,12 @@ final class UmiTab: ObservableObject, Identifiable {
         return UmiFocusHistory.mostRecent(among: panes) ?? tree.root?.leftmostLeaf()
     }
 
-    /// Whether the pane is in this tab: shown in its tree, or waiting in one of its stacks.
+    /// Whether the pane is in this tab: on show in its tree, or hidden.
     func contains(_ surface: Ghostty.SurfaceView) -> Bool {
-        tree.contains(surface) || stacks.contains { $0.members.contains { $0 === surface } }
+        tree.contains(surface) || isHidden(surface)
     }
 
-    /// The stack a pane belongs to, if it shares its place with others.
-    func stack(of pane: Ghostty.SurfaceView) -> UmiPaneStack? {
-        stacks.first { $0.members.contains { $0 === pane } }
-    }
+    func isHidden(_ pane: Ghostty.SurfaceView) -> Bool { hidden.contains { $0 === pane } }
 
     /// What the tab is called when it has no name: the focused pane's title or folder.
     var title: String {
