@@ -68,10 +68,12 @@ def setup(inst, win):
 
 
 @pytest.fixture
-def moving(inst):
-    """Let go of ⌃⌘ after each test, whatever happened."""
+def moving(inst, win):
+    """Let go of ⌃⌘ after each test, whatever happened, and show the sidebar again: hiding it also
+    makes new windows of the shared instance start without one."""
     yield
     rpc(inst, "debug.release")
+    inst.cli("sidebar", "on", "--window", win["window"], check=False)
 
 
 # ---- KM-1: within the tab -----------------------------------------------------------------------
