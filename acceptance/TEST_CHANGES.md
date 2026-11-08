@@ -1308,3 +1308,9 @@ targets) are in `UmiQueryTests` against the default `jump` list.
   `::test_a_disabled_claude_plugin_is_not_current`: the installed version they fake is the bundled
   one, now 1.2.0 (the hook script reads `UMI_PANE`), so they still test "same version, but another
   copy" and "same version, but disabled" rather than an old version.
+- `test_layout.py::test_cli_inside_panes_defaults_to_this_pane`, `test_editor.py::test_edit_targets_the_calling_pane_and_never_falls_back`,
+  `test_editor.py::test_a_file_opened_from_a_pane_goes_beside_that_pane` and two checks in
+  `test_robustness.py` typed the bare `<cli>` in a pane, which runs whichever copy is first on the
+  pane's PATH: on mac-air-2 the installed 0.6.3, which reads the retired `UMI_PANE_ID`, so the build
+  under test was never the one checked. They now type the build's own CLI by its path; the P-4 test
+  first checks that `<cli>` is on PATH in the pane, which it did implicitly before.
