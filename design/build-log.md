@@ -150,3 +150,44 @@ and `1f8bdf4af`) are superseded by these.
     out, as primitives.md defines unseen. Its sidebar mark still shows the failure. Where:
     `UmiAttention.jumpOrder`, SPEC L-12. Working panes are never jump targets, even unseen.
 
+
+## Step 2: pane data
+
+**Status:** built on `design/step2-pane-data`, ready for review. The UI half of the suite didn't run:
+mac-air-2's screen is locked (see "Not verified").
+
+**What changed**
+
+- Attributes on panes, tabs and windows: `umi pane|tab|window set|unset|get` (`UmiAttributes`).
+  Values are strings; keys are letters, digits, `.`, `-`, `_`. Panes' are kept by pane id, tabs' on
+  the `UmiTab`, windows' on the window; all three are saved in `layout.json` and come back after a
+  restart. Each changed value is a `pane.changed`, `tab.changed` or `window.changed` event.
+- Read-only keys Umi keeps, computed when read: `kind`, `cwd`, `branch`, `command`, `focused`,
+  `hidden`, `in_drawer`, `seen_at`, `changed_at`, `status_since`, `idle_for`, and `visible_count` on
+  tabs. Setting one fails with exit 1 and changes nothing, not even the other pairs of the command.
+- `role` has one holder per value among panes and among tabs. The Docs tab is now the tab with
+  `role=docs` (design/cli.md choice 10): `UmiTab.isDocs` reads the attribute, and Markdown opened
+  from outside goes to whichever tab holds it.
+- `agent.*` can be written with `pane set` and change the pane's agent in `UmiAttention` (badge,
+  ⌃⌘J, `changed_at`); the next hook overwrites them. Every changed `agent.*` key is a `pane.changed`
+  event now, `agent.status` first.
+- `ls --json`: every pane, tab and window has `attributes` holding everything; panes also have
+  `kind`, `hidden`, `in_drawer` and `indicator`. `ls` text shows each pane's own attributes.
+- Events carry `at` (ISO 8601) and `cause` (`UmiCause`): `key` with the key, `mouse`, `palette`,
+  `cli` with the command and calling pane, `hook`, `umi`. The palette runs its commands with
+  `UMI_CAUSE=palette`; the CLI sends its words and `UMI_CAUSE` with every request. `pane.moved`
+  has `from` and `to` (tab, window, index).
+- The activity log (`UmiActivityLog`): every event in day files under `<state>/logs/activity`, kept
+  30 days; `umi log [--since] [--until] [--filter] [--pane]`; `umi events --since` replays it first.
+- The focus log (`UmiFocusLog`): stretches of keyboard focus while Umi is active, the screen is
+  unlocked and the user typed or clicked in the last 3 minutes, with what the pane showed, in
+  `<state>/logs/focus`; `umi focus-log`.
+- Times on the command line: ISO 8601, a clock time today (`9am`, `14:30`), or a duration (`2h`).
+- Step 1 leftovers: the CLI no longer sends `UMI_SESSION_ID` (`UmiCaller.session` is gone); the
+  comments in `UmiInputSync.swift` and `UmiReopen.swift` no longer describe sessions; CLI.md's
+  `doctor` exit rule matches SPEC I-2 (non-zero only for a plugin that isn't installed and current);
+  COMPROMISES.md marks the rows about sessions, Take Over, the read-only view, the inbox and the
+  toasts as removed.
+- SPEC: new section D (D-1 to D-8, core tier); L-7 and T-4 reworded. CLI.md gained "Attributes"
+  and "Events and logs" from design/cli.md; the Pane, Tab and Window objects follow it.
+  TEST_CHANGES.md lists the new and changed tests.
