@@ -103,7 +103,8 @@ of the suite didn't run: mac-air-2's screen locked during the runs (see "Not ver
    conversation, one-offs and the first prompt. Variables typed before the command
    (`FOO=1 claude`) don't come back. A Claude that never had a prompt comes back fresh (no
    `--resume`). Codex comes back as `codex resume ID <its flags>`.
-5. `claude -p` (and `codex exec`) run in a pane are one-offs: their hooks don't make the pane's agent.
+5. `claude -p` (and `codex exec`, also after options: `codex -m o3 exec …`) run in a pane are
+   one-offs: their hooks don't make the pane's agent.
 6. Quiet moments: only `idle` is quiet; `error` and `needs_input` keep the update waiting (the design
    says "idle with nothing typed"). Keys typed into a permission dialog still count as a possible
    draft until the next prompt is sent, as before.
@@ -119,6 +120,14 @@ of the suite didn't run: mac-air-2's screen locked during the runs (see "Not ver
    `sessions/` folder stays on disk untouched.
 10. Menu ids kept for users' `shortcuts.json`: `session.next_needing_you` (now "Jump to Next Pane
     Needing You") and `view.dismiss_toasts` ("Dismiss Update Note").
+13. ⌃⌘U stays, as View ▸ Dismiss Update Note, though spec-cleanup.md lists it with the inbox keys
+    that leave. Where: `UmiShortcuts` (`view.dismiss_toasts`), SPEC I-4 and L-9. Why: spec-cleanup
+    also says the update note needs a home of its own, and the note needs a way to go away; the key
+    that already dismissed it is the one users know. Check: whether you'd rather the note close
+    with a click or after a while, and ⌃⌘U be freed.
+14. ⌃⌘J takes a pane whose agent failed (`error`) only while it is unseen; once looked at it drops
+    out, as primitives.md defines unseen. Its sidebar mark still shows the failure. Where:
+    `UmiAttention.jumpOrder`, SPEC L-12. Working panes are never jump targets, even unseen.
 11. `AGENTS.md` still mentions agent sessions and `app/macos/UmiTests/verify_agent_panes.py` (removed
     with the read-only view). I left it alone: AGENTS.md changes need Alejo's go-ahead.
 12. The real-agent runs (`ACCEPTANCE_REAL=1`) have no tests left; their fixture in `conftest.py`

@@ -4,7 +4,7 @@ import Testing
 
 /// L-12: where ⌃⌘J (`jump`) goes. Needs input first (oldest first), then unseen panes
 /// (`changedAt > seenAt`) whose agent finished or failed (oldest first).
-struct UmiJumpTests {
+@MainActor struct UmiJumpTests {
     private let start = Date(timeIntervalSince1970: 1_800_000_000)
 
     private func agent(_ status: UmiAttention.Status, changed: Double, seen: Double?) -> UmiAttention.Agent {
