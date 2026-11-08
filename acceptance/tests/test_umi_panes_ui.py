@@ -552,9 +552,10 @@ def assume_active(inst):
 
 
 @pytest.mark.req("S-3")
-def test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock(inst, win):
-    """The marks come from the panes' agent hooks (UmiAttention); the row shows them on the agent's
-    icon and the Dock badge counts the panes whose agent needs the user (not the finishes not seen yet)."""
+def test_an_unseen_finish_or_a_question_marks_the_row_and_counts_on_the_dock(inst, win):
+    """The marks come from the panes' agent hooks (UmiAttention); the row shows the pane indicator of
+    its `tab.summary` pane (PI-2) and the Dock badge counts the panes whose agent needs the user (not
+    the finishes not seen yet)."""
     pane, tab = new_tab(inst, win)
     other, other_tab = new_tab(inst, win)
     try:
@@ -568,7 +569,7 @@ def test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock(i
         set_agent(inst, pane, "claude", title="Long task", status="needs_input", mark="needs_you")
         assert rpc(inst, "debug.ui.attention")["badge"] == "2"
         set_agent(inst, pane, "claude", title="Long task", status="working", mark="none")
-        assert row(inst, win["window"], tab)["mark"] == "none"
+        assert row(inst, win["window"], tab)["mark"] == "working", "the row shows the pane indicator (PI-2)"
         assert rpc(inst, "debug.ui.attention")["badge"] == "1"
     finally:
         clear_agent(inst, pane)

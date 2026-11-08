@@ -44,7 +44,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, PI-1 to PI-4, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
 
 ### Core: agents in panes
 These outcomes must hold every time, with both agents: the plugin's hooks report each agent's state
@@ -68,7 +68,9 @@ tests:
 Requirements that left with Umi's own agent sessions (design step 1, 2026-11-07; design/spec-cleanup.md):
 AG-1 to AG-17, AG-20 to AG-24 (sessions, the read-only view, Take Over, `agent` commands, the inbox and
 toasts), and the delivery phases that built them. Their IDs are not reused. Design step 4
-(2026-11-08) replaced stacks (M-7) with hidden panes and the pane strip (H-1 to H-8).
+(2026-11-08) replaced stacks (M-7) with hidden panes and the pane strip (H-1 to H-8). Design step 5
+(2026-11-08) replaced the cyan focus line and S-3's brighter agent logo with the pane indicator
+(PI-1 to PI-4).
 
 ---------------------------------------------------------------------------------------------------
 
@@ -452,7 +454,8 @@ From design/attention-ui.md ("Panes per tab", "Hidden panes", "The pane strip") 
   the window's title bar, above the panes, adding no height (a window with no title bar, as in full
   screen, gives it a 22-point band of its own). It has a chip for every pane of the tab:
   those on show in layout order, then the hidden ones, dim and in italics; the focused pane's chip is
-  filled. A chip shows its pane's icon (a file's type icon and unsaved dot, E-24) and title. Clicking
+  filled. A chip shows its pane's indicator (PI-2), its icon (a file's type icon and unsaved dot,
+  E-24) and title. Clicking
   a hidden pane's chip brings it in (at the right end) with focus; clicking another focuses its pane.
   When a hidden pane is brought in and another hidden for it, the outgoing pane takes the incoming
   one's place among the hidden chips. Terminals have no pane headers; file and web panes keep their
@@ -473,6 +476,38 @@ From design/attention-ui.md ("Panes per tab", "Hidden panes", "The pane strip") 
   onto a tab's row into that tab, onto the "Move to previous / next tab" targets (M-4) there, and
   out of the window into a window of its own; a hidden pane's chip moves the hidden pane. A chip
   click that doesn't move is a click (H-5).
+
+## PI. The pane indicator
+
+From design/attention-ui.md ("The pane indicator") and prototypes/pane-indicator.html (bottom right;
+focus as a larger, brighter mark and a slightly brighter pane; the quiet palette, no motion). It
+replaces the cyan line that marked the focused pane of a split and the brighter agent logo of S-3.
+
+- **PI-1 [A]** Each pane has one of four states, from its agent's `agent.status` (AG-18): `working`;
+  `needs_you` while it is `needs_input` or `error`; `finished` while it is `idle` or `stopped` and
+  the pane is `unseen` (D-4), then `none`; `none` for a pane without an agent. Looking at the pane
+  clears `finished`; looking doesn't clear `needs_you`. A finished pane brought back on show by its
+  condition (H-3) is `finished` until looked at. `ls --json` gives each pane's `indicator`.
+- **PI-2 [A+W]** The state shows as a small round mark at the pane's bottom right, in the
+  terminal's right and bottom padding below the prompt, over terminals, file and web panes alike,
+  never taking clicks; `none` shows nothing. The same mark comes before the pane's icon on its strip
+  chip (H-5), hidden panes included, and a chip's accessibility value ends with its state
+  (", working", ", needs you", ", finished, not seen yet"). A tab's sidebar row shows the mark of the
+  pane the `tab.summary` slot picks among all its panes, hidden ones included (S-3). Nothing
+  animates. `<cli> screenshot` draws the marks as the window shows them.
+- **PI-3 [A+W]** The focused pane's mark is larger (9 points instead of 7) and at full strength;
+  the other panes' working and finished marks are a little dimmer (70%), "needs you" always at full
+  strength. In a tab showing more than one pane, the focused pane is slightly brighter (white over
+  it at the `indicator.focus` amount, default 3%), and when it has no state its mark is a quiet grey
+  dot, so focus shows without a line. A tab showing one pane gets neither. No cyan line marks the
+  focused pane.
+- **PI-4 [A]** The slots `indicator.working`, `indicator.needs_you` and `indicator.finished` set
+  each state's colour: `muted` (the quiet palette: grey-green for working, light grey for
+  finished, a dull amber for needs you), `amber`, `green`, `violet`, `grey`, `#RRGGBB`, or `none`
+  (no mark in that state); defaults `muted`, `amber`, `muted`. `indicator.focus` sets how much
+  brighter the focused pane is: a percentage up to 20% (`0` for none), default `3%`. Changes to the
+  config take effect within seconds; a value that doesn't read keeps the default and `slot ls`
+  shows its error.
 
 ## T. Terminal input and output, and events
 
@@ -562,16 +597,15 @@ From design/attention-ui.md ("Panes per tab", "Hidden panes", "The pane strip") 
   - The header (Warp's control bar) is 4 pt above and below, 8 pt at the sides, 4 pt between
     items: "Search tabs..." (S-13; Tabs mode), the Tabs, Files and Search buttons, and + (24 pt
     high, radius 4).
-  - A tab with an agent shows the agent's mark (Claude or Codex), small and monochrome, in the 24 pt
-    circle instead of the terminal glyph: the agent of its focused pane, else the one most in need,
-    else the one that stopped last. The mark is a little brighter while that agent needs the user
-    (`agent.status` is `needs_input` or `error`) or finished and its pane wasn't looked at since
-    (design/primitives.md: `changed_at > seen_at`). A pane is looked at while it has keyboard focus
-    in the front window and the app is active (a tab switch, a pane focus, or switching windows or
-    apps); looking at another pane of the same tab doesn't count, and an agent that finishes in the
-    pane being looked at leaves no mark. The agent starting a new turn clears it. Colors and hints
-    stay subtle; no status badges (the pane indicator replaces them in a later step). The Dock badge
-    counts the panes whose agent needs input.
+  - A tab with an agent shows the agent's logo (Claude or Codex), small, monochrome at 60%, in the
+    24 pt circle instead of the terminal glyph: the agent of the pane the `tab.summary` slot picks
+    (by default its focused pane's agent, else the one most in need, else the one that stopped
+    last; hidden panes count). The circle's bottom-right edge carries that pane's indicator (PI-2);
+    the logo itself no longer changes with attention. A pane is looked at while it has keyboard
+    focus in the front window and the app is active (a tab switch, a pane focus, or switching
+    windows or apps); looking at another pane of the same tab doesn't count, and an agent that
+    finishes in the pane being looked at leaves no mark. The agent starting a new turn clears it.
+    No status badges. The Dock badge counts the panes whose agent needs input.
   - No desktop notifications. The agents' own desktop notifications (OSC 9 and 777, which Claude Code
     and Codex send) are dropped while an agent its plugin reports runs in the pane (AG-18); other
     programs' notifications, including the shell's after the agent exits, are Ghostty's as before.
@@ -898,7 +932,7 @@ What the user, their scripts and their agents build on (design/primitives.md, "A
   (how long since its terminal last printed, as `90s`); of each tab, `visible_count` (the panes it
   shows). Times are ISO 8601 with a time zone. "Unseen" is `changed_at > seen_at`, kept as `unseen`
   (`true`/`false`); each pane's
-  `indicator` in `ls --json` says `working`, `needs_you`, `finished` (unseen) or `none`.
+  `indicator` in `ls --json` says `working`, `needs_you`, `finished` (unseen) or `none` (PI-1).
 - **D-5 [A]** `agent.*` can be written with `pane set` as the hook plugin writes them (AG-18): on a
   pane without an agent, together with `agent.kind` (`claude` or `codex`); values outside each key's
   set (`agent.status`, `agent.done`) fail with exit 1. They count as the hook's would (the Dock
@@ -960,9 +994,11 @@ lists", "Slots", "Keys and palette commands"; CLI.md, "Selectors", "Queries", "L
   config and listed with their values by `<cli> slot ls` (`default` says whether the user changed
   it): `jump` (the list `jump`), `badge` (the Dock badge counts its matches; default `@needs-you`),
   `landing` (the pane focused when the app comes back to the front after `landing.after`, default
-  none), `tab.summary` (which pane gives a tab's sidebar row its agent mark and line 2: the focused
-  pane's agent, else the one most in need, else the latest), `sidebar.line2` (a template, default
-  `{agent.title or command or cwd}`), `strip.make-room`, `indicator.<state>` and `done-check` (a
+  none), `tab.summary` (which pane gives a tab's sidebar row its agent logo, pane indicator and line
+  2, among all its panes, hidden ones included: the focused pane's agent, else the one most in
+  need, else the latest), `sidebar.line2` (a template, default
+  `{agent.title or command or cwd}`), `strip.make-room`, `indicator.<state>` and `indicator.focus`
+  (PI-4) and `done-check` (a
   regular expression the last line of the agent's last message must match for `agent.done=true`;
   default `^Status: done`). The defaults behave as before this step.
 - **Q-5 [A]** Key bindings: `key.<keys> = ACTION` binds a `<cli>` command line (`go --next

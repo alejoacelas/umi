@@ -134,8 +134,9 @@ Objects in JSON:
   the user's, `agent.*`, and Umi's read-only ones; "Attributes" below), "file"?: path (a file pane),
   "frame"?: {"x", "y", "width", "height"} (points, top-left origin, in the window's terminal area;
   panes on show only), "url"?: the page's address and "title": its title (a web pane, SPEC
-  E-12)}`. `indicator` is `needs_you` while its agent needs input or failed, `finished` while it
-  finished and the pane is unseen (`changed_at > seen_at`), `working` while it works.
+  E-12)}`. `indicator` is the pane indicator's state (SPEC PI-1): `working` while its agent works,
+  `needs_you` while it needs input or failed, `finished` while it finished (`idle`, `stopped`) and
+  the pane is `unseen`, else `none`.
   A tab's `panes` lists the panes on show in layout order, then the hidden ones in strip order.
 
 Events: `pane.created` and `tab.created` carry `"reopened": true` when `reopen` brought them back;
@@ -263,10 +264,11 @@ Slots:
 | `badge` | `@needs-you` | the Dock badge counts its matches |
 | `landing` | `none` | a query: the pane focused when the app comes back to the front after `landing.after` |
 | `landing.after` | `10m` | |
-| `tab.summary` | `focused and agent.kind then (agent.status=needs_input or agent.status=error) \| sort -status_since then unseen \| sort -status_since then agent.kind \| sort -status_since` | the pane of a tab, among those on show, that gives its sidebar row the agent mark and line 2 |
+| `tab.summary` | `focused and agent.kind then (agent.status=needs_input or agent.status=error) \| sort -status_since then unseen \| sort -status_since then agent.kind \| sort -status_since` | the pane of a tab (its panes on show, then its hidden ones) that gives its sidebar row the agent logo, the pane indicator and line 2 |
 | `sidebar.line2` | `{agent.title or command or cwd}` | a template: each `{…}` is the first of its keys that is set; the default keeps the built-in line |
 | `strip.make-room` | `not pinned and not focused \| sort seen_at` | which pane on show is hidden when one comes into a tab at its limit: the first match among its panes on show, never one that is arriving. When nothing matches, the tab shows more than its limit |
-| `indicator.working`, `indicator.needs_you`, `indicator.finished` | `muted`, `amber`, `muted` | stored; take effect with the pane indicator |
+| `indicator.working`, `indicator.needs_you`, `indicator.finished` | `muted`, `amber`, `muted` | the pane indicator's colour in each state: `muted` (that state's quiet colour), `amber`, `green`, `violet`, `grey`, `#RRGGBB`, or `none` (no mark) |
+| `indicator.focus` | `3%` | how much brighter the focused pane of a split is: a percentage up to 20%, `0` for none |
 | `done-check` | `^Status: done` | a regular expression; `agent.done=true` when the last line of the agent's last message matches |
 
 - A key binding's ACTION is a palette command's title, `@LIST` (`go --next @LIST`), or a `<cli>`

@@ -1384,3 +1384,29 @@ centre zone, passes again unchanged.
   and one more): "rows of the terminal area" now start below the title bar band, which holds the
   pane strip's chips (H-5); before, the band was empty, so counting from the window's top measured
   the same thing. The thresholds are unchanged.
+
+## Design step 5: the pane indicator (2026-11-08)
+
+The cyan line that marked the focused pane of a split and S-3's brighter agent logo left; the pane
+indicator came in (SPEC PI-1 to PI-4).
+
+**Added.** `test_pane_indicator.py`: the states from the hooks and `pane set` (working, needs you for
+`needs_input` and `error`, finished while unseen, none), a look clearing finished and not a question,
+a pane brought back by its condition showing finished; the mark at the pane's bottom right (read from
+a window screenshot's pixels) and on its chip (hidden panes too); the tab row's mark from
+`tab.summary`, a hidden pane that needs you included; focus (the larger mark, the grey mark of an
+idle focused pane in a split, the focused pane a little brighter in the screenshot, no cyan line on
+its top edge, nothing for a lone pane); the `indicator.*` slots read again from the config (colours,
+`none`, the focus amount, bad values shown by `slot ls`). UI (unlocked screen): the marks, the
+brightness and no cyan line in a capture of the real window, a real click moving them; the chips'
+and the row's accessibility values. Swift: `UmiIndicatorTests` (the slots' values and the looks).
+
+**Changed.** A row's `mark` (`debug.ui.rows`) is now the pane indicator of its `tab.summary` pane,
+which has a fourth state, `working` (before, `none` while the agent worked):
+- `test_umi_attention.py::test_a_new_turn_clears_the_mark_and_a_question_keeps_it`: after the new
+  turn and after the question is answered, the row says `working` instead of `none`; the pane's own
+  attention mark (`debug.ui.attention`) is checked to be `none` there, which is what the old `none`
+  meant (the finish is cleared).
+- `test_umi_panes_ui.py::test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock`
+  became `…_marks_the_row_and_counts_on_the_dock`: a working agent's row says `working` instead of
+  `none`; the badge checks are unchanged.

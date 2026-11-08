@@ -123,6 +123,18 @@ show, two hidden), one a file with unsaved changes. Screenshot the window:
   that was on show (the layout is as before). ⌘[ brings hidden ones in at the left end;
 - click a hidden chip: it comes in, focused; the outgoing chip takes its place among the hidden.
 
+**PI-2, PI-3: the pane indicator (by hand, and a screenshot).** A tab with three panes on show and a
+hidden one: one agent working, one asking a question (needs you), one finished while another pane
+had focus, the hidden one asking too; a second tab whose agent works. Compare with
+`design/prototypes/pane-indicator.html` (bottom right, focus as size and brightness, quiet palette):
+- each pane with a state has a small round mark at its bottom right, under the prompt, clear of the
+  text; only "needs you" is in colour (amber), working is a dim grey-green, finished light grey;
+- the focused pane is a little brighter than the others, subtle enough that the others don't look
+  dull; its mark is a little larger (a grey dot when it has no state); no cyan line anywhere;
+- the strip's chips carry the same marks before their icons, the hidden chip too; each tab row's
+  icon circle carries the mark of its summary pane (amber for the tab whose hidden pane asks);
+- click another pane: the brightness and the larger mark move with focus; nothing animates.
+
 ## Warp's look for terminals
 
 **S-9, S-10, S-11: blocks at the bottom, and the folder box.** Setup: a window whose pane ran, in zsh,

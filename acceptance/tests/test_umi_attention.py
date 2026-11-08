@@ -83,7 +83,7 @@ def test_a_finish_in_the_pane_looked_at_leaves_no_mark(inst, win, active):
         inst.hook(pane, "SessionEnd")
 
 
-@pytest.mark.req("S-3")
+@pytest.mark.req("S-3", "PI-2")
 def test_a_new_turn_clears_the_mark_and_a_question_keeps_it(inst, win):
     pane, tab = new_tab(inst, win)
     try:
@@ -92,12 +92,15 @@ def test_a_new_turn_clears_the_mark_and_a_question_keeps_it(inst, win):
         turn(inst, pane)
         wait_until(lambda: row(inst, win["window"], tab)["mark"] == "finished", 5, message="finished out of sight")
         inst.hook(pane, "UserPromptSubmit", prompt="more")
-        assert row(inst, win["window"], tab)["mark"] == "none"
+        # The row shows the pane indicator (PI-2): the finish is cleared, the agent works.
+        assert row(inst, win["window"], tab)["mark"] == "working"
+        assert mark(inst, pane) == "none"
         inst.hook(pane, "PermissionRequest", tool_name="Bash")
         assert row(inst, win["window"], tab)["mark"] == "needs_you"
         assert rpc(inst, "debug.ui.attention")["needing_you"] >= 1
         inst.hook(pane, "PostToolUse", tool_name="Bash")
-        assert row(inst, win["window"], tab)["mark"] == "none"
+        assert row(inst, win["window"], tab)["mark"] == "working"
+        assert mark(inst, pane) == "none"
     finally:
         inst.hook(pane, "SessionEnd")
 
