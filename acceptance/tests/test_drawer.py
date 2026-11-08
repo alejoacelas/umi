@@ -43,6 +43,26 @@ def key(inst, win, keys):
     return rpc(inst, "debug.key", window=win["window"], keys=keys, focus="none")
 
 
+def settled(inst, win):
+    """`debug.drawer` once the drawer has finished rising or going down."""
+    return wait_until(lambda: (lambda d: d if not d["sliding"] else None)(drawer(inst, win)), 5,
+                      message="the drawer's slide ended")
+
+
+def ended(pid):
+    try:
+        os.kill(pid, 0)
+        return False
+    except ProcessLookupError:
+        return True
+
+
+def shell_pid(inst, pane):
+    inst.cli("send", "--pane", pane, "-e", "echo SHELL-PID-$$")
+    out = inst.cli("wait", "--pane", pane, "--pattern", r"^SHELL-PID-\d+", "--timeout", "10").stdout.strip()
+    return int(out.split("-")[-1])
+
+
 @pytest.fixture
 def closing(inst, win):
     """Put the window's drawer away after the test, whatever happened."""
@@ -95,8 +115,9 @@ def test_drawer_show_moves_the_pane_in_and_opens_the_drawer_over_the_tab(inst, w
     assert [p["id"] for p in inst.json("ls", "--where", "in_drawer")["panes"]] == [c]
     # It has keyboard focus.
     wait_until(lambda: inst.tree()["current_pane"] == c, 5, message="the drawer pane has focus")
-    # The panel: the panes' full width, the lower half, its bottom on the window's bottom edge.
-    d = drawer(inst, win)
+    # The panel, once risen: the panes' full width, the lower half, its bottom on the window's bottom edge.
+    d = settled(inst, win)
+    assert d["rise"] == 1, d
     area = d["panes_area"]
     assert abs(d["frame"]["width"] - area["width"]) <= 1 and abs(d["frame"]["x"] - area["x"]) <= 1, d
     assert abs(d["frame"]["y"] - area["y"]) <= 1, "the drawer sits on the bottom edge"
@@ -117,6 +138,74 @@ def test_drawer_show_moves_the_pane_in_and_opens_the_drawer_over_the_tab(inst, w
     assert len(reds) > 5, "the drawer pane's red rows show across the panes' width"
     above = [shot.px(x, f["y"] + f["height"] + 40) for x in range(int(f["x"]) + 4, int(f["x"] + f["width"]) - 4, 40)]
     assert not any(reddish(p) for p in above), "nothing of it above the drawer"
+
+
+@pytest.mark.req("DR-1")
+def test_the_drawer_rises_and_goes_down_in_a_quarter_second(inst, win, closing, tmp_path):
+    """prototypes/drawer.html, option B: the panel slides up from below the bottom edge over 0.26 s
+    (`transform .26s ease`), and back down when put away."""
+    a, b, c = three(inst, win)
+    inst.cli("pane", "focus", a)
+    fill_red(inst, c)
+
+    def samples(until, limit=3):
+        out, start = [], time.time()
+        while time.time() - start < limit:
+            d = drawer(inst, win)
+            out.append((time.time() - start, d))
+            if until(d):
+                return out
+        raise AssertionError(f"the slide didn't end: {[(round(t, 3), x['rise'], x['sliding']) for t, x in out]}")
+
+    began = time.time()
+    rpc(inst, "drawer.show", pane=c, window=win["window"])
+    up = samples(lambda d: not d["sliding"] and d["rise"] == 1 and "frame" in d)
+    took = time.time() - began
+    rises = [d["rise"] for _, d in up]
+    assert any(0.05 < r < 0.95 for r in rises), f"seen part way up: {rises}"
+    assert rises == sorted(rises), f"it only goes up: {rises}"
+    assert 0.2 <= took <= 1.0, f"rose in {took:.3f} s"
+    # Part way up, the panel itself is lower: its bottom below the panes' bottom edge.
+    area = up[-1][1]["panes_area"]
+    mid = [d["frame"]["y"] for _, d in up if "frame" in d and 0.05 < d["rise"] < 0.95]
+    assert mid and min(mid) < area["y"] - 5, f"the panel was below its place while rising: {mid} vs {area['y']}"
+    assert abs(up[-1][1]["frame"]["y"] - area["y"]) <= 1
+
+    began = time.time()
+    rpc(inst, "drawer.hide", window=win["window"])
+    # The picture it goes down as: the panel at its size, its header on top, the terminal's red rows under it.
+    png = tmp_path / "leaving.png"
+    d = rpc(inst, "debug.drawer", window=win["window"], leaving_png=str(png))
+    assert d["leaving"] and d["leaving_size"]["width"] == pytest.approx(area["width"], abs=1), d
+    assert d["leaving_size"]["height"] == pytest.approx(up[-1][1]["frame"]["height"] + 27, abs=2), d
+    w, h, buf = load_png(png)
+    sx = w / d["leaving_size"]["width"]
+
+    def px(x, y_from_top):
+        i = (int(y_from_top * sx) * w + int(x * sx)) * 4
+        return tuple(buf[i:i + 3])
+    header = [px(x, 13) for x in range(10, int(area["width"]) - 10, 20)]
+    assert not any(reddish(p) for p in header), "the header on top"
+    body = [px(x, y) for x in range(10, int(area["width"]) - 30, 30) for y in range(30, int(d["leaving_size"]["height"]), 6)]
+    assert sum(reddish(p) for p in body) > 10, "the terminal's red rows in the picture"
+    down = samples(lambda d: not d["sliding"] and d["rise"] == 0)
+    took = time.time() - began
+    falls = [d["rise"] for _, d in down]
+    assert any(0.05 < r < 0.95 for r in falls), f"seen part way down: {falls}"
+    assert falls == sorted(falls, reverse=True), f"it only goes down: {falls}"
+    assert 0.2 <= took <= 1.0, f"went down in {took:.3f} s"
+    # It goes down as a picture of itself (its pane is no longer in the drawer's view), gone at the end.
+    assert any(d["leaving"] for _, d in down if 0 < d["rise"] < 1), "a picture of the panel goes down"
+    assert not down[-1][1]["leaving"] and "frame" not in down[-1][1]
+    # Opened again half way down, it rises from where it is.
+    rpc(inst, "drawer.show", window=win["window"])
+    settled(inst, win)
+    rpc(inst, "drawer.hide", window=win["window"])
+    time.sleep(0.1)
+    rpc(inst, "drawer.show", window=win["window"])
+    back = samples(lambda d: not d["sliding"] and d["rise"] == 1)
+    assert min(d["rise"] for _, d in back) > 0.05, "it rose from part way, not from the bottom"
+    assert not back[-1][1]["leaving"]
 
 
 @pytest.mark.req("DR-1")
@@ -210,6 +299,7 @@ def test_a_drawer_pane_that_needs_you_shows_a_line_along_the_bottom_edge(inst, w
     inst.cli("pane", "rename", c, "deploy-check")
     inst.cli("drawer", "show", c)
     inst.cli("drawer", "hide", "--window", win["window"])
+    settled(inst, win)
     assert drawer(inst, win)["waiting"] == [] and drawer(inst, win)["line_label"] is None
     plain = Shot(inst, win, tmp_path / "no-line.png")
     try:

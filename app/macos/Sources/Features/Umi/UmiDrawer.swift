@@ -31,6 +31,55 @@ final class UmiDrawerModel: ObservableObject {
         guard !isOpen else { return [] }
         return panes.filter { UmiIndicator.state(of: $0) == .needsYou }
     }
+
+    // MARK: The slide (prototypes/drawer.html, option B: `transform .26s ease`)
+
+    /// How far the drawer has risen: 0 is below the window's bottom edge, 1 is up.
+    @Published fileprivate(set) var rise: CGFloat = 0
+    /// While it slides down: a picture of the panel as it was when it closed (its pane may already
+    /// be somewhere else, docked or hidden in its tab).
+    @Published fileprivate(set) var leaving: NSImage?
+    private var slideTimer: Timer?
+    private var slideFrom: CGFloat = 0
+    private var slideTo: CGFloat = 0
+    private var slideStart = Date.distantPast
+    private var slideDuration: TimeInterval = 0
+
+    /// Whether the drawer is rising or going down.
+    var isSliding: Bool { slideTimer != nil }
+
+    /// Slide towards up (1) or down (0), from where it is now: a slide reversed half way takes half
+    /// the time. With Reduce Motion on, it moves at once.
+    func slide(to target: CGFloat, reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
+        slideTimer?.invalidate()
+        slideTimer = nil
+        guard !reduceMotion, abs(rise - target) > 0.001 else {
+            rise = target
+            if target == 0 { leaving = nil }
+            return
+        }
+        slideFrom = rise
+        slideTo = target
+        slideStart = Date()
+        slideDuration = UmiDrawer.slideDuration * Double(abs(target - rise))
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.step() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        slideTimer = timer
+    }
+
+    private func step(now: Date = Date()) {
+        let t = slideDuration > 0 ? min(1, now.timeIntervalSince(slideStart) / slideDuration) : 1
+        rise = slideFrom + (slideTo - slideFrom) * CGFloat(UmiDrawer.ease(t))
+        guard t >= 1 else { return }
+        rise = slideTo
+        slideTimer?.invalidate()
+        slideTimer = nil
+        if slideTo == 0 { leaving = nil }
+    }
+
+    fileprivate func setLeaving(_ image: NSImage?) { leaving = image }
 }
 
 @MainActor
@@ -39,6 +88,25 @@ enum UmiDrawer {
     static let heightShare: CGFloat = 0.52
     /// Its header: a chip per pane, and what can be done with the one on show.
     static let headerHeight: CGFloat = 26
+    /// How long it takes to rise or go down (the prototype's 0.26 s).
+    static let slideDuration: TimeInterval = 0.26
+
+    /// CSS's `ease` (cubic-bezier(0.25, 0.1, 0.25, 1)), the prototype's timing: progress at time t
+    /// (both 0 to 1).
+    nonisolated static func ease(_ t: Double) -> Double {
+        let t = min(max(t, 0), 1)
+        let (x1, y1, x2, y2) = (0.25, 0.1, 0.25, 1.0)
+        func bezier(_ s: Double, _ a: Double, _ b: Double) -> Double {
+            3 * (1 - s) * (1 - s) * s * a + 3 * (1 - s) * s * s * b + s * s * s
+        }
+        // Find s with x(s) = t (x is increasing), then return y(s).
+        var low = 0.0, high = 1.0, s = t
+        for _ in 0..<40 {
+            s = (low + high) / 2
+            if bezier(s, x1, x2) < t { low = s } else { high = s }
+        }
+        return bezier(s, y1, y2)
+    }
 
     // MARK: Where panes are
 
@@ -79,7 +147,10 @@ enum UmiDrawer {
         guard drawer.isOpen else { return }
         let pane = drawer.current
         let hadFocus = pane.map { hasFocus($0, in: window) } ?? false
+        // It goes down as a picture of itself: its pane may be docked or hidden at once.
+        drawer.setLeaving(picture(of: window))
         drawer.isOpen = false
+        drawer.slide(to: 0)
         window.setOccluded(drawer.panes, occluded: true)
         if refocus && hadFocus {
             // The tab's own focused pane: the one focused before the drawer took focus (the drawer's
@@ -132,6 +203,10 @@ enum UmiDrawer {
         let changed = !wasOpen || drawer.current !== pane
         drawer.current = pane
         drawer.isOpen = true
+        if !wasOpen {
+            drawer.setLeaving(nil)
+            drawer.slide(to: 1)
+        }
         window.setOccluded(drawer.panes.filter { $0 !== pane }, occluded: true)
         // Start at the size it will have, so its program sees the right columns and rows.
         let size = panelSize(in: window)
@@ -191,6 +266,41 @@ enum UmiDrawer {
         if area.width <= 0 || area.height <= 0 { area = window.surfaceTree.viewBounds() }
         guard area.width > 0, area.height > 0 else { return .zero }
         return CGSize(width: area.width, height: max((area.height * heightShare).rounded() - headerHeight - 1, 40))
+    }
+
+    /// The open drawer as it looks now (its header and its terminal), for it to go down as a picture.
+    private static func picture(of window: TerminalController) -> NSImage? {
+        guard let pane = window.drawer.showing, pane.window === window.window,
+              let content = window.window?.contentView else { return nil }
+        let frame = pane.convert(pane.bounds, to: content)
+        let header = content.isFlipped
+            ? NSRect(x: frame.minX, y: frame.minY - headerHeight - 1, width: frame.width, height: headerHeight + 1)
+            : NSRect(x: frame.minX, y: frame.maxY, width: frame.width, height: headerHeight + 1)
+        let panel = frame.union(header)
+        // Only what is on screen (a drawer still rising is partly below the edge): its top part.
+        let visible = panel.intersection(content.bounds)
+        guard visible.width > 0, visible.height > 0,
+              let rep = content.bitmapImageRepForCachingDisplay(in: visible) else { return nil }
+        content.cacheDisplay(in: visible, to: rep)
+        let cached = NSImage(size: visible.size)
+        cached.addRepresentation(rep)
+        // Drawn in the panel's own coordinates, origin bottom left.
+        func local(_ rect: NSRect) -> NSRect {
+            let y = content.isFlipped ? panel.maxY - rect.maxY : rect.minY - panel.minY
+            return NSRect(x: rect.minX - panel.minX, y: y, width: rect.width, height: rect.height)
+        }
+        let image = NSImage(size: panel.size)
+        image.lockFocus()
+        cached.draw(in: local(visible))
+        if !UmiFilePanes.shared.isFilePane(pane.id), !UmiWebPanes.shared.isWebPane(pane.id),
+           let terminal = pane.terminalImage() {
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: local(visible)).addClip()
+            terminal.draw(in: local(frame))
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        image.unlockFocus()
+        return image
     }
 
     // MARK: Panes coming in and going out
@@ -462,6 +572,17 @@ enum UmiDrawer {
                 out["first_responder"] = window.window?.firstResponder === pane
             }
             out["focus_returns_to"] = window.selectedTab.effectiveFocusedSurface?.umiID ?? NSNull()
+            // The slide: how far it has risen (0 to 1), whether it is moving, and whether the picture
+            // it goes down as is on screen.
+            out["rise"] = Double(drawer.rise)
+            out["sliding"] = drawer.isSliding
+            out["leaving"] = drawer.leaving != nil
+            // `leaving_png`: write the picture it goes down as to that path (a PNG), to look at.
+            if let path = params.string("leaving_png"), let picture = drawer.leaving,
+               let tiff = picture.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: path))
+                out["leaving_size"] = ["width": Double(picture.size.width), "height": Double(picture.size.height)]
+            }
             // Where the window's panes are (points, in the window's content view, origin bottom left),
             // for checks of screenshots.
             if let content = window.window?.contentView {
@@ -585,14 +706,32 @@ struct UmiDrawerOverlay: View {
     var body: some View {
         let _ = attention.revision
         GeometryReader { geo in
-            if drawer.isOpen, !drawer.settling, let pane = drawer.current {
-                UmiDrawerPanel(controller: controller, drawer: drawer, pane: pane)
-                    .frame(width: geo.size.width, height: (geo.size.height * UmiDrawer.heightShare).rounded())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            } else if !drawer.waiting.isEmpty {
-                UmiDrawerWaitingLine(controller: controller, drawer: drawer, color: indicator.color(.needsYou))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            let height = (geo.size.height * UmiDrawer.heightShare).rounded()
+            // Below the bottom edge by what it has still to rise (and the shadow's reach).
+            let drop = (1 - drawer.rise) * (height + 40)
+            ZStack(alignment: .bottom) {
+                if !drawer.waiting.isEmpty {
+                    UmiDrawerWaitingLine(controller: controller, drawer: drawer, color: indicator.color(.needsYou))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                }
+                if drawer.isOpen, !drawer.settling, let pane = drawer.current {
+                    UmiDrawerPanel(controller: controller, drawer: drawer, pane: pane)
+                        .frame(width: geo.size.width, height: height)
+                        .offset(y: drop)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                } else if let picture = drawer.leaving {
+                    // Going down: the picture of the panel it closed with, its top at the panel's top.
+                    Image(nsImage: picture)
+                        .frame(width: geo.size.width, height: height, alignment: .top)
+                        .background(UmiDrawerPanel.background)
+                        .shadow(color: .black.opacity(0.6), radius: 18, y: -8)
+                        .offset(y: drop)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             }
+            .clipped()
         }
     }
 }
