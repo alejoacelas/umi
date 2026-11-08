@@ -359,7 +359,9 @@ def test_a_key_the_palette_and_umi_cause_events(inst, win):
         moved = events.until(lambda e: e["event"] == "pane.moved")
         assert moved[0]["cause"] == {"kind": "key", "key": "ctrl+cmd+t"}, moved
         # The palette: what its command does is caused by the palette.
-        rpc(inst, "debug.palette.perform", window=win["window"], title="Set Pane Attribute…", answers=["via=palette"])
+        rpc(inst, "debug.palette", window=win["window"], mode="commands", query="set pane attribute")
+        ran = rpc(inst, "debug.palette.perform", window=win["window"], title="Set Pane Attribute…", answers=["via=palette"])
+        assert not ran.get("error") and not ran.get("failed"), ran
         set_ = events.until(lambda e: e["event"] == "pane.changed" and e["data"].get("key") == "via")
         assert set_[0]["cause"]["kind"] == "palette" and "pane set" in set_[0]["cause"]["command"], set_
         # A command the palette runs gets UMI_CAUSE: its own umi calls are recorded with that cause.
