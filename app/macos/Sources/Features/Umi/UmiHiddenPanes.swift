@@ -541,7 +541,7 @@ private struct UmiStripChip: View {
         .foregroundColor(Color.white.opacity(focused ? 0.95 : (onShow ? 0.80 : 0.42)))
         .padding(.horizontal, 8)
         .frame(height: 22)
-        .frame(maxWidth: 160)
+        .frame(maxWidth: 300)
         .background(RoundedRectangle(cornerRadius: 6).fill(focused ? UmiTheme.selectedFill : (hovering ? UmiTheme.hoverFill : .clear)))
         // The chip is its pane's drag handle; a click without a drag shows or focuses the pane.
         .overlay {
@@ -551,11 +551,10 @@ private struct UmiStripChip: View {
         .help(onShow ? label : "\(label) (hidden: click to bring it in)")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-        .accessibilityValue(onShow ? (focused ? "on show, focused" : "on show") : "hidden")
+        .modifier(UmiStripChipValue(doc: doc, place: onShow ? (focused ? "on show, focused" : "on show") : "hidden"))
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(focused ? .isSelected : [])
         .accessibilityAction { UmiStripChip.click(pane) }
-        .modifier(UmiStripDirtyValue(doc: doc))
     }
 
     @MainActor
@@ -570,18 +569,21 @@ private struct UmiStripChip: View {
     }
 }
 
-/// A file chip says "Unsaved changes" while its dot shows.
-private struct UmiStripDirtyValue: ViewModifier {
+/// A chip's accessibility value: where its pane is ("on show", "on show, focused", "hidden"), and
+/// ", unsaved changes" while a file chip's dot shows.
+private struct UmiStripChipValue: ViewModifier {
     let doc: UmiDocument?
+    let place: String
 
     func body(content: Content) -> some View {
-        if let doc { content.modifier(Observed(doc: doc)) } else { content }
+        if let doc { content.modifier(Observed(doc: doc, place: place)) } else { content.accessibilityValue(place) }
     }
 
     private struct Observed: ViewModifier {
         @ObservedObject var doc: UmiDocument
+        let place: String
         func body(content: Content) -> some View {
-            content.accessibilityHint(doc.isDirty ? "Unsaved changes" : "")
+            content.accessibilityValue(doc.isDirty ? place + ", unsaved changes" : place)
         }
     }
 }

@@ -766,7 +766,8 @@ def test_a_pane_dropped_on_the_previous_or_next_tab_target_moves_there(inst, win
 
 @pytest.mark.req("M-4")
 def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(inst, win, ui):
-    """The real mouse: the pane's grab handle (top centre of the pane) dragged onto the targets."""
+    """The real mouse: the pane's chip in the pane strip (its drag handle, H-8) dragged onto the
+    targets."""
     t1 = win["tab"]
     p2, t2 = new_tab(inst, win)
     ready(inst, p2)
@@ -778,8 +779,15 @@ def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(in
         element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane"), 5, message="the pane")
         return _frame(ui, element)
 
+    def chip(pane):
+        inst.cli("pane", "rename", pane, "drag-" + pane[:6])
+        strip = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Pane strip"), 5, message="the pane strip")
+        element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "drag-" + pane[:6], root=strip), 5, message="the chip")
+        cx, cy, cw, chh = _frame(ui, element)
+        return cx + cw / 2, cy + chh / 2
+
     x, y, w, h = pane_area()
-    _mouse_drag((x + w / 2, y + 6), (x + w / 2, y + 36))
+    _mouse_drag(chip(p2), (x + w / 2, y + 36))
     wait_until(lambda: [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"], p2], 5,
                message="moved to the end of the previous tab")
     assert tab_of(inst, t2) is None, "its tab, left empty, closed"
@@ -793,7 +801,7 @@ def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(in
     left = frames(inst, t1)[win["pane"]]
     px, py, pw, ph = area_x + f["x"], area_y + f["y"], f["width"], f["height"]
     area_centre = area_x + (left["x"] + f["x"] + pw) / 2
-    _mouse_drag((px + pw / 2, py + 6), (area_centre, py + ph - 36))
+    _mouse_drag(chip(p2), (area_centre, py + ph - 36))
     wait_until(lambda: len(tab_ids(inst, win["window"])) == 2 and [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"]],
                5, message="moved to a new tab after the last")
 
@@ -936,8 +944,8 @@ def test_ties_go_to_the_current_tab_and_any_pane_of_a_tab_counts(inst, win, tmp_
     assert rpc(inst, "debug.ui.open_file", path=str(root / "sub" / "b.txt"))["tab"] == t1
 
 
-@pytest.mark.req("E-10")
-def test_markdown_opens_in_one_docs_tab_most_recent_first(inst, win, tmp_path):
+@pytest.mark.req("E-10", "H-1")
+def test_markdown_opens_in_the_docs_tab_at_its_right_end_three_on_show(inst, win, tmp_path):
     names = [f"doc{i}.md" for i in range(1, 6)]
     for i, name in enumerate(names):
         folder = tmp_path / ("a" if i % 2 else "b")   # two folders: the folder doesn't matter
@@ -952,18 +960,24 @@ def test_markdown_opens_in_one_docs_tab_most_recent_first(inst, win, tmp_path):
         assert rpc(inst, "debug.ui.open_file", path=str(paths[name]))["tab"] == docs_tab
     assert len(tab_ids(inst, win["window"])) == len(before) + 1, "one tab for all of them"
     tab = tab_of(inst, docs_tab)
-    assert tab["docs"] is True and tab["selected"]
-    files = [os.path.basename(p["file"]) for p in tab["panes"]]
-    assert files == list(reversed(names)), "one stack, the most recently opened first and on show"
-    assert [p["shown"] for p in tab["panes"]] == [True, False, False, False, False]
-    # Opening one again makes it the most recent and shows it.
-    rpc(inst, "debug.ui.open_file", path=str(paths["doc2.md"]))
+    assert tab["attributes"]["role"] == "docs" and tab.get("name") == "Docs" and tab["selected"]
+    on_show = [os.path.basename(p["file"]) for p in tab["panes"] if not p["hidden"]]
+    # Each new one at the right end of the tab, focused; three on show, the others hidden.
+    assert len(on_show) == 3 and on_show[-1] == "doc5.md", on_show
+    assert {os.path.basename(p["file"]) for p in tab["panes"]} == set(names), "every one stays in the tab"
+    assert inst.tree()["current_pane"] == next(p["id"] for p in tab["panes"] if p["file"].endswith("doc5.md"))
+    # Opening a hidden one again shows it where it is: brought in, no second pane.
+    hidden_one = next(os.path.basename(p["file"]) for p in tab["panes"] if p["hidden"])
+    rpc(inst, "debug.ui.open_file", path=str(paths[hidden_one]))
     tab = tab_of(inst, docs_tab)
-    assert [os.path.basename(p["file"]) for p in tab["panes"]] == ["doc2.md", "doc5.md", "doc4.md", "doc3.md", "doc1.md"]
-    assert tab["panes"][0]["shown"]
-    # Text files still go by folder.
-    (tmp_path / "a" / "notes.txt").write_text("notes\n")
-    assert rpc(inst, "debug.ui.open_file", path=str(tmp_path / "a" / "notes.txt"))["tab"] != docs_tab
+    assert len(tab["panes"]) == 5
+    assert hidden_one in [os.path.basename(p["file"]) for p in tab["panes"] if not p["hidden"]]
+    # Text files still go by folder: a tab with a pane in their folder (the docs tab's panes start
+    # in their files' folders, so a folder of its own here).
+    other = tmp_path / "c"
+    other.mkdir()
+    (other / "notes.txt").write_text("notes\n")
+    assert rpc(inst, "debug.ui.open_file", path=str(other / "notes.txt"))["tab"] != docs_tab
 
 
 # ---- UI (real mouse; the lead runs these) ---------------------------------------------------------

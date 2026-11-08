@@ -141,7 +141,7 @@ def test_refuses_what_it_cannot_edit(inst, win, tmp_path):
         path.write_bytes(b"a" * cut + "é".encode("utf-8") + b"\n")
         inst.cli("edit", str(path), "--pane", win["pane"])
         assert doc(inst, win["pane"], str(path)) is not None
-        # Closed again, so the next one opens in this tab too (three panes fill a tab).
+        # Closed again, so the tab doesn't fill up with them.
         inst.cli("editor", "close", str(path), "--pane", win["pane"])
 
 
@@ -178,38 +178,48 @@ def tab_ids(inst, window_id):
     return [t["id"] for w in inst.tree()["windows"] if w["id"] == window_id for t in w["tabs"]]
 
 
-@pytest.mark.req("E-1", "E-9")
-def test_files_open_in_panes_beside_the_caller_three_to_a_tab(inst, win, tmp_path):
+@pytest.mark.req("E-1", "E-9", "H-1")
+def test_files_open_in_panes_beside_the_caller_and_a_full_tab_makes_room(inst, win, tmp_path):
     names = ["one.md", "two.json", "three.csv", "four.txt"]
     paths = []
     for name in names:
         (tmp_path / name).write_text({"md": "# One\n", "json": '{"a": [1, 2]}\n', "csv": "a,b\n1,2\n",
                                       "txt": "four\n"}[name.split(".")[1]])
         paths.append(str(tmp_path / name))
-    inst.cli("edit", *paths[:3], "--pane", win["pane"])
+    tabs_before = tab_ids(inst, win["window"])
+    opened = inst.json("edit", *paths[:3], "--pane", win["pane"])
+    # Every file stays in the caller's tab: no new tab (E-9's old three-then-a-new-tab rule is gone).
+    assert tab_ids(inst, win["window"]) == tabs_before and opened["tab"] == win["tab"]
     panes = panes_of(inst, win["tab"])
-    # The caller, then each file to the right of the one before; three panes fill the tab.
-    assert panes[0]["id"] == win["pane"] and "file" not in panes[0]
-    assert [os.path.basename(p.get("file", "")) for p in panes[1:]] == ["one.md", "two.json"]
-    assert [p["frame"]["x"] for p in panes] == sorted(p["frame"]["x"] for p in panes)
-    # The third goes to a new tab right after the caller's.
-    ids = tab_ids(inst, win["window"])
-    third_tab = ids[ids.index(win["tab"]) + 1]
-    assert [os.path.basename(p.get("file", "")) for p in panes_of(inst, third_tab)] == ["three.csv"]
-    # A fourth goes beside the third, in that tab.
-    inst.cli("edit", paths[3], "--tab", third_tab)
-    assert [os.path.basename(p.get("file", "")) for p in panes_of(inst, third_tab)] == ["three.csv", "four.txt"]
-    # Opening an open file again shows it where it is: no second pane.
-    before = sum(len(panes_of(inst, t)) for t in tab_ids(inst, win["window"]))
-    inst.cli("edit", paths[0], "--pane", win["pane"])
-    assert sum(len(panes_of(inst, t)) for t in tab_ids(inst, win["window"])) == before
+    on_show = [p for p in panes if not p["hidden"]]
+    # The caller, then each file to the right of the one before; at three, the tab made room: the
+    # third file arrived and one of the earlier files was hidden, never the caller (it has focus).
+    assert on_show[0]["id"] == win["pane"] and "file" not in on_show[0]
+    assert len(on_show) == 3 and os.path.basename(on_show[-1]["file"]) == "three.csv"
+    assert [p["frame"]["x"] for p in on_show] == sorted(p["frame"]["x"] for p in on_show)
+    assert len(opened["hid"]) == 1
+    gone = next(p for p in panes if p["id"] == opened["hid"][0])
+    assert gone["hidden"] and os.path.basename(gone["file"]) in ("one.md", "two.json")
+    # A fourth goes beside the caller, in the same tab; another earlier one is hidden for it.
+    again = inst.json("edit", paths[3], "--pane", win["pane"])
+    assert again["tab"] == win["tab"] and len(again["hid"]) == 1
+    on_show = [p for p in panes_of(inst, win["tab"]) if not p["hidden"]]
+    assert os.path.basename(on_show[1]["file"]) == "four.txt" and len(on_show) == 3
+    # Opening an open file again shows it where it is: no second pane (a hidden one comes in).
+    before = len(panes_of(inst, win["tab"]))
+    hidden_file = next(p for p in panes_of(inst, win["tab"]) if p["hidden"])
+    inst.cli("edit", hidden_file["file"], "--pane", win["pane"])
+    assert len(panes_of(inst, win["tab"])) == before
+    assert not next(p for p in panes_of(inst, win["tab"]) if p["id"] == hidden_file["id"])["hidden"]
     # Keyboard focus stayed in the caller.
     assert inst.tree().get("current_pane") == win["pane"]
-    # Modes: Markdown, JSON and CSV open as previews, other text as source; each document names its pane.
-    modes = {os.path.basename(d["path"]): d["mode"] for d in docs(inst, win["pane"]) + docs(inst, panes_of(inst, third_tab)[0]["id"])}
+    # Modes: Markdown, JSON and CSV open as previews, other text as source; each document names its
+    # pane and whether it is hidden.
+    listed = docs(inst, win["pane"])
+    modes = {os.path.basename(d["path"]): d["mode"] for d in listed}
     assert modes == {"one.md": "preview", "two.json": "preview", "three.csv": "preview", "four.txt": "source"}
-    assert all(d.get("pane") for d in docs(inst, win["pane"]))
-    proc = inst.cli("editor", "mode", "preview", paths[3], "--tab", third_tab, check=False)
+    assert all(d.get("pane") and "hidden" in d for d in listed)
+    proc = inst.cli("editor", "mode", "preview", paths[3], "--tab", win["tab"], check=False)
     assert proc.returncode != 0 and "source" in proc.stderr
 
 
