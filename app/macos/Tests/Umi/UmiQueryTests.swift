@@ -139,4 +139,22 @@ import Testing
         // Afterwards, whatever AppKit's currentEvent still holds, Umi's own changes are Umi's.
         #expect(UmiCause.now.kind == "umi")
     }
+
+    /// Step 2's review, (a): a key AppKit took off the queue lingers in `NSApp.currentEvent` after
+    /// it was handled. The old rule (any `currentEvent` under a second old) made it the cause of
+    /// whatever Umi did on its own next; the key must not count once it isn't being dispatched.
+    @Test func aKeyLingeringInCurrentEventIsNotTheCause() throws {
+        let app = try #require(NSApp)
+        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                                  timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
+                                                  characters: "q", charactersIgnoringModifiers: "q", isARepeat: false, keyCode: 12))
+        app.postEvent(event, atStart: true)
+        // Taking it off the queue makes it `currentEvent`, as AppKit's run loop does; it is never sent.
+        let taken = try #require(app.nextEvent(matching: .keyDown, until: Date(timeIntervalSinceNow: 2), inMode: .default, dequeue: true))
+        #expect(taken.keyCode == 12)
+        let lingering = try #require(app.currentEvent)
+        // What the old rule looked at: a key event, less than a second old.
+        #expect(lingering.type == .keyDown && ProcessInfo.processInfo.systemUptime - lingering.timestamp < 1)
+        #expect(UmiCause.now.kind == "umi")
+    }
 }
