@@ -223,16 +223,20 @@ def test_the_moving_pane_is_outlined_and_tagged_in_the_window(inst, win, moving,
 
 # ---- KM-4: what a preview leaves (design step 6's review) --------------------------------------------
 
-def histories(inst):
+def histories(inst, p):
+    """The tab history and the focus history, as far as they speak of this test's tabs and panes (other
+    tests' tabs drop out of them as they close)."""
     nav = rpc(inst, "debug.navigation")
-    return nav["history"], nav["focus_history"]
+    tabs = [p["A"], p["B"], p["C"]]
+    panes = [p[x] for x in "abcdefgh"]
+    return [t for t in nav["history"] if t in tabs], [x for x in nav["focus_history"] if x in panes]
 
 
 @pytest.mark.req("KM-4", "L-15", "L-18")
 def test_previews_leave_the_tab_and_focus_histories_alone(inst, win, moving):
     p = setup(inst, win)
     time.sleep(0.5)
-    before = histories(inst)
+    before = histories(inst, p)
     assert before[0][0] == p["A"] and before[1][0] == p["b"], before
     key(inst, win, "ctrl+cmd+down", hold=True)
     key(inst, win, "ctrl+cmd+down", hold=True)
@@ -240,15 +244,17 @@ def test_previews_leave_the_tab_and_focus_histories_alone(inst, win, moving):
     key(inst, win, "esc")
     wait_until(lambda: not move(inst, win)["active"], 5, message="cancelled")
     time.sleep(0.5)
-    assert histories(inst) == before, "tabs passed over aren't recorded, even after Esc"
+    after = histories(inst, p)
+    assert after[0] == before[0], f"tabs passed over aren't recorded, even after Esc: {before[0]} → {after[0]}"
+    assert after[1] == before[1], f"nor panes: {before[1]} → {after[1]}"
     # A landing records where it landed, and nothing it passed over on the way.
     key(inst, win, "ctrl+cmd+down", hold=True)
     key(inst, win, "ctrl+cmd+down", hold=True)
     key(inst, win, "ctrl+cmd+up", hold=True)
     rpc(inst, "debug.release")
     wait_until(lambda: not move(inst, win)["active"], 5, message="landed")
-    wait_until(lambda: histories(inst)[0][0] == p["B"], 5, message="the landing's tab recorded")
-    tabs, focus = histories(inst)
+    wait_until(lambda: histories(inst, p)[0][0] == p["B"], 5, message="the landing's tab recorded")
+    tabs, focus = histories(inst, p)
     assert tabs[:2] == [p["B"], p["A"]], tabs
     assert focus[0] == p["b"] and focus[1:] == before[1][1:], focus
 

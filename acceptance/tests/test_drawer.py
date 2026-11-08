@@ -242,11 +242,14 @@ def test_drawer_dock_puts_the_pane_right_of_the_focused_pane_making_room(inst, w
     inst.cli("drawer", "show", d4)
     inst.cli("pane", "focus", a)
     inst.cli("drawer", "show", "--window", win["window"])
+    # Focusing a pane of the tab while the drawer stays open makes it the tab's focused pane.
+    inst.cli("pane", "focus", b)
+    assert drawer(inst, win)["open"]
     start = iso_now()
     out = inst.json("drawer", "dock", "--window", win["window"])
-    assert out["pane"] == d4 and len(out["hid"]) == 1 and out["hid"][0] in (b, c), out
+    assert out["pane"] == d4 and len(out["hid"]) == 1 and out["hid"][0] in (a, c), out
     order = shown(inst, win["tab"])
-    assert order.index(d4) == order.index(a) + 1, "right of the focused pane"
+    assert order.index(d4) == order.index(b) + 1, "right of the tab's focused pane"
     assert hidden(inst, win["tab"]) == out["hid"]
     assert not window_json(inst, win)["drawer"]["panes"] and not window_json(inst, win)["drawer"]["open"]
     wait_until(lambda: inst.tree()["current_pane"] == d4, 5, message="the docked pane has focus")
