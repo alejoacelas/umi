@@ -508,6 +508,14 @@ struct UmiPaneStrip: View {
             ForEach(shown, id: \.id) { pane in
                 UmiStripChip(pane: pane, onShow: true, focused: pane === focused)
             }
+            if !shown.isEmpty, !tab.hidden.isEmpty {
+                // The prototype's separator between the panes on show and the hidden ones.
+                Rectangle()
+                    .fill(Color(red: 0x2a / 255.0, green: 0x2a / 255.0, blue: 0x2a / 255.0))
+                    .frame(width: 1, height: 14)
+                    .padding(.horizontal, 4)
+                    .accessibilityHidden(true)
+            }
             ForEach(tab.hidden, id: \.id) { pane in
                 UmiStripChip(pane: pane, onShow: false, focused: false)
             }
@@ -550,7 +558,7 @@ private struct UmiStripChip: View {
                 .truncationMode(.middle)
                 .frame(width: UmiStripChip.textWidth(label))
         }
-        .foregroundColor(Color.white.opacity(focused ? 0.95 : (onShow ? 0.80 : 0.42)))
+        .foregroundColor(Color.white.opacity(focused ? 0.95 : (onShow ? 0.80 : 0.34)))
         .padding(.horizontal, 8)
         .frame(height: 22)
         .fixedSize()
