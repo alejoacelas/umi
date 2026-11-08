@@ -146,7 +146,6 @@ final class UmiPersistence {
             return ["split": [
                 "direction": split.direction == .horizontal ? "horizontal" : "vertical",
                 "ratio": split.ratio,
-                "placed": split.placed,
                 "left": encode(node: split.left),
                 "right": encode(node: split.right),
             ]]
@@ -308,8 +307,7 @@ final class UmiPersistence {
                 let direction: SplitTree<Ghostty.SurfaceView>.Direction =
                     (split["direction"] as? String) == "vertical" ? .vertical : .horizontal
                 let ratio = split["ratio"] as? Double ?? 0.5
-                return .split(.init(direction: direction, ratio: ratio, left: l, right: r,
-                                    placed: split["placed"] as? Bool ?? false))
+                return .split(.init(direction: direction, ratio: ratio, left: l, right: r))
             case let (l?, nil): return l
             case let (nil, r?): return r
             default: return nil
