@@ -1299,7 +1299,12 @@ Watched on the live screen (same script and folder as step 6's part):
   you, a thin amber line runs along the bottom of the panes with "manager · needs you" at its right
   end. This is drawer.html option B, apart from the logged choices (7: the words instead of "D · H").
 
-**Final counts** (mac-air-2, unlocked screen, under the screen lock): see below.
+**Final counts** (mac-air-2, unlocked screen, under the screen lock, ReleaseLocal at `474b8debc`; it
+changes only this log from `7f90eb4ae`, and the commit after it only these counts): acceptance suite
+519 passed, 1 failed, 1 skipped (`~/umi-final-step7-final.log`; the first run, the same result, is
+`~/umi-final-step7-run1.log`). The failure is `test_builds_from_a_path_with_spaces`, which fails on
+main too; the skip is the narrow-window check above. Swift unit tests at `7f90eb4ae`: 432 passed, 1
+skipped (the benchmark), none failed (`~/umi-final-step7-swift.log`).
 
 **Choice for Alejo to check**
 
