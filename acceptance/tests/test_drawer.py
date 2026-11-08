@@ -397,9 +397,38 @@ def test_a_drawer_panes_program_ending_takes_it_out(inst, win, closing):
     a, b, c = three(inst, win)
     ready(inst, c)
     inst.cli("drawer", "show", c)
+    start = iso_now()
     inst.cli("send", "--pane", c, "-e", "exit")
     wait_until(lambda: not window_json(inst, win)["drawer"]["panes"], 10, message="the pane left the drawer")
     assert not window_json(inst, win)["drawer"]["open"]
+    # design/cli.md's events: pane.closed has `pane`, `tab` (the tab the drawer is over) and `window`.
+    closed = [e for e in events_since(inst, start, "pane.closed") if e["data"]["pane"] == c]
+    assert closed and closed[-1]["data"]["tab"] == win["tab"] and closed[-1]["data"]["window"] == win["window"], closed
+
+
+@pytest.mark.req("DR-4", "L-20")
+def test_closing_a_drawer_pane_ends_its_program(inst, win, closing):
+    """A closed drawer pane can't be reopened (as a hidden pane), so its shell ends, the drawer open
+    or closed; pane.closed names the tab the drawer is over."""
+    a, b, c = three(inst, win)
+    d4 = split(inst, "down", a, "--no-focus")
+    ready(inst, c, d4)
+    pids = {c: shell_pid(inst, c), d4: shell_pid(inst, d4)}
+    inst.cli("drawer", "show", d4)
+    inst.cli("drawer", "show", c)
+    assert drawer(inst, win)["open"] and drawer(inst, win)["current"] == c
+    start = iso_now()
+    inst.cli("pane", "close", c)          # on show, the drawer open
+    settled(inst, win)
+    inst.cli("drawer", "hide", "--window", win["window"])
+    inst.cli("pane", "close", d4)         # in the closed drawer
+    for pane, pid in pids.items():
+        wait_until(lambda: ended(pid), 10, message=f"the closed drawer pane's shell ended ({pane})")
+    assert not window_json(inst, win)["drawer"]["panes"]
+    assert not any(p in i["panes"] for i in inst.json("reopen", "--list")["items"] for p in pids)
+    closed = {e["data"]["pane"]: e["data"] for e in events_since(inst, start, "pane.closed")}
+    for pane in pids:
+        assert closed[pane]["tab"] == win["tab"] and closed[pane]["window"] == win["window"], closed
 
 
 # ---- DR-5: saved with the layout ---------------------------------------------------------------------------

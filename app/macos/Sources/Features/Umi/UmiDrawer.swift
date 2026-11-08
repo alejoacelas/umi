@@ -442,7 +442,10 @@ enum UmiDrawer {
     static func remove(_ pane: Ghostty.SurfaceView, from window: TerminalController) {
         guard window.drawer.contains(pane) else { return }
         release(pane, from: window, refocus: true)
-        UmiEvents.shared.emit("pane.closed", ["pane": pane.umiID, "window": window.umiIDString, "drawer": true])
+        // `tab`: the tab the drawer is over (the window's selected tab), as `UmiTopology.locate` gives
+        // a drawer pane.
+        UmiEvents.shared.emit("pane.closed", ["pane": pane.umiID, "tab": window.selectedTab.idString,
+                                              "window": window.umiIDString, "drawer": true])
     }
 
     /// `pane close` of a drawer pane: its program ends.
