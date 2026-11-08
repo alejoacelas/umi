@@ -322,11 +322,8 @@ def test_the_indicator_slots_set_its_colours_and_the_focus_amount(configured, tm
 # ---- On the real screen --------------------------------------------------------------------------
 
 def window_element(ui, inst, win):
-    from test_umi_editor_warp import window_of
-    inst.cli("window", "focus", win["window"])
-    ui.activate()
-    pane = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane"), 5, message="a pane")
-    return window_of(ui, pane)
+    from test_umi_panes_ui import _test_window
+    return _test_window(ui, inst, win)
 
 
 def capture(ui, inst, win, path):
@@ -377,8 +374,8 @@ def test_chips_and_rows_say_the_state_to_accessibility_ui(inst, win, ui, agents)
     inst.hook(c, "PermissionRequest", tool_name="Bash")
     agents(b)
     inst.hook(b, "UserPromptSubmit", prompt="work")
-    window_element(ui, inst, win)
-    chips = wait_until(lambda: (lambda cs: cs if len(cs) == 3 else None)(strip_chips(ui)), 5, message="three chips")
+    window = window_element(ui, inst, win)
+    chips = wait_until(lambda: (lambda cs: cs if len(cs) == 3 else None)(strip_chips(ui, window)), 5, message="three chips")
     values = {ui.label(e): ui.value(e) for e in chips}
     assert values["ind-c"].endswith(", needs you"), values
     assert values["ind-b"].endswith(", working"), values

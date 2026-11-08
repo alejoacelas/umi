@@ -785,16 +785,15 @@ def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(in
     p2, t2 = new_tab(inst, win)
     ready(inst, p2)
     _select(inst, win, t2)
-    inst.cli("window", "focus", win["window"])
-    ui.activate()
+    window = _test_window(ui, inst, win)
 
     def pane_area():
-        element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane"), 5, message="the pane")
+        element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane", root=window), 5, message="the pane")
         return _frame(ui, element)
 
     def chip(pane):
         inst.cli("pane", "rename", pane, "drag-" + pane[:6])
-        strip = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Pane strip"), 5, message="the pane strip")
+        strip = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Pane strip", root=window), 5, message="the pane strip")
         element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "drag-" + pane[:6], root=strip), 5, message="the chip")
         cx, cy, cw, chh = _frame(ui, element)
         return cx + cw / 2, cy + chh / 2
@@ -1038,20 +1037,63 @@ def _row_element(ui, title):
     return ui.find(lambda e: ui.role(e) in ("AXButton", "AXGroup", "AXStaticText") and ui.label(e) == title)
 
 
+def _test_window(ui, inst, win):
+    """The test's window in the accessibility tree, brought to the front. The instance's first
+    window shows a pane, a strip and a sidebar too, so a search of every window can land there:
+    this window is the one whose sidebar lists the test's tab."""
+    title = tab_of(inst, win["tab"])["title"]
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+
+    def find():
+        for w in ui.windows():
+            if ui.find(lambda e: ui.role(e) == "AXButton" and ui.label(e) == title, root=w):
+                return w
+    return wait_until(find, 5, message="the test's window")
+
+
+def _terminal_frames(ui, window):
+    """The frames of the terminals on show in a window, left to right."""
+    return sorted((_frame(ui, e) for e in ui.find_all(lambda e: ui.role(e) == "AXTextArea", root=window)),
+                  key=lambda f: (f[0], f[1]))
+
+
 def _window_of(ui, element):
     while element is not None and ui.role(element) != "AXWindow":
         element = ui.attr(element, "AXParent")
     return element
 
 
-def _screen_point_outside(rect):
-    """A point on the main display (top-left coordinates, as AX and CGEvent use) outside rect."""
+def _make_room_outside(ui, window):
+    """Make the window smaller and put it near the main display's top left, leaving room on its right
+    and below to drop something outside it (a new window covers most of a laptop's screen)."""
+    import ApplicationServices as AX  # noqa: N812
     import Quartz
     b = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID())
-    x, y, w, h = rect
-    for px, py in ((x + w + 150, y + 120), (x - 150, y + 120), (x + 120, y + h + 80), (x + 120, y - 80)):
-        if b.origin.x + 30 < px < b.origin.x + b.size.width - 30 and b.origin.y + 60 < py < b.origin.y + b.size.height - 30:
-            return px, py
+    width, height = min(900, b.size.width - 400), min(560, b.size.height - 260)
+    AX.AXUIElementSetAttributeValue(window, "AXPosition", AX.AXValueCreate(AX.kAXValueCGPointType, (b.origin.x + 60, b.origin.y + 80)))
+    AX.AXUIElementSetAttributeValue(window, "AXSize", AX.AXValueCreate(AX.kAXValueCGSizeType, (width, height)))
+    wait_until(lambda: _frame(ui, window)[2] <= width + 1, 5, message="the window resized")
+    time.sleep(0.5)
+
+
+def _point_outside_windows(ui):
+    """A point on the main display's visible area (top-left coordinates, as AX and CGEvent use)
+    that is in none of the app's windows: the test's own and the instance's first one too, since a
+    drop there lands in that window."""
+    import AppKit
+    screen = AppKit.NSScreen.screens()[0]
+    full, vis = screen.frame(), screen.visibleFrame()
+    left, top = vis.origin.x, full.size.height - (vis.origin.y + vis.size.height)
+    right, bottom = left + vis.size.width, top + vis.size.height
+    frames = [_frame(ui, w) for w in ui.windows()]
+
+    def inside(px, py):
+        return any(x - 20 <= px <= x + w + 20 and y - 20 <= py <= y + h + 20 for x, y, w, h in frames)
+    for py in range(int(top) + 60, int(bottom) - 30, 20):
+        for px in range(int(right) - 40, int(left) + 30, -20):
+            if not inside(px, py):
+                return px, py
     return None
 
 
@@ -1061,10 +1103,10 @@ def test_dragging_a_tab_row_out_of_the_window_makes_a_window_ui(inst, win, ui):
     inst.cli("window", "focus", win["window"])
     ui.activate()
     element = wait_until(lambda: _row_element(ui, "drag-me-out"), 5, message="the row in the accessibility tree")
+    _make_room_outside(ui, _window_of(ui, element))
     x, y, w, h = _frame(ui, element)
-    end = _screen_point_outside(_frame(ui, _window_of(ui, element)))
-    if end is None:
-        pytest.skip("the window covers the screen; no room to drop outside it")
+    end = _point_outside_windows(ui)
+    assert end is not None, "no room outside the app's windows to drop, even with this one made smaller"
     before = {w["id"] for w in inst.tree()["windows"]}
     _mouse_drag((x + w / 2, y + h / 2), end)
     wait_until(lambda: any(w["id"] not in before and [t["id"] for t in w["tabs"]] == [t2] for w in inst.tree()["windows"]),
