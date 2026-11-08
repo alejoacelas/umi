@@ -983,9 +983,15 @@ class TerminalController: BaseTerminalController {
         UmiEvents.shared.emit("tab.closed", ["tab": tab.idString, "window": umiIDString])
     }
 
+    /// Whether closing the tab would end a running program, in a pane on show or a hidden one
+    /// (a hidden pane keeps running, H-2).
+    func runsProgram(_ tab: UmiTab) -> Bool {
+        tree(of: tab).contains(where: { $0.needsConfirmQuit }) || hiddenPanes(of: tab).contains(where: { $0.needsConfirmQuit })
+    }
+
     /// Close a tab, asking first if a program is running in it.
     func closeTab(_ tab: UmiTab, sender: Any?) {
-        guard tree(of: tab).contains(where: { $0.needsConfirmQuit }) else {
+        guard runsProgram(tab) else {
             closeTabImmediately(tab)
             return
         }
@@ -1018,7 +1024,7 @@ class TerminalController: BaseTerminalController {
             for tab in toClose where self.tabs.contains(where: { $0 === tab }) { self.closeTabImmediately(tab) }
             self.undoManager?.setActionName(actionName)
         }
-        guard toClose.contains(where: { tree(of: $0).contains(where: { $0.needsConfirmQuit }) }) else {
+        guard toClose.contains(where: { runsProgram($0) }) else {
             close()
             return
         }
@@ -1307,7 +1313,7 @@ class TerminalController: BaseTerminalController {
 
     @IBAction func closeOtherTabs(_ sender: Any?) {
         guard tabs.count > 1 else { return }
-        let needsConfirm = tabs.contains { $0 !== selectedTab && tree(of: $0).contains(where: { $0.needsConfirmQuit }) }
+        let needsConfirm = tabs.contains { $0 !== selectedTab && runsProgram($0) }
         guard needsConfirm else {
             closeOtherTabsImmediately()
             return
@@ -1324,7 +1330,7 @@ class TerminalController: BaseTerminalController {
         guard let current = index(of: selectedTab) else { return }
         let toClose = tabs.enumerated().filter { $0.offset > current }.map(\.element)
         guard !toClose.isEmpty else { return }
-        let needsConfirm = toClose.contains { tree(of: $0).contains(where: { $0.needsConfirmQuit }) }
+        let needsConfirm = toClose.contains { runsProgram($0) }
         guard needsConfirm else {
             closeTabsOnTheRightImmediately()
             return
