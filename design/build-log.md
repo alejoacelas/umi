@@ -676,3 +676,112 @@ rest of the UI tests. The drag out of the window was never seen working.
     bar. Untried in full screen. Where: `TerminalView` (`max(topInset, 22)`), SPEC H-5.
 17. The walk follows a rebound key, but it is held only while ⌘ is down: a rebinding without ⌘
     lands each step at once, like a menu click. Where: `UmiPaneWalk.held`.
+
+
+## Step 5: the pane indicator
+
+**Status:** built on `design/step5-pane-indicator` (from `design/step4-hidden-panes-strip`, not yet in
+main), ready for review. The UI tests didn't run: mac-air-2's screen was locked for every run (see
+"Not verified"). They are written and need one run on an unlocked screen before merging.
+
+**What changed**
+
+- The pane indicator (`UmiIndicator.swift`): one mark per pane at its bottom right, in the
+  terminal's right and bottom padding (centre 8 points from the right edge, 10 from the bottom), over
+  terminals, file and web panes. States from `agent.status`: working; `needs_input`/`error` need you;
+  `idle`/`stopped` finished while `unseen`, then nothing. Quiet palette from the prototype (working
+  `#6f7f76`, needs you `#e0a93e`, finished `#bdbdbd`); nothing animates.
+- Focus: the focused pane's mark is 9 points instead of 7 and at full strength (others' working and
+  finished marks at 70%; needs you always full); in a tab showing more than one pane the focused
+  pane is lifted by white at `indicator.focus` (default 3%: `#050505` becomes about `#0c0c0c`, the
+  prototype's value), and an idle focused pane shows a grey (`#6a6a6a`) mark.
+- The cyan focus line is gone (`TerminalSplitTreeView`). S-3's brighter agent logo is gone: the logo
+  stays at 60% and the row's icon circle carries the summary pane's mark at its bottom-right edge.
+- Strip chips show the mark before their icon; their accessibility value ends with the state.
+- `tab.summary` now looks at all of a tab's panes, hidden ones after those on show.
+- Slots: `indicator.working|needs_you|finished` take `muted`, `amber`, `green`, `violet`, `grey`,
+  `#RRGGBB` or `none`; new slot `indicator.focus` (`3%`, up to 20%). Bad values show in `slot ls`
+  and keep the default. The config is re-read every second for the indicator.
+- `<cli> screenshot` draws the marks and the lift over the terminal images (they come from the
+  terminals' layers and covered the SwiftUI overlay).
+- `debug.ui.indicator` reports what is drawn (each pane's state, mark colour/size/opacity, lift;
+  chips; rows; the style); a row's `mark` in `debug.ui.rows` is the indicator state (now with
+  `working`); `debug.ui.attention` panes gained `indicator`.
+- Removed Ghostty's unreferenced `SurfaceGrabHandle.swift` (left by step 4).
+- SPEC: new section PI (PI-1 to PI-4, fixed tier); S-3, D-4, Q-4, H-5 reworded. CLI.md: `indicator`
+  wording, `tab.summary`, the indicator slots and `indicator.focus`. CHECKS.md: PI-2/PI-3.
+  TEST_CHANGES.md lists the added and the two changed tests.
+
+**Verified, and how**
+
+All runs are on mac-air-2, in `~/umi-test-design-step5`, under `lockf -k ~/umi-screen.lock`. The
+screen was locked for every run (`CGSSessionScreenIsLocked` true), so every UI test was skipped.
+Builds pass `CODE_SIGN_IDENTITY=-` to xcodebuild; the suite and Swift runs use the same local,
+uncommitted `app/dist/signing.sh` edit as step 4 (`~/umi-test-design-step5-{build,suite,swift}.sh`).
+
+- Dev copy (the Debug build, started as `app/dist/dev.sh` starts it, with its own config folder),
+  driven by `~/umi-test-design-step5-trial.py` at `1d2acf8d4`: 34 of 34 checks read back
+  (`~/umi-test-design-step5-trial.log`, screenshots in `~/umi-test-design-step5-shots`). Tried: the
+  default style; a lone shell pane (no mark, no lift); three panes (the focused one's grey 9-point
+  mark and 3% lift, the others nothing); hooks `UserPromptSubmit` (working, muted, 70%),
+  `PermissionRequest` (needs you, amber, full), `Stop` out of sight (finished, light grey); the
+  chips' states; in the screenshot, amber pixels at the needs-you pane's bottom right, grey at the
+  focused one's, the focused pane's background a few levels brighter, no cyan on its top edge;
+  focusing the finished pane clears it; focused needs-you is 9 points; the row of a tab follows
+  `tab.summary` (needs you, then a working tab's row, then a tab whose hidden pane needs you);
+  writing the config while running (`needs_you = #ff0000` drawn red, `focus = 10%` lifting about
+  25 levels, `working = none`), bad values (`blinking`, `50%`) shown by `slot ls` with the defaults
+  kept, `focus = 0`; a file pane focused (the mark and lift over its editor); a hidden pane's chip.
+  The first run found that `screenshot` drew the terminal images over the marks; fixed in
+  `1d2acf8d4`, after which the pixel checks passed (`1-three-panes-states.png`, `2-sidebar-rows.png`).
+- Acceptance suite, ReleaseLocal at `5fae46d31` (later commits only add this log), full run
+  (`~/umi-test-design-step5-suite.log`): 387 passed, 8 failed, 91 skipped (UI tests: the locked
+  screen). `test_pane_indicator.py`: 7 passed, 2 UI skipped. The 8 failures are the ones steps 1 to 4
+  list as failing on main; run alone on main's app code (`~/umi-test-design-step3`, `71e39f857`;
+  origin/main `69480b751` differs only in the build log), 7 of them failed there too and
+  `test_option_command_i_in_a_one_tab_window_leaves_tabs_opened_later_out`, the one steps 1 to 4
+  found flaky on both, passed (`~/umi-test-design-step5-base.log`).
+- Swift unit tests (`~/umi-test-design-step5-swift.log`): 430 passed, 1 skipped (a benchmark), none
+  failed; the new `UmiIndicatorTests` (3) pass.
+
+**Not verified**
+
+- Every UI test (91 skipped). This step's two, for the orchestrator to run on an unlocked screen:
+  `test_pane_indicator.py::test_the_marks_and_the_lift_on_screen_ui` (the marks, the lift and no
+  cyan line in a `screencapture` of the real window, and a real click moving focus) and
+  `::test_chips_and_rows_say_the_state_to_accessibility_ui`. So the SwiftUI overlay itself was never
+  seen on screen: the screenshots above draw the marks with the same looks and positions
+  (`UmiIndicator.draw`), but the on-screen overlay is a separate code path (`UmiPaneIndicatorOverlay`).
+  Step 4's unrun UI tests still stand.
+- The CHECKS.md item PI-2/PI-3 (by hand), and how 3% looks to a person ("subtle enough that other
+  panes don't look dull").
+- A light theme: the lift is white over the pane, which does almost nothing on a light background.
+
+**Choices for Alejo to check**
+
+1. Place: the mark's centre is 8 points from the pane's right edge and 10 from its bottom, inside
+   Ghostty's padding (16 right, 20 below the prompt), so it never covers text; it sits just under the
+   prompt line rather than on it, because the prompt's distance from the bottom varies with
+   `window-padding-balance`. Full-screen programs have no bottom padding, so there it sits over the
+   last row's right edge. Where: `UmiPaneIndicatorOverlay.inset`.
+2. Focus: the prototype's "larger, brighter mark" (9 vs 7 points; other panes' working/finished marks
+   at 70%, needs you always full) plus a white lift of the focused pane in a split (3%, the
+   prototype's `#0c0c0c` on `#050505`). An idle focused pane in a split gets a grey dot (the
+   prototype's size option did); a lone pane gets no lift and no grey dot, as the cyan line was only
+   for splits. Chips show no grey dot (the focused chip is already filled).
+3. "The amount is a setting": the slot `indicator.focus` (`3%`, `0` off, at most 20%) rather than a
+   new config key, so Ghostty's parser needed no change. Where: `UmiConfig.slots`, `UmiIndicator`.
+4. Slot values: `muted` means each state's quiet colour (working `#6f7f76`, finished `#bdbdbd`, and
+   for needs you a dull amber `#8c7a52` I made up, since the prototype never mutes it); also `amber`,
+   `green`, `violet`, `grey`, `#RRGGBB`, `none`. A bad value keeps the default, shown in `slot ls`.
+5. The row's mark sits on the bottom-right edge of the row's icon circle, keeping Warp's icon and the
+   agent logo (the prototype replaced the icon with the dot). The logo no longer brightens. A row's
+   `mark` in `debug.ui.rows` now has `working` too.
+6. `tab.summary` now considers hidden panes (after those on show), as the prototype's sidebar does,
+   so a hidden pane that needs you shows on its row; this also changes which agent gives the row its
+   logo and line 2. Where: `UmiSlots.summaryPane`, CLI.md, Q-4.
+7. Accessibility: the pane mark itself is hidden from the accessibility tree; chips' values end with
+   the state (", working", ", needs you", ", finished, not seen yet"), and rows say it as before.
+8. On a light theme the lift does nearly nothing (white over white); untried.
+9. "Nothing for a pane with no agent" (attention-ui.md open point 1) is kept: a long-running command
+   or an unsaved file shows no mark.
