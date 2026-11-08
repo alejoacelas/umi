@@ -23,6 +23,9 @@ enum UmiHidden {
     /// Where in the hidden list the next pane hidden to make room goes: the place the incoming
     /// pane had, so the two chips swap (attention-ui.md, "The pane strip").
     private static var swapIndex: Int?
+    /// A pane on show that the next make-room spares besides the arrivals (the pane a ⌘[ ⌘] walk
+    /// began on).
+    private static var spared: Ghostty.SurfaceView?
 
     static func withoutMakingRoom<T>(_ body: () throws -> T) rethrows -> T {
         suspended += 1
@@ -59,7 +62,7 @@ enum UmiHidden {
         guard leaves.count > tab.visibleLimit else { return }
         let arrived = leaves.filter { !old.contains($0) }
         guard !arrived.isEmpty else { return }
-        makeRoom(in: tab, window: window, keeping: arrived)
+        makeRoom(in: tab, window: window, keeping: arrived + (spared.map { [$0] } ?? []))
     }
 
     /// Hide panes on show, as `strip.make-room` picks them, until the tab shows its limit. Panes
@@ -138,7 +141,7 @@ enum UmiHidden {
     /// the incoming pane's place in the strip. Returns the panes hidden.
     @discardableResult
     static func show(_ pane: Ghostty.SurfaceView, atStart: Bool = false, focus: Bool,
-                     byCondition: Bool = false) throws -> [Ghostty.SurfaceView] {
+                     byCondition: Bool = false, sparing: Ghostty.SurfaceView? = nil) throws -> [Ghostty.SurfaceView] {
         guard let location = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
         let tab = location.tab
         let window = location.window
@@ -159,7 +162,11 @@ enum UmiHidden {
         }
         let (_, hid) = collectingHidden {
             swapIndex = index
-            defer { swapIndex = nil }
+            spared = sparing
+            defer {
+                swapIndex = nil
+                spared = nil
+            }
             window.setTree(newTree, for: tab)
         }
         if !collectors.isEmpty { collectors[collectors.count - 1] += hid }
@@ -427,8 +434,8 @@ final class UmiPaneWalk {
             }
             if !wasShown {
                 // The pane focused when the walk began is never the one hidden for it.
-                if let startFocus, startTree.contains(startFocus) { tab.focusedSurface = startFocus }
-                _ = try? UmiHidden.show(target, atStart: offset < 0, focus: false)
+                _ = try? UmiHidden.show(target, atStart: offset < 0, focus: false,
+                                        sparing: startFocus.flatMap { startTree.contains($0) ? $0 : nil })
                 brought = target
             }
         }
