@@ -321,6 +321,10 @@ the suite didn't run: mac-air-2's screen was locked for every run (see "Not veri
 - Panes and commands get `UMI_PANE` (`UMI_PANE_ID` retired); palette and key commands also get
   `UMI_TAB`, `UMI_WINDOW`, `UMI_CAUSE`, `UMI_CLI`, `UMI_STATE_DIR`. The hook plugins are 1.2.0 (their
   script reads `UMI_PANE`); Umi updates installed ones at launch.
+- After step 3's review: `pane move QUERY` moves every match and tab/window queries act on every
+  tab or window holding a match (choice 11); a list naming a missing list or itself is an error
+  (choice 13); CLI.md and Q-1 name ` then ` among what makes a selector a query (the code already
+  did); a Swift test reproduces the lingering-key case of fix (a) without a real key.
 - Step 2's review, (a): `UmiCause` takes a key or click as the cause only while AppKit dispatches it
   (the window's `sendEvent`, or a local monitor's event until the run loop's turn ends), not whatever
   `NSApp.currentEvent` still holds up to a second later. COMPROMISES.md's step 2 row says so now.
@@ -396,9 +400,11 @@ was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI tests were 
   tried through `debug.key` (Umi's own key handling, then the window), the palette through
   `debug.palette.perform`.
 - Fix (a) with real key presses: no key could be typed on the locked Mac. The Swift test
-  `UmiQueryTests/aKeyIsTheCauseOnlyWhileItIsDispatched` checks that a key counts inside the dispatch
-  and not after it; the lingering-`currentEvent` case itself needs a real key followed within a
-  second by a change Umi makes on its own.
+  `UmiQueryTests/aKeyLingeringInCurrentEventIsNotTheCause` reproduces the lingering case inside the
+  app: it posts a key and takes it off AppKit's queue without sending it, checks that
+  `NSApp.currentEvent` now holds that key under a second old (what the old rule named the cause),
+  and checks that the cause is `umi`. A real key press on an unlocked mac-air-2, followed within a
+  second by a change Umi makes on its own, is still untried.
 - `landing` with a real return to the app: tried through `debug.landing` (the same code the
   activation notification calls), not by switching apps.
 
@@ -434,13 +440,21 @@ was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI tests were 
 10. For `pane set`, a positional first word that reads as `KEY=VALUE` is a pair even if it could be a
     query (`pane set owner=me x=1` sets two keys); a query target goes in `--pane`, or reads as one
     when it isn't a single pair (`@list`, `not hidden`, `(a=1)`). Where: `UmiAttributesRPC`, CLI.md.
-11. Only `pane set`, `pane unset` and `pane close` act on every match now; `pane move` takes the first
-    (design/cli.md choice 3 lists move with the others: moving several panes at once to one tab or
-    window needs an order and a landing rule the design doesn't give). `hide`/`show` come in step 4.
+11. `pane set`, `unset`, `close` and `move` act on every match, in the query's order. `pane move`'s
+    first match goes where the options say and each next one beside the one moved before it (so
+    `--new-tab` makes one new tab holding them all); with `--to P`, P itself stays put. A tab or
+    window query acts on every tab or window holding a match for `close`, `equalize`, `color`,
+    `pin`, `unpin`, `set` and `unset`; `tab focus|rename|move` and `window focus` take the one holding
+    the first match (one focus, one name). `hide`/`show` come in step 4. Where: `UmiRPC`
+    (`pane.move`, `tab.*`, `window.close`), `UmiTopology.everyTab/everyWindow`, CLI.md, Q-1.
 12. `tab back` stays until step 6 (design/cli.md removes it, but ⇧⌘[ keeps meaning "back through the
-    tabs visited" until step 6 makes it Warp's previous tab).
+    tabs visited" until step 6 makes it Warp's previous tab). design/plan.md's step 6 now says to
+    remove it.
 13. Problems in Umi's config lines show in `list ls` and `slot ls` (`problems`, and the CLI prints them
-    on stderr), not in Ghostty's configuration-errors window.
+    on stderr), not in Ghostty's configuration-errors window. A list whose query names, directly or
+    through other lists, a list that doesn't exist, doesn't parse or names it back is such a
+    problem: `list ls` gives it an `error`, a query naming it fails with exit 1, and a query slot
+    naming it shows the `error` in `slot ls`. Where: `UmiConfig.listError/referenceError`.
 14. `ls` lost its `list` alias (`umi list` is now the lists).
 15. The hook plugins went to 1.2.0 because their script now checks `UMI_PANE`; Umi updates installed
     ones at launch.
