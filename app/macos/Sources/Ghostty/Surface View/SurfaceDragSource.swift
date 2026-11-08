@@ -122,6 +122,27 @@ extension Ghostty {
             }
         }
 
+        /// Umi: chips sit in the window's title bar, where a drag moves the window (the window
+        /// server starts that move at the mouse down, before this view sees it). A chip's drag moves
+        /// its pane instead, so the window can't be moved while the mouse is over a chip.
+        override var mouseDownCanMoveWindow: Bool { false }
+        private weak var umiUnmovableWindow: NSWindow?
+
+        private func umiHoldWindowStill(_ still: Bool) {
+            if still, let window, window.isMovable {
+                window.isMovable = false
+                umiUnmovableWindow = window
+            } else if !still, let window = umiUnmovableWindow {
+                window.isMovable = true
+                umiUnmovableWindow = nil
+            }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            umiHoldWindowStill(false)
+            super.viewWillMove(toWindow: newWindow)
+        }
+
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
             // Ensure this view gets the mouse event before window dragging handlers
             return true
@@ -161,10 +182,12 @@ extension Ghostty {
         }
 
         override func mouseEntered(with event: NSEvent) {
+            umiHoldWindowStill(true)
             onHoverChanged?(true)
         }
 
         override func mouseExited(with event: NSEvent) {
+            umiHoldWindowStill(false)
             onHoverChanged?(false)
         }
 

@@ -97,8 +97,12 @@ private struct TerminalSplitLeaf: View {
 
     @State private var dropState: DropState = .idle
     @State private var isSelfDragging: Bool = false
+    /// Umi: the pane dragged by its chip in the pane strip.
+    @ObservedObject private var stripDrag = UmiStripDrag.shared
 
     var body: some View {
+        // Umi: dragged by its chip counts as dragging itself.
+        let selfDragging = isSelfDragging || stripDrag.pane == surfaceView.id
         GeometryReader { geometry in
             Ghostty.InspectableSurface(
                 surfaceView: surfaceView,
@@ -115,7 +119,7 @@ private struct TerminalSplitLeaf: View {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly
                 // so it is a proper invalid drop zone.
-                if !isSelfDragging {
+                if !selfDragging {
                     Color.clear
                         .onDrop(of: [.ghosttySurfaceId], delegate: SplitDropDelegate(
                             dropState: $dropState,
@@ -126,7 +130,7 @@ private struct TerminalSplitLeaf: View {
                 }
             }
             .overlay {
-                if !isSelfDragging, case .dropping(let zone) = dropState {
+                if !selfDragging, case .dropping(let zone) = dropState {
                     zone.overlay(in: geometry)
                         .allowsHitTesting(false)
                 }
@@ -136,6 +140,9 @@ private struct TerminalSplitLeaf: View {
                 if isSelfDragging {
                     dropState = .idle
                 }
+            }
+            .onChange(of: stripDrag.pane) { pane in
+                if pane == surfaceView.id { dropState = .idle }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Terminal pane")

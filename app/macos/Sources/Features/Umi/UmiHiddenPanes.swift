@@ -487,6 +487,15 @@ final class UmiPaneWalk {
 
 // MARK: - The pane strip
 
+/// The pane whose strip chip is being dragged, if any. A pane dragged by its chip is dragged
+/// "by itself", as by Ghostty's old grab handle: its own place takes no drop, so the previous/next
+/// tab targets over it can (`TerminalSplitLeaf`).
+@MainActor
+final class UmiStripDrag: ObservableObject {
+    static let shared = UmiStripDrag()
+    @Published var pane: Ghostty.SurfaceView.ID?
+}
+
 /// The pane strip in the window's title bar (attention-ui.md, "The pane strip";
 /// prototypes/pane-strip.html, option C): a chip for every pane of the tab, those on show in layout
 /// order, then the hidden ones, dim. A chip's click shows or focuses its pane; a chip is its pane's
@@ -538,6 +547,8 @@ private struct UmiStripChip: View {
     @ObservedObject private var web = UmiWebPanes.shared
     @ObservedObject private var attention = UmiAttention.shared
     @ObservedObject private var indicator = UmiIndicator.shared
+    /// Pane names (`pane rename`) are kept here.
+    @ObservedObject private var state = UmiState.shared
     @State private var dragging = false
     @State private var hovering = false
 

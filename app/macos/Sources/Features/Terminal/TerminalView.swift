@@ -117,7 +117,10 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                                 UmiPaneStrip(controller: controller, tab: controller.selectedTab,
                                              leading: controller.sidebarVisible ? 8 : 78)
                                     .frame(height: max(topInset, 22))
-                                    .onPreferenceChange(Ghostty.DraggingSurfaceKey.self) { draggingChip = $0 }
+                                    .onPreferenceChange(Ghostty.DraggingSurfaceKey.self) {
+                                        draggingChip = $0
+                                        UmiStripDrag.shared.pane = $0
+                                    }
                             }
                             terminals
                         }
