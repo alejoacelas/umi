@@ -22,24 +22,18 @@ doubt, they win.
 
 This is what the requirements serve, and what decides between them when they compete.
 
-- **The orchestrator.** The user keeps an orchestrator agent running all day, usually Claude Code
-  and sometimes Codex, in one of the app's panes (live) or as a headless session.
-  - It runs in full-access (bypass permissions) mode.
-  - Otherwise it uses its harness's full feature set: the user's skills (notably
-    `supervise-workers`), MCP servers, subagents, background tasks, plan mode and questions to the
-    user.
-- **The workers.** The orchestrator starts Claude Code and Codex workers through `<cli>`, usually with
-  full access, in a folder or a fresh git worktree, on a chosen model and effort. Workers run
-  headless, and use their harness's full feature set.
-  - The `supervise-workers` loop: write a task file, start a worker pointing at it, wait for it to
-    finish, read the report, check the evidence, follow up or steer.
-  - Follow-ups come seconds or hours later. Sometimes the orchestrator steers, interrupts or stops a
-    worker, starts more, or has workers start their own workers.
-- **The user.** The user watches all of this in the app. They arrange panes, tabs and windows
-  Warp-style, move live terminals and sessions around, read files in the editor, and now and then step
-  in: locate a session in a pane, take it over in the agent's own interface, hand it back.
-- **Long runs.** The app, the orchestrator and the workers run for days. Over that time the machine
-  sleeps, the app quits or crashes, and new builds get installed.
+- **Agents in panes.** The user runs Claude Code and Codex in the app's panes all day, typed as they
+  would type them in any terminal, many at once: an orchestrator agent, workers, reviewers. The
+  product runs no agents of its own. Starting, steering and supervising agents lives outside it, in
+  scripts and skills that use `<cli>` (design/README.md).
+- **Keeping track.** Umi's plugin for Claude Code and Codex reports each agent's state on its pane
+  (`agent.status`, its title and session, AG-18), so the user sees which panes are working, need
+  them, or finished while they weren't looking, and scripts can read and act on the same facts.
+- **The user.** They arrange panes, tabs and windows Warp-style, move live terminals around, read
+  files in the editor, and step into whichever pane needs them.
+- **Long runs.** The app and the agents in its panes run for days. Over that time the machine
+  sleeps, the app quits or crashes, and new builds get installed: each agent comes back in its pane
+  on the same conversation.
 
 ## Priorities
 
@@ -52,70 +46,27 @@ the product's identity, packaging and editor.
 
 Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
 
-### Core: agent sessions
-These outcomes must hold every time, with both harnesses. How they are achieved is open. The user's
-order: first, launching sessions that run reliably and that the user can interact with in the pane,
-tab or window they choose; second, agents supervising and steering other agents.
-- **Launch:** headless start, sessions the user will use going live in their chosen place, fidelity
-  to the agent the user would get in their own terminal.
-- **Headless and live:** a read-only view only where the user asks for one, taking over at once,
-  handing back, removing a session from its pane without stopping it, messages that reach live
-  sessions.
-- **Supervision:** message ids, steering, exactly-once delivery, wait/read, truthful status,
-  interrupt, stop, list, resume, watch, reports, orchestration from inside agents.
-- **Observability:** the agents' own hooks report their state, Warp-style, for sessions the product
-  started and agents the user typed.
-- **A CLI agents can use with no instructions.**
-- **Robustness:** crashes, restarts, upgrades, isolation, long runs, no orphans.
+### Core: agents in panes
+These outcomes must hold every time, with both agents: the plugin's hooks report each agent's state
+on its pane, truthfully, and agents come back in their panes after a quit, a crash or an update.
 
-Requirements: AG-1 to AG-24, R-3 to R-7.
+Requirements: AG-18, AG-19, R-3 to R-7.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
 the tiers above. Record every such compromise in `COMPROMISES.md`: what, why, and which requirement it
 protects.
-- How the read-only view presents a session, beyond AG-5.
-- Approval flows for sessions that don't have full access, beyond surfacing and answering them
-  (part of AG-17).
 
 ### Not requirements
 These are open design decisions, not requirements. Make them on the merits and validate them with the
 tests:
-- how the read-only view presents a session;
-- what process owns agents and sessions, and how the CLI finds the app;
-- whether agents keep running while the app isn't. The user's call: sessions may stop when the app
-  quits, as long as AG-10 and AG-22 hold. They would rather the effort go into making resumption
-  reliable than into keeping agents alive across app restarts.
+- how the CLI finds the app;
+- whether agents keep running while the app isn't: they end with the app's terminals and are typed
+  again in their panes when it runs again.
 
-The user's instructions for agent sessions (BRIEF-agents.md §1, "Agent sessions") replace
-`REQUESTS.md`'s "two launch modes": the product always launches and controls sessions headless;
-sessions move from headless to live (the agent's own interface in a pane) and back. Control still
-rests on identifiers and events the harness itself reports, never on reading or typing into a
-screen; the one thing typed into a pane is the command that starts the agent's own interface there.
-
-## Delivery phases
-
-The product is delivered in two phases, each built against this suite. The tiers apply within each
-phase.
-
-- **Phase 1, the app:** everything that doesn't need managed agents. That's P, I, L, M, T, S, E and
-  IA, and the parts of R-3 to R-7 about windows, panes and the CLI. Two items inside these groups
-  wait for phase 2: L-9's ⌃⌘J (jump to the agent that needs the user) and S-3's managed-agent status
-  line.
-- **Phase 2, the harness:** managed agents, built on phase 1's app. That's MA, AP, the rest of R,
-  and the agent parts above.
-
-Tests that need managed agents carry the `harness` marker. `--phase 1` leaves them out, and the
-traceability report marks requirements that only they cover as deferred.
-
-Phase 2 requirements (since replaced by AG): MA-1 to MA-29, AP-1 to AP-11, R-1, R-2, R-8 to R-10.
-
-A third run redid agent sessions (AG, replacing phase 2's MA, AP, IA, R-1, R-2 and R-8 to R-10)
-and made the app changes the user decided after phase 2.
-
-Phase 1 must not close doors on phase 2. Its decisions about panes, the CLI, control endpoints,
-stored state and identity leave room for sessions shown in panes, agent commands in the CLI,
-and agents reaching the app from their own processes.
+Requirements that left with Umi's own agent sessions (design step 1, 2026-11-07; design/spec-cleanup.md):
+AG-1 to AG-17, AG-20 to AG-24 (sessions, the read-only view, Take Over, `agent` commands, the inbox and
+toasts), and the delivery phases that built them. Their IDs are not reused.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -140,8 +91,9 @@ and agents reaching the app from their own processes.
   - clears the download quarantine;
   - links `<cli>` into `~/.local/bin`;
   - makes the app the default for Markdown, unless asked not to.
-- **I-2 [A]** After install, `<cli> doctor` reports what is missing on this machine, for example
-  `claude`, `codex` or `git` not on the login PATH, and exits non-zero if anything is.
+- **I-2 [A]** After install, `<cli> doctor` reports whether `<cli>` is on the login PATH (so its panes
+  have it) and whether Umi's hook plugins are installed and current in Claude Code and Codex (where
+  that agent is installed), and exits non-zero when a plugin isn't.
 - **I-3 [W]** `open README.md` (or double-clicking a `.md` file) opens it in the app's editor.
 - **I-4 [A]** Updates. An installed copy updates itself from the product's own public release feed,
   without interrupting the user and without their having to act (REQUESTS.md, 2026-10-27):
@@ -150,22 +102,21 @@ and agents reaching the app from their own processes.
   - a check that finds a newer signed release downloads and verifies it without asking, then installs
     it at the first quiet moment and relaunches. Quiet means all of these hold, and anything the
     product can't be sure of counts as busy:
-    - no agent turn runs in any session the product knows (started by it or typed in a pane, AG-18),
-      and no message waits to be delivered;
     - every pane is at its own shell's prompt with nothing typed and nothing else running there
-      (no foreground program, no job, no shell started from it), or shows an idle agent: its own
-      interface with nothing typed in it, or a read-only view;
+      (no foreground program, no job, no shell started from it), or runs an agent its plugin reports
+      (AG-18) whose `agent.status` is idle, with nothing typed in it and nothing it started still
+      running;
     - no editor or other window holds unsaved changes or a dialog that a relaunch would lose;
     - nobody has typed or clicked in the app for 2 minutes;
   - about 30 seconds before installing, a notice in the sidebar (never a dialog) says "Updating to
     X.Y.Z", with **Not now** (wait for the next quiet moment at least an hour later) and **Install
     now**. Anything the user does during the countdown stops it until the next quiet moment;
-  - after the relaunch everything comes back as after a quit (AG-7, AG-22, R-3): windows, tabs,
-    panes and their folders, and agent sessions in their panes, live ones live with the same
-    conversation and flags (an agent the user typed in a pane included);
-  - `<cli> update --now` installs at once (asking first, with `--force`, before cutting running
-    turns off, AG-22); `<cli> update --status` says what is pending and why it isn't quiet yet (which
-    pane or session); `<cli> update --rollback` installs the previously installed version again
+  - after the relaunch everything comes back as after a quit (R-3): windows, tabs, panes and their
+    folders, and in each pane that ran an agent, that agent typed again with the flags it was typed
+    with, on the same conversation (AG-18);
+  - `<cli> update --now` installs at once (asking first, with `--force`, while an agent in a pane is
+    working); `<cli> update --status` says what is pending and why it isn't quiet yet (which pane);
+    `<cli> update --rollback` installs the previously installed version again
     (its verified zip is kept when a new one installs), and the version gone back from doesn't
     install by itself again. An install that fails doesn't install by itself again either;
   - a config setting (`auto-update = check`) turns automatic installing off: then a background check
@@ -178,7 +129,8 @@ and agents reaching the app from their own processes.
   - an older build updates to a newer one end to end;
   - *Warp parity, 2026-11-05:* after an update installs, the relaunched app says once, inside the
     window, "Umi updated to X.Y.Z" with that release's notes from the feed (Warp's "Warp updated!"
-    toast); it stays until ⌃⌘U dismisses it, and a failed install shows nothing.
+    toast); it stays until ⌃⌘U (View ▸ Dismiss Update Note) dismisses it, and a failed install shows
+    nothing.
 
   `<cli> update --check` prints the installed and the newest version. Publishing a new version from
   the development Mac is one command.
@@ -225,20 +177,16 @@ the menu.
   - ⌃⇧⌘N moves the tab to a new window;
   - ⌃⌘P pins or unpins the tab;
   - ⌃⌘R / ⌃⇧⌘R rename the tab or pane;
-  - ⌃⌘J goes to the next session that needs the user, and ⌃⌘K goes back (L-12);
+  - ⌃⌘J goes to the next pane whose agent needs the user, and ⌃⌘K goes back (L-12);
   - ⇧⌘T reopens the last closed pane, tab or window (L-20);
-  - ⌃⌘O takes over the focused pane's session, and ⌃⌘W removes the session from its pane, where
-    it keeps running (AG-6, AG-8);
   - (Warp parity, 2026-11-05) ⌥⌘I and ⌥⇧⌘I synchronize input and stop it (L-32); ⌘= ⌘- ⌘0 zoom
     the interface and ⌥⇧> ⌥⇧< change the terminals' font size (L-33).
-  - ⇧⌘U opens or closes the notifications inbox, and ⌃⌘U dismisses the toasts and the update note
-    (AG-24, I-4; Warp parity, 2026-11-05).
+  - ⌃⌘U dismisses the note after an update (I-4).
 
   Each is a menu item, and the command palette lists them. `<cli> shortcuts` changes them (L-17).
 
 - **L-10 [A+W]** Shortcuts work from anywhere: with keyboard focus in a terminal, the editor (source
-  or preview), the sidebar (its rename field and the file tree), a session's read-only view in a
-  pane or the palette. A terminal never takes one of these keys first.
+  or preview), the sidebar (its rename field and the file tree) or the palette. A terminal never takes one of these keys first.
 
 - **L-11 [A+W]** Moving between tabs:
   - ⇧⌘[ (`<cli> tab back`) goes to the tab the user was in before, in any window. Pressed again,
@@ -252,10 +200,10 @@ the menu.
     Reduce Motion), so a tab switch looks different from a window switch, which stays as macOS
     draws it. The fade never holds up typing or clicks.
 
-- **L-12 [A+W]** ⌃⌘J (`<cli> jump`) goes to the next session that needs the user: sessions that
-  need input first, then sessions that finished while the user wasn't looking, oldest first. A
-  session shown in a pane gets that pane focused (its tab selected, its window in front); a
-  session no pane shows is shown. Pressed again, it goes to the next one. ⌃⌘K (`<cli> jump back`)
+- **L-12 [A+W]** ⌃⌘J (`<cli> jump`) goes to the next pane whose agent needs the user: panes whose
+  `agent.status` is `needs_input` first, then panes whose agent finished or failed (`error`) while the
+  pane wasn't looked at (S-3), oldest first in each. The pane gets focused (its tab selected, its window in front).
+  Pressed again, it goes to the next one. ⌃⌘K (`<cli> jump back`)
   goes back to the pane the user was in before the first of those jumps. When nothing needs the
   user, `jump` fails with a message saying so.
 
@@ -268,18 +216,17 @@ the menu.
   changes. Choosing one runs it for the focused pane (as `<cli>` typed in that pane would), asking
   first for the values it needs (a name, a color among the allowed ones, a tab or pane among those
   open, …). Output, and errors, show in the palette. A `<cli>` command line typed into the palette
-  runs as typed. The palette also lists the menu actions (with their shortcuts), the managed
-  sessions, and Ghostty's actions on the focused terminal; each title appears once.
+  runs as typed. The palette also lists the menu actions (with their shortcuts) and Ghostty's actions on the focused terminal; each title appears once.
 
-  *Warp parity, 2026-11-05.* It is one palette, as Warp's: unfiltered it searches actions, managed
-  sessions (Warp's conversations), panes and the files of L-16 together, at most 250 results. A
-  query starting with `actions:`, `sessions:`, `files:`, `conversations:` or `tabs:` filters it to
+  *Warp parity, 2026-11-05.* It is one palette, as Warp's: unfiltered it searches actions,
+  panes and the files of L-16 together, at most 250 results. A
+  query starting with `actions:`, `sessions:`, `files:` or `tabs:` filters it to
   that source; the prefix leaves the query and shows before it as an italic filter word, and
   Backspace in the empty query removes the filter. A query that begins a filter word shows the
   rest of the word dimmed after it, and Tab applies that filter ("fi", Tab: `files:`). ⇧⌘P and ⌘O
   open it filtered to sessions and files. Empty and unfiltered it selects nothing, indexes no
-  files, and shows filter chips (files, actions, sessions, conversations; each but actions with
-  its filter's icon), Recent (the last three rows chosen from it, files opened from it included)
+  files, and shows filter chips (files, actions, sessions; each but actions with its filter's
+  icon), Recent (the last three rows chosen from it, files opened from it included)
   and Suggested (Keyboard Shortcuts, Settings…, Show Project Explorer; a row can be in both); ↓
   selects the first, ↑ from the first selects nothing again, and the arrows stop at the ends. Its look is Warp's: 640 px wide, at most
   464 tall, 117 px below the window's top, on Warp's `surface_2` (the background with 10% of the
@@ -289,7 +236,7 @@ the menu.
   nothing matches.
 
 - **L-15 [A+W]** ⇧⌘P lists every pane of every window, the most recently used first, each with its
-  own title: its name, else its agent session's title, else what its program set as its title,
+  own title: its name, else its agent's title (`agent.title`), else what its program set as its title,
   else its folder; then its folder and branch, what it runs (or last ran) and its tab. The pane the
   palette was opened from is marked Current. Choosing a pane focuses it, its tab and its window.
   *Warp parity, 2026-11-05:* rows as Warp's navigation palette, 70 px with two lines: the title
@@ -370,7 +317,6 @@ the menu.
     come back as they were. After 60 seconds they end, as closed panes always did;
   - the most recently closed item comes back first; something that already came back (by undo, say)
     or whose program ended is skipped. `<cli> reopen --list` shows what can come back;
-  - closing a pane that shows an agent session never stops the session.
 
   ⇧⌘T is no longer a second Undo key. ⌘Z still undoes a close for Ghostty's `undo-timeout`.
 
@@ -419,8 +365,8 @@ the menu.
   What is typed or pasted into a pane of a synced tab is typed into every terminal pane of every
   synced tab in that window; ⌘ shortcuts and text still being composed by an input method stay
   in the pane. A paste that needs confirming (Ghostty's paste protection) is confirmed once, in
-  the pane it was pasted into, and then goes to every synced pane. Panes showing a file, a page
-  or a session's read-only view don't take it. As in Warp, ⌥⌘I in a window syncing every tab
+  the pane it was pasted into, and then goes to every synced pane. Panes showing a file or a page
+  don't take it. As in Warp, ⌥⌘I in a window syncing every tab
   leaves the other tabs synced and this one not, and syncing every tab one by one is the same as
   syncing all of them; ⌥⌘I in a window syncing nothing syncs only that tab, so a tab opened later
   isn't synced, even when it was the window's only one. A synced tab's sidebar row shows Warp's
@@ -466,7 +412,7 @@ A "live session" is a pane with a running program, its scrollback and its state.
   should come to occupy the same pane space and be accessible through the cmd [] shortcuts + a small
   tab thing at the top similarly to what we currently do for files". A pane dropped on the middle of
   another pane (the middle third each way; "Stack here" shows) joins it in its place, on show and
-  focused; its old place closes. Any panes can stack: terminals, file panes, agent sessions.
+  focused; its old place closes. Any panes can stack: terminals and file panes.
   - A strip along the top of the place names each member; clicking one shows it, its ✕ closes it.
   - ⌘[ and ⌘] show the previous and next member of the focused pane's stack. In a pane that isn't
     stacked they go to the previous and next pane, as before.
@@ -544,8 +490,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
   - Line 1: the tab's folder (its focused pane's), or the name the user gave the tab. Then the git
     branch, a linked worktree shown differently from a normal checkout; a pane count when split;
     and close and pin affordances on hover.
-  - Line 2: the title of the tab's agent session, when it has one (a session Umi started, or a
-    `claude`/`codex` typed in the pane and reported by Umi's plugin, AG-18). Otherwise what the
+  - Line 2: the title of the tab's agent (`agent.title`), when one runs in it (a `claude`/`codex`
+    typed in a pane and reported by Umi's plugin, AG-18). Otherwise what the
     focused pane is doing: the running command or the last one it ran; else the folder's path.
   - Rows look like Warp's vertical tabs (Warp parity, 2026-11-05): line 1 at 12 pt regular, 90% ink,
     selected or not; line 2 at 10 pt, 60%; 1 pt between them. The icon is a 24 pt circle filled at
@@ -563,23 +509,19 @@ A "live session" is a pane with a running program, its scrollback and its state.
   - The header (Warp's control bar) is 4 pt above and below, 8 pt at the sides, 4 pt between
     items: "Search tabs..." (S-13; Tabs mode), the Tabs, Files and Search buttons, and + (24 pt
     high, radius 4).
-  - A tab with an agent session shows the agent's mark (Claude or Codex), small and monochrome, in
-    the 24 pt circle instead of the terminal glyph. When a session finished and the user hasn't looked at it yet, or it needs the user,
-    the mark's status badge says so (below). Looking at the pane (it has focus in the front window while the
-    app is active, by a tab switch, a pane focus, or switching windows or apps) clears it; a session
-    that finishes while the user looks at it leaves no mark. Colors and hints stay subtle. No desktop
-    notifications. The Dock badge counts the sessions that need the user.
-  - *Warp parity, 2026-11-05.* The mark wears Warp's status badge, 57% of the icon's size, its
-    bottom-right corner 5% of the icon's size inside the icon's, in a ring of the terminal's
-    background, in Warp's default Dark colors: working (magenta clock),
-    finished and not seen yet (green check), needs the user (yellow stop), error (red triangle),
-    stopped (grey stop). The mark itself stays monochrome; the badge carries the color. A finish
-    counts as seen when the user looks at any pane of its tab as it finishes (Warp's rule), and the
-    agent starting a new turn clears the mark. The agents' own desktop notifications (OSC 9 and
-    777, which Claude Code and Codex send) are dropped while an agent session's own interface runs
-    in the pane's terminal (one the product started or one its plugin reports, AG-18) and the
-    session isn't stopped; other programs' notifications, including the shell's after the agent
-    exits, are Ghostty's as before.
+  - A tab with an agent shows the agent's mark (Claude or Codex), small and monochrome, in the 24 pt
+    circle instead of the terminal glyph: the agent of its focused pane, else the one most in need,
+    else the one that stopped last. The mark is a little brighter while that agent needs the user
+    (`agent.status` is `needs_input` or `error`) or finished and its pane wasn't looked at since
+    (design/primitives.md: `changed_at > seen_at`). A pane is looked at while it has keyboard focus
+    in the front window and the app is active (a tab switch, a pane focus, or switching windows or
+    apps); looking at another pane of the same tab doesn't count, and an agent that finishes in the
+    pane being looked at leaves no mark. The agent starting a new turn clears it. Colors and hints
+    stay subtle; no status badges (the pane indicator replaces them in a later step). The Dock badge
+    counts the panes whose agent needs input.
+  - No desktop notifications. The agents' own desktop notifications (OSC 9 and 777, which Claude Code
+    and Codex send) are dropped while an agent its plugin reports runs in the pane (AG-18); other
+    programs' notifications, including the shell's after the agent exits, are Ghostty's as before.
 - **S-4 [A+W]** Rows can be clicked to select, double-clicked to rename, dragged to reorder
   (M-4), and right-clicked for Warp's menu, with Warp's labels and order (Warp parity, 2026-11-05):
   Pin tab (Unpin tab); New group with tab, Move to group ▸, Remove from group (S-14); Copy branch,
@@ -629,10 +571,9 @@ A "live session" is a pane with a running program, its scrollback and its state.
     (L-13), `<cli> tab new --index`, and pinning and unpinning. Pinned tabs come first, in pin order:
     pinning puts a tab at the end of the pinned tabs and unpinning at the top of the others, as in
     Warp;
-  - a new tab the user goes to (⌘T, the sidebar's +, `<cli> tab new`, a session started with
-    `--focus`) opens right after the current tab, below the pinned tabs, as in Warp (Ghostty's
+  - a new tab the user goes to (⌘T, the sidebar's +, `<cli> tab new`) opens right after the current tab, below the pinned tabs, as in Warp (Ghostty's
     `window-new-tab-position = end` puts it last instead). A tab opened in the background
-    (`--no-focus`, a session shown without `--focus`) goes last, so no tab shifts while the user isn't
+    (`--no-focus`) goes last, so no tab shifts while the user isn't
     looking. A pane moved to a new tab gets one right after its own tab.
 
   This is the window's real tab order: `ls`, `#N` selectors and ⌘1–9 follow it. (Until 0.6.0 the
@@ -646,7 +587,7 @@ A "live session" is a pane with a running program, its scrollback and its state.
 
 - **S-13 [A+W]** Search tabs (Warp parity, 2026-11-05), as Warp's vertical tabs: a "Search tabs..."
   field at the top of the sidebar's Tabs mode (a 12 pt magnifying glass, 24 pt high). A query lists
-  only the tabs whose title, folder, branch, command or agent session title contain it (any case);
+  only the tabs whose title, folder, branch, command or agent title contain it (any case);
   with none, "No tabs match your search." (12 pt, 60%). While the window's sidebar has a query, ⇧⌘[
   and ⇧⌘] (previous and next) and ⌃Tab and ⌃⇧Tab go through the matching tabs only, wrapping
   around (also while the sidebar is hidden, as Warp's closed panel; not while it shows Files, which
@@ -876,176 +817,43 @@ and links (E-7) work as before.
   path, Split pane right / left / down / up, and in a split Maximize pane (Minimize pane when
   maximized) and Close pane.
 
-## AG. Agent sessions
+## AG. Agents in panes
 
-A **session** is one Claude Code or Codex conversation the product knows. It runs in one of two ways:
+Claude Code and Codex run in the app's panes, typed by the user (or by a script, `<cli> send`). The
+product runs no agents of its own (design/README.md); what it knows about an agent comes from the
+agent's own hooks, through Umi's plugin.
 
-- **Headless:** the product runs the agent without its interface (Claude Code's own headless mode,
-  Codex's own app server) and controls it from events and ids the agent reports.
-- **Live:** the agent's own interface (Claude Code's or Codex's) runs in a pane, on the same
-  conversation.
-
-The product always launches and controls sessions headless. A session moves from headless to live
-when the user takes it over in a pane, and back to headless when its interface closes. Wherever it
-runs, it is the same session: same id, conversation, folder and settings.
-
-### Launching
-- **AG-1 [A]** `agent start claude|codex PROMPT` starts a session headless and prints its id. It
-  takes a name, a folder or a git worktree, a model and effort, full access (no approvals),
-  environment variables and extra arguments for the agent. Without a placement nothing appears on
-  screen. Text comes from arguments, from stdin with `-`, or after `--` where it isn't harness
-  arguments; no command waits on stdin unless asked to with `-`.
-- **AG-2 [A]** Sessions the user will interact with: with a placement (`--tab`, `--split [DIR]`,
-  `--window`, `--pane P`), the session runs headless until its first turn finishes, and is then
-  resumed live in that place, on the same conversation. Meanwhile the place shows the read-only
-  view (AG-5). The user's focus doesn't move unless asked (`--focus`), as in L-8.
-- **AG-3 [A]** Launches are reliable. A session's first turn starts within seconds. A session that
-  can't start (the agent isn't installed, the folder is gone, the conversation no longer exists)
-  fails at once, with the reason, in `agent start`/`send`/`wait`/`info`; it never silently starts a
-  fresh conversation in its place.
-- **AG-4 [A]** Fidelity. A session, headless or live, is the agent the user would get by typing the
-  same command in their own terminal in that folder: their and the project's instructions
-  (`CLAUDE.md`, `AGENTS.md`), skills, MCP servers, plugins, hooks and subagents; the login shell's
-  environment, never the launching process's agent variables; their own logins. Running sessions
-  never changes the user's own `claude`/`codex` configuration, except installing Umi's plugins
-  (AG-18).
-
-### Headless and live
-- **AG-5 [A+W]** Read-only view. A headless session appears in a pane only when the user asks to
-  locate it (`agent open`, the Window menu, the palette, the "next session that needs you"
-  shortcut). The pane shows the session read-only: what was said on both sides, tool activity, its
-  status and anything it waits on, and a **Take Over** button. Showing a session that is already
-  shown focuses its pane.
-- **AG-6 [A]** Take over. The button (or `agent open --live`) immediately replaces the read-only view
-  with the agent's own interface on the same conversation, in that pane. A turn running at that
-  moment continues in the live interface (Codex) or is interrupted (Claude Code, which can't share a
-  running turn); either way nothing waits for the turn to end.
-- **AG-7 [A]** Back to headless. When the live interface closes (the user quits it), the session is
-  headless again with its whole conversation, and the pane shows the read-only view. A session cut
-  off by a quit of the app comes back in the same place after a restart: live panes live, read-only
-  panes read-only.
-- **AG-8 [A]** Remove from a pane. A keyboard shortcut (and `agent hide`) removes the session from
-  its pane without stopping it: the pane goes away (the user doesn't see it) and the session keeps
-  running until it finishes. A live interface keeps running out of sight until its turn and any
-  background work end; then the session is headless and idle.
-- **AG-9 [A]** Messages reach live sessions. A message sent to a live session is delivered exactly
-  once:
-  - Codex: at once, through the conversation the live interface shows (steering a running turn, or
-    starting one).
-  - Claude Code: when its interface is idle and the user has nothing typed in it. The session runs
-    the message headless (the pane shows the read-only view meanwhile) and then returns live to the
-    same pane. Until then the message waits, and `agent info`/`ls` say why.
-
-### Supervising and steering
-- **AG-10 [A]** `agent send SESSION TEXT` prints a message id at once. While the session works, the
-  agent sees TEXT during its current turn (steering, at its next step). Otherwise TEXT starts a turn.
-  A session that is stopped, crashed, or from before an app restart or update resumes its
-  conversation with the folder, model, effort, access, environment and arguments it was started
-  with. `--interrupt` stops the running turn first, and TEXT is the next thing the agent sees.
-  Message and session ids are the ones the agent itself reports or echoes; the agent's own session or
-  thread id also selects the session.
-- **AG-11 [A]** Exactly once. Every message is delivered to the agent exactly once, under any timing,
-  including steering, interrupts, crashes and restarts. A message that can't be delivered ends in a
-  failure state the caller sees; nothing is pending forever.
-- **AG-12 [A]** `agent wait SESSION [--message ID] [--timeout S]` waits until the turn answering the
-  latest (or given) message has ended and the session has settled (no background work of its own
-  still pending), or until it needs input, and prints a status, then the reply. `DONE` 0;
-  `NEEDS_INPUT` 2 (with what it waits on); `INTERRUPTED`, `FAILED`, `STOPPED`, `ERROR`,
-  `CANCELLED` 3; `TIMEOUT` 124 (with what is still running). An old message's wait returns that
-  message's own reply. `--report` waits for the worker's own report instead (AG-16).
-- **AG-13 [A]** Truthful status: `starting`, `working`, `idle`, `needs_input`, `stopped` or `error`,
-  for headless and live sessions alike. `stopped` is what `agent stop` leaves; a session whose
-  interface closed or whose agent exited by itself is `idle` (a message resumes it). A session isn't `idle` while a turn runs, a message waits,
-  or background work it started (that will wake it) is pending; it isn't `working` when it's done.
-  Turns the agent starts by itself (a background task finished, a scheduled wake-up) show as
-  `working`, appear in the transcript as their own turns, and are never taken as the reply to a
-  message.
-- **AG-14 [A]** `agent read` prints the last reply, a given message's reply, or the transcript in
-  order. `agent ls` and `agent info` show each session's status and activity, where it is
-  (`background`, a pane's read-only view, or live in a pane), its parent, its latest report, what it
-  loaded when it last started (model, MCP servers and their state, flags for anything that failed or
-  needs the user), and messages waiting.
-- **AG-15 [A]** `agent interrupt` stops the running turn and keeps the session. `agent stop` ends the
-  session's work completely: its agent process and everything it started, including detached
-  processes and ones that ignore SIGTERM; a live interface closes; the conversation stays resumable.
-  `agent rm` forgets a session (`--force` stops it first). `agent rename` renames; names are unique
-  among running sessions.
-- **AG-16 [A]** Agents supervise agents. Inside any session (headless or live), `<cli>` is on PATH
-  and reaches the right instance; `self` names the session; sessions it starts record it as their
-  parent (`agent ls --parent self`). `agent watch SESSION --notify OTHER` sends OTHER a message when
-  SESSION finishes, needs input or stops. `agent report done|blocked|failed SUMMARY` records a
-  worker's verdict, shown in `info`/`ls` and awaited by `agent wait --report` (done 0, blocked 2,
-  failed 3). A session knows its situation without being told: its name and id, parent, folder, that
-  nobody may be watching, and how to report and reach other sessions.
-- **AG-17 [A]** Approvals and questions. Without full access, what the agent asks for (approvals,
-  questions, several questions in one request) shows as pending requests that say exactly what
-  would be allowed, answerable with `agent approve`/`deny`/`answer` and from the read-only view.
-  Requests the agent withdraws disappear. In a live session the agent's own interface asks.
-
-### Observability
-- **AG-18 [A]** The product observes agents the way Warp does: Umi's plugins for Claude Code and
-  Codex report each session's state from the agents' own hooks to the app. That covers sessions the
-  product started, while live, and `claude`/`codex` the user starts by typing them in a pane, which
-  then become sessions the product knows. The plugins are installed into the user's Claude Code and
-  Codex and kept up to date (`agent plugins` shows their state). Outside the product (another
-  terminal, or no app running) they're silent: no output and no effect.
-- **AG-19 [A]** Live status is truthful through agent updates: a turn's end with background work
-  still pending isn't "finished", an interrupted turn doesn't stay "working", and a session waiting
-  on a permission prompt or a question is `needs_input`.
-- **AG-24 [A]** *Warp parity, 2026-11-05.* Agent events inside the app, as Warp's notification
-  mailbox and toasts:
-  - an agent shown in a pane that finishes its turn, asks for the user or fails adds an item to an
-    inbox, newest first, at most 100; a pane keeps only its newest item, and the agent starting a
-    new turn takes it away. An item is read once the user looks at its pane, or if it happened
-    while they looked at its tab. Items use Warp's words: the session's title, or "Claude
-    completed" ("Task completed."; Codex: "Notification from Codex"), "Claude needs attention"
-    (what the agent asks, or "Waiting for input."), "Claude failed" (the agent's error, or "The
-    agent encountered an error.") and "Claude cancelled" ("Cancelled by user.") for a turn that
-    was stopped;
-  - ⇧⌘U opens the inbox over the window's top right: filters All tabs, Unread and Errors (the last
-    two only while they have items), each item with the agent's icon and badge, title, message and
-    age. ↑ ↓ choose, Return goes to the session's pane (the item is read), Tab or Shift-Tab change
-    the filter, Escape or ⇧⌘U close it. A click outside it closes it too (the click still goes
-    to what it hits, so typing then reaches the pane), and so does closing its window. It is open
-    in one window at a time: ⇧⌘U in another window opens it there;
-  - an unread item also shows as a toast in the window the user is looking at (the key window of
-    the active app), for 8 seconds, at most two at once (the oldest goes), none while the inbox is
-    open in that window; opening the inbox or ⌃⌘U dismisses them, and looking at the pane takes its toast away.
-    No desktop notifications (S-3).
-
-### CLI for agents
-- **AG-20 [A]** An agent with no instructions about the product can use it: given only a task that
-  needs other agents (and that `<cli>` exists), real Claude Code and Codex agents start sessions,
-  wait for them, read their replies, steer them and stop them through `<cli>`, guided only by its
-  help and its messages. The help is short and plain; errors say what to do instead.
-
-### Robustness
-- **AG-21 [A]** No orphans. Every process started for a session belongs to a session listed as
-  running, or is gone: after `agent stop`, `agent rm --force`, a crash of the agent, a quit of the
-  app, and after every process of the product is killed and the app started again. No zombies
-  accumulate.
-- **AG-22 [A]** Crash and restart. After the app quits, crashes (`kill -9` of every product process)
-  or is updated, all sessions are listed; each resumes on its next message; no message is delivered
-  twice or lost; transcripts keep every entry once. A turn cut off by the quit, crash or update
-  continues by itself once the app runs again, with a short note saying when and why it was cut off
-  and that what it had running was stopped; `agent wait` on the cut-off message returns the
-  continued turn's reply. A normal quit or an update never cuts turns off silently: it interrupts
-  them cleanly, and an update installs while turns run only if the user agrees (an update that
-  installs by itself waits for a quiet moment, when none runs, I-4).
-- **AG-23 [A]** Long runs. Many sessions, long transcripts, large tool outputs and days of uptime don't
-  make the CLI or the app slow. Disk use grows only with what the user keeps.
+- **AG-18 [A]** The plugin writes `agent.*` on the agent's pane (design/primitives.md, "Agent hook
+  plugin"; CLI.md, "Agent hooks"). Umi's plugins for Claude Code and Codex are installed into the
+  user's Claude Code and Codex and kept current (`<cli> plugins` shows their state). Inside one of
+  the app's panes, each hook event runs `<cli> hook EVENT`, which sets on that pane: `agent.kind`
+  (`claude` or `codex`), `agent.status` (`working`, `needs_input`, `idle`, `stopped`, `error`),
+  `agent.title` (the conversation's first prompt), `agent.summary` (the first line of its last
+  reply), `agent.done` (at each turn's end: whether the reply's last line starts with `Status:
+  done`) and `agent.session` (the agent's own session or thread id). `ls --json` shows them in each
+  pane's `attributes`; each status change is a `pane.changed` event with key `agent.status`. The
+  next agent in the pane overwrites them. A `claude -p` a script runs in the pane is a one-off, not
+  the pane's agent. Outside the product (another terminal, no app running, no pane) the hooks print
+  nothing and do nothing, and they never make the agent wait. When the app relaunches (after a quit,
+  a crash or an update), each pane whose agent was running gets that agent typed again in its
+  shell, with the flags it was typed with, resuming its conversation (`--resume ID` for Claude Code,
+  `resume ID` for Codex); its first prompt isn't run again.
+- **AG-19 [A]** `agent.status` stays truthful through agent updates: a turn's end with background
+  work still pending isn't "finished" (`working` until it ends), an interrupted turn (Esc or Ctrl-C)
+  doesn't stay `working`, a failed turn is `error`, an agent waiting on a permission prompt or a
+  question is `needs_input`, and an agent whose process ended (quit, crash, kill) is `stopped`.
 
 ## R. Robustness
 
-- **R-3 [A]** Restart. After the app quits and restarts, pins and tab names come back. Sessions come
-  back as AG-22 says, and their panes as AG-7 says.
+- **R-3 [A]** Restart. After the app quits and restarts, pins and tab names come back, and each pane's
+  agent comes back as AG-18 says.
 - **R-4 [A]** Paths. Everything works with a state directory or working directory containing spaces,
   and with a long state-directory path (Unix socket paths are limited to 104 bytes). The product
   builds from a checkout path containing spaces.
 - **R-5 [A]** Isolation. Two isolated instances (different state directories) never talk to each
-  other: CLI calls, agents and the panes of one never reach the other.
-- **R-6 [A]** The app and its CLI keep working, and tell the truth, while sessions are busy,
-  approvals are pending, or event consumers are slow.
-- **R-7 [A]** Stale environments. A CLI run with stale pane, socket or agent variables (for example
-  from a terminal that outlived its app) either reaches the right instance or fails clearly. It
+  other: CLI calls, hooks and the panes of one never reach the other.
+- **R-6 [A]** The app and its CLI keep working, and tell the truth, while the agents in its panes are
+  busy, many hooks arrive at once, or event consumers are slow.
+- **R-7 [A]** Stale environments. A CLI run with stale pane or socket variables (for example from a
+  terminal, or an agent's hook, that outlived its app) either reaches the right instance or fails clearly. It
   never acts on the wrong one.

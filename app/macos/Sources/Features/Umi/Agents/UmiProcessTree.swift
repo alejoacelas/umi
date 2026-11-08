@@ -1,14 +1,9 @@
 import Darwin
 import Foundation
 
-/// Finding and stopping every process started for a session (MA-9, R-1).
-///
-/// A harness runs as the leader of its own session and process group, and everything it
-/// starts inherits its environment, which carries `UMI_SESSION_ID` and `UMI_STATE_DIR`.
-/// Commands that detach (`setsid`, double fork, reparented to launchd) leave the process
-/// group but keep the environment, so the environment is what finds them, through the
-/// kernel's copy of each process's arguments and environment (KERN_PROCARGS2). Process
-/// groups and parent links catch the rest.
+/// The processes on this Mac, as the kernel reports them: what runs in front of a pane's
+/// terminal and what it started (the quiet moment, I-4), and a process's environment
+/// (KERN_PROCARGS2: an agent's configuration folder).
 enum UmiProcessTree {
     struct Info {
         let pid: pid_t
@@ -80,126 +75,5 @@ enum UmiProcessTree {
             index += 1
         }
         return env
-    }
-
-    /// Processes started for sessions of this instance: their environment names this
-    /// state directory and one of these sessions (all sessions when `sessions` is nil).
-    static func tagged(sessions: Set<String>?, stateDir: String, excluding: Set<pid_t> = []) -> [(pid: pid_t, session: String)] {
-        let me = getpid()
-        var out: [(pid_t, String)] = []
-        for info in all() where info.pid != me && !info.zombie && !excluding.contains(info.pid) {
-            guard let env = environment(info.pid),
-                  let session = env["UMI_SESSION_ID"], !session.isEmpty,
-                  env["UMI_STATE_DIR"] == stateDir else { continue }
-            if let sessions, !sessions.contains(session) { continue }
-            out.append((info.pid, session))
-        }
-        return out
-    }
-
-    /// Descendants of a process (by parent links, as of now).
-    static func descendants(of root: pid_t, in infos: [Info]? = nil) -> [pid_t] {
-        let list = infos ?? all()
-        var children: [pid_t: [pid_t]] = [:]
-        for info in list { children[info.ppid, default: []].append(info.pid) }
-        var out: [pid_t] = []
-        var queue = [root]
-        while let pid = queue.popLast() {
-            for child in children[pid] ?? [] where child != root {
-                out.append(child)
-                queue.append(child)
-            }
-        }
-        return out
-    }
-
-    static func members(ofGroup pgid: pid_t, in infos: [Info]? = nil) -> [pid_t] {
-        guard pgid > 1 else { return [] }
-        return (infos ?? all()).filter { $0.pgid == pgid && !$0.zombie }.map(\.pid)
-    }
-
-    static func isAlive(_ pid: pid_t) -> Bool {
-        guard pid > 0 else { return false }
-        if kill(pid, 0) != 0 { return errno == EPERM }
-        // A zombie still answers kill(0).
-        return !(all().first { $0.pid == pid }?.zombie ?? false)
-    }
-
-    /// Members of the process group a harness led, once the harness itself is gone. A process
-    /// id isn't reused while a group with that id exists, so if no process has the group's id
-    /// the members are the harness's leftovers (children that cleared their environment
-    /// included). If a process has that id, it is the live harness (counted elsewhere) or an
-    /// unrelated process that reused the id: the group isn't touched.
-    static func orphanedGroup(_ pgid: pid_t, in infos: [Info]) -> [pid_t] {
-        guard pgid > 1, !infos.contains(where: { $0.pid == pgid && !$0.zombie }) else { return [] }
-        return members(ofGroup: pgid, in: infos)
-    }
-
-    /// Everything that belongs to a session right now: its harness's group and descendants,
-    /// the group a harness that already exited left behind, and any process carrying the
-    /// session's tag.
-    static func sessionProcesses(session: String, stateDir: String, harness: pid_t?, exitedHarness: pid_t? = nil) -> Set<pid_t> {
-        let infos = all()
-        var pids = Set<pid_t>()
-        if let harness, harness > 1 {
-            pids.insert(harness)
-            pids.formUnion(members(ofGroup: harness, in: infos))
-            pids.formUnion(descendants(of: harness, in: infos))
-        }
-        if let exitedHarness {
-            pids.formUnion(orphanedGroup(exitedHarness, in: infos))
-        }
-        let me = getpid()
-        for info in infos where info.pid != me && !info.zombie {
-            if pids.contains(info.pid) { continue }
-            if let env = environment(info.pid), env["UMI_SESSION_ID"] == session, env["UMI_STATE_DIR"] == stateDir {
-                pids.insert(info.pid)
-                pids.formUnion(descendants(of: info.pid, in: infos))
-            }
-        }
-        pids.remove(me)
-        pids.remove(0)
-        pids.remove(1)
-        return pids
-    }
-
-    /// SIGTERM, then SIGKILL whatever is left after `grace` seconds. Process groups led by
-    /// these processes get the same signals. Blocks for at most `grace` + a little.
-    static func terminate(_ pids: Set<pid_t>, grace: TimeInterval) {
-        guard !pids.isEmpty else { return }
-        for pid in pids {
-            kill(pid, SIGTERM)
-            kill(-pid, SIGTERM)
-        }
-        let deadline = Date().addingTimeInterval(grace)
-        while Date() < deadline {
-            if !pids.contains(where: { isAliveCheap($0) }) { return }
-            usleep(50_000)
-        }
-        for pid in pids {
-            kill(-pid, SIGKILL)
-            kill(pid, SIGKILL)
-        }
-    }
-
-    static func killNow(_ pids: Set<pid_t>) {
-        for pid in pids {
-            kill(-pid, SIGKILL)
-            kill(pid, SIGKILL)
-        }
-    }
-
-    /// kill(0) without the zombie check (a zombie is as good as gone for signalling).
-    private static func isAliveCheap(_ pid: pid_t) -> Bool {
-        if kill(pid, 0) == 0 { return !isZombie(pid) }
-        return errno == EPERM
-    }
-
-    private static func isZombie(_ pid: pid_t) -> Bool {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        var info = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.stride
-        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return false }
-        return info.kp_proc.p_stat == 5
     }
 }

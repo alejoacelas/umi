@@ -197,25 +197,6 @@ def test_a_file_stays_open_when_the_pane_that_opened_it_moves_away(inst, win, tm
     assert any(os.path.realpath(d["path"]) == os.path.realpath(doc) for d in docs), docs
 
 
-@pytest.mark.req("AG-2", "L-8")
-@pytest.mark.harness
-def test_an_agent_launched_into_a_new_window_gets_its_command(inst, win):
-    """A new window that takes focus shows on the next turn of the run loop; the command that opens the
-    agent's own interface must still be typed into its pane (`umi claude TASK --new-window`: the task
-    headless, then live there)."""
-    marker = "new-window-" + uuid.uuid4().hex[:6]
-    result = inst.json("claude", f"ECHO {marker}", "--new-window", "--cwd", inst.work,
-                       "--env", "FAKE_AGENT_DIR=" + inst.fake_dir, "--env", "CLAUDE_CONFIG_DIR=" + inst.claude_config)
-    sid, pane = result["session"]["id"], result["pane"]
-    try:
-        assert inst.wait(sid)[1]["status"] == "DONE"
-        wait_until(lambda: inst.info(sid)["location"] == "live", 30, message="the session live in its window")
-        inst.cli("wait", "--pane", pane, "--pattern", f"> ECHO {marker}", "--timeout", "30")
-    finally:
-        inst.cli("agent", "stop", sid, check=False)
-        inst.cli("window", "close", inst.find_pane(pane)[0]["id"], check=False)
-
-
 @pytest.mark.req("I-4")
 def test_a_feed_whose_version_isnt_a_version_is_refused(fresh, tmp_path):
     """The feed's version isn't covered by the update's signature and names a folder on disk, so
@@ -235,7 +216,6 @@ def test_a_feed_whose_version_isnt_a_version_is_refused(fresh, tmp_path):
         assert "version" in (proc.stderr + proc.stdout), proc.stderr
     finally:
         server.shutdown()
-
 
 
 @pytest.mark.req("T-3")
@@ -489,7 +469,7 @@ def update_releases(target, tmp_path_factory):
     server.shutdown()
 
 
-UPDATE_NOTES = "Inbox on ⇧⌘U.\nToasts for agents."
+UPDATE_NOTES = "Agents in panes.\nNo more sessions."
 
 
 def _serve_feed(root, which):
@@ -879,22 +859,21 @@ def _shell_ready(inst, pane):
     time.sleep(0.5)
 
 
-@pytest.mark.req("I-4", "AG-7", "AG-22", "R-3")
+@pytest.mark.req("I-4", "AG-18", "R-3")
 @pytest.mark.slow
-@pytest.mark.harness
 def test_an_update_installs_itself_at_a_quiet_moment_and_everything_comes_back(target, update_releases, tmp_path):
     """I-4 (Alejo, 2026-10-27: "make install when quiet the default"): the check downloads the new
     version without asking; it doesn't install while a pane runs something; once everything is quiet
     a countdown runs and the app relaunches as the new version with its tabs, folders and the agent
-    the user typed (same conversation, same flags), as after a quit (AG-7, AG-22)."""
+    the user typed (typed again in its pane, on the same conversation, with the same flags)."""
     from test_install import bundle_version
-    from test_live import BANNER, PLUGIN, REPLY, login_fake_dir, wait_live
     from harness import FAKE_CLAUDE
 
     root, base, log = update_releases
     installed, dest = _install_old(target, update_releases, tmp_path, args=[], env=QUIET_ENV, restore=True)
-    fake_root = login_fake_dir()
-    sid = hid = None
+    # The panes' shells reach the fake's state and Umi's plugin, as the user's own `claude` does
+    # (the isolated instance relaunches with its environment).
+    installed.env.update({"FAKE_AGENT_DIR": installed.fake_dir, "FAKE_CLAUDE_PLUGIN_DIRS": installed.plugin("claude")})
     try:
         installed.start_app()
         wait_until(lambda: _update_status(installed)["state"] == "up_to_date", 30, message="a first check")
@@ -912,18 +891,11 @@ def test_an_update_installs_itself_at_a_quiet_moment_and_everything_comes_back(t
 
         # The user's own claude, typed with flags.
         word = uuid.uuid4().hex[:8]
-        plugin = os.path.join(installed.target.app, PLUGIN["claude"])
-        known = {s["id"] for s in installed.agents()}
-        installed.cli("send", "--pane", agent_pane, "--enter",
-                      f"FAKE_AGENT_DIR='{fake_root}' FAKE_CLAUDE_PLUGIN_DIRS='{plugin}' '{FAKE_CLAUDE}' "
-                      f"--dangerously-skip-permissions --model fake-model-q 'ECHO before {word}'")
-        session = wait_until(lambda: next((s for s in installed.agents() if s["id"] not in known), None), 30,
-                             message="the typed claude to become a session")
-        sid = session["id"]
-        wait_until(lambda: f"{REPLY['claude']}ECHO before {word}" in installed.screen(agent_pane, scrollback=True), 20,
+        installed.type_agent(agent_pane, "claude", args=f"--dangerously-skip-permissions --model fake-model-q 'ECHO before {word}'")
+        wait_until(lambda: f"⏺ ECHO before {word}" in installed.screen(agent_pane, scrollback=True), 20,
                    message="its first reply")
-        wait_until(lambda: installed.info(sid)["status"] == "idle", 20, message="it is idle")
-        hid = installed.info(sid).get("harness_id")
+        installed.wait_agent_status(agent_pane, "idle", 20)
+        session = installed.attributes(agent_pane)["agent.session"]
         installed.cli("send", "--pane", busy, "--enter", "sleep 600")
 
         del log[:]
@@ -956,30 +928,18 @@ def test_an_update_installs_itself_at_a_quiet_moment_and_everything_comes_back(t
         assert {"kept", "agent", "busy"} <= set(tabs), tabs
         assert sorted(os.path.realpath(p["cwd"]) for p in tabs["kept"]["panes"]) == sorted(map(os.path.realpath, folders)), \
             tabs["kept"]
-        back = wait_live(installed, sid, "claude", timeout=90)
-        assert installed.find_pane(back)[1].get("name") == "agent", "the agent came back in its own tab"
-        installed.cli("send", "--pane", back, "--enter", "STATE")
-
-        def told():
-            for item in reversed(installed.transcript(sid)):
-                if item["kind"] == "assistant" and (item.get("text") or "").startswith("{"):
-                    return json.loads(item["text"])
-            return None
-
-        state = wait_until(told, 30, message="the STATE reply")
-        assert (state["model"], state["permission_mode"]) == ("fake-model-q", "bypassPermissions"), state
-        installed.cli("send", "--pane", back, "--enter", "RECALL")
-        wait_until(lambda: f"history: ECHO before {word}" in installed.screen(back, scrollback=True), 20,
+        installed.wait_agent_status(agent_pane, "idle", 90)
+        assert installed.find_pane(agent_pane)[1].get("name") == "agent", "the agent came back in its own tab"
+        assert installed.attributes(agent_pane)["agent.session"] == session
+        out = subprocess.run(["ps", "-axww", "-o", "command="], capture_output=True, text=True).stdout
+        argv = next(line.split() for line in out.splitlines() if FAKE_CLAUDE in line and session in line)
+        assert argv[argv.index("--model") + 1] == "fake-model-q" and "--dangerously-skip-permissions" in argv, argv
+        installed.cli("send", "--pane", agent_pane, "--enter", "RECALL")
+        wait_until(lambda: f"history: ECHO before {word}" in installed.screen(agent_pane, scrollback=True), 20,
                    message="the same conversation")
         last = _update_status(installed).get("last_install") or {}
         assert (last.get("version"), last.get("from"), last.get("ok")) == ("999.0.0", "0.0.1", True), last
     finally:
-        if sid:
-            installed.cli("agent", "stop", sid, check=False, timeout=60)
-        if hid:
-            import glob
-            for path in glob.glob(os.path.join(fake_root, "claude", f"{hid}.*")):
-                os.remove(path)
         _uninstall(installed, dest)
 
 
@@ -1030,7 +990,7 @@ def test_not_now_activity_install_now_and_rollback(target, update_releases, tmp_
         _wait_relaunched(installed, dest, "999.0.0")
         status = _update_status(installed)
         assert status.get("rollback") == "0.0.1", status
-        note = wait_until(lambda: installed.rpc("debug.ui.inbox").get("update_note"), 15, message="the note after the update")
+        note = wait_until(lambda: installed.rpc("debug.ui.update_note").get("update_note"), 15, message="the note after the update")
         assert note == {"version": "999.0.0", "notes": UPDATE_NOTES}, note
 
         # Rollback, and no update loop.
@@ -1043,7 +1003,7 @@ def test_not_now_activity_install_now_and_rollback(target, update_releases, tmp_
         assert bundle_version(dest) == "0.0.1" and status["installed"] == "0.0.1", status
         assert status.get("rolled_back_from") == "999.0.0" and status["state"] == "held_back", status
         assert "ready" not in status, status
-        assert installed.rpc("debug.ui.inbox").get("update_note") is None, "a rollback says nothing"
+        assert installed.rpc("debug.ui.update_note").get("update_note") is None, "a rollback says nothing"
         # The user asks for it: it installs again.
         installed.cli("update", "--now", timeout=600)
         _wait_relaunched(installed, dest, "999.0.0")

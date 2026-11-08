@@ -148,8 +148,8 @@ let commandTable: [CommandHelp] = [
                                         ask: [Ask(name: "DIRECTION", prompt: "Direction", choices: ["up", "down", "left", "right"]),
                                               Ask(name: "AMOUNT", prompt: "Cells (empty: 10)", optional: true, kind: "number")])]),
     CommandHelp(section: "Layout", usage: "jump [back]",
-                summary: "the next session that needs you | back to where you were",
-                actions: [PaletteAction(title: "Jump to Next Session Needing You", argv: ["jump"]),
+                summary: "the next pane whose agent needs you | back to where you were",
+                actions: [PaletteAction(title: "Jump to Next Pane Needing You", argv: ["jump"]),
                           PaletteAction(title: "Jump Back", argv: ["jump", "back"])]),
     CommandHelp(section: "Layout", usage: "worktree ls",
                 actions: [PaletteAction(title: "List Git Worktrees", argv: ["worktree", "ls"])]),
@@ -215,33 +215,15 @@ let commandTable: [CommandHelp] = [
     CommandHelp(section: "Editor", usage: "comments wait FILE [--timeout SECS]",
                 summary: "until the user presses Done on the file in the editor; then its open comments"),
 
-    // Agents
-    CommandHelp(section: "Agents (Claude Code and Codex sessions; `\(cliName) agent --help` explains them)",
-                usage: "agent start claude|codex \"TASK\" …",
-                summary: "start a session (headless, in the background); prints its id"),
-    CommandHelp(section: "Agents (Claude Code and Codex sessions; `\(cliName) agent --help` explains them)",
-                usage: "agent wait SESSION", summary: "wait until it finishes; prints its reply"),
-    CommandHelp(section: "Agents (Claude Code and Codex sessions; `\(cliName) agent --help` explains them)",
-                usage: "agent send SESSION \"TEXT\"", summary: "steer it, or give it its next task; prints the message id"),
-    CommandHelp(section: "Agents (Claude Code and Codex sessions; `\(cliName) agent --help` explains them)",
-                usage: "agent read | ls | info | open | hide | interrupt | stop | watch | report | rm",
-                actions: [PaletteAction(title: "Open Agent Session…", argv: ["agent", "open", "--focus"],
-                                        ask: [Ask(name: "SESSION", prompt: "Session (name or id)")]),
-                          PaletteAction(title: "Take Over Agent Session…", argv: ["agent", "open", "--focus", "--live"],
-                                        ask: [Ask(name: "SESSION", prompt: "Session (name or id)")]),
-                          PaletteAction(title: "List Agent Sessions", argv: ["agent", "ls"]),
-                          PaletteAction(title: "Agent Plugins: Status", argv: ["agent", "plugins"]),
-                          PaletteAction(title: "Agent Plugins: Install or Update", argv: ["agent", "plugins", "install"])]),
-    CommandHelp(section: "Agents (Claude Code and Codex sessions; `\(cliName) agent --help` explains them)",
-                usage: "claude [\"TASK\"] / codex [\"TASK\"]",
-                summary: """
-                a session for you in a new tab: it does TASK headless,
-                then opens live there (`agent start … --tab --focus`)
-                """,
-                actions: [PaletteAction(title: "New Claude Session…", argv: ["claude"],
-                                        ask: [Ask(name: "TASK", prompt: "Task (leave empty to just open Claude)", optional: true)]),
-                          PaletteAction(title: "New Codex Session…", argv: ["codex"],
-                                        ask: [Ask(name: "TASK", prompt: "Task (leave empty to just open Codex)", optional: true)])]),
+    // Agents in panes
+    CommandHelp(section: "Agents (Claude Code and Codex run in panes; Umi's plugin reports them)",
+                usage: "plugins [status | install [--force] | remove]",
+                summary: "Umi's hook plugins in Claude Code and Codex: they write agent.* on the agent's pane",
+                actions: [PaletteAction(title: "Agent Plugins: Status", argv: ["plugins"]),
+                          PaletteAction(title: "Agent Plugins: Install or Update", argv: ["plugins", "install"])]),
+    CommandHelp(section: "Agents (Claude Code and Codex run in panes; Umi's plugin reports them)",
+                usage: "hook EVENT --agent claude|codex [--pid PID]",
+                summary: "run by the plugins: the hook's input on stdin; prints nothing"),
 
     // Other
     CommandHelp(section: "Other", usage: "shortcuts [ls | set ID KEYS | clear ID | reset [ID]]",
@@ -256,7 +238,7 @@ let commandTable: [CommandHelp] = [
                 summary: "look for a newer version | say what's pending and what a quiet moment waits for"),
     CommandHelp(section: "Other", usage: "update --now [--force]", summary: """
         download and install now, then relaunch (--force: even while
-        agent turns run; they continue after the relaunch)
+        agents in panes work; they come back on their conversations)
         """),
     CommandHelp(section: "Other", usage: "update --rollback [--force]", summary: """
         go back to the version installed before this one (it won't
@@ -266,7 +248,7 @@ let commandTable: [CommandHelp] = [
         answer \(productName)'s update question: ask again tomorrow |
         don't ask about this version again
         """),
-    CommandHelp(section: "Other", usage: "doctor", summary: "check this machine for what \(productName) needs",
+    CommandHelp(section: "Other", usage: "doctor", summary: "is \(cliName) on PATH, are the agent plugins installed and current",
                 actions: [PaletteAction(title: "Check This Mac for What \(productName) Needs", argv: ["doctor"])]),
     CommandHelp(section: "Other", usage: "help", summary: "this help (--json: for programs)"),
 ]

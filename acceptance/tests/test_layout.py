@@ -499,12 +499,11 @@ SHORTCUTS = {
     "cmd+shift+[": "back to the tab visited before", "cmd+shift+]": "the next tab in sidebar order",
     "cmd+1": "the first tab", "cmd+8": "the eighth tab", "cmd+9": "the last tab",
     "cmd+p": "the command palette", "cmd+shift+p": "the pane palette", "cmd+,": "Settings (the config file)",
-    "cmd+ctrl+j": "the next session that needs the user", "cmd+ctrl+k": "back from that jump",
-    # L-20, AG-6, AG-8.
+    "cmd+ctrl+j": "the next pane whose agent needs the user", "cmd+ctrl+k": "back from that jump",
+    # L-20; I-4's update note.
     "cmd+shift+t": "reopen the last closed pane, tab or window",
-    "cmd+ctrl+o": "take over the focused pane's session", "cmd+ctrl+w": "remove the session from its pane",
+    "cmd+ctrl+u": "dismiss the note after an update",
 }
-AGENT_SHORTCUTS = {"cmd+ctrl+j": "jump to the agent that needs the user"}
 
 
 @pytest.mark.req("L-9", "S-2")
@@ -514,16 +513,6 @@ def test_shortcuts_are_menu_items(inst, win, ui):
     missing = [f"{spec} ({what})" for spec, what in SHORTCUTS.items() if ui.shortcut(spec) is None]
     assert not missing, f"shortcuts with no menu item: {missing}"
     labels = {spec: ui.label(ui.shortcut(spec)) for spec in SHORTCUTS}
-    assert len(set(labels.values())) == len(labels), f"one item for two shortcuts: {labels}"
-
-
-@pytest.mark.req("L-9")
-@pytest.mark.harness
-def test_agent_shortcuts_are_menu_items(inst, win, ui):
-    shortcuts = {**SHORTCUTS, **AGENT_SHORTCUTS}
-    missing = [f"{spec} ({what})" for spec, what in AGENT_SHORTCUTS.items() if ui.shortcut(spec) is None]
-    assert not missing, f"shortcuts with no menu item: {missing}"
-    labels = {spec: ui.label(ui.shortcut(spec)) for spec in shortcuts}
     assert len(set(labels.values())) == len(labels), f"one item for two shortcuts: {labels}"
 
 

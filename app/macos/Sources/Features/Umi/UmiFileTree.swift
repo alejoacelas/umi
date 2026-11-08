@@ -592,7 +592,7 @@ final class UmiFileTreeModel: ObservableObject {
     var terminalPane: Ghostty.SurfaceView? {
         guard let controller else { return nil }
         func isTerminal(_ pane: Ghostty.SurfaceView) -> Bool {
-            !UmiFilePanes.shared.isFilePane(pane.id) && UmiAgentUI.shared.session(forPane: pane.id) == nil
+            !UmiFilePanes.shared.isFilePane(pane.id) && !UmiWebPanes.shared.isWebPane(pane.id)
         }
         if let pane = focusedPane, isTerminal(pane) { return pane }
         let panes = (controller.tree(of: controller.selectedTab).root?.leaves() ?? []).filter(isTerminal)

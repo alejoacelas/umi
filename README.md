@@ -6,15 +6,15 @@ curl -fsSL https://github.com/alejoacelas/umi/releases/latest/download/install.s
 
 A macOS terminal for working with coding agents, built on [Ghostty](https://ghostty.org) and modelled
 on Warp: tabs and panes in a sidebar, live terminals you can move between panes, tabs and windows, a
-Markdown editor beside your terminals, Claude Code and Codex sessions you can start, watch and steer,
+Markdown editor beside your terminals, Claude Code and Codex in panes with their state on each pane,
 and an `umi` command line that agents (and you) can drive everything from. Apple Silicon Macs, macOS
 13 or later.
 
 The command above downloads the latest release (and checks it against the release's checksum), puts
 `Umi.app` in `/Applications` (or `~/Applications`), clears the download quarantine so macOS opens it
 without asking, links the `umi` command into `~/.local/bin`, makes Umi the app for Markdown files, and
-opens it. Nothing else needs to be installed first. `umi doctor` shows what Umi can find on this
-machine (`claude`, `codex`, `git`).
+opens it. Nothing else needs to be installed first. `umi doctor` says whether `umi` is on your PATH and
+whether Umi's agent plugins are installed and current.
 
 Umi is named after the heroine of *From Up on Poppy Hill*, who raises signal flags over the sea every
 morning (*umi* is Japanese for "sea").
@@ -60,27 +60,27 @@ pane of the row. Double-click a divider to even out its row.
 
 ## Agents
 
-`umi claude "task"` and `umi codex "task"` start a Claude Code or Codex session that works in the
-background and opens in its own interface in a new tab once its first turn is done. Agents can
-supervise other agents with `umi agent` (`umi agent --help` explains it in one screen): start
-sessions, wait for them, steer them with messages, read their replies, and show one to you.
-`umi agent open SESSION` shows a session read-only in a pane, with a Take Over button.
-
-To know what agents do in its terminals, Umi installs a small plugin for Claude Code and one for Codex
-when it starts (marketplace `umi`, in `~/.claude` and `~/.codex`, with the agents' own commands). They
-report to Umi only inside Umi and do nothing anywhere else. `umi agent plugins` shows their state.
+Run `claude` and `codex` in Umi's panes as in any terminal. Umi installs a small plugin for Claude Code
+and one for Codex when it starts (marketplace `umi`, in `~/.claude` and `~/.codex`, with the agents'
+own commands); inside Umi their hooks write each agent's state on its pane (`agent.status`, its title
+and session: `umi ls --json`), and anywhere else they do nothing. The sidebar marks a tab whose agent
+needs you or finished while you weren't looking, ⌃⌘J goes to the next such pane, and the Dock badge
+counts the panes waiting for you. When Umi relaunches (a quit, a crash, an update), each agent is
+typed again in its pane with its flags, on the same conversation. `umi plugins` shows the plugins'
+state. Umi runs no agents of its own: scripts and skills start and steer them with `umi send`,
+`umi read` and `umi wait`.
 
 ## Updates
 
 Umi checks this repository's latest release in the background (about every 15 minutes) and
 downloads a newer version by itself. Its signature is verified, and it installs at the first quiet
-moment: when no agent turn is running and no message is waiting, every pane is at an empty shell
-prompt or shows an idle agent, nothing in the editor is unsaved, and nobody has typed or clicked in
+moment: when every pane is at an empty shell prompt or runs an idle agent with nothing typed in it,
+nothing in the editor is unsaved, and nobody has typed or clicked in
 Umi for two minutes. Half a minute before, a note at the bottom of the sidebar says "Updating to
 X.Y.Z" (Not now waits at least an hour; Install now goes ahead); typing or clicking stops it. Umi then
-relaunches with its windows, tabs, folders and agent sessions as they were.
+relaunches with its windows, tabs, folders and agents as they were.
 
-- `umi update --status` says what is pending and what it waits for (which pane or session). Anything
+- `umi update --status` says what is pending and what it waits for (which pane). Anything
   Umi can't be sure of counts as busy: for example, a Claude Code or Codex interface waits until a
   prompt is sent once something was typed into it, and one with MCP servers running holds the update
   back until it closes.
@@ -96,7 +96,7 @@ relaunches with its windows, tabs, folders and agent sessions as they were.
 ## Uninstall
 
 ```sh
-umi agent plugins remove
+umi plugins remove
 rm -rf /Applications/Umi.app ~/.local/bin/umi ~/Library/Application\ Support/Umi ~/.config/umi
 ```
 

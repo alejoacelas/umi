@@ -1,8 +1,8 @@
 import AppKit
 
 /// Moving between tabs and panes from the keyboard, the menus and the CLI: next and previous
-/// tab in sidebar order, ⌘1–9, back through the tabs visited (L-11), the sessions that need
-/// the user (L-12), and moving tabs up and down (L-13).
+/// tab in sidebar order, ⌘1–9, back through the tabs visited (L-11), the panes whose agent
+/// needs the user (L-12), and moving tabs up and down (L-13).
 ///
 /// Everything here acts on Umi's own record of the current window, so it works whatever
 /// has keyboard focus (L-10).
@@ -86,41 +86,27 @@ enum UmiNavigation {
         return true
     }
 
-    // MARK: Sessions that need the user
+    // MARK: Panes whose agent needs the user
 
     /// Where "back" returns to: the pane focused when a run of jumps started.
     private static var jumpOrigin: Weak<Ghostty.SurfaceView>?
     /// Where the last jump went, to tell a run of jumps from a fresh start.
-    private enum Landing { case pane(UUID), session(String) }
-    private static var landing: Landing?
+    private static var landing: UUID?
 
-    enum JumpResult { case pane(Ghostty.SurfaceView), session(String) }
-
-    /// ⌃⌘J: the next session that needs the user (needs input first, then finished and
-    /// unseen; oldest first). A session no pane shows is shown by the agent engine.
+    /// ⌃⌘J: the next pane whose agent needs the user (needs input first, then finished and
+    /// unseen; oldest first).
     @discardableResult
-    static func jumpToNextNeedingYou() -> JumpResult? {
+    static func jumpToNextNeedingYou() -> Ghostty.SurfaceView? {
         let here = UmiTopology.currentPane
-        let targets = UmiAttention.shared.targetsNeedingYou().filter { target in
-            if case .pane(let id) = target { return id != here?.id && pane(id) != nil }
-            return true
-        }
-        guard let target = targets.first else { return nil }
+        let targets = UmiAttention.shared.targetsNeedingYou().filter { $0 != here?.id && pane($0) != nil }
+        guard let id = targets.first, let view = pane(id) else { return nil }
         if !isAtLanding(here) { jumpOrigin = here.map { Weak($0) } }
-        switch target {
-        case .pane(let id):
-            guard let view = pane(id) else { return nil }
-            landing = .pane(id)
-            UmiLayout.focusPane(view, activate: true)
-            return .pane(view)
-        case .session(let session):
-            landing = .session(session)
-            UmiAttention.shared.showSession?(session)
-            return .session(session)
-        }
+        landing = id
+        UmiLayout.focusPane(view, activate: true)
+        return view
     }
 
-    /// ⌃⌘K: back to where the user was before jumping to sessions that need them.
+    /// ⌃⌘K: back to where the user was before jumping to panes that need them.
     @discardableResult
     static func jumpBack() -> Ghostty.SurfaceView? {
         guard let origin = jumpOrigin?.value, UmiTopology.locate(origin) != nil else { return nil }
@@ -137,10 +123,7 @@ enum UmiNavigation {
 
     private static func isAtLanding(_ here: Ghostty.SurfaceView?) -> Bool {
         guard let here, let landing, jumpOrigin?.value != nil else { return false }
-        switch landing {
-        case .pane(let id): return here.id == id
-        case .session(let session): return UmiAttention.shared.agent(forPane: here.id)?.session == session
-        }
+        return here.id == landing
     }
 
     private static func pane(_ id: UUID) -> Ghostty.SurfaceView? {
@@ -249,7 +232,7 @@ enum UmiFocusHistory {
     }
 
     /// The user looked at the pane if it has focus in the key window of the active app: its
-    /// agent's quiet mark clears (UmiAttention).
+    /// `seenAt` is now (UmiAttention).
     static func lookedIfVisible(_ pane: Ghostty.SurfaceView) {
         guard NSApp.isActive, let window = pane.window, window.isKeyWindow,
               let controller = window.windowController as? TerminalController,

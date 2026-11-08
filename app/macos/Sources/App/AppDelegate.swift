@@ -209,14 +209,6 @@ class AppDelegate: NSObject,
         // Umi: the control socket comes up before any window exists, so panes created
         // during restoration can already be reached.
         UmiControlServer.shared.start()
-        // Agent sessions: load them, clean up after an earlier run, continue cut-off turns.
-        UmiAgents.shared.bootstrap()
-        MainActor.assumeIsolated {
-            // "Next session that needs you" reaching a session no pane shows: show it.
-            UmiAttention.shared.showSession = { id in
-                _ = try? UmiAgentUI.open(id, placement: .init(kind: .tab, focus: true), caller: UmiCaller([:]))
-            }
-        }
         // Umi's plugins for Claude Code and Codex, installed and kept current (AG-18).
         UmiAgentPlugins.ensureInstalledAtLaunch()
     }
@@ -832,14 +824,14 @@ class AppDelegate: NSObject,
             .reduce(0) { $0 + ($1.bell ? 1 : 0) }
         let wantsBadge = ghostty.config.bellFeatures.contains(.attention) && bellCount > 0
         var label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
-        // Umi: agent sessions that need the user come first (UmiAttention).
+        // Umi: panes whose agent needs the user come first (UmiAttention).
         let needingInput = MainActor.assumeIsolated { UmiAttention.shared.needingYouCount }
         if needingInput > 0 { label = needingInput > 99 ? "99+" : String(needingInput) }
         NSApp.dockTile.badgeLabel = label
         NSApp.dockTile.display()
     }
 
-    /// Umi: a managed session started or stopped needing the user. Isolated (test)
+    /// Umi: a pane's agent started or stopped needing the user. Isolated (test)
     /// instances set the badge without asking for the badge permission.
     func refreshDockBadge() {
         if UmiPaths.isIsolated { setDockBadge() } else { syncDockBadge() }

@@ -295,11 +295,9 @@ enum UmiTopology {
             json["shown"] = location.window.tree(of: location.tab).contains(pane)
             if let stack = location.tab.stack(of: pane) { json["stack"] = stack.members.map(\.umiID) }
         }
-        if let session = UmiAgentUI.shared.session(forPane: pane.id) {
-            json["agent"] = session
-            json["showing"] = UmiAgentUI.shared.livePanes.contains(pane.id) ? "live"
-                : (UmiAgentUI.shared.showingTerminal.contains(pane.id) ? "terminal" : "agent")
-        }
+        // `agent.*` from the pane's agent hooks (design/cli.md, "Attributes"; the other
+        // attributes arrive with pane data).
+        json["attributes"] = UmiAttention.shared.agent(forPane: pane.id)?.attributes ?? [:]
         return json
     }
 

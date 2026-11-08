@@ -473,7 +473,7 @@ def test_closed_items_expire_after_60_seconds_and_their_programs_end(inst, win):
     wait_until(ended, 20, message="the closed pane's shell ended once it couldn't come back")
 
 
-# ---- S-3: rows (folder, then the session's title; quiet marks) ----------------------------------
+# ---- S-3: rows (folder, then the agent's title; quiet marks) ------------------------------------
 
 def set_agent(inst, pane, kind="claude", title="", status="idle", mark="none"):
     return rpc(inst, "debug.ui.attention.set", pane=pane, kind=kind, title=title, status=status, mark=mark)
@@ -484,7 +484,7 @@ def clear_agent(inst, pane):
 
 
 @pytest.mark.req("S-3")
-def test_rows_show_the_folder_then_the_sessions_title(inst, win, tmp_path):
+def test_rows_show_the_folder_then_the_agents_title(inst, win, tmp_path):
     folder = tmp_path / "row-project"
     folder.mkdir()
     pane, tab = new_tab(inst, win, "--cwd", str(folder))
@@ -498,9 +498,9 @@ def test_rows_show_the_folder_then_the_sessions_title(inst, win, tmp_path):
         set_agent(inst, pane, "codex", title="Review the parser", status="idle")
         r = row(inst, win["window"], tab)
         assert (r["line2"], r["icon"]) == ("Review the parser", "codex")
-        # A session with no title yet says what it's doing.
-        set_agent(inst, pane, "claude", title="", status="starting")
-        assert row(inst, win["window"], tab)["line2"] == "starting"
+        # An agent with no title yet says what it's doing.
+        set_agent(inst, pane, "claude", title="", status="working")
+        assert row(inst, win["window"], tab)["line2"] == "working"
     finally:
         clear_agent(inst, pane)
     # A user-given name replaces the folder on line 1; the folder comes back when it's cleared.
@@ -541,8 +541,8 @@ def assume_active(inst):
 
 @pytest.mark.req("S-3")
 def test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock(inst, win):
-    """The marks come from the agent engine (UmiAttention); the row shows them on the agent's icon
-    and the Dock badge counts the sessions that need the user (not the finishes not seen yet)."""
+    """The marks come from the panes' agent hooks (UmiAttention); the row shows them on the agent's
+    icon and the Dock badge counts the panes whose agent needs the user (not the finishes not seen yet)."""
     pane, tab = new_tab(inst, win)
     other, other_tab = new_tab(inst, win)
     try:
@@ -573,12 +573,14 @@ def test_looking_at_the_pane_clears_the_mark(inst, win, assume_active):
         inst.cli("tab", "focus", tab)
         wait_until(lambda: row(inst, win["window"], tab)["mark"] == "none", 5, message="a tab switch is a look")
         assert rpc(inst, "debug.ui.attention")["badge"] == ""
-        # A question, then focusing the pane from another tab.
+        # A question, then focusing the pane from another tab: it still needs the user (the mark
+        # follows agent.status=needs_input), and a finish after it is seen as it happens.
         inst.cli("tab", "focus", win["tab"])
         set_agent(inst, pane, "claude", title="Long task", status="needs_input", mark="needs_you")
         assert row(inst, win["window"], tab)["mark"] == "needs_you"
         inst.cli("pane", "focus", pane)
-        wait_until(lambda: row(inst, win["window"], tab)["mark"] == "none", 5, message="a pane focus is a look")
+        time.sleep(0.5)
+        assert row(inst, win["window"], tab)["mark"] == "needs_you", "looking doesn't answer the question"
         # A finish seen as it happens leaves no mark.
         set_agent(inst, pane, "claude", title="Long task", status="idle", mark="finished")
         wait_until(lambda: row(inst, win["window"], tab)["mark"] == "none", 5, message="seen as it finished")

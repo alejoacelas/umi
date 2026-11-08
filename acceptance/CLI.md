@@ -5,6 +5,11 @@
 here is free. Output for humans is free-form unless stated. With `--json`, the listed fields must be
 present. Extra fields are fine.
 
+This is `design/cli.md` as far as the design's steps have landed (design/plan.md). Step 1 took Umi's
+own agent sessions out: the `agent` commands are gone, and agents run in panes, reported by Umi's
+plugin through `hook` ("Agent hooks" below). Later steps bring the rest of `design/cli.md`
+(attributes and `pane set`, queries, lists and `go`, hidden panes, the drawer, the logs).
+
 ## General
 
 - `--json` before the command, or anywhere before a `--` separator, prints JSON instead of human text.
@@ -14,8 +19,6 @@ present. Extra fields are fine.
   |---|---|
   | 0 | success |
   | 1 | usage error, unknown selector, failed action |
-  | 2 | `agent wait`: NEEDS_INPUT; `agent wait --report`: blocked |
-  | 3 | `agent wait`: INTERRUPTED, FAILED, STOPPED, ERROR or CANCELLED; `agent wait --report`: failed |
   | 124 | a wait timed out |
 
 - Errors go to stderr, prefixed `<cli>: `.
@@ -23,10 +26,9 @@ present. Extra fields are fine.
   and window. Elsewhere they default to the focused ones.
 - Selectors are described in SPEC L-4. `--pane`/`-p`, `--tab`/`-t` and `--window`/`-w` take selectors.
 - Text arguments: words are joined with spaces. `-` alone means "read the text from stdin". Text after
-  `--` is text, even if it starts with dashes (except for `agent start`, where it is harness
-  arguments).
+  `--` is text, even if it starts with dashes.
 - No command ever waits for stdin unless given `-`. The exceptions are `send` (layout) with no text
-  and a non-TTY stdin, and `edit` with no file.
+  and a non-TTY stdin, `edit` with no file, and `hook`.
 
 ## Layout
 
@@ -43,7 +45,7 @@ present. Extra fields are fine.
 | `tab color [TAB] COLOR` | red green yellow blue magenta cyan (Warp's six, from the theme's ANSI colors), purple pink orange teal graphite, none |
 | `tab pin\|unpin [TAB]` | |
 | `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down`: one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
-| `jump [back]` | the next session that needs the user (prints the pane, or the session id when no pane shows it), or back to where the user was; JSON `{"pane", "tab", "window", …}` or `{"session"}`; fails when nothing needs the user |
+| `jump [back]` | the next pane whose agent needs the user (`agent.status=needs_input` first, then panes whose agent finished unseen; oldest first in each; prints the pane), or back to where the user was; JSON `{"pane", "tab", "window", …}`; fails when nothing needs the user. (`go --next jump` replaces it in step 3.) |
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions |
 | `pane focus\|close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window` |
 | `pane rename [PANE] NAME` | |
@@ -68,15 +70,18 @@ present. Extra fields are fine.
 Objects in JSON:
 - **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab]}`
 - **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "docs": bool, "color"?, "group"?: its tab group's name, "focused_pane": id, "panes": [Pane]}`
-- **Pane**: `{"id", "cwd", "name"?, "focused": bool, "zoomed": bool, "agent"?: session id (a session
-  shown in this pane, read-only or live), "file"?: path (a file pane), "shown": bool (false for a
+- **Pane**: `{"id", "cwd", "name"?, "focused": bool, "zoomed": bool, "attributes": {key: value}
+  (the `agent.*` keys of "Agent hooks" below; step 2 adds the rest of design/cli.md's attributes),
+  "file"?: path (a file pane), "shown": bool (false for a
   stack member that isn't on show), "stack"?: [id] (the panes sharing its place, in strip order),
   "frame"?: {"x", "y", "width", "height"} (points, top-left origin, in the window's terminal area),
   "url"?: the page's address and "title": its title (a web pane, SPEC E-12)}`.
   A tab's `panes` lists the panes on show, then stack members that aren't.
 
 Events: `pane.created` and `tab.created` carry `"reopened": true` when `reopen` brought them back;
-`sidebar.changed` is emitted when a window's sidebar is shown or hidden or its width changes.
+`sidebar.changed` is emitted when a window's sidebar is shown or hidden or its width changes. A change
+of a pane's agent status is `pane.changed` with `data` `{"pane", "key": "agent.status", "old", "new"}`
+(`old` is null for a pane's first agent).
 
 Other commands:
 
@@ -109,56 +114,33 @@ pinned; nothing reorders them on its own (SPEC S-7).
 | Command | Notes |
 |---|---|
 | `update --check` | prints the installed and the newest version; JSON `{"installed", "latest", "update_available": bool}` |
-| `update [--now [--force]]` | checks at once, then downloads and verifies the newest version. It installs at the next quiet moment (SPEC I-4; with `auto-update = check` or `download`, when the app quits), or with `--now` installs it and relaunches the app at once; `--now` refuses while managed-agent turns run unless `--force` |
-| `update --status` | what is known without checking, and what a staged update waits for. JSON: `installed`, `latest`, `update_available`, `state` (`up_to_date`, `available`, `downloading`, `ready`, `installing`, `asking`, `later`, `skipped`, `agreed`, `held_back`, `failed`, `unknown`), `mode` (`install`, `download`, `check`, `off`), `ready` and `installs` (`quiet` or `quit`) for a staged update, `countdown` (seconds) while the notice counts down, `not_now_until`, `held_back` (why a newer version doesn't install by itself), `rolled_back_from`, `failed_install`, `rollback` (the version `--rollback` goes back to), `quiet` `{"quiet": bool, "waiting_for": [{"kind": "pane"\|"session"\|"editor"\|"dialog"\|"input", "reason", "pane"?, "tab"?, "session"?, "name"?}], "idle_seconds"}`; without `--json`, a line per thing it waits for |
+| `update [--now [--force]]` | checks at once, then downloads and verifies the newest version. It installs at the next quiet moment (SPEC I-4; with `auto-update = check` or `download`, when the app quits), or with `--now` installs it and relaunches the app at once; `--now` refuses while a pane's `agent.status` is `working` unless `--force` |
+| `update --status` | what is known without checking, and what a staged update waits for. JSON: `installed`, `latest`, `update_available`, `state` (`up_to_date`, `available`, `downloading`, `ready`, `installing`, `asking`, `later`, `skipped`, `agreed`, `held_back`, `failed`, `unknown`), `mode` (`install`, `download`, `check`, `off`), `ready` and `installs` (`quiet` or `quit`) for a staged update, `countdown` (seconds) while the notice counts down, `not_now_until`, `held_back` (why a newer version doesn't install by itself), `rolled_back_from`, `failed_install`, `rollback` (the version `--rollback` goes back to), `quiet` `{"quiet": bool, "waiting_for": [{"kind": "pane"\|"editor"\|"dialog"\|"input", "reason", "pane"?, "tab"?}], "idle_seconds"}`; without `--json`, a line per thing it waits for |
 | `update --rollback [--force]` | installs the version installed before this one from its kept, verified zip and relaunches; the version gone back from doesn't install by itself again (`update` installs it). Fails when no earlier version is kept |
 | `update --later \| --skip` | answers the update question (`auto-update = check`): ask again after a day \| not about this version |
 
-## Agents
+## Agent hooks
 
-Sessions are Claude Code or Codex conversations (SPEC, AG). The product starts and controls them
-headless; a session can be shown in a pane read-only, taken over live there, and handed back.
+Claude Code and Codex run in panes; Umi runs no agents of its own. Umi's plugins report each agent's
+state on its pane.
 
 | Command | Notes |
 |---|---|
-| `agent start claude\|codex PROMPT… [--name N] [--cwd D] [--worktree W [--base REF]] [--model M] [--effort E] [--full-access] [--permission-mode M] [--profile P] [--env K=V]… [PLACEMENT] [--wait [--timeout S]] [-- HARNESS ARGS]` | prints the session id (and a one-line hint on stderr); JSON `{"session": Session, "message": Message}`; with a PLACEMENT the session also gets a pane (AG-2); `--wait` behaves like `agent wait` |
-| PLACEMENT | `--tab [--window W]`, `--split [DIR] [--pane P]`, `--new-window`, `--focus` (switch to it; also alone: a new tab, switched to) |
-| `claude\|codex [PROMPT…] [agent start options]` | a session for the user: `agent start … --tab --focus` unless another placement is given |
-| `agent send SESSION TEXT… [--interrupt] [--wait [--timeout S]]` | prints the message id; JSON `{"message": Message, "session": Session}` |
-| `agent wait SESSION [--message ID] [--timeout S]` | prints STATUS, then the reply (or what it waits on); JSON `{"status", "reply"?, "message"?: Message, "session": Session, "requests"?: [Request], "error"?}` |
-| `agent wait SESSION --report [--message ID] [--timeout S]` | waits for the worker's report; JSON `{"report": Report, "session": Session}` |
-| `agent read SESSION [--message ID]` | the reply; JSON `{"reply", "message"?}` |
-| `agent read SESSION --transcript [--last N]` | JSON `{"items": [Item]}` |
-| `agent ls [--parent S]` | JSON `{"sessions": [Session]}` |
-| `agent info SESSION` | JSON Session |
-| `agent open SESSION [PLACEMENT] [--live]` | show it in a pane (default: a new tab, not focused); `--live`: take it over at once; JSON includes `pane` |
-| `agent hide SESSION` | remove it from its pane; it keeps running until it finishes (AG-8) |
-| `agent attach SESSION` | run the session's own interface in this terminal (what Take Over runs in the pane) |
-| `agent interrupt\|stop SESSION` | |
-| `agent rename SESSION NAME`, `agent rm SESSION [--force]` | |
-| `agent report done\|blocked\|failed SUMMARY… [--session S]` | inside a session S defaults to `self`; JSON `{"report": Report}` |
-| `agent watch SESSION --notify OTHER [--message ID] [--text T]` | |
-| `agent approve SESSION [REQUEST] [--always] [--message TEXT]`, `agent deny SESSION [REQUEST] [--message TEXT]`, `agent answer SESSION [TEXT…] [--answer N=TEXT]…` | approvals and questions (sessions without full access) |
-| `agent plugins [status\|install [--force]\|remove]` | Umi's plugins in Claude Code and Codex (AG-18); JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}`; current means this app's version, from this copy of the app, enabled and (Codex) its hooks trusted; `--force` reinstalls even when current |
-| `agent hook EVENT` | used by Umi's plugins: reads the agent's hook input on stdin; prints nothing |
-| `doctor` | exit 0 when everything needed is present |
+| `hook EVENT --agent claude\|codex [--pid PID]` | run by Umi's plugins: reads the agent's hook input (JSON) on stdin and writes `agent.*` on the pane the agent runs in (the caller's pane, `UMI_PANE_ID`); prints nothing; exits 0 always, also when no pane matches or nothing runs |
+| `plugins [status\|install [--force]\|remove]` | Umi's plugins in Claude Code and Codex (SPEC AG-18); JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}`; current means this app's version, from this copy of the app, enabled and (Codex) its hooks trusted; `--force` reinstalls even when current |
+| `doctor` | reports whether `<cli>` is on the login PATH and whether the hook plugins are installed and current (for each agent that is installed); exit 0 when they are; JSON `{"ok", "checks": [{"check", "ok", "detail", "required"}]}` |
 
-SESSION is a session id or unique prefix, a name, the agent's own session or thread id, or `self`
-(inside a session).
+Keys written by the hooks, in each pane's `attributes`:
 
-- **Session**: `{"id", "name", "kind": "claude"|"codex", "status": starting|working|idle|needs_input|stopped|error,
-  "activity", "title", "cwd", "location": "background"|"pane"|"live", "running": bool (Umi's headless process for
-  it runs), "pane"?: pane id, "harness_id"?, "parent"?,
-  "requests": [Request], "last_message"?: Message, "waiting"?: [Message] (messages not delivered yet),
-  "waiting_reason"?, "error"?, "report"?: Report, "background_tasks"?: int, "startup"?: Startup, "origin": "started"|"typed"}`
-- **Report**: `{"verdict": "done"|"blocked"|"failed", "summary", "at"}` (ISO 8601 time)
-- **Startup**: `{"at", "model"?, "mcp_servers"?: [{"name", "status"}], "skills"?: [str], "plugins"?: [str],
-  "agents"?: [str], "flags": [str]}`. `flags` lists what failed or needs the user, in words.
-- **Message**: `{"id", "text", "state": queued|sent|delivered|done|interrupted|failed|error|stopped|cancelled, "reply"?, "error"?}`
-- **Request**: `{"id", "kind": "approval"|"question", "title", "detail", "questions": [{"id",
-  "question", "options": [str]}], "details": {"url"?, "permissions"?, "schema"?}}`
-- **Item**: `{"id", "kind": "user"|"assistant"|"tool"|"request"|"notice"|"error", "text", "message"?:
-  message id (user items), "tool"?, "detail"?, "output"?, "state"?}`
+| Key | Value |
+|---|---|
+| `agent.kind` | `claude` or `codex` |
+| `agent.status` | `working`, `needs_input`, `idle`, `stopped` or `error` (SPEC AG-19) |
+| `agent.title` | the conversation's first prompt, on one line |
+| `agent.summary` | the first line of the agent's last reply |
+| `agent.done` | `true` or `false`, set at the end of each turn: the reply's last line starts with `Status: done` |
+| `agent.session` | the agent's own session (Claude Code) or thread (Codex) id; a relaunch resumes it |
 
-Exit codes for `agent wait`: `DONE` 0; `NEEDS_INPUT` 2; `INTERRUPTED`, `FAILED`, `STOPPED`, `ERROR`,
-`CANCELLED` 3; `TIMEOUT` 124. With `--report`: done 0, blocked 2, failed 3, timeout 124.
+Removed (design/cli.md): every `agent …` command (an old one fails with exit 1 and says what to do),
+the `claude` and `codex` shortcuts, the Session, Report, Message, Request, Item and Startup objects,
+the `agent` pane field, and exit codes 2 and 3.

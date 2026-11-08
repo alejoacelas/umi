@@ -8,11 +8,12 @@ import Testing
 struct UmiQuietTests {
     private let start = Date(timeIntervalSince1970: 1_800_000_000)
 
-    /// Everything idle: two panes at their prompts, an idle session, nobody typing for 3 minutes.
+    /// Everything idle: two panes at their prompts, an idle agent in a third, nobody typing for 3
+    /// minutes.
     private func calm() -> UmiQuiet.Snapshot {
         var snapshot = UmiQuiet.Snapshot(lastInput: start, now: start.addingTimeInterval(180), idle: 120)
-        snapshot.panes = [.init(id: "p1", tab: "work", state: .prompt), .init(id: "p2", tab: "work", state: .prompt)]
-        snapshot.sessions = [.init(id: "s1", name: "claude-1", busy: nil)]
+        snapshot.panes = [.init(id: "p1", tab: "work", state: .prompt), .init(id: "p2", tab: "work", state: .prompt),
+                          .init(id: "p3", tab: "agent", state: .agent(busy: nil))]
         return snapshot
     }
 
@@ -45,23 +46,38 @@ struct UmiQuietTests {
         }
     }
 
-    @Test func aRunningTurnOrAWaitingMessageIsNotQuiet() {
+    @Test func aBusyAgentInAPaneIsNotQuiet() {
         var snapshot = calm()
-        snapshot.sessions.append(.init(id: "s2", name: "worker", busy: "a turn is running"))
-        snapshot.sessions.append(.init(id: "s3", name: "waiting", busy: "1 message waiting to be delivered"))
+        snapshot.panes.append(.init(id: "p4", tab: "agent", state: .agent(busy: "its agent is working")))
         let reasons = UmiQuiet.reasons(in: snapshot)
-        #expect(reasons.map(\.session) == ["s2", "s3"])
-        #expect(reasons.allSatisfy { $0.kind == .session })
+        #expect(reasons.map(\.pane) == ["p4"])
+        #expect(reasons.first?.kind == .pane)
+        #expect(reasons.first?.text == "its agent is working")
     }
 
-    @Test func idleAgentsInPanesAreQuiet() {
+    @Test func anAgentIsQuietOnlyWhenIdleWithNothingTyped() {
+        let now = Date()
+        var agent = UmiAttention.Agent(kind: .claude, status: .idle, at: now)
+        #expect(UmiQuiet.agentBusy(agent) == nil)
+        for status in [UmiAttention.Status.working, .needsInput, .error] {
+            agent.status = status
+            #expect(UmiQuiet.agentBusy(agent) != nil)
+        }
+        agent.status = .idle
+        agent.draft = true
+        #expect(UmiQuiet.agentBusy(agent)?.contains("typed") == true)
+        agent.draft = false
+        agent.inputTouched = true
+        #expect(UmiQuiet.agentBusy(agent)?.contains("input line") == true)
+        agent.inputTouched = false
+        agent.idleInferred = true
+        #expect(UmiQuiet.agentBusy(agent)?.contains("interrupted") == true)
+    }
+
+    @Test func idleAgentsAndExitedPanesAreQuiet() {
         var snapshot = calm()
-        snapshot.panes += [.init(id: "p3", tab: "agent", state: .live("s1")), .init(id: "p4", tab: "agent", state: .view("s1")),
-                           .init(id: "p5", tab: "done", state: .exited)]
+        snapshot.panes += [.init(id: "p5", tab: "done", state: .exited)]
         #expect(UmiQuiet.reasons(in: snapshot).isEmpty)
-        // An interface Umi doesn't know as a session can't be judged.
-        snapshot.panes.append(.init(id: "p6", tab: "agent", state: .live("unknown")))
-        #expect(UmiQuiet.reasons(in: snapshot).map(\.pane) == ["p6"])
     }
 
     @Test func unsavedEditsAndDialogsAreNotQuiet() {
@@ -104,6 +120,35 @@ struct UmiQuietTests {
         #expect(flags.effort == "high")
         #expect(flags.profile == "fast")
         #expect(flags.args.isEmpty)
+    }
+
+    @Test func aRestartResumesTheConversationWithTheTypedFlags() {
+        #expect(UmiTypedCommand.restartCommand(program: "claude", args: ["--dangerously-skip-permissions", "--model", "opus",
+                                                                        "--resume", "old", "--add-dir", "/a", "--verbose", "fix it"],
+                                               kind: .claude, session: "s1")
+                == ["claude", "--model", "opus", "--dangerously-skip-permissions", "--add-dir", "/a", "--verbose",
+                    "--resume", "s1"])
+        // Never prompted: a fresh conversation, as typed.
+        #expect(UmiTypedCommand.restartCommand(program: "/x/claude-code/cli.js", args: ["--verbose"], kind: .claude, session: nil)
+                == ["claude", "--verbose"])
+        #expect(UmiTypedCommand.restartCommand(program: "codex", args: ["--yolo", "-m", "gpt-5", "resume", "--last", "-i", "a.png",
+                                                                       "-c", "x=1", "do it"],
+                                               kind: .codex, session: "t1")
+                == ["codex", "resume", "t1", "--yolo", "-m", "gpt-5", "-c", "x=1"])
+        #expect(UmiTypedCommand.isOneOff(["-p", "hi"], kind: .claude))
+        #expect(!UmiTypedCommand.isOneOff(["--", "-p"], kind: .claude))
+        #expect(UmiTypedCommand.isOneOff(["exec", "hi"], kind: .codex))
+        #expect(UmiTypedCommand.isOneOff(["-m", "o3", "exec", "hi"], kind: .codex))
+        #expect(UmiTypedCommand.isOneOff(["--model=o3", "e", "hi"], kind: .codex))
+        #expect(!UmiTypedCommand.isOneOff(["-m", "o3", "fix the bug"], kind: .codex))
+    }
+
+    @MainActor @Test func doneCheckReadsTheReplysLastLine() {
+        #expect(UmiAgentHooks.doneCheck("Fixed it.\n\nStatus: done"))
+        #expect(UmiAgentHooks.doneCheck("Status: done, pending verification: CI at 5pm\n"))
+        #expect(!UmiAgentHooks.doneCheck("Status: done\nbut one more thing"))
+        #expect(!UmiAgentHooks.doneCheck("Status: waiting on you: approve"))
+        #expect(!UmiAgentHooks.doneCheck(""))
     }
 
     @Test func theAgentsProgramIsFoundInItsArguments() {

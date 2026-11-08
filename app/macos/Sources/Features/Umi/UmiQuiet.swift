@@ -4,11 +4,9 @@ import GhosttyKit
 
 /// A quiet moment (I-4): when Umi may quit and relaunch to install an update with nothing lost
 /// and nobody interrupted. All of these hold, and anything Umi can't be sure of counts as busy:
-/// - no agent turn runs in any session Umi knows (started by Umi or typed in a pane, AG-18), and
-///   no message waits to be delivered;
 /// - every pane is at its own shell's prompt with nothing typed and nothing else running there,
-///   or shows an idle agent: its own interface (Claude Code, Codex) idle with nothing typed in
-///   it, or a session's read-only view;
+///   or runs an agent (Claude Code, Codex) whose `agent.status` is idle with nothing typed in it
+///   and nothing it started still running;
 /// - no editor document has unsaved changes, and no dialog, sheet or text field is in use (a web
 ///   pane counts as quiet: its page keeps unsaved drafts in its local storage, which survives the
 ///   relaunch, E-12);
@@ -19,27 +17,22 @@ import GhosttyKit
 enum UmiQuiet {
     /// One thing that keeps this moment from being quiet.
     struct Reason: Equatable {
-        enum Kind: String { case session, pane, editor, dialog, input }
+        enum Kind: String { case pane, editor, dialog, input }
         let kind: Kind
         let text: String
         var pane: String?
         var tab: String?
-        var session: String?
-        var sessionName: String?
 
         var json: [String: Any] {
             var out: [String: Any] = ["kind": kind.rawValue, "reason": text]
             if let pane { out["pane"] = pane }
             if let tab { out["tab"] = tab }
-            if let session { out["session"] = session }
-            if let sessionName { out["name"] = sessionName }
             return out
         }
 
         /// For people: `pane 1a2b3c4d (tab "build"): running make`.
         var line: String {
             switch kind {
-            case .session: return "session \(sessionName ?? session ?? "?"): \(text)"
             case .pane:
                 var where_ = "pane \(pane.map { String($0.prefix(8)) } ?? "?")"
                 if let tab { where_ += " (tab \"\(tab)\")" }
@@ -63,10 +56,9 @@ enum UmiQuiet {
         case unknown(String)
         /// Its process has exited: nothing runs there.
         case exited
-        /// A session's read-only view (the session's id).
-        case view(String)
-        /// A session's own interface, in front (the session's id).
-        case live(String)
+        /// An agent its plugin reports, in front. `busy`: why it isn't idle with nothing typed
+        /// (nil: it is).
+        case agent(busy: String?)
     }
 
     struct Pane: Equatable {
@@ -75,16 +67,8 @@ enum UmiQuiet {
         let state: PaneState
     }
 
-    /// A session Umi knows: `busy` says why it isn't idle with nothing waiting (nil: it is).
-    struct Session: Equatable {
-        let id: String
-        let name: String
-        let busy: String?
-    }
-
     struct Snapshot {
         var panes: [Pane] = []
-        var sessions: [Session] = []
         /// Editor documents with unsaved changes.
         var unsaved: [String] = []
         /// Dialogs, sheets and text fields in use.
@@ -98,25 +82,16 @@ enum UmiQuiet {
     /// Everything that keeps the moment from being quiet: none means quiet.
     static func reasons(in snapshot: Snapshot) -> [Reason] {
         var out: [Reason] = []
-        var known: [String: Session] = [:]
-        for session in snapshot.sessions {
-            known[session.id] = session
-            if let busy = session.busy {
-                out.append(Reason(kind: .session, text: busy, session: session.id, sessionName: session.name))
-            }
-        }
         for pane in snapshot.panes {
             func add(_ text: String) { out.append(Reason(kind: .pane, text: text, pane: pane.id, tab: pane.tab)) }
             switch pane.state {
-            case .prompt, .exited, .view:
-                // A read-only view has nothing to lose; its session is judged above.
+            case .prompt, .exited, .agent(busy: nil):
                 continue
             case .typed: add("something is typed at its prompt")
             case .running(let name): add("\(name) is running")
             case .job(let name): add("\(name) is running in the background")
             case .unknown(let why): add("can't tell whether it's idle (\(why))")
-            case .live(let id):
-                if known[id] == nil { add("an agent interface that isn't a session Umi knows") }
+            case .agent(busy: let busy?): add(busy)
             }
         }
         for name in snapshot.unsaved {
@@ -174,47 +149,7 @@ enum UmiQuiet {
     // MARK: Reading the app
 
     @MainActor
-    static func reasons() -> [Reason] {
-        let found = reasons(in: snapshot())
-        // Only once everything else is quiet (it reads every process's environment).
-        return found.isEmpty ? leftovers() : found
-    }
-
-    /// Processes a session started that still run on their own (a build or server a headless
-    /// agent left behind, with its output redirected): the quit ends whatever carries a session's
-    /// tag, so they keep the moment from being quiet. The harnesses themselves, what still runs on
-    /// a pane's terminal (judged with the pane) and `caffeinate` don't count.
-    @MainActor
-    static func leftovers() -> [Reason] {
-        let (own, names): (Set<pid_t>, [String: String]) = UmiAgents.queue.sync {
-            var own = Set<pid_t>()
-            var names: [String: String] = [:]
-            for session in UmiAgents.shared.sessions {
-                names[session.record.id] = session.record.name
-                if session.live, let pid = session.record.pid { own.insert(pid) }
-                if let pid = session.record.livePID { own.insert(pid) }
-            }
-            return (own, names)
-        }
-        // What still runs on a pane's terminal was judged with the pane (and found quiet); work
-        // that left it (detached, no terminal) wasn't.
-        var terminals = Set<dev_t>()
-        for controller in TerminalController.all where !controller.isClosed {
-            for pane in controller.tabs.flatMap(\.panes) {
-                var info = stat()
-                if let tty = pane.surfaceModel?.ttyName, stat(tty, &info) == 0 { terminals.insert(info.st_rdev) }
-            }
-        }
-        let processes = Processes()
-        for (pid, session) in UmiProcessTree.tagged(sessions: nil, stateDir: UmiPaths.stateDirectory, excluding: own) {
-            if let info = processes.byPID[pid], info.tpgid > 0, terminals.contains(info.tdev) { continue }
-            let name = UmiProcess.name(pid) ?? "a process"
-            if promptHelpers.contains(name) { continue }
-            return [Reason(kind: .session, text: "\(name), which it started, is still running", session: session,
-                           sessionName: names[session] ?? session)]
-        }
-        return []
-    }
+    static func reasons() -> [Reason] { reasons(in: snapshot()) }
 
     @MainActor
     static func report() -> [String: Any] {
@@ -226,36 +161,16 @@ enum UmiQuiet {
     @MainActor
     static func snapshot() -> Snapshot {
         var snapshot = Snapshot(lastInput: lastInput, now: now, idle: idleInterval)
-        struct Live { let id: String; let kind: UmiAgentKind; let pid: Int32? }
-        let (sessions, live): ([Session], [Live]) = UmiAgents.queue.sync {
-            let all = UmiAgents.shared.sessions
-            return (all.map { Session(id: $0.record.id, name: $0.record.name, busy: $0.quietBlocker) },
-                    all.filter { $0.record.live == true }.map {
-                        Live(id: $0.record.id, kind: $0.record.kind, pid: $0.record.livePID)
-                    })
-        }
-        snapshot.sessions = sessions
-
         let processes = Processes()
-        let ui = UmiAgentUI.shared
         var seen = Set<UUID>()
         func add(_ pane: Ghostty.SurfaceView, tab: String) {
             guard seen.insert(pane.id).inserted else { return }
-            let umiID = pane.umiID
-            let state: PaneState
-            if ui.isShowingAgent(pane.id), let id = ui.attachments[pane.id] {
-                // The view covers a terminal of its own, which may have been used meanwhile.
-                let under = paneState(pane, live: nil, processes: processes)
-                state = under == .prompt || under == .exited ? .view(id) : under
-            } else {
-                // Only a pane whose input Umi follows for the session can hold an idle interface
-                // (UmiAgentLiveUI routes keys by these): another agent there (typed under a view
-                // whose terminal is shown) is a program Umi can't vouch for.
-                let followed = ui.livePanes.contains(pane.id) ? ui.attachments[pane.id] : nil
-                let session = live.first { $0.id == followed }
-                state = paneState(pane, live: session.map { ($0.id, $0.kind, $0.pid) }, processes: processes)
+            var state = paneState(pane, agent: UmiAttention.shared.agent(forPane: pane.id), processes: processes)
+            // An agent being typed again after a relaunch hasn't said what it does yet.
+            if UmiAgentHooks.restoring.contains(pane.id), state == .prompt || state == .typed {
+                state = .agent(busy: "its agent is starting again after the relaunch")
             }
-            snapshot.panes.append(Pane(id: umiID, tab: tab, state: state))
+            snapshot.panes.append(Pane(id: pane.umiID, tab: tab, state: state))
         }
         for controller in TerminalController.all where !controller.isClosed {
             for tab in controller.tabs {
@@ -264,8 +179,6 @@ enum UmiQuiet {
             }
             if controller.palette.isPresented { snapshot.dialogs.append("the command palette is open") }
         }
-        // Panes kept out of sight while a removed session's interface finishes (AG-8).
-        for pane in ui.parked.values { add(pane, tab: "(removed from its tab)") }
         if let delegate = NSApp.delegate as? AppDelegate, delegate.quickControllerInitialized {
             for pane in delegate.quickController.surfaceTree.root?.leaves() ?? [] { add(pane, tab: "(quick terminal)") }
         }
@@ -330,10 +243,9 @@ enum UmiQuiet {
     /// agents run to keep the Mac awake: they hold no work.
     static let promptHelpers: Set<String> = ["gitstatusd", "gitstatusd-darwin-arm64", "caffeinate"]
 
-    /// What a pane's terminal holds. `live`: the session whose own interface Umi shows there.
+    /// What a pane's terminal holds. `agent`: what its plugin reports about the pane's agent.
     @MainActor
-    static func paneState(_ pane: Ghostty.SurfaceView, live: (id: String, kind: UmiAgentKind, pid: Int32?)?,
-                          processes: Processes) -> PaneState {
+    static func paneState(_ pane: Ghostty.SurfaceView, agent: UmiAttention.Agent?, processes: Processes) -> PaneState {
         guard let surface = pane.surface else { return .unknown("it has no terminal") }
         if ghostty_surface_process_exited(surface) { return .exited }
         // Text being composed with an input method isn't on the terminal yet.
@@ -364,11 +276,10 @@ enum UmiQuiet {
             if !promptHelpers.contains(job) { return .job(job) }
         }
         if front != shell {
-            // The session's own interface, known by its process (from its hooks) or by the session
-            // its environment names (Umi started it): never by its arguments.
-            if let live {
-                let group = live.pid.flatMap { processes.byPID[$0]?.pgid }
-                if group == front || UmiProcessTree.environment(front)?["UMI_SESSION_ID"] == live.id {
+            // The agent its hooks report, known by its process: never by its arguments.
+            if let agent, agent.running {
+                let group = agent.pid.flatMap { processes.byPID[$0]?.pgid }
+                if group == front {
                     // Anything the agent runs: its hooks (Claude Code runs an event's hooks side by
                     // side, so the user's own Stop hook may still build after Umi's says the turn is
                     // done), its commands, and the servers it keeps (MCP), which Umi can't tell from
@@ -379,7 +290,7 @@ enum UmiQuiet {
                         let job = UmiProcess.name(pid) ?? "a process"
                         if !promptHelpers.contains(job) { return .job("\(job), started by its agent,") }
                     }
-                    return .live(live.id)
+                    return .agent(busy: agentBusy(agent))
                 }
             }
             // A program, or a shell started from the pane's shell.
@@ -393,32 +304,21 @@ enum UmiQuiet {
     }
 }
 
-extension UmiAgentSession {
-    /// Why this session keeps the moment from being quiet (nil: it's idle and nothing waits).
-    var quietBlocker: String? {
-        if !queue.isEmpty { return "\(queue.count) message\(queue.count == 1 ? "" : "s") waiting to be delivered" }
-        if !inFlight.isEmpty { return "a message is being delivered" }
-        // Commands its agent left running after its turn (Codex's background terminals): a
-        // relaunch would end them.
-        if let tasks = backgroundTasks, tasks > 0 {
-            return "\(tasks) background command\(tasks == 1 ? "" : "s") still running"
+extension UmiQuiet {
+    /// Why an agent in front of its pane keeps the moment from being quiet (nil: its
+    /// `agent.status` is idle and nothing is typed in it).
+    static func agentBusy(_ agent: UmiAttention.Agent) -> String? {
+        if agent.draft { return "something is typed in its agent" }
+        if agent.inputTouched {
+            return "its agent's input line may hold text (an update waits until a prompt is sent or the agent exits)"
         }
-        // Any interface of its own in a pane, Codex's attached one included.
-        if record.live == true, liveDraft { return "something is typed in its interface" }
-        if record.live == true, liveInputTouched {
-            return "its interface's input line may hold text (an update waits until a prompt is sent or the interface closes)"
+        if agent.idleInferred { return "its agent was interrupted from the keyboard; it waits for the agent to say it is idle" }
+        switch agent.status {
+        case .idle: return nil
+        case .working: return agent.background > 0 ? "its agent is working (\(agent.background) background task\(agent.background == 1 ? "" : "s"))" : "its agent is working"
+        case .needsInput: return "its agent is waiting for you" + (agent.detail.map { " (\($0))" } ?? "")
+        case .error: return "its agent's last turn failed"
+        case .stopped: return "its agent stopped but is still in front"
         }
-        switch status {
-        case "working": return activityText == "working" ? "a turn is running" : "a turn is running (\(activityText))"
-        case "starting": return "it is starting"
-        case "needs_input": return "it is waiting for you (\(activityText))"
-        default: break
-        }
-        if goingLive || reclaiming { return "its interface is opening or closing" }
-        if record.live == true, liveIdleInferred {
-            return "its interface was interrupted from the keyboard; it waits for the agent to say it is idle"
-        }
-        if exclusiveLive, liveState != .idle { return "its interface is busy" }
-        return nil
     }
 }

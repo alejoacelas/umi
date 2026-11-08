@@ -118,9 +118,8 @@ def main():
 
 
 def agents_and_ui_evidence():
-    """After the agent-sessions run: sidebar rows with agent marks and their order (S-3, S-7), a
-    wider sidebar (S-8), the palettes (L-14, L-15, L-16), and a session live in one pane next to
-    another's read-only view (AG-5, AG-6)."""
+    """Sidebar rows with agent marks and their order (S-3, S-7), a wider sidebar (S-8), and the
+    palettes (L-14, L-15, L-16)."""
     inst = Instance(Target(os.path.join(HERE, "..", "targets", "umi.json")), prefix="acc-extra-ui-")
     inst.start_app()
     base = os.path.realpath(tempfile.mkdtemp(prefix="umi-evidence-ui-"))
@@ -138,17 +137,18 @@ def agents_and_ui_evidence():
         wait_until(lambda: inst.cli("read", "--pane", w["pane"], check=False).stdout.strip() != "", 20)
         inst.cli("tab", "pin", w["tab"])
         inst.cli("send", "--pane", w["pane"], "-e", "git log --oneline | head -3")
-        env = ["--env", "FAKE_AGENT_DIR=" + inst.fake_dir, "--env", "CLAUDE_CONFIG_DIR=" + inst.claude_config]
-        done = inst.json("agent", "start", "claude", "--cwd", repo, *env, "--name", "fix-login-test",
-                         "--tab", "--window", w["window"], "ECHO fixed the login test")["session"]["id"]
-        asks = inst.json("agent", "start", "claude", "--cwd", repo, *env, "--name", "add-rate-limits",
-                         "--tab", "--window", w["window"], "ASK_PERMISSION")["session"]["id"]
-        busy = inst.json("agent", "start", "codex", "--cwd", repo, *env, "--name", "review-api",
-                         "--tab", "--window", w["window"], "--full-access", "SLEEP 60")["session"]["id"]
+        # Agents in tabs of their own: fakes typed in their panes, reported by Umi's plugin.
+        def agent_tab(kind, prompt):
+            pane = inst.cli("tab", "new", "--window", w["window"], "--cwd", repo, "--no-focus").stdout.strip()
+            wait_until(lambda: inst.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20)
+            inst.type_agent(pane, kind)
+            inst.type_line(pane, prompt)
+            return pane
+        done = agent_tab("claude", "ECHO fixed the login test")
+        asks = agent_tab("claude", "ASK_PERMISSION")
+        busy = agent_tab("codex", "SLEEP 60")
         inst.json("tab", "new", "--window", w["window"], "--cwd", base, "--no-focus")
         inst.cli("tab", "focus", w["tab"])
-        inst.wait(done)
-        inst.wait(asks)
         time.sleep(3)
         shot(inst, w["window"], "S-3-S-7-agent-rows")
         inst.cli("sidebar", "width", "340", "--window", w["window"])
@@ -174,27 +174,16 @@ def agents_and_ui_evidence():
             time.sleep(0.5)
         # L-14 again, typed into: the CLI's own entries, each with its `umi …` line.
         try:
-            state = ctl.call("debug.palette", window=w["window"], mode="commands", query="agent")
+            state = ctl.call("debug.palette", window=w["window"], mode="commands", query="split")
             print("L-14-command-palette-cli entries:", [e.get("title") for e in state.get("entries", [])][:8])
             time.sleep(1)
             shot(inst, w["window"], "L-14-command-palette-cli")
             ctl.call("debug.palette.close", window=w["window"])
         except Exception as e:  # noqa: BLE001
             print("couldn't type into the command palette", e)
-        # AG-5 / AG-6: one session live in a pane, another read-only beside it.
-        lw = inst.json("window", "new", "--name", "live-and-read-only", "--cwd", repo)
-        wait_until(lambda: inst.cli("read", "--pane", lw["pane"], check=False).stdout.strip() != "", 20)
-        # Out of their tabs first (a session already shown would just be focused there).
-        inst.cli("agent", "hide", done, check=False)
-        inst.cli("agent", "hide", asks, check=False)
-        time.sleep(1)
-        inst.json("agent", "open", done, "--split", "right", "--pane", lw["pane"])
-        live_pane = inst.json("agent", "open", asks, "--split", "down", "--pane", lw["pane"], "--live")["pane"]
-        wait_until(lambda: inst.json("agent", "info", asks)["location"] == "live", 30, message="live")
-        time.sleep(3)
-        shot(inst, lw["window"], "AG-5-AG-6-live-and-read-only")
-        for sid in (done, asks, busy):
-            inst.cli("agent", "stop", sid, check=False)
+        for pane in (done, asks, busy):
+            inst.cli("keys", "--pane", pane, "esc")
+            inst.type_line(pane, "/exit")
     finally:
         inst.cleanup()
 

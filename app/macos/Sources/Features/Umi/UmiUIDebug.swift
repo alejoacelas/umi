@@ -70,30 +70,32 @@ enum UmiUIDebug {
             return ["web_pane": UmiWebPanes.openFromTerminal(url, pane: pane)]
 
         case "debug.ui.attention.set":
-            // Stands in for the agent engine (UmiAttention's writer).
+            // Stands in for a pane's agent hooks (UmiAttention's writer).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
             guard let kind = params.string("kind").flatMap(UmiAttention.Kind.init(rawValue:)) else {
                 throw UmiError.badRequest("kind is claude or codex")
             }
-            let mark: UmiAttention.Mark
-            switch params.string("mark") ?? "none" {
-            case "none": mark = .none
-            case "finished": mark = .finished
-            case "needs_you": mark = .needsYou
-            default: throw UmiError.badRequest("mark is none, finished or needs_you")
-            }
-            let stopped = params.bool("stopped") ?? (mark != .none)
-            UmiAttention.shared.set(.init(session: params.string("session"), kind: kind,
-                                           title: params.string("title") ?? "", status: params.string("status") ?? "idle",
-                                           live: params.bool("live") ?? true, mark: mark,
-                                           lastStop: stopped ? Date() : nil, detail: params.string("detail")),
-                                    forPane: pane.id)
+            try UmiAttention.shared.standIn(forPane: pane.id, kind: kind, title: params.string("title"),
+                                            status: params.string("status"), mark: params.string("mark"), ago: 0,
+                                            detail: params.string("detail"))
             return attention()
 
         case "debug.ui.attention.clear":
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
-            UmiAttention.shared.set(nil, forPane: pane.id)
+            try UmiAttention.shared.standIn(forPane: pane.id, kind: nil, title: nil, status: nil, mark: nil, ago: nil)
             return attention()
+
+        case "debug.ui.assume_inactive":
+            UmiLooking.assumeInactive = params.bool("on") ?? true
+            return attention()
+
+        case "debug.ui.update_note":
+            if params.bool("dismiss") ?? false { UmiUpdateNote.shared.dismiss() }
+            if let version = params.string("show") { UmiUpdateNote.shared.show(version: version, notes: params.string("notes")) }
+            return UmiUpdateNote.shared.report
+
+        case "debug.ui.notifications":
+            return ["dropped": UmiAgentHooks.droppedNotifications, "passed": UmiAgentHooks.passedNotifications]
 
         case "debug.ui.attention":
             return attention()
@@ -321,9 +323,10 @@ enum UmiUIDebug {
 
     private static func attention() -> [String: Any] {
         var panes: [String: Any] = [:]
-        for (id, agent) in UmiAttention.shared.panes {
-            panes[id.uuidString.lowercased()] = ["kind": agent.kind.rawValue, "title": agent.title, "status": agent.status,
-                                                 "mark": agent.mark == .none ? "none" : (agent.mark == .finished ? "finished" : "needs_you")]
+        for (id, agent) in UmiAttention.shared.openPanes {
+            panes[id.uuidString.lowercased()] = ["kind": agent.kind.rawValue, "title": agent.title, "status": agent.status.rawValue,
+                                                 "mark": agent.mark == .none ? "none" : (agent.mark == .finished ? "finished" : "needs_you"),
+                                                 "unseen": agent.unseen, "attributes": agent.attributes]
         }
         return ["panes": panes, "needing_you": UmiAttention.shared.needingYouCount,
                 "badge": NSApp.dockTile.badgeLabel ?? "", "looked_at": UmiLooking.lookedAt?.umiID ?? "",

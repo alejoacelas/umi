@@ -5,17 +5,16 @@ import SwiftUI
 /// - **Everything (⌘P, L-14):** the CLI's commands, built at runtime from `umi help --json`
 ///   (so the palette follows the CLI as it changes) and run through the bundled CLI in the
 ///   context of the focused pane, asking for arguments a command needs; Umi's menu actions,
-///   Ghostty's actions, managed sessions, panes and files. Empty, it shows filter chips and the
+///   Ghostty's actions, panes and files. Empty, it shows filter chips and the
 ///   Recent and Suggested sections.
-/// - **Filters**, typed as a prefix (`files:`, `sessions:`, `actions:`, `conversations:`,
-///   `tabs:`) and shown as an italic word before the query; Backspace in an empty query removes
+/// - **Filters**, typed as a prefix (`files:`, `sessions:`, `actions:`, `tabs:`) and shown as an italic word before the query; Backspace in an empty query removes
 ///   it. ⇧⌘P opens the palette filtered to sessions (every pane, most recently used first, L-15)
 ///   and ⌘O to files (the focused pane's repository, L-16).
 @MainActor
 final class UmiPaletteModel: ObservableObject {
     /// The palette's source: everything (`commands`) or one of Warp's query filters.
     /// `panes` is Warp's "sessions" filter; `launchConfigs` is ⌃⌘L's list (L-21).
-    enum Mode: String, CaseIterable { case commands, actions, panes, files, tabs, conversations, launchConfigs = "launch_configs" }
+    enum Mode: String, CaseIterable { case commands, actions, panes, files, tabs, launchConfigs = "launch_configs" }
     enum Step: Equatable { case list, ask, running, output }
 
     @Published private(set) var isPresented = false
@@ -62,7 +61,7 @@ final class UmiPaletteModel: ObservableObject {
     /// The Suggested section: Umi's counterparts of Warp's (its theme chooser and settings).
     static let suggestedIDs = ["umi:Keyboard Shortcuts", "umi:Settings…", "umi:Show Project Explorer"]
     /// The filter chips of the empty palette, in Warp's order.
-    static let chips: [Mode] = [.files, .actions, .panes, .conversations]
+    static let chips: [Mode] = [.files, .actions, .panes]
 
     /// The shortcuts page (⌘/) of this window.
     let shortcutsPage = UmiShortcutsPageModel()
@@ -251,12 +250,11 @@ final class UmiPaletteModel: ObservableObject {
         switch mode {
         case .commands:
             // Files are indexed once there's a query (see refresh): the empty palette shows none.
-            base = commandEntries() + conversationEntries() + paneEntries()
+            base = commandEntries() + paneEntries()
         case .actions: base = commandEntries()
         case .panes: base = paneEntries()
         case .files: startFiles()
         case .tabs: base = tabEntries()
-        case .conversations: base = conversationEntries()
         case .launchConfigs: base = launchConfigEntries()
         }
     }
@@ -288,7 +286,7 @@ final class UmiPaletteModel: ObservableObject {
                 entries = rank(base, query: query, keepOrder: false)
             case .files:
                 refreshFiles()
-            case .panes, .tabs, .conversations:
+            case .panes, .tabs:
                 entries = Array(rank(base, query: query, keepOrder: false).prefix(Self.resultLimit))
             }
         }
@@ -345,7 +343,7 @@ final class UmiPaletteModel: ObservableObject {
             Self.remember(ref.id)
             Self.chosenFiles[ref.id] = ref
             Self.chosenFiles = Self.chosenFiles.filter { Self.chosen.contains($0.key) }
-        } else if step == .list, [.action, .cli, .pane, .conversation].contains(entry.kind), !entry.id.hasPrefix("run:") {
+        } else if step == .list, [.action, .cli, .pane].contains(entry.kind), !entry.id.hasPrefix("run:") {
             Self.remember(entry.id)
         }
         entry.perform()
@@ -411,19 +409,6 @@ final class UmiPaletteModel: ObservableObject {
         return out + ghostty.filter { titles.insert($0.title).inserted } + launchConfigEntries(inCommands: true)
     }
 
-    /// Every managed session can be shown (again) from the palette (AP-3, AP-4), the ones that
-    /// need the user first: Warp's conversations.
-    private func conversationEntries() -> [UmiPaletteEntry] {
-        UmiAgentMenu.ordered().map { session in
-            UmiPaletteEntry(id: "agent:" + session.id, title: "Show Agent: \(session.name)",
-                            subtitle: "\(session.kind) · \(UmiAgentMenu.describe(status: session.status, activity: session.activity))",
-                            icon: UmiAgentMenu.symbol(for: session.status), value: session.id, kind: .conversation) { [weak self] in
-                self?.close(restoreFocus: false)
-                _ = try? UmiAgentUI.open(session.id, placement: .init(kind: .tab, focus: true), caller: UmiCaller([:]))
-            }
-        }
-    }
-
     /// Every tab of every window, the most recently shown first.
     private func tabEntries() -> [UmiPaletteEntry] {
         let recent = UmiTabHistory.recentFirst
@@ -449,7 +434,7 @@ final class UmiPaletteModel: ObservableObject {
     private func reloadCommands() {
         guard isPresented, step == .list, mode == .commands || mode == .actions else { return }
         let keep = selection
-        base = mode == .commands ? commandEntries() + conversationEntries() + paneEntries() : commandEntries()
+        base = mode == .commands ? commandEntries() + paneEntries() : commandEntries()
         refresh()
         selection = isZeroState ? keep : min(max(keep, 0), max(entries.count - 1, 0))
     }
@@ -588,9 +573,9 @@ final class UmiPaletteModel: ObservableObject {
                 details.append(place)
             }
             if let agent = UmiAttention.shared.agent(forPane: pane.id) {
-                details.append("\(agent.kind.rawValue) · \(agent.status)")
+                details.append("\(agent.kind.rawValue) · \(agent.status.rawValue)")
                 row.command = agent.kind.rawValue
-                row.hint = agent.status
+                row.hint = agent.status.rawValue
             } else if let command = UmiPaneContext.command(for: pane) {
                 details.append(command.running ? "▸ \(command.text)" : command.text)
                 row.command = command.text
@@ -920,7 +905,6 @@ extension UmiPaletteModel.Mode {
         case .panes: return "sessions:"
         case .files: return "files:"
         case .tabs: return "tabs:"
-        case .conversations: return "conversations:"
         case .launchConfigs: return nil
         }
     }
@@ -932,18 +916,16 @@ extension UmiPaletteModel.Mode {
         case .actions: return "actions"
         case .panes: return "sessions"
         case .files: return "files"
-        case .conversations: return "conversations"
         }
     }
 
-    /// The filter chip's icon (SF Symbols like Warp's file, terminal and conversation icons;
+    /// The filter chip's icon (SF Symbols like Warp's file and terminal icons;
     /// Warp's actions chip has none).
     var chipSymbol: String? {
         switch self {
         case .commands, .actions, .launchConfigs: return nil
         case .tabs, .panes: return "terminal"
         case .files: return "doc"
-        case .conversations: return "bubble.left"
         }
     }
 
@@ -955,7 +937,6 @@ extension UmiPaletteModel.Mode {
         case .panes: return "Search sessions"
         case .files: return "Search files"
         case .tabs: return "Search tabs"
-        case .conversations: return "Search conversations"
         case .launchConfigs: return "Search launch configurations"
         }
     }
@@ -963,7 +944,7 @@ extension UmiPaletteModel.Mode {
 
 /// One row of the palette.
 struct UmiPaletteEntry: Identifiable {
-    enum Kind: String { case action, cli, pane, file, choice, tab, conversation, create }
+    enum Kind: String { case action, cli, pane, file, choice, tab, create }
 
     /// What a pane's two-line row shows (Warp's navigation palette).
     struct PaneRow {

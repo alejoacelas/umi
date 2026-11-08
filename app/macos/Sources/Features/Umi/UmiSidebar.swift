@@ -233,7 +233,7 @@ struct UmiOverlayScrollbar: View {
 ///
 /// Line 1 is the tab's folder (the focused pane's), or the name the user gave the tab, with the
 /// git branch (a linked worktree shown differently), a pane count when split, and pin and
-/// close on hover. Line 2 is the title of the tab's agent session when it has one, with the
+/// close on hover. Line 2 is the title of the tab's agent when it has one, with the
 /// agent's mark as the row icon; otherwise what the focused pane is doing (the command it is
 /// running or last ran, an agent typed into it), else its folder's path.
 @MainActor
@@ -292,7 +292,7 @@ struct UmiSidebarRowModel {
         let command = focusedPane.flatMap { UmiPaneContext.command(for: $0) }
         failed = command?.failed ?? false
         if let agent {
-            detail = .session(title: agent.title.isEmpty ? Self.describe(agent.status) : agent.title, status: agent.status)
+            detail = .session(title: agent.title.isEmpty ? Self.describe(agent.status.rawValue) : agent.title, status: agent.status.rawValue)
         } else if let command {
             detail = .command(text: command.text, running: command.running)
         } else {
@@ -311,9 +311,6 @@ struct UmiSidebarRowModel {
         }
     }
 
-    /// The status badge on the agent's mark (Warp's states).
-    var badge: UmiAttention.Badge { agent?.badge ?? .none }
-
     /// The mark's name for the CLI and accessibility.
     var markName: String {
         switch agent?.mark ?? .none {
@@ -329,13 +326,12 @@ struct UmiSidebarRowModel {
         if maximized { parts.append("Maximized") }
         if tab.pinned { parts.append("pinned") }
         guard let agent else { return (parts + [detail.text]).joined(separator: " · ") }
-        parts += [agent.kind.rawValue, Self.describe(agent.status)]
+        parts += [agent.kind.rawValue, Self.describe(agent.status.rawValue)]
         switch agent.mark {
         case .finished: parts.append("finished, not seen yet")
         case .needsYou: parts.append("needs you")
         case .none: break
         }
-        if agent.badge == .error { parts.append("error") }
         return (parts + [detail.text]).joined(separator: " · ")
     }
 
@@ -353,7 +349,7 @@ struct UmiSidebarRowModel {
     func json(in controller: TerminalController? = nil) -> [String: Any] {
         var json: [String: Any] = [
             "tab": tab.idString, "selected": selected, "pinned": tab.pinned, "panes": paneCount,
-            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName, "badge": badge.rawValue,
+            "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName,
             "color": UmiTopology.colorName(tab.color), "failed": failed, "maximized": maximized,
         ]
         if let hint { json["hint"] = hint }
@@ -369,8 +365,8 @@ struct UmiSidebarRowModel {
             if let worktree = git.worktree { json["worktree"] = worktree }
         }
         if let agent {
-            json["agent"] = ["kind": agent.kind.rawValue, "status": agent.status, "title": agent.title,
-                             "session": agent.session ?? "", "live": agent.live]
+            json["agent"] = ["kind": agent.kind.rawValue, "status": agent.status.rawValue, "title": agent.title,
+                             "session": agent.session ?? "", "unseen": agent.unseen]
         }
         switch detail {
         case .session: json["detail"] = "session"
@@ -499,7 +495,7 @@ struct UmiSidebarTabRow: View {
                 }
                 .frame(minHeight: 15)
 
-                // Line 2: the session's title, or what the focused pane is doing.
+                // Line 2: the agent's title, or what the focused pane is doing.
                 detail(row)
             }
         }
@@ -570,7 +566,7 @@ struct UmiSidebarTabRow: View {
     }
 
     /// Warp's leading icon: a 24 pt circle at 10% with a 16 pt glyph at 90%. A tab with an agent
-    /// session shows the agent's mark there instead (S-3).
+    /// shows the agent's mark there instead (S-3).
     @ViewBuilder
     private func icon(_ row: UmiSidebarRowModel) -> some View {
         ZStack {
@@ -589,13 +585,10 @@ struct UmiSidebarTabRow: View {
             }
         }
         .frame(width: 24, height: 24)
-        // Warp's status badge on the agent's icon; the mark stays monochrome and the badge carries
-        // the color (Warp parity, 2026-11-05).
-        .umiStatusBadge(row.icon == .claude || row.icon == .codex ? row.badge : .none, total: 24)
     }
 
-    /// The agent's mark is monochrome: a little brighter when its session finished unseen or
-    /// needs the user. Its status badge carries the color (Warp parity, 2026-11-05).
+    /// The agent's mark is monochrome: a little brighter when its pane finished unseen or its
+    /// agent needs the user.
     static func markColor(_ mark: UmiAttention.Mark) -> Color {
         // Quiet (60%), and the row title's 90% while marked.
         mark == .none ? UmiTheme.textSecondary : UmiTheme.rowTitle
@@ -863,7 +856,7 @@ private struct UmiUpdateNotice: View {
         case .failed(let version, let reason): return "Couldn't download \(name) \(version): \(reason)"
         case .updating(let version, let seconds):
             return seconds > 0
-                ? "Updating to \(name) \(version) in \(seconds) s. \(name) relaunches, with your tabs and sessions."
+                ? "Updating to \(name) \(version) in \(seconds) s. \(name) relaunches, with your tabs and agents."
                 : "Updating to \(name) \(version)…"
         case .waiting(let version):
             return "Updating to \(name) \(version) at the next quiet moment (nothing running, nobody typing)."

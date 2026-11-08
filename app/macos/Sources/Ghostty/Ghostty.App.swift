@@ -372,7 +372,7 @@ extension Ghostty {
             guard let text = contents.first(where: { $0.mime == "text/plain" }).flatMap({ String(data: $0.data, encoding: .utf8) }),
                   !text.isEmpty else { return }
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { UmiAgentUI.shared.inputSent(pane: surfaceView, text: text, keys: []) }
+                MainActor.assumeIsolated { UmiAgentHooks.inputSent(pane: surfaceView, text: text, keys: []) }
             }
         }
 
@@ -1646,7 +1646,7 @@ extension Ghostty {
                 guard let body = String(cString: n.body!, encoding: .utf8) else { return }
                 // Umi: an agent's own notifications (OSC 9/777) are dropped (S-3), as Warp drops
                 // them for agents its plugin reports.
-                if MainActor.assumeIsolated({ UmiInbox.shared.dropsDesktopNotification(fromPane: surfaceView.id, title: title) }) {
+                if MainActor.assumeIsolated({ UmiAgentHooks.dropsDesktopNotification(fromPane: surfaceView.id, title: title) }) {
                     return
                 }
                 showDesktopNotification(surfaceView, title: title, body: body)
@@ -1698,7 +1698,7 @@ extension Ghostty {
                 UmiCommandLog.shared.commandFinished(surfaceView.id, exitCode: exitCode)
                 DispatchQueue.main.async {
                     // A session's own interface (`umi agent attach`) ended in this pane.
-                    UmiAgentUI.shared.commandFinished(in: surfaceView)
+                    UmiAgentHooks.commandFinished(in: surfaceView)
                     UmiState.shared.layoutDidChange()
                 }
 

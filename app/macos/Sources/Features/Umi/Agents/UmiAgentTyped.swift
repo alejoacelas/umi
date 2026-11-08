@@ -1,15 +1,14 @@
 import Darwin
 import Foundation
 
-/// The flags of an agent the user typed in a pane (`claude --dangerously-skip-permissions
-/// --model opus`), read from its process, so the session comes back as typed: after a quit,
-/// a crash or an update its interface returns with them, and a message resumes it headless
-/// with them (AG-7, AG-10, AG-18).
+/// The command of an agent the user typed in a pane (`claude --dangerously-skip-permissions
+/// --model opus`), read from its process, so it comes back as typed after a quit, a crash or an
+/// update: Umi types it again in the pane, resuming the conversation its hooks reported
+/// (design/primitives.md, "Agent hook plugin").
 ///
-/// The model, effort and permissions become the session's own settings; other flags are kept
-/// as its harness arguments. What picks a conversation (`--resume`, `--continue`,
-/// `--session-id`, `--fork-session`), one-offs (`--print`, `--worktree`, `--bg`), Umi's own
-/// plugin and the first prompt are left out: the session resumes its own conversation.
+/// What picks a conversation (`--resume`, `--continue`, `--session-id`, `--fork-session`,
+/// Codex's `resume`), one-offs (`--print`, `--worktree`, `--bg`), Umi's own plugin and the first
+/// prompt are left out: the restart resumes its own conversation.
 enum UmiTypedCommand {
     struct Flags: Equatable {
         var model: String?
@@ -20,14 +19,15 @@ enum UmiTypedCommand {
         var args: [String] = []
     }
 
-    /// The typed command's arguments after the agent's program. `pid` is the process that ran
-    /// the agent's hook: the agent itself, or a shell it ran the hook in.
-    static func arguments(pid: Int32, kind: UmiAgentKind) -> [String]? {
+    /// The typed command: the agent's process, its program as the shell was given it, and the
+    /// arguments after it. `pid` is the process that ran the agent's hook: the agent itself, or a shell it ran the
+    /// hook in.
+    static func command(pid: Int32, kind: UmiAgentKind) -> (pid: Int32, program: String, args: [String])? {
         var candidate = pid
         for _ in 0..<3 {
             if let argv = UmiProcess.arguments(candidate),
                let index = argv.prefix(3).firstIndex(where: { isProgram($0, kind) }) {
-                return Array(argv[(index + 1)...])
+                return (candidate, argv[index], Array(argv[(index + 1)...]))
             }
             guard let parent = parentPID(candidate), parent > 1 else { return nil }
             candidate = parent
@@ -62,6 +62,89 @@ enum UmiTypedCommand {
 
     static func flags(_ args: [String], kind: UmiAgentKind) -> Flags {
         kind == .claude ? claude(args) : codex(args)
+    }
+
+    /// A one-off run (`claude -p`), not an interface in the pane: its hooks don't make the pane's
+    /// agent.
+    static func isOneOff(_ args: [String], kind: UmiAgentKind) -> Bool {
+        guard kind == .claude else { return ["exec", "e"].contains(codexSubcommand(args)) }
+        return args.prefix { $0 != "--" }.contains { $0 == "-p" || $0 == "--print" }
+    }
+
+    /// The command line that brings the agent back on conversation `session` (nil: a fresh one,
+    /// when it never had a prompt), with the flags it was typed with. A `.js` program (`node
+    /// …/cli.js`) is typed by its agent's name.
+    static func restartCommand(program: String, args: [String], kind: UmiAgentKind, session: String?) -> [String] {
+        let name = program.hasSuffix(".js") ? kind.rawValue : program
+        switch kind {
+        case .claude:
+            let flags = claude(args)
+            var out = [name]
+            if let model = flags.model { out += ["--model", model] }
+            if let effort = flags.effort { out += ["--effort", effort] }
+            if flags.fullAccess {
+                out.append("--dangerously-skip-permissions")
+            } else if let mode = flags.permissionMode {
+                out += ["--permission-mode", mode]
+            }
+            out += flags.args
+            if let session { out += ["--resume", session] }
+            return out
+        case .codex:
+            var out = [name]
+            if let session { out += ["resume", session] }
+            return out + codexKept(args)
+        }
+    }
+
+    private static let codexValued: Set<String> = ["-m", "--model", "-a", "--ask-for-approval", "-p", "--profile",
+                                                   "-c", "--config", "-s", "--sandbox", "-C", "--cd", "--add-dir",
+                                                   "--local-provider", "--enable", "--disable"]
+    private static let codexDropped: Set<String> = ["-i", "--image", "--remote"]
+
+    /// Codex's first word that isn't an option or an option's value (`codex -m o3 exec …`: `exec`).
+    static func codexSubcommand(_ args: [String]) -> String? {
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            if arg == "--" { return nil }
+            if !arg.hasPrefix("-") { return arg }
+            if !arg.contains("="), codexValued.contains(arg) || codexDropped.contains(arg) { i += 1 }
+            i += 1
+        }
+        return nil
+    }
+
+    /// Codex's options as typed, for a restart: every option and its value, without the
+    /// subcommand and its words (`resume ID`, `--last`), the first prompt, images and `--remote`.
+    static func codexKept(_ args: [String]) -> [String] {
+        let valued = codexValued
+        let dropped = codexDropped
+        var out: [String] = []
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            if arg == "--" { break }
+            let name = arg.hasPrefix("--") ? String(arg.split(separator: "=", maxSplits: 1)[0]) : arg
+            let inline = arg.hasPrefix("--") && arg.contains("=")
+            if dropped.contains(name) {
+                if !inline { i += 1 }
+            } else if valued.contains(name) {
+                if inline {
+                    out.append(arg)
+                } else if i + 1 < args.count {
+                    out += [arg, args[i + 1]]
+                    i += 1
+                }
+            } else if arg == "--last" || arg == "--all" {
+                // `resume --last`: the restart names its thread.
+            } else if arg.hasPrefix("-") {
+                out.append(arg)
+            }
+            // Anything else is the subcommand, its thread or the first prompt.
+            i += 1
+        }
+        return out
     }
 
     // Claude Code 2.1's options (`claude --help`, and options it takes without listing them,
@@ -186,30 +269,5 @@ enum UmiTypedCommand {
             i += 1
         }
         return flags
-    }
-}
-
-extension UmiAgentSession {
-    /// A `claude`/`codex` the user typed in a pane (a new one, or `--resume` of a session Umi
-    /// knows): its flags become the session's settings (UmiTypedCommand). An interface Umi
-    /// started itself (`agent attach`, which names the session in its environment) runs with the
-    /// session's settings already. Nothing changes when its process can't be read.
-    func adoptTypedFlags(pid: Int32) {
-        guard record.liveAttached != true,
-              UmiProcessTree.environment(pid)?["UMI_SESSION_ID"] != record.id,
-              let args = UmiTypedCommand.arguments(pid: pid, kind: record.kind) else { return }
-        // Only an interactive interface: never a one-off Claude run (`-p`; Codex's `-p` is a profile).
-        if record.kind == .claude && (args.contains("-p") || args.contains("--print")) { return }
-        let flags = UmiTypedCommand.flags(args, kind: record.kind)
-        record.model = flags.model
-        record.effort = flags.effort
-        record.permissionMode = flags.permissionMode
-        record.fullAccess = flags.fullAccess
-        if record.kind == .codex {
-            record.profile = flags.profile
-        } else {
-            record.harnessArgs = flags.args
-        }
-        saveRecord()
     }
 }

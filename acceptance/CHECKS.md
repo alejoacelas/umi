@@ -27,12 +27,12 @@ run in each pane.
 - Split dividers are subtle (thin, low contrast).
 
 **S-3: tab rows.** Setup: tabs named and unnamed; a git repo on a branch; a linked worktree; a split
-tab; a pinned tab; an agent session working, one finished while another tab was in front, one that
+tab; a pinned tab; an agent working in a pane, one finished while another tab was in front, one that
 needs the user.
 - Pinned tabs are first.
 - Line 1 has the folder (or the tab's name), then the branch; the worktree looks different. Split
   tabs show a pane count.
-- Line 2 has the session's title for agent tabs; otherwise the running or last command.
+- Line 2 has the agent's title for agent tabs; otherwise the running or last command.
 - Agent tabs show a small monochrome Claude or Codex mark. The finished-unseen and needs-you marks
   have a quiet color; nothing is loud. Selecting the tab clears the color.
 - Close and pin controls appear on hover (by hand).
@@ -69,7 +69,7 @@ Mac alone with the app's panes at their prompts.
 - Moving the mouse alone doesn't stop it; a key or a click does, and the notice then says it waits for
   the next quiet moment.
 - After the relaunch the app is behind the app that was in front (when it wasn't in front itself), and
-  its windows, tabs, folders and agent sessions are as they were.
+  its windows, tabs and folders are as they were, and each pane's agent is back on its conversation.
 
 **I-5: one-line install.** Setup: the release repository's README, and running its install command
 in a fresh shell with the install destination pointed at a temporary folder.
@@ -80,7 +80,7 @@ in a fresh shell with the install destination pointed at a temporary folder.
 ## Moving things
 
 **L-9: shortcuts do what they say (by hand).** On a window with three tabs, one of them split, an
-agent session in one, and focus in turn in a terminal, the editor and the sidebar's file tree,
+agent in one, and focus in turn in a terminal, the editor and the sidebar's file tree,
 press each shortcut and confirm what it does:
 - ⌘B toggles the sidebar; ⇧⌘E shows Files; ⌘O opens the quick file search; ⇧⌘M toggles the editor
   preview; ⌘P the command palette; ⇧⌘P the pane list; ⌘, Settings;
@@ -88,19 +88,18 @@ press each shortcut and confirm what it does:
   sidebar order; ⌘1–9 a tab by number; ⌃⇧←/→ move the tab;
 - ⌃⌘T and ⌃⌘N move the pane to a new tab or window; ⌃⌘← and ⌃⌘→ move it into the previous or
   next tab; ⌃⇧⌘N moves the tab to a new window; ⇧⌘T reopens what was closed;
-- ⌃⌘P pins; ⌃⌘R and ⌃⇧⌘R rename; ⌃⌘J goes to the session that needs you and ⌃⌘K back; ⌃⌘O takes
-  over the focused pane's session and ⌃⌘W removes it from the pane.
+- ⌃⌘P pins; ⌃⌘R and ⌃⇧⌘R rename; ⌃⌘J goes to the pane whose agent needs you and ⌃⌘K back.
 
 Also: the command palette lists these actions, and Settings shows and changes them.
 
-**L-14, L-15, L-16: the palettes.** Setup: a window with a few tabs, sessions and a git repository.
+**L-14, L-15, L-16: the palettes.** Setup: a window with a few tabs, agents and a git repository.
 Screenshots of ⌘P (CLI entries with their `umi …` line, menu actions with their shortcuts), of ⇧⌘P
 (each pane with its own title, the current one marked) and of ⌘O in the repository (its files,
 recent and changed ones first).
 - Each palette is quiet (no heavy borders), legible, and shows what the requirement lists.
 - Choosing an entry does what it says, and a command that needs a value asks for it (by hand).
 
-**S-7: sidebar order (by hand).** Five tabs, one pinned, two with agent sessions. Click rows, press
+**S-7: sidebar order (by hand).** Five tabs, one pinned, two with agents. Click rows, press
 ⌘1–9, ⇧⌘] several times, ⇧⌘[, ⌃Tab and ⌃⌘J: the selection moves, the tabs never do. Let an agent in
 a tab you aren't looking at finish a turn: its row shows the quiet mark and stays where it is. Drag a
 row, use Move Tab Up/Down and pin and unpin a tab: those tabs move where you put them (a pinned tab to
@@ -182,15 +181,3 @@ save.
 
 **I-3: default app (by hand, after a real install).** `open README.md` opens it in the app's editor.
 
-## Agent sessions
-
-**AG-5: the read-only view.** Setup: a headless session shown in a pane with `agent open`. It has
-run a tool, replied with Markdown, and now has a pending approval; then a second screenshot after it
-was answered and the session finished.
-- What both sides said is visible, and so is the tool activity (a tool line expands to its output),
-  the status, and the pending approval as a card with buttons.
-- There's nothing to type into: the view is read-only, with a **Take Over** button and one quiet line
-  saying what it does.
-- Markdown in replies is rendered, code set apart; nothing is boxed or bordered beyond the cards
-  (S-1).
-- Pressing Take Over shows the agent's own interface in that pane at once (by hand).

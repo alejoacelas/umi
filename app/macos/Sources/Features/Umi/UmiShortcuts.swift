@@ -4,7 +4,7 @@ import SwiftUI
 /// Umi's menu items and their keyboard shortcuts (L-9), also listed in the command palette.
 ///
 /// Every item works whatever has keyboard focus (L-10): a terminal, the editor, the sidebar
-/// (its rename field and file tree), an agent pane's view or the palette. Menu key
+/// (its rename field and file tree) or the palette. Menu key
 /// equivalents alone don't guarantee that (a view can take a key first, and AppKit doesn't
 /// match some shifted keys), so a local key monitor dispatches the items' shortcuts before
 /// any view sees them. Umi's defaults unbind Ghostty's own bindings for the same keys.
@@ -205,36 +205,18 @@ enum UmiShortcuts {
                      UmiTabGroups.ungroup(group, in: window)
                  }, enabled: { UmiTabGroups.currentGroup() != nil }),
 
-            // Sessions that need the user (L-12).
-            Item(id: "session.next_needing_you", title: "Jump to Next Session Needing You", key: "j", modifiers: [.command, .control],
+            // Panes whose agent needs the user (L-12).
+            Item(id: "session.next_needing_you", title: "Jump to Next Pane Needing You", key: "j", modifiers: [.command, .control],
                  symbol: "exclamationmark.bubble", menu: "Window",
                  action: { if UmiNavigation.jumpToNextNeedingYou() == nil { NSSound.beep() } }),
             Item(id: "session.jump_back", title: "Jump Back", key: "k", modifiers: [.command, .control],
                  symbol: "arrow.uturn.backward.circle", menu: "Window",
                  action: { if UmiNavigation.jumpBack() == nil { NSSound.beep() } },
                  enabled: { UmiNavigation.canJumpBack }),
-            // Agent events inside the app (Warp parity, 2026-11-05; S-9).
-            Item(id: "view.inbox", title: "Toggle Notifications", key: "u", modifiers: [.command, .shift],
-                 symbol: "tray", menu: "View", action: { UmiInbox.shared.toggle() }),
-            Item(id: "view.dismiss_toasts", title: "Dismiss Toasts", key: "u", modifiers: [.command, .control],
-                 symbol: "xmark.circle", menu: "View", action: { UmiInbox.shared.dismissToasts() },
-                 enabled: { UmiInbox.shared.hasToasts }),
-            // A session in the focused pane (AG-6, AG-8).
-            Item(id: "session.take_over", title: "Take Over Session", key: "o", modifiers: [.command, .control],
-                 symbol: "arrow.down.right.and.arrow.up.left", menu: "Window",
-                 action: { if !UmiAgentUI.takeOverFocused() { NSSound.beep() } },
-                 enabled: { UmiAgentUI.focusedSessionPane(live: false) != nil }),
-            Item(id: "session.remove_from_pane", title: "Remove Session from Pane", key: "w", modifiers: [.command, .control],
-                 symbol: "rectangle.badge.minus", menu: "Window",
-                 action: { if !UmiAgentUI.removeFocusedFromPane() { NSSound.beep() } },
-                 enabled: { UmiAgentUI.focusedSessionPane(live: nil) != nil }),
-            Item(id: "pane.toggle_agent_terminal", title: "Toggle Session View and Shell", key: "", modifiers: [], symbol: "terminal",
-                 menu: "Window",
-                 action: {
-                     guard let pane = UmiTopology.currentPane, UmiAgentUI.shared.session(forPane: pane.id) != nil else { return }
-                     UmiAgentUI.shared.toggleTerminal(pane)
-                 },
-                 enabled: { UmiTopology.currentPane.map { UmiAgentUI.shared.session(forPane: $0.id) != nil } ?? false }),
+            // The note after an update (I-4).
+            Item(id: "view.dismiss_toasts", title: "Dismiss Update Note", key: "u", modifiers: [.command, .control],
+                 symbol: "xmark.circle", menu: "View", action: { UmiUpdateNote.shared.dismiss() },
+                 enabled: { UmiUpdateNote.shared.isShowing }),
             // Warp's keybindings page (⌘/); in the editor's source the key is the editor's.
             Item(id: "help.shortcuts", title: "Keyboard Shortcuts", key: "/", modifiers: [.command], symbol: "keyboard",
                  menu: "Help", action: { UmiShortcutsPageModel.toggle() },
@@ -335,9 +317,7 @@ enum UmiShortcuts {
         for existing in allItems(mainMenu) where handlers[existing] == nil && existing.action.map(fontActions.contains) == true {
             existing.menu?.removeItem(existing)
         }
-        // Every session, shown in a pane or not, with its status (AP-3, AP-4).
         if let windowMenu = topMenu("Window", in: mainMenu) {
-            UmiAgentMenu.shared.install(in: windowMenu)
             UmiTabGroupMenu.shared.install(in: windowMenu)
         }
         installMonitor()
@@ -465,16 +445,7 @@ enum UmiShortcuts {
                 item.action()
             }
         }
-        // Every managed session can be shown (again) from the palette (AP-3, AP-4), the ones
-        // that need the user first.
-        let agents = UmiAgentMenu.ordered().map { session in
-            CommandOption(title: "Show Agent: \(session.name)",
-                          description: "\(session.kind) · \(UmiAgentMenu.describe(status: session.status, activity: session.activity))",
-                          symbols: nil, leadingIcon: UmiAgentMenu.symbol(for: session.status)) {
-                _ = try? UmiAgentUI.open(session.id, placement: .init(kind: .tab, focus: true), caller: UmiCaller([:]))
-            }
-        }
-        return fixed + UmiTabGroups.paletteOptions() + agents
+        return fixed + UmiTabGroups.paletteOptions()
     }
 
     // MARK: Actions

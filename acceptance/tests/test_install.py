@@ -2,9 +2,7 @@
 
 import os
 import plistlib
-import shutil
 import subprocess
-import tempfile
 import threading
 import time
 from functools import partial
@@ -12,7 +10,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from harness import Instance, login_which, Target, wait_until
+from harness import Instance, Target, wait_until
 
 pytestmark = pytest.mark.install
 
@@ -94,49 +92,19 @@ def test_installer(target, fresh, tmp_path):
     assert default_markdown_app() == default_before, "asked not to change the default Markdown app"
 
 
-
-
 @pytest.mark.req("I-2")
 def test_doctor(inst):
+    """`doctor` says whether the CLI is on PATH in the panes and whether Umi's hook plugins are installed
+    and current; it exits 0 when they are (for each agent that is installed)."""
     proc = inst.cli("doctor", check=False)
-    report = (proc.stdout + proc.stderr).lower()
-    for tool in ("claude", "codex", "git"):
-        assert tool in report, f"doctor says nothing about {tool}"
-    everything = all(bool(login_which(t)) for t in ("claude", "codex", "git"))
-    assert (proc.returncode == 0) == everything, report
-
-
-@pytest.mark.req("AG-22")
-@pytest.mark.slow
-@pytest.mark.harness
-def test_upgrading_keeps_sessions(target, tmp_path):
-    if not target.installer:
-        pytest.skip("the target file has no installer")
-    dest = str(tmp_path / "Applications" / os.path.basename(target.app))
-    bindir = str(tmp_path / "bin")
-    from harness import Instance
-    holder = Instance(target, prefix="acc-r8-")       # only for its state dir and environment
-    installed = None
-    try:
-        proc = run_installer(target, target.app, dest, bindir, holder.env)
-        assert proc.returncode == 0, proc.stdout + proc.stderr
-        installed = Instance(Target.from_installed(target, dest), state_dir=holder.dir)
-        installed.start_app()
-        word = "upgrade-" + os.urandom(4).hex()
-        sid = installed.start_agent("codex", f"ECHO remember {word}")
-        installed.wait(sid)
-        installed.quit_app()
-        proc = run_installer(target, target.app, dest, bindir, installed.env)   # the "new build"
-        assert proc.returncode == 0, proc.stderr
-        installed.start_app()
-        assert sid in {s["id"] for s in installed.agents()}
-        installed.send(sid, "RECALL")
-        code, out = installed.wait(sid)
-        assert out["status"] == "DONE" and word in out["reply"], out
-    finally:
-        (installed or holder).cleanup()
-        time.sleep(0.5)
-        shutil.rmtree(tmp_path, ignore_errors=True)
+    report = proc.stdout + proc.stderr
+    assert "Claude Code plugin" in report and "Codex plugin" in report, report
+    assert inst.target.cli_name + " on PATH" in report, report
+    plugins = inst.json("plugins")
+    fine = all(not p.get("agent_installed") or p.get("current") for p in (plugins["claude"], plugins["codex"]))
+    assert (proc.returncode == 0) == fine, (report, plugins)
+    checks = inst.json("doctor", check=False)["checks"]
+    assert not any(c["check"] in ("claude", "codex", "git") for c in checks), "doctor no longer requires the agents or git"
 
 
 # ---- P-2, I-4: updates --------------------------------------------------------------------------

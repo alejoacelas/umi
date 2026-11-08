@@ -1160,3 +1160,86 @@ Two tests changed because two branches' behaviours met; what each checks is unch
   keyboard with the window, so the second ⌘E did nothing for a person pressing it twice (found
   walking the branch on mac-air-2); the test's extra focus hid that. Stricter than before.
   **Requirements:** E-2.
+
+## Design step 1: orchestration out (2026-11-07)
+
+design/plan.md step 1 removes Umi-run agent sessions (design/spec-cleanup.md): AG-1 to AG-17 and
+AG-20 to AG-24 left SPEC.md, and AG-18, AG-19, I-2, I-4, L-9, L-12, L-14, S-3 and R-3 to R-7 were
+reworded around agents in panes. Tests of removed features went with them; tests that still apply
+were moved onto the new surface (`<cli> hook`, `plugins`, each pane's `attributes`). No test was
+weakened.
+
+**Removed with their features.**
+- `tests/test_sessions.py`, `tests/test_sessions_real.py`, `tests/test_chaos.py`,
+  `tests/mcp_codeword.py`: headless sessions and the `agent` commands (AG-1 to AG-17, AG-20 to AG-23),
+  their real-agent runs and their chaos runs.
+- `tests/test_live.py`: the read-only view, Take Over, `agent hide`, messages to live sessions
+  (AG-2, AG-5 to AG-9). Its AG-18/AG-19 tests were rewritten in `tests/test_agent_panes.py` (below).
+- `tests/test_review_agents.py` → `tests/test_review_regressions.py`: the 34 review regressions about
+  sessions, Take Over, parking, steering and resuming went; the 10 about shortcuts, the palette,
+  reopening and the screen lock stay unchanged. Changed: "an update now counts work in a live
+  interface" now types a fake Claude into a pane and checks the refusal names "1 agent turn"; "a
+  session waiting for the user stays reachable after its pane closes" became "a pane waiting for the
+  user stops counting once it closes" (the Dock count goes back down; `jump` no longer reaches a
+  pane that is gone); "many windows opened while the screen is locked" checks that a pane's shell
+  still answers instead of an agent session. The plugin-status regressions moved to
+  `test_agent_panes.py`, calling `plugins` instead of `agent plugins`.
+- `tests/test_robustness.py`: the AG-21 to AG-23 tests (orphans of sessions, crash recovery of
+  sessions, partial log lines, long-run sessions, an agent of one instance reaching another,
+  stale agent environments). R-3, R-4, R-5 and R-7 tests stay; added "agents report with spaces
+  and long state dirs" (R-4 for `hook`).
+- `tests/test_install.py`: `test_upgrading_keeps_sessions` (AG-22). Agents coming back after an
+  update are checked by `test_umi_extra.py`'s quiet-moment install and by
+  `test_agent_panes.py`'s relaunch tests.
+- `tests/test_umi_agent_events.py` → `tests/test_umi_attention.py`: Warp's status badges, the
+  inbox and the toasts (AG-24) went; Warp's tab-wide seen rule was replaced by per-pane tests (a
+  finish seen from another pane of its tab keeps its mark, a finish in the pane looked at leaves
+  none, a new turn clears it, a question keeps it, `jump` order). The update-note tests stay, read
+  through `debug.ui.update_note` instead of `debug.ui.inbox`. The desktop-notification test moved
+  to `test_agent_panes.py` and drives the pane through `hook` instead of the engine stand-in.
+- `tests/test_layout.py`: `test_agent_shortcuts_are_menu_items` (⌃⌘J is in the main list);
+  `SHORTCUTS` loses ⌃⌘O and ⌃⌘W (removed) and gains ⌃⌘U (the update note).
+- `tests/test_umi_extra.py`: `test_an_agent_launched_into_a_new_window_gets_its_command` (`umi
+  claude --new-window`, removed). The quiet-moment install test types its Claude with the new
+  helpers and checks the agent comes back by its process's arguments and `RECALL`, instead of
+  `agent info`/transcripts.
+- `app/macos/UmiTests/verify_agent_panes.py`: the read-only view and Take Over without the
+  accessibility tree.
+
+**Changed to the new behaviour (design wins over the old spec).**
+- `test_umi_panes_ui.py::test_looking_at_the_pane_clears_the_mark`: a pane whose agent needs input
+  keeps its mark when looked at (the mark follows `agent.status=needs_input`, design/attention-ui.md);
+  before, looking cleared it. A row whose agent has no title shows "working" (there is no
+  "starting" status any more).
+- `test_umi_palette_warp.py`: no `conversations:` filter or chip (Umi has no agent conversations
+  of its own).
+- `test_umi_nav.py`: the menu title is "Jump to Next Pane Needing You"; the jump to "a session no
+  pane shows" went.
+- `test_quiet_updates.py`: the session-based quiet tests became pane-based ones with typed fake
+  agents: an agent at work or waiting is not quiet (turn, background work, permission prompt,
+  failed turn), an idle agent with nothing typed is quiet (drafts, Esc/Ctrl-U/Ctrl-C, recalled
+  prompts, a queued prompt and a newer draft, Shift-Return, an inferred interrupt), and the job and
+  hook tests use the helpers. "A message waiting to be delivered" and "processes a headless agent
+  left behind" went with headless sessions.
+- `test_install.py::test_doctor`: `doctor` reports the CLI on PATH and the hook plugins, not
+  `claude`/`codex`/`git` (design/spec-cleanup.md).
+- Stand-ins: `debug.attention.set` and `debug.ui.attention.set` now write a pane's agent the way
+  its hooks would (`mark` maps to needs_input, or finished-and-unseen, or seen); tests that used
+  them keep their checks.
+
+**Added.** `tests/test_agent_panes.py` (AG-18, AG-19, S-3, R-3): an agent typed in a pane writes
+`agent.*` on it (both agents); status changes are `pane.changed` events; `agent.done` from the
+reply's last line; the hooks are silent outside Umi; hooks from a plugin folder with spaces;
+`claude -p` isn't the pane's agent; `plugins`; truthful status for both agents, a failed turn, an
+agent killed without SessionEnd; a Claude typed with flags comes back after a quit with them on
+its conversation; a Codex comes back after every process is killed while an exited one doesn't;
+the agents' OSC 9/777 notifications are dropped; the removed `agent` commands fail and say what
+to do. Swift: `UmiQuietTests` lost the session cases and gained agent-in-pane quiet rules, restart
+command lines and the done check.
+
+### After review (2026-11-07)
+
+- `checks/umi_verdicts.py`: the AG-5 verdict (the read-only view) is gone with AG-5.
+- Swift: `UmiJumpTests` is new (L-12: needs input first, then unseen panes whose agent finished or
+  failed; a failed pane drops out once looked at). `UmiQuietTests`' one-off check gained
+  `codex -m o3 exec …` and `codex --model=o3 e …` (one-offs) and `codex -m o3 "fix the bug"` (not).

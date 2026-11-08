@@ -147,10 +147,11 @@ def setup_layout(inst, base):
         run(inst, pane, "ls -la | head -5")
     run(inst, pinned, "true")
     run(inst, named, "echo hi")
-    agent = None
-    if PHASE != "1":
-        agent = inst.json("agent", "start", "claude", "--cwd", repo, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
-                          "--tab", "--window", w["window"], "SLEEP 600")["session"]["id"]
+    # An agent at work in a tab of its own (a fake Claude typed in its pane, reported by Umi's plugin).
+    agent = inst.cli("tab", "new", "--window", w["window"], "--cwd", repo, "--no-focus").stdout.strip()
+    wait_until(lambda: inst.cli("read", "--pane", agent, check=False).stdout.strip() != "", 20)
+    inst.type_agent(agent, "claude")
+    inst.type_line(agent, "SLEEP 600")
     inst.cli("tab", "focus", inst.json("pane", "info", split)["tab"])
     time.sleep(1.5)
     shot, note = screenshot(inst, w["window"], "S-1-S-3-S-6-window")
@@ -158,8 +159,8 @@ def setup_layout(inst, base):
     time.sleep(1)
     files, note2 = screenshot(inst, w["window"], "S-2-files-mode")
     inst.cli("sidebar", "tabs")
-    if agent:
-        inst.cli("agent", "stop", agent, check=False)
+    inst.cli("keys", "--pane", agent, "esc")
+    inst.type_line(agent, "/exit")
     return {"S-1": [("window", shot, note)], "S-3": [("window", shot, note)], "S-6": [("window", shot, note)],
             "S-2": [("tabs mode", shot, note), ("files mode", files, note2)]}
 
@@ -200,26 +201,6 @@ def setup_editor(inst, base):
         e4.append(("modified + disk change", None, "could not edit through accessibility; do it by hand"))
     return {"E-1": [("preview", preview, n1)], "E-2": [("preview", preview, n1), ("source", source, n2)],
             "E-7": [("preview", preview, n1)], "E-4": e4}
-
-
-def setup_agents(inst, base):
-    w = inst.json("window", "new", "--name", "check-agents", "--cwd", base)
-    sid = inst.json("agent", "start", "claude", "--cwd", base, "--env", "FAKE_AGENT_DIR=" + inst.fake_dir,
-                    "--env", "CLAUDE_CONFIG_DIR=" + os.path.join(inst.fake_dir, "claude-config"),
-                    "RUN printf '# Heading\\n\\n- item **bold**\\n\\n```sh\\necho code\\n```\\n'")["session"]["id"]
-    inst.wait(sid)
-    inst.json("agent", "open", sid, "--split", "right", "--pane", w["pane"])
-    inst.send(sid, "ASK_PERMISSION")
-    inst.wait(sid)
-    time.sleep(1.5)
-    approval, n1 = screenshot(inst, w["window"], "AG-5-approval")
-    inst.cli("agent", "approve", sid, check=False)
-    inst.wait(sid)
-    time.sleep(1.5)
-    done, n2 = screenshot(inst, w["window"], "AG-5-finished")
-    transcript = "\n".join(f"{i['kind']}: {i['text'][:100]}" for i in inst.transcript(sid))
-    inst.cli("agent", "stop", sid, check=False)
-    return {"AG-5": [("pending approval", approval, n1), ("finished", done, n2), ("transcript from the CLI", transcript, None)]}
 
 
 def setup_blocks(inst, base):
@@ -327,9 +308,9 @@ def setup_markdown(target, base):
     return {"MD-1": shots}
 
 
-SETUPS = [setup_layout, setup_blocks, setup_editor, setup_agents]
+SETUPS = [setup_layout, setup_blocks, setup_editor]
 PHASE = "all"
-PHASE_TWO_CHECKS = ("AG-",)   # SPEC.md, Delivery phases
+PHASE_TWO_CHECKS = ()
 
 
 def main():
@@ -350,8 +331,6 @@ def main():
     try:
         inst.start_app()
         for setup in SETUPS:
-            if PHASE == "1" and setup is setup_agents:
-                continue
             try:
                 evidence.update(setup(inst, base))
             except Exception:  # noqa: BLE001

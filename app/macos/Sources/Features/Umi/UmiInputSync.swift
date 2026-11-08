@@ -95,15 +95,12 @@ final class UmiInputSync {
         guard let location = UmiTopology.locate(pane),
               isSynced(location.tab, in: location.window) else { return [] }
         let window = location.window
-        let agents = UmiAgentUI.shared
         return window.tabs.filter { isSynced($0, in: window) }
             .flatMap { UmiTopology.panes(of: $0, in: window) }
             .filter { other in
                 other !== pane
                     && !UmiFilePanes.shared.isFilePane(other.id)
                     && !UmiWebPanes.shared.isWebPane(other.id)
-                    && (agents.session(forPane: other.id) == nil || agents.livePanes.contains(other.id)
-                        || agents.showingTerminal.contains(other.id))
             }
     }
 

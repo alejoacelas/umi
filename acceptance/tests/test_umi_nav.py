@@ -1,14 +1,14 @@
 """Moving around Umi from the keyboard, menus, palettes and CLI (SPEC L-9 to L-18, S-7).
 
 Shortcuts work whatever has focus; ⌘⇧[ goes back through the tabs visited; ⌘⇧] walks the
-sidebar order; ⌃⌘J / ⌃⌘K go to the sessions that need the user and back; ⌃⇧←/→ move tabs;
+sidebar order; ⌃⌘J / ⌃⌘K go to the panes whose agent needs the user and back; ⌃⇧←/→ move tabs;
 ⌘P, ⇧⌘P and ⌘O open the command, pane and file palettes; ⌘, opens the config file in the editor,
 and `umi shortcuts` changes shortcuts; a close returns focus to the pane used before; tabs stay where the user put them:
 selecting one or an agent finishing its turn moves nothing, as in Warp (S-7).
 
 Most checks go through the CLI. Behavior that only the UI shows is checked through the app's
 internal `debug.*` control methods (menus, the palettes, a key press delivered inside the app,
-attention data standing in for the agent engine). Tests that need the accessibility tree are
+attention data standing in for the agents' hooks). Tests that need the accessibility tree are
 marked `ui` and take over the keyboard; run them only when nobody is using the Mac.
 """
 
@@ -87,7 +87,7 @@ NAV_SHORTCUTS = {
     "Go to Pane…": ("p", ["shift", "cmd"]),
     "Open Quickly…": ("o", ["cmd"]),
     "Settings…": (",", ["cmd"]),
-    "Jump to Next Session Needing You": ("j", ["ctrl", "cmd"]),
+    "Jump to Next Pane Needing You": ("j", ["ctrl", "cmd"]),
     "Jump Back": ("k", ["ctrl", "cmd"]),
 }
 
@@ -216,7 +216,7 @@ def test_tab_number_items_and_cycling(inst, win):
     assert tab_ids(inst, win["window"]) == order, "selecting by number or cycling moved tabs"
 
 
-# ---- L-12: the sessions that need the user, and back -----------------------------------------------
+# ---- L-12: the panes whose agent needs the user, and back -------------------------------------------
 
 @pytest.mark.req("L-12")
 def test_jump_goes_to_sessions_needing_you_then_back(inst, win):
@@ -243,17 +243,6 @@ def test_jump_goes_to_sessions_needing_you_then_back(inst, win):
             rpc(inst, "debug.attention.set", pane=pane, clear=True)
     proc = inst.cli("jump", check=False)
     assert proc.returncode != 0 and "needs you" in proc.stderr
-
-
-@pytest.mark.req("L-12")
-def test_jump_to_a_session_no_pane_shows(inst, win):
-    rpc(inst, "debug.attention.background", items=[{"session": "s-bg-1", "title": "background worker", "since_ago": 5}],
-        record_shows=True)
-    try:
-        assert inst.json("jump")["session"] == "s-bg-1"
-        assert "s-bg-1" in rpc(inst, "debug.navigation")["shown_sessions"]
-    finally:
-        rpc(inst, "debug.attention.background", items=[])
 
 
 # ---- L-13: moving tabs up and down ----------------------------------------------------------------
