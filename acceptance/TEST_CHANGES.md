@@ -1243,3 +1243,26 @@ command lines and the done check.
 - Swift: `UmiJumpTests` is new (L-12: needs input first, then unseen panes whose agent finished or
   failed; a failed pane drops out once looked at). `UmiQuietTests`' one-off check gained
   `codex -m o3 exec …` and `codex --model=o3 e …` (one-offs) and `codex -m o3 "fix the bug"` (not).
+
+## Design step 2: pane data (2026-11-08)
+
+**Added.** `tests/test_pane_data.py` (D-1 to D-8): `pane|tab|window set/unset/get`, from inside a
+pane and outside; each change an event, a repeated value none; attributes back after a restart;
+read-only keys and bad names fail and change nothing; `role` moves between panes; the Docs tab is
+the tab with `role=docs` (Markdown from outside goes there); `kind`, `cwd`, `branch`, `command`,
+`focused`, `hidden`, `in_drawer`, `idle_for`, `visible_count`; `seen_at`, `changed_at`,
+`status_since` and the pane's `indicator`; `agent.*` written with `pane set` (needs `agent.kind`,
+counts for the Dock badge, overwritten by the next hook, `unset agent.kind` takes the agent away);
+events carry `at` and `cause` (cli with command and calling pane, hook, key, palette, `UMI_CAUSE`);
+`log` with `--since`/`--until`/`--filter`/`--pane`, `pane.moved`'s `from`/`to`, a bad time failing;
+`events --since` replaying then streaming; the log kept across a restart; the focus log's
+stretches, the open one, the idle limit and the screen lock.
+
+**Changed.**
+- `test_agent_panes.py::test_agent_status_changes_are_pane_changed_events`: every changed `agent.*`
+  key is now a `pane.changed` event (CLI.md, "Events and logs"), so the test picks the ones with key
+  `agent.status` and checks the same three changes as before; it also checks their cause is `hook`.
+- `test_agent_panes.py::test_the_plugins_hooks_are_silent_outside_umi` (its before/after comparison): `ls`'s
+  `attributes` now hold Umi's own keys too, and some change by themselves (`idle_for`, `seen_at`), so
+  the comparison covers what can be written on a pane (the user's attributes and `agent.*`), which
+  is what a hook could change.
