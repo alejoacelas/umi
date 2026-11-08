@@ -72,7 +72,8 @@ final class UmiDrawerModel: ObservableObject {
 
     /// One frame of the slide (the timer calls it; tests call it with their own times).
     func step(now: Date = Date()) {
-        let t = slideDuration > 0 ? min(1, now.timeIntervalSince(slideStart) / slideDuration) : 1
+        var t = slideDuration > 0 ? min(1, now.timeIntervalSince(slideStart) / slideDuration) : 1
+        if t > 0.999_999 { t = 1 }   // at the full duration (times are doubles)
         rise = slideFrom + (slideTo - slideFrom) * CGFloat(UmiDrawer.ease(t))
         guard t >= 1 else { return }
         rise = slideTo
@@ -451,10 +452,23 @@ enum UmiDrawer {
                                               "window": window.umiIDString, "drawer": true])
     }
 
-    /// `pane close` of a drawer pane: its program ends.
+    /// `pane close` of a drawer pane: its program ends. A closed drawer pane can't be reopened, so its
+    /// terminal ends here rather than when its view goes: SwiftUI can keep the drawer's last view of
+    /// it for a while (the shell then ran on; found in the full suite).
     static func closePane(_ pane: Ghostty.SurfaceView) {
         guard let window = window(holding: pane) else { return }
         remove(pane, from: window)
+        endTerminal(of: pane)
+    }
+
+    /// End a closed drawer pane's terminal once nothing shows it: out of any view it is still in,
+    /// then its surface freed (`SurfaceView.umiEndTerminal`).
+    private static func endTerminal(of pane: Ghostty.SurfaceView) {
+        DispatchQueue.main.async {
+            guard UmiTopology.locate(pane) == nil, !UmiReopen.shared.holds(pane.id) else { return }
+            if pane.superview != nil { pane.removeFromSuperview() }
+            pane.umiEndTerminal()
+        }
     }
 
     /// Take a pane out of the drawer for a move elsewhere (`pane move`): it goes into the current
