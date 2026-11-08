@@ -14,8 +14,6 @@ final class UmiDrawerModel: ObservableObject {
     @Published fileprivate(set) var current: Ghostty.SurfaceView?
     /// The tab each pane came from (by id), where hiding it puts it back (design/cli.md choice 6).
     fileprivate(set) var origins: [UUID: UUID] = [:]
-    /// The pane focused before the drawer opened: focus goes back to it when the drawer closes.
-    fileprivate weak var returnFocus: Ghostty.SurfaceView?
     /// Bumped to build the panel's terminal view again when its pane didn't make it into the window
     /// (a pane taken out of a tree in the same turn can be left out by AppKit's view moves).
     @Published fileprivate(set) var renderToken = 0
@@ -84,9 +82,10 @@ enum UmiDrawer {
         drawer.isOpen = false
         window.setOccluded(drawer.panes, occluded: true)
         if refocus && hadFocus {
+            // The tab's own focused pane: the one focused before the drawer took focus (the drawer's
+            // pane never becomes a tab's focused pane), or the one the user focused since.
             let tab = window.selectedTab
-            let tree = window.tree(of: tab)
-            if let back = drawer.returnFocus.flatMap({ tree.contains($0) ? $0 : nil }) ?? tab.effectiveFocusedSurface {
+            if let back = tab.effectiveFocusedSurface {
                 tab.focusedSurface = back
                 window.focusedSurface = back
                 if window.window?.isKeyWindow ?? false {
@@ -94,7 +93,6 @@ enum UmiDrawer {
                 }
             }
         }
-        drawer.returnFocus = nil
         var data: [String: Any] = ["window": window.umiIDString]
         if let pane { data["pane"] = pane.umiID }
         UmiEvents.shared.emit("drawer.closed", data)
@@ -131,12 +129,6 @@ enum UmiDrawer {
         let drawer = window.drawer
         guard drawer.contains(pane) else { return }
         let wasOpen = drawer.isOpen
-        if !wasOpen {
-            // Where focus goes back to: the pane focused in the tab now.
-            let tab = window.selectedTab
-            let tree = window.tree(of: tab)
-            drawer.returnFocus = window.focusedSurface.flatMap { tree.contains($0) ? $0 : nil } ?? tab.effectiveFocusedSurface
-        }
         let changed = !wasOpen || drawer.current !== pane
         drawer.current = pane
         drawer.isOpen = true
@@ -283,8 +275,7 @@ enum UmiDrawer {
         guard let window = window(holding: pane) else { throw UmiError.badRequest("the pane isn't in a drawer") }
         let tab = window.selectedTab
         let tree = window.tree(of: tab)
-        let anchor = window.drawer.returnFocus.flatMap { tree.contains($0) ? $0 : nil }
-            ?? (window.focusedSurface.flatMap { tree.contains($0) ? $0 : nil }) ?? tab.effectiveFocusedSurface
+        let anchor = window.focusedSurface.flatMap { tree.contains($0) ? $0 : nil } ?? tab.effectiveFocusedSurface
         release(pane, from: window)
         // The tab's focused pane stays focused while the pane arrives (so `strip.make-room` spares it);
         // the docked pane takes focus after.
@@ -470,7 +461,7 @@ enum UmiDrawer {
                 out["frame"] = UmiTopology.frameJSON(pane.convert(pane.bounds, to: content))
                 out["first_responder"] = window.window?.firstResponder === pane
             }
-            out["return_focus"] = drawer.returnFocus?.umiID ?? NSNull()
+            out["focus_returns_to"] = window.selectedTab.effectiveFocusedSurface?.umiID ?? NSNull()
             // Where the window's panes are (points, in the window's content view, origin bottom left),
             // for checks of screenshots.
             if let content = window.window?.contentView {
@@ -741,7 +732,8 @@ private struct UmiDrawerWaitingLine: View {
                     Text(label).font(.system(size: 10.5)).foregroundColor(amber).lineLimit(1)
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 12)
+                // Clear of the pane indicator at the bottom-right corner.
+                .padding(.trailing, 26)
                 .accessibilityLabel("Drawer: \(label)")
             }
             LinearGradient(colors: [amber.opacity(0), amber], startPoint: .leading, endPoint: UnitPoint(x: 0.7, y: 0.5))
