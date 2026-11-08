@@ -8,7 +8,7 @@ import AppKit
 /// programs keep running while it can be reopened; when it expires they end, as a closed pane's
 /// always did. A pane returns to the same slot at the same size when its tab hasn't changed
 /// since; otherwise next to the pane it was beside, with its old share of that row or column.
-/// Closing a pane that shows an agent never stops the agent's session (the engine's rule).
+/// A reopened pane keeps its attributes, and its agent keeps running while it is held.
 @MainActor
 final class UmiReopen {
     static let shared = UmiReopen()

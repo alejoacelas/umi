@@ -238,11 +238,17 @@ final class UmiConnection: @unchecked Sendable {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 do {
-                    let result = try await UmiRPC.handle(
-                        method: method,
-                        params: UmiParams(params),
-                        caller: UmiCaller(caller),
-                        connection: self)
+                    let from = UmiCaller(caller)
+                    // Internal checks (`debug.*`) stand in for the user: what they do takes the cause
+                    // of what they simulate (a key press, a click), not the request's.
+                    let cause: UmiCause? = method.hasPrefix("debug.") ? nil : UmiCause.request(method: method, caller: from)
+                    let result = try await UmiCause.$request.withValue(cause) {
+                        try await UmiRPC.handle(
+                            method: method,
+                            params: UmiParams(params),
+                            caller: from,
+                            connection: self)
+                    }
                     self.sendRaw(["id": id, "result": result ?? [String: Any]()])
                 } catch let error as UmiError {
                     self.sendRaw(["id": id, "error": ["code": error.code, "message": error.message]])
@@ -360,24 +366,28 @@ struct UmiParams {
     func has(_ key: String) -> Bool { raw[key] != nil && !(raw[key] is NSNull) }
 }
 
-/// Who sent a request: the pane the CLI runs in (if any) and that pane's instance.
+/// Who sent a request: the pane the CLI runs in (if any), that pane's instance, and what the CLI
+/// was run as (its words, and `UMI_CAUSE` when the palette or a key binding ran it).
 struct UmiCaller {
     let pane: String?
     let instance: String?
-    /// The managed session the CLI runs in (UMI_SESSION_ID), if any: what `self` names and
-    /// the parent of sessions it starts (MA-12).
-    let session: String?
+    /// `UMI_CAUSE` from the CLI's environment (`palette`, `key:<keys>`).
+    let cause: String?
+    /// The CLI's words after its name.
+    let argv: [String]?
 
-    init(pane: String?, instance: String?, session: String?) {
+    init(pane: String?, instance: String?, cause: String? = nil, argv: [String]? = nil) {
         self.pane = pane
         self.instance = instance
-        self.session = session
+        self.cause = cause
+        self.argv = argv
     }
 
     init(_ raw: [String: Any]) {
         pane = (raw["pane"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         instance = (raw["instance"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        session = (raw["session"] as? String).flatMap { $0.isEmpty ? nil : $0.lowercased() }
+        cause = (raw["cause"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        argv = raw["argv"] as? [String]
     }
 
     /// A pane id from a terminal of an earlier run of this instance.

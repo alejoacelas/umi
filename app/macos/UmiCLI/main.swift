@@ -112,30 +112,27 @@ func absolutePath(_ path: String, relativeTo base: String? = nil) -> String {
 /// directory (for example the CLI pointed elsewhere with UMI_STATE_DIR) is not a caller
 /// context at all; a pane of an earlier run of the same instance is stale, and the app
 /// refuses to use it as a default.
+///
+/// Every request also says what the CLI was run as (its words), and `UMI_CAUSE` when the
+/// palette or a key binding ran it, so the app records the right cause for what it changes.
 struct Caller {
     var pane: String?
     var instance: String?
-    /// The managed session this CLI runs in (inside an agent): what `self` names.
-    var session: String?
 
     static func current() -> Caller {
         let env = ProcessInfo.processInfo.environment
         guard let instance = env["UMI_INSTANCE"], !instance.isEmpty else { return Caller() }
         let hash = instance.split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
         guard hash == stateHash(stateDirectory()) else { return Caller() }
-        var caller = Caller()
-        if let pane = env["UMI_PANE_ID"], !pane.isEmpty { caller.pane = pane }
-        if let session = env["UMI_SESSION_ID"], !session.isEmpty { caller.session = session }
-        guard caller.pane != nil || caller.session != nil else { return Caller() }
-        caller.instance = instance
-        return caller
+        guard let pane = env["UMI_PANE_ID"], !pane.isEmpty else { return Caller() }
+        return Caller(pane: pane, instance: instance)
     }
 
     var json: [String: Any] {
-        var out: [String: Any] = [:]
+        var out: [String: Any] = ["argv": Array(CommandLine.arguments.dropFirst())]
         if let pane { out["pane"] = pane }
         if let instance { out["instance"] = instance }
-        if let session { out["session"] = session }
+        if let cause = ProcessInfo.processInfo.environment["UMI_CAUSE"], !cause.isEmpty { out["cause"] = cause }
         return out
     }
 }
@@ -220,12 +217,16 @@ final class Client {
         }
     }
 
-    func call(_ method: String, _ params: [String: Any]) throws -> Any {
+    /// `other` gets the lines that aren't the answer (events a subscription replays before it).
+    func call(_ method: String, _ params: [String: Any], other: (([String: Any]) -> Void)? = nil) throws -> Any {
         let id = nextID
         nextID += 1
         try send(["id": id, "method": method, "params": params, "caller": Caller.current().json])
         while let message = readLine() {
-            guard (message["id"] as? Int) == id else { continue }
+            guard (message["id"] as? Int) == id else {
+                other?(message)
+                continue
+            }
             if let error = message["error"] as? [String: Any] {
                 throw RPCError(code: error["code"] as? String ?? "error",
                                message: error["message"] as? String ?? "request failed")
@@ -594,8 +595,10 @@ func printTree(_ result: Any) {
                 if let name = pane["name"] as? String { row += "  \(bold(name))" }
                 row += "  \(abbreviateHome(pane["cwd"] as? String ?? ""))"
                 if pane["zoomed"] as? Bool ?? false { row += "  (zoomed)" }
-                if let attributes = pane["attributes"] as? [String: String], let kind = attributes["agent.kind"] {
-                    row += "  [\(kind) \(attributes["agent.status"] ?? "?")]"
+                if let attributes = pane["attributes"] as? [String: String] {
+                    if let kind = attributes["agent.kind"] { row += "  [\(kind) \(attributes["agent.status"] ?? "?")]" }
+                    let own = attributes.filter { !readOnlyAttributes.contains($0.key) && !$0.key.hasPrefix("agent.") }
+                    if !own.isEmpty { row += "  " + dim(own.keys.sorted().map { "\($0)=\(own[$0]!)" }.joined(separator: " ")) }
                 }
                 print(row)
             }
@@ -604,6 +607,10 @@ func printTree(_ result: Any) {
 }
 
 // MARK: - Commands
+
+/// Attributes Umi keeps (design/cli.md, "Attributes"): left out of `ls`'s text.
+let readOnlyAttributes: Set<String> = ["kind", "cwd", "branch", "command", "focused", "hidden", "in_drawer",
+                                       "seen_at", "changed_at", "status_since", "idle_for", "visible_count"]
 
 /// The help, printed from the command table (`commands.swift`), as `help --json` is.
 var help: String { renderHelp() }
@@ -669,6 +676,12 @@ func layoutCommand(_ argv: [String]) {
 
     case "events":
         eventsCommand(rest)
+
+    case "log":
+        logCommand(rest)
+
+    case "focus-log":
+        focusLogCommand(rest)
 
     case "notify":
         let args = parse(rest, ArgSpec(valued: ["--pane"], aliases: ["-p": "--pane"]))
@@ -865,9 +878,11 @@ func shortcutsCommand(_ argv: [String]) {
 }
 
 func windowCommand(_ argv: [String]) {
-    guard let sub = argv.first else { fail("window: use new, focus or close") }
+    guard let sub = argv.first else { fail("window: use set, unset, get, new, focus or close") }
     let rest = Array(argv.dropFirst())
     switch sub {
+    case "set", "unset", "get":
+        attributesCommand("window", sub, rest)
     case "new":
         let args = parse(rest, ArgSpec(valued: creationSpec, boolean: ["--no-focus"]))
         guard args.positional.isEmpty else { fail("window new: unexpected argument \(args.positional[0])") }
@@ -883,9 +898,11 @@ func windowCommand(_ argv: [String]) {
 }
 
 func tabCommand(_ argv: [String]) {
-    guard let sub = argv.first else { fail("tab: use new, focus, back, next, prev, close, rename, color, pin, unpin, move or equalize") }
+    guard let sub = argv.first else { fail("tab: use set, unset, get, new, focus, back, next, prev, close, rename, color, pin, unpin, move or equalize") }
     let rest = Array(argv.dropFirst())
     switch sub {
+    case "set", "unset", "get":
+        attributesCommand("tab", sub, rest)
     case "new":
         let args = parse(rest, ArgSpec(valued: creationSpec.union(["--window", "--pane", "--color", "--index"]),
                                        boolean: ["--no-focus"], aliases: ["-w": "--window", "-p": "--pane"]))
@@ -964,9 +981,11 @@ func tabCommand(_ argv: [String]) {
 }
 
 func paneCommand(_ argv: [String]) {
-    guard let sub = argv.first else { fail("pane: use focus, close, info, zoom, rename, move, swap or resize") }
+    guard let sub = argv.first else { fail("pane: use set, unset, get, focus, close, info, zoom, rename, move, swap or resize") }
     let rest = Array(argv.dropFirst())
     switch sub {
+    case "set", "unset", "get":
+        attributesCommand("pane", sub, rest)
     case "focus", "close", "info", "zoom":
         let args = parse(rest, ArgSpec())
         var params: [String: Any] = [:]
@@ -1156,22 +1175,165 @@ func waitCommand(_ argv: [String]) {
 }
 
 func eventsCommand(_ argv: [String]) {
-    let args = parse(argv, ArgSpec(valued: ["--filter", "--pane"], aliases: ["-p": "--pane", "-f": "--filter"]))
+    let args = parse(argv, ArgSpec(valued: ["--filter", "--pane", "--since"], aliases: ["-p": "--pane", "-f": "--filter"]))
     var params: [String: Any] = ["filters": args.all("--filter") + args.positional]
     if let pane = args.value("--pane") { params["pane"] = pane }
+    if let since = args.value("--since") { params["since"] = parseTime(since, option: "--since").timeIntervalSince1970 }
     let client = connect()
+    setvbuf(stdout, nil, _IOLBF, 0)
+    // Events replayed from the log (`--since`) arrive before the answer.
+    var replayed: [[String: Any]] = []
     do {
-        _ = try client.call("events.subscribe", params)
+        _ = try client.call("events.subscribe", params) { replayed.append($0) }
     } catch let error as RPCError {
         fail(error.message)
     } catch {
         fail("\(error)")
     }
-    setvbuf(stdout, nil, _IOLBF, 0)
+    for message in replayed where message["event"] is String { printJSON(message) }
+    fflush(stdout)
     while let message = client.readLine() {
-        guard let name = message["event"] as? String else { continue }
-        printJSON(["event": name, "data": message["data"] ?? [String: Any](), "ts": message["ts"] ?? 0])
+        guard message["event"] is String else { continue }
+        printJSON(message)
         fflush(stdout)
+    }
+}
+
+// MARK: - Logs
+
+/// A time on the command line: ISO 8601, a clock time today (`9am`, `14:30`), or a duration back
+/// from now (`90s`, `5m`, `2h`, `3d`).
+func parseTime(_ text: String, option: String, now: Date = Date()) -> Date {
+    let word = text.trimmingCharacters(in: .whitespaces).lowercased()
+    let units: [Character: Double] = ["s": 1, "m": 60, "h": 3600, "d": 86_400]
+    if let unit = word.last, let scale = units[unit], let amount = Double(word.dropLast()), amount >= 0 {
+        return now.addingTimeInterval(-amount * scale)
+    }
+    let clock = try? NSRegularExpression(pattern: "^(\\d{1,2})(?::(\\d{2}))?(?::(\\d{2}))?\\s*(am|pm)?$")
+    if let match = clock?.firstMatch(in: word, range: NSRange(word.startIndex..., in: word)) {
+        func group(_ i: Int) -> String? {
+            Range(match.range(at: i), in: word).map { String(word[$0]) }
+        }
+        var hour = Int(group(1) ?? "") ?? 0
+        let minute = Int(group(2) ?? "") ?? 0
+        let second = Int(group(3) ?? "") ?? 0
+        let meridiem = group(4)
+        // A bare number is a clock time only with am/pm or minutes (`9` alone isn't one).
+        if meridiem != nil || group(2) != nil {
+            if let meridiem {
+                guard (1...12).contains(hour) else { fail("\(option): \(text) isn't a time") }
+                if meridiem == "am" && hour == 12 { hour = 0 }
+                if meridiem == "pm" && hour != 12 { hour += 12 }
+            }
+            guard hour < 24, minute < 60, second < 60,
+                  let date = Calendar.current.date(bySettingHour: hour, minute: minute, second: second, of: now) else {
+                fail("\(option): \(text) isn't a time")
+            }
+            return date
+        }
+    }
+    let iso = ISO8601DateFormatter()
+    for options: ISO8601DateFormatter.Options in [[.withInternetDateTime, .withFractionalSeconds], [.withInternetDateTime]] {
+        iso.formatOptions = options
+        if let date = iso.date(from: text) { return date }
+    }
+    // A date, or a date and time without a zone: local time.
+    let local = DateFormatter()
+    local.locale = Locale(identifier: "en_US_POSIX")
+    local.timeZone = .current
+    for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd"] {
+        local.dateFormat = format
+        if let date = local.date(from: text) { return date }
+    }
+    fail("\(option): \(text) isn't a time (use ISO 8601, a clock time like 9am or 14:30, or a duration like 2h)")
+}
+
+func logTimes(_ args: Args) -> [String: Any] {
+    var params: [String: Any] = [:]
+    if let since = args.value("--since") { params["since"] = parseTime(since, option: "--since").timeIntervalSince1970 }
+    if let until = args.value("--until") { params["until"] = parseTime(until, option: "--until").timeIntervalSince1970 }
+    return params
+}
+
+/// "10:42:07" today, else "Nov 7 10:42:07".
+func shortTime(_ iso: Any?) -> String {
+    guard let text = iso as? String else { return "?" }
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    guard let date = parser.date(from: text) else { return text }
+    let out = DateFormatter()
+    out.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm:ss" : "MMM d HH:mm:ss"
+    return out.string(from: date)
+}
+
+func logCommand(_ argv: [String]) {
+    let args = parse(argv, ArgSpec(valued: ["--since", "--until", "--filter", "--pane"],
+                                   aliases: ["-p": "--pane", "-f": "--filter"]))
+    var params = logTimes(args)
+    params["filters"] = args.all("--filter") + args.positional
+    if let pane = args.value("--pane") { params["pane"] = pane }
+    let result = callDict("log", params)
+    if jsonOutput {
+        printJSON(result)
+        return
+    }
+    for event in result["events"] as? [[String: Any]] ?? [] {
+        let cause = event["cause"] as? [String: Any] ?? [:]
+        var by = cause["kind"] as? String ?? "?"
+        if let key = cause["key"] as? String { by += " \(key)" }
+        if let command = cause["command"] as? String { by += " (\(command))" }
+        let data = event["data"] as? [String: Any] ?? [:]
+        var about: [String] = []
+        if let pane = data["pane"] { about.append("pane \(shortID(pane))") }
+        if let tab = data["tab"] as? String { about.append("tab \(shortID(tab))") }
+        if let key = data["key"] as? String {
+            about.append("\(key): \(data["old"] as? String ?? "–") → \(data["new"] as? String ?? "–")")
+        }
+        print("\(shortTime(event["at"]))  \(event["event"] as? String ?? "?")  \(about.joined(separator: " "))  \(dim("by " + by))")
+    }
+}
+
+func focusLogCommand(_ argv: [String]) {
+    let args = parse(argv, ArgSpec(valued: ["--since", "--until", "--pane"], aliases: ["-p": "--pane"]))
+    var params = logTimes(args)
+    if let pane = args.value("--pane") { params["pane"] = pane }
+    let result = callDict("focus_log", params)
+    if jsonOutput {
+        printJSON(result)
+        return
+    }
+    for stretch in result["stretches"] as? [[String: Any]] ?? [] {
+        let seconds = Int((stretch["seconds"] as? Double ?? 0).rounded())
+        let length = seconds >= 60 ? "\(seconds / 60)m\(String(format: "%02d", seconds % 60))s" : "\(seconds)s"
+        var what = stretch["title"] as? String ?? ""
+        if let file = stretch["file"] as? String { what = abbreviateHome(file) }
+        print("\(shortTime(stretch["start"]))  \(length.padding(toLength: 7, withPad: " ", startingAt: 0))  pane \(shortID(stretch["pane"]))  \(what)"
+              + ((stretch["open"] as? Bool ?? false) ? dim("  (now)") : ""))
+    }
+}
+
+// MARK: - Attributes
+
+/// `pane|tab|window set|unset|get`: the words go to the app, which tells a leading selector from
+/// the keys (design/cli.md, "Attributes").
+func attributesCommand(_ object: String, _ verb: String, _ argv: [String]) {
+    let option = "--\(object)"
+    let args = parse(argv, ArgSpec(valued: [option], aliases: ["-\(object.prefix(1))": option]))
+    var params: [String: Any] = ["words": args.positional + (args.rest ?? [])]
+    if let selector = args.value(option) { params[object] = selector }
+    let result = callDict("\(object).\(verb)", params)
+    if jsonOutput {
+        var out = result
+        out.removeValue(forKey: "keys")
+        printJSON(out)
+        return
+    }
+    guard verb == "get" else { return }
+    let attributes = result["attributes"] as? [String: String] ?? [:]
+    if let keys = result["keys"] as? [String], !keys.isEmpty {
+        for key in keys { print(attributes[key] ?? "") }
+    } else {
+        for key in attributes.keys.sorted() { print("\(key)=\(attributes[key] ?? "")") }
     }
 }
 

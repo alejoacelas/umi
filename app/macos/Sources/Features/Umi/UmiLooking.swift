@@ -41,6 +41,7 @@ enum UmiLooking {
     /// Something about `controller`'s focus changed: if its focused pane is being looked at,
     /// say so.
     static func focusChanged(in controller: TerminalController) {
+        defer { UmiFocusLog.shared.update() }
         guard appIsActive, controller === keyController, let pane = pane(of: controller) else { return }
         UmiAttention.shared.looked(atPane: pane.id)
     }

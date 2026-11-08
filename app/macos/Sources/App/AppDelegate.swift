@@ -240,6 +240,8 @@ class AppDelegate: NSObject,
         UmiPersistence.shared.restoreLayout()
         undoManager.enableUndoRegistration()
         UmiQuiet.start()
+        UmiFocusLog.shared.start()
+        UmiPaneOutput.shared.start()
         UmiUpdater.shared.startBackgroundChecks()
 
         // Register our service provider. This must happen after everything is initialized.

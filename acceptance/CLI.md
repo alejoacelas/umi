@@ -7,8 +7,9 @@ present. Extra fields are fine.
 
 This is `design/cli.md` as far as the design's steps have landed (design/plan.md). Step 1 took Umi's
 own agent sessions out: the `agent` commands are gone, and agents run in panes, reported by Umi's
-plugin through `hook` ("Agent hooks" below). Later steps bring the rest of `design/cli.md`
-(attributes and `pane set`, queries, lists and `go`, hidden panes, the drawer, the logs).
+plugin through `hook` ("Agent hooks" below). Step 2 brought pane data: attributes and `pane set`,
+events with their cause, `log` and `focus-log` ("Attributes", "Events and logs"). Later steps bring
+the rest of `design/cli.md` (queries, lists and `go`, hidden panes, the drawer).
 
 ## General
 
@@ -25,6 +26,9 @@ plugin through `hook` ("Agent hooks" below). Later steps bring the rest of `desi
 - Inside the app's panes, the pane, tab and window arguments default to the calling pane and its tab
   and window. Elsewhere they default to the focused ones.
 - Selectors are described in SPEC L-4. `--pane`/`-p`, `--tab`/`-t` and `--window`/`-w` take selectors.
+- Times on the command line (`--since`, `--until`) are ISO 8601, a clock time today (`9am`, `14:30`),
+  or a duration back from now (`90s`, `5m`, `2h`, `3d`); anything else fails with exit 1. Times in
+  JSON are ISO 8601 with a time zone.
 - Text arguments: words are joined with spaces. `-` alone means "read the text from stdin". Text after
   `--` is text, even if it starts with dashes.
 - No command ever waits for stdin unless given `-`. The exceptions are `send` (layout) with no text
@@ -34,7 +38,7 @@ plugin through `hook` ("Agent hooks" below). Later steps bring the rest of `desi
 
 | Command | Notes |
 |---|---|
-| `ls` | JSON: `{"windows": [Window], "current_tab": id, "current_pane": id}` |
+| `ls` | JSON: `{"windows": [Window], "current_tab": id, "current_pane": id}`; the text lists each pane's own attributes |
 | `window new [--cwd D] [--cmd C] [--name N] [--worktree W [--base REF]] [--no-focus]` | prints the new pane's id; JSON has `pane`, `tab`, `window` |
 | `window focus\|close [WINDOW]` | |
 | `tab new [NAME] [--window W] [--pane P] [--cwd D] [--cmd C] [--name N] [--color C] [--index I] [--worktree W [--base REF]] [--no-focus]` | as `window new`; the tab opens right after the current tab, or last with `--no-focus`, or at `--index` (SPEC S-7) |
@@ -56,7 +60,7 @@ plugin through `hook` ("Agent hooks" below). Later steps bring the rest of `desi
 | `keys [--pane P] KEY…` | enter esc tab backspace up down left right ctrl+c shift+tab … |
 | `read [--pane P] [--scrollback] [--lines N]` | prints the text as the shell and programs printed it. With Umi's look (SPEC S-9 to S-12) a zsh prompt is two blank rows, the folder, and the command line; durations, lines and the folder box are drawn, not text |
 | `wait [--pane P] (--pattern RE \| --idle SECS) [--timeout T]` | prints the matched text; 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
-| `events [--filter PREFIX]… [--pane P]` | a filter keeps events whose name starts with PREFIX; JSON lines `{"event": name, "data": {…}}`, names like `pane.created`, `pane.closed`, `pane.moved`, `pane.focused`, `tab.created`, `tab.renamed`, `tab.selected`, `window.created` |
+| `events [--filter PREFIX]… [--pane P] [--since T]` | streams Event objects as JSON lines ("Events and logs"); a filter keeps events whose name starts with PREFIX; `--since` replays the activity log from T first |
 | `notify [--pane P] TITLE [BODY]` | |
 | `sidebar [on\|off\|toggle\|status\|tabs\|files\|search] [--window W]` | shown or hidden per window (the given one, else the caller's, else the current); JSON: `{"visible": bool, "mode": "tabs"\|"files"\|"search", "width": points, "window": id}` |
 | `sidebar width [N] [--window W]` | prints the window's sidebar width in points; with N sets it (clamped to 180–600) |
@@ -68,20 +72,24 @@ plugin through `hook` ("Agent hooks" below). Later steps bring the rest of `desi
 | `layout open NAME [--no-focus]` | NAME is a configuration's name or file name (case doesn't matter; a file holding several configurations fails and lists their names); opens each of its windows as a new window, the active one in front; prints the windows' ids; JSON `{"name", "windows": [id], "panes": [id]}` |
 
 Objects in JSON:
-- **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab]}`
-- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "docs": bool, "color"?, "group"?: its tab group's name, "focused_pane": id, "panes": [Pane]}`
-- **Pane**: `{"id", "cwd", "name"?, "focused": bool, "zoomed": bool, "attributes": {key: value}
-  (the `agent.*` keys of "Agent hooks" below; step 2 adds the rest of design/cli.md's attributes),
-  "file"?: path (a file pane), "shown": bool (false for a
-  stack member that isn't on show), "stack"?: [id] (the panes sharing its place, in strip order),
-  "frame"?: {"x", "y", "width", "height"} (points, top-left origin, in the window's terminal area),
-  "url"?: the page's address and "title": its title (a web pane, SPEC E-12)}`.
+- **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab], "attributes": {…}}`
+- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "docs": bool (it has
+  `role=docs`), "color"?, "group"?: its tab group's name, "focused_pane": id, "panes": [Pane],
+  "attributes": {…}}`
+- **Pane**: `{"id", "kind": "terminal"|"file"|"web", "cwd", "name"?, "focused": bool, "zoomed": bool,
+  "hidden": bool (a stack member that isn't on show), "in_drawer": bool,
+  "indicator": "working"|"needs_you"|"finished"|"none", "attributes": {key: value} (every attribute:
+  the user's, `agent.*`, and Umi's read-only ones; "Attributes" below), "file"?: path (a file pane),
+  "shown": bool (false for a stack member that isn't on show), "stack"?: [id] (the panes sharing its
+  place, in strip order), "frame"?: {"x", "y", "width", "height"} (points, top-left origin, in the
+  window's terminal area), "url"?: the page's address and "title": its title (a web pane, SPEC
+  E-12)}`. `indicator` is `needs_you` while its agent needs input or failed, `finished` while it
+  finished and the pane is unseen (`changed_at > seen_at`), `working` while it works.
   A tab's `panes` lists the panes on show, then stack members that aren't.
 
 Events: `pane.created` and `tab.created` carry `"reopened": true` when `reopen` brought them back;
-`sidebar.changed` is emitted when a window's sidebar is shown or hidden or its width changes. A change
-of a pane's agent status is `pane.changed` with `data` `{"pane", "key": "agent.status", "old", "new"}`
-(`old` is null for a pane's first agent).
+`sidebar.changed` is emitted when a window's sidebar is shown or hidden or its width changes. Events,
+their causes and the logs are under "Events and logs" below.
 
 Other commands:
 
@@ -93,6 +101,65 @@ Other commands:
 
 Events also include `palette.opened` and `palette.ran`. Tabs change places only when moved (`tab.moved`) or
 pinned; nothing reorders them on its own (SPEC S-7).
+
+## Attributes
+
+| Command | Notes |
+|---|---|
+| `pane set [PANE] KEY=VALUE…` | sets each pair on the pane; `KEY=` sets the empty string; all or nothing (a bad pair changes nothing). JSON `{"panes": [id], "set": {key: value}}` |
+| `pane unset [PANE] KEY…` | removes the keys; removing a missing key is not an error. JSON `{"panes": [id], "unset": [key]}` |
+| `pane get [PANE] [KEY…]` | prints each KEY's value on a line (empty when unset), or every attribute as `key=value` lines without KEY. JSON `{"pane": id, "attributes": {…}}` (only the KEYs asked for, when given) |
+| `tab set\|unset\|get [TAB] …`, `window set\|unset\|get [WINDOW] …` | the same on tabs and windows; JSON `{"tabs": [id], …}`, `{"windows": [id], …}`, `{"tab"\|"window": id, "attributes"}` |
+
+- PANE (TAB, WINDOW) is a selector (`--pane`/`-p`, `--tab`/`-t`, `--window`/`-w`, or the first word).
+  For `set`, a first word without `=` is the selector. For `unset` and `get`, the first word is the
+  selector when it names one and more words follow (for `get`, also when it is the only word);
+  otherwise every word is a key. `unset` with only a selector fails with exit 1. Without a selector:
+  the calling pane (its tab, its window) inside the app's panes, else the focused one.
+- Values are strings. Keys are letters, digits, `.`, `-` and `_`.
+- **Read-only keys** (kept by Umi; setting one fails with exit 1): `kind` (`terminal`, `file`,
+  `web`), `cwd`, `branch` (the git branch of the pane's folder), `command` (the command it runs, or
+  last ran), `focused` (`true`/`false`: focused in its tab), `hidden`, `in_drawer`, `seen_at` (when the
+  pane itself last had keyboard focus in the app's front window while the app was active; now while
+  it has), `changed_at` (when its `agent.status` last changed), `status_since` (the same, for the
+  status), `idle_for` (seconds since its terminal last printed, as `90s`), and on tabs
+  `visible_count` (the panes it shows). Times are ISO 8601 with a time zone. A key Umi has nothing
+  for is absent (`branch` outside git, `changed_at` without an agent).
+- **Keys written by the hook plugin** ("Agent hooks" below): anyone may write them with `pane set`;
+  the next hook event overwrites them. On a pane without an agent they need `agent.kind` (`claude` or
+  `codex`) in the same command, else exit 1. `agent.status` is one of its five values and
+  `agent.done` is `true` or `false`, else exit 1. `pane unset PANE agent.kind` takes the agent away;
+  `agent.status` can't be unset on its own.
+- **Keys with a meaning to Umi**: `role` has one holder per value, among panes for panes and among
+  tabs for tabs: setting `role=manager` on a pane removes it from the pane that had it. The Docs tab
+  (SPEC E-10) is the tab with `role=docs`. `pinned` (panes) and `visible_limit` (tabs) are stored now
+  and take effect with hidden panes.
+- Attributes live and die with their pane (or tab, window). They are saved and restored with the
+  layout.
+
+## Events and logs
+
+| Command | Notes |
+|---|---|
+| `events [--filter PREFIX]… [--pane P] [--since T]` | streams events as JSON lines (Event objects); `--since` replays the activity log from T first |
+| `log [--since T] [--until T] [--filter PREFIX]… [--pane P]` | the activity log: the same Event objects, oldest first; JSON `{"events": [Event]}`; a line per event for people. Kept 30 days. P may be the id (or id prefix) of a pane that is gone |
+| `focus-log [--since T] [--until T] [--pane P]` | stretches of keyboard focus overlapping the times: JSON `{"stretches": [{"pane", "tab", "window", "start", "end", "seconds", "title", "kind", "cwd", "file"?, "url"?, "agent"?: {"kind", "session"?, "title"}, "attributes": {…}, "open"?: true}]}`, oldest first; the stretch going on now is last, with `"open": true` and `end` now. Kept 30 days |
+
+- **Event**: `{"event": name, "at": time, "cause": {"kind", "command"?, "key"?, "pane"?}, "data": {…}}`.
+- `cause.kind`: `key` (with `key`, named as `shortcuts` names keys: `ctrl+cmd+t`), `mouse`, `palette`
+  (with `command`), `cli` (with `command`: the words it was run with, `umi …`; and `pane` when run
+  inside one of the app's panes), `hook` (an agent's hook), `config` (a condition or a slot) or `umi`
+  (the app on its own). A command the palette runs (or a key binding, later) has `UMI_CAUSE=palette`
+  (or `UMI_CAUSE=key:<keys>`) in its environment, and the `<cli>` calls it makes are recorded with
+  that cause.
+- `pane.changed` `{"pane", "key", "old", "new"}` (null for a key that wasn't set, or was removed), and
+  `tab.changed` / `window.changed` the same with `tab` / `window`: one per changed key. An agent's
+  status change is `pane.changed` with key `agent.status`, before its other `agent.*` keys.
+- `pane.moved` has `from` and `to`: `{"tab", "window", "index"}` (the pane's place in its tab's
+  layout, from 1).
+- A focus stretch counts only while the app is active, the screen is unlocked, and the user typed or
+  clicked in the app within the last 3 minutes; one that ends because the user stopped ends when the
+  3 minutes passed.
 
 ## Editor
 
@@ -128,7 +195,7 @@ state on its pane.
 |---|---|
 | `hook EVENT --agent claude\|codex [--pid PID]` | run by Umi's plugins: reads the agent's hook input (JSON) on stdin and writes `agent.*` on the pane the agent runs in (the caller's pane, `UMI_PANE_ID`); prints nothing; exits 0 always, also when no pane matches or nothing runs |
 | `plugins [status\|install [--force]\|remove]` | Umi's plugins in Claude Code and Codex (SPEC AG-18); JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}`; current means this app's version, from this copy of the app, enabled and (Codex) its hooks trusted; `--force` reinstalls even when current |
-| `doctor` | reports whether `<cli>` is on the login PATH and whether the hook plugins are installed and current (for each agent that is installed); exit 0 when they are; JSON `{"ok", "checks": [{"check", "ok", "detail", "required"}]}` |
+| `doctor` | reports whether `<cli>` is on the login PATH and whether the hook plugins are installed and current (for each agent that is installed); exits non-zero when a plugin isn't installed and current (SPEC I-2), and 0 otherwise, also when `<cli>` isn't on PATH (that is reported, not required); JSON `{"ok", "checks": [{"check", "ok", "detail", "required"}]}` |
 
 Keys written by the hooks, in each pane's `attributes`:
 

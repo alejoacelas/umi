@@ -408,6 +408,11 @@ enum UmiShortcuts {
     /// Perform the Umi item whose shortcut this key is. True when the key was Umi's. Every
     /// key press goes through here before any view sees it.
     static func dispatch(_ event: NSEvent) -> Bool {
+        // What the key does is caused by the key (the events' `cause`).
+        UmiCause.during(UmiCause.key(event)) { dispatchKey(event) }
+    }
+
+    private static func dispatchKey(_ event: NSEvent) -> Bool {
         // Only shortcuts with ⌘ or ⌃, or function keys: plain keys and ⌥-keys are typing,
         // except ⌥⇧ keys an item has (⌥⇧> and ⌥⇧<, Warp's font size keys).
         let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false

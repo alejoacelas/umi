@@ -48,9 +48,10 @@ Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, T-1
 
 ### Core: agents in panes
 These outcomes must hold every time, with both agents: the plugin's hooks report each agent's state
-on its pane, truthfully, and agents come back in their panes after a quit, a crash or an update.
+on its pane, truthfully, and agents come back in their panes after a quit, a crash or an update. The
+pane data scripts read (attributes, events and their causes, the logs) tells the truth.
 
-Requirements: AG-18, AG-19, R-3 to R-7.
+Requirements: AG-18, AG-19, D-1 to D-8, R-3 to R-7.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
@@ -158,7 +159,7 @@ the menu.
   print noise.
 - **L-6 [A]** Relative `--cwd` values are relative to where the CLI ran.
 - **L-7 [A]** `ls` shows every window, tab and pane with their ids, names, working directories,
-  focus, zoom and pins.
+  focus, zoom and pins, and each one's attributes (D-1).
 - **L-8 [A]** Commands that create things accept a "don't focus it" option. The user's selected tab
   and focused pane are then unchanged, at every moment, not just eventually. If the app is in the
   background, it stays in the background: the app that was in front stays in front.
@@ -429,10 +430,10 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **T-3 [A]** Wait until a pane's output matches a pattern, or has been idle for N seconds, with a
   timeout. A timeout exits 124. A pane that closes while waited on ends the wait promptly with an
   error.
-- **T-4 [A]** A stream of layout events (panes and tabs created, closed, renamed, moved, focused) can
-  be followed as JSON lines, optionally filtered by kind or by pane. A consumer that stops reading
-  never stalls the app: other commands keep working, and the stalled consumer is eventually
-  disconnected.
+- **T-4 [A]** A stream of events (panes and tabs created, closed, renamed, moved, focused; attributes
+  changed, D-1) can be followed as JSON lines, optionally filtered by kind or by pane, each with when
+  it happened and its cause (D-6). A consumer that stops reading never stalls the app: other
+  commands keep working, and the stalled consumer is eventually disconnected.
 - **T-5 [A]** Many concurrent CLI invocations all get correct answers.
 - **T-6 [A]** Show a desktop notification from a pane.
 - **T-7 [A]** The app can capture an image of a window, including terminal contents, through
@@ -816,6 +817,58 @@ and links (E-7) work as before.
 - **MD-5 [A]** Right-clicking the preview shows Warp's items: Copy (with a selection), Copy file
   path, Split pane right / left / down / up, and in a split Maximize pane (Minimize pane when
   maximized) and Close pane.
+
+## D. Pane data
+
+What the user, their scripts and their agents build on (design/primitives.md, "Attributes" and
+"Logs"; CLI.md, "Attributes" and "Events and logs").
+
+- **D-1 [A]** Attributes. Panes, tabs and windows carry key–value pairs (string values; keys are
+  letters, digits, `.`, `-` and `_`): `<cli> pane|tab|window set [TARGET] KEY=VALUE…`, `unset
+  [TARGET] KEY…` (removing a key that isn't there is not an error) and `get [TARGET] [KEY…]`, from
+  inside a pane defaulting to that pane, its tab and window. `ls --json` shows every attribute in each
+  pane's, tab's and window's `attributes`. Each change of a value is an event (`pane.changed`,
+  `tab.changed`, `window.changed` with `key`, `old`, `new`); setting the value a key already has
+  changes nothing. Attributes live and die with their pane, tab or window, and come back with them
+  after a restart.
+- **D-2 [A]** The keys Umi keeps (`kind`, `cwd`, `branch`, `command`, `focused`, `hidden`,
+  `in_drawer`, `seen_at`, `changed_at`, `status_since`, `idle_for`, `visible_count`) can't be set:
+  setting one, or a key that isn't a valid name, fails with exit 1 and changes nothing, not even the
+  other pairs of the same command.
+- **D-3 [A]** Single holders. `role` has one holder per value, among panes for panes and among tabs
+  for tabs: setting `role=manager` on a pane takes it from the pane that had it (a `pane.changed`
+  event for that pane). The Docs tab, where Markdown opened from outside the app goes (E-10), is the
+  tab with `role=docs`.
+- **D-4 [A]** What Umi keeps, as attributes of each pane: `kind` (`terminal`, `file`, `web`), `cwd`,
+  `branch` (of the git checkout it is in), `command` (running, or last run), `focused` (in its tab),
+  `hidden`, `in_drawer`, `seen_at` (set while the pane itself has keyboard focus in the app's front
+  window and the app is active; looking at another pane of the tab doesn't count), `changed_at` (set
+  when `agent.status` changes), `status_since` (when `agent.status` last changed) and `idle_for`
+  (how long since its terminal last printed, as `90s`); of each tab, `visible_count` (the panes it
+  shows). Times are ISO 8601 with a time zone. "Unseen" is `changed_at > seen_at`; each pane's
+  `indicator` in `ls --json` says `working`, `needs_you`, `finished` (unseen) or `none`.
+- **D-5 [A]** `agent.*` can be written with `pane set` as the hook plugin writes them (AG-18): on a
+  pane without an agent, together with `agent.kind` (`claude` or `codex`); values outside each key's
+  set (`agent.status`, `agent.done`) fail with exit 1. They count as the hook's would (the Dock
+  badge, `jump`, `changed_at`), and the next hook event overwrites them. `pane unset PANE agent.kind`
+  takes the pane's agent away.
+- **D-6 [A]** Every event carries `at` and its `cause`: `{"kind": "key", "key"}` for a key press
+  (`ctrl+cmd+t`), `mouse`, `palette` (with `command`), `cli` (with `command`, the words it was run
+  with, and the calling `pane` when run inside one), `hook` (an agent's hook), `config` or `umi` (the
+  app on its own). A command the palette (or a key binding) runs gets `UMI_CAUSE` in its
+  environment, and the `<cli>` calls it makes are recorded with that cause.
+- **D-7 [A]** The activity log: every event, as `events` streams them, kept 30 days and across
+  restarts. `<cli> log [--since T] [--until T] [--filter PREFIX]… [--pane P]` prints them oldest
+  first (a pane that is gone can be named by its id); `events --since T` replays the log, then
+  streams. `pane.moved` says where from and to (`from`, `to`: tab, window, index). Times are ISO
+  8601, a clock time today (`9am`, `14:30`) or a duration back from now (`2h`); anything else fails
+  with exit 1.
+- **D-8 [A]** The focus log: each stretch during which a pane had keyboard focus in the app's front
+  window, while the app was active, the screen was unlocked and the user had typed or clicked in the
+  app within the last 3 minutes, with what the pane showed (title, kind, folder, file or page, agent
+  and its session, attributes). A stretch that ends because the user stopped ends when the 3
+  minutes passed. `<cli> focus-log [--since T] [--until T] [--pane P]` lists them, the one going on
+  now last (`open`). Kept 30 days. It measures keyboard focus, not where the user looked.
 
 ## AG. Agents in panes
 

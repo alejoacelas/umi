@@ -346,7 +346,8 @@ final class UmiPaletteModel: ObservableObject {
         } else if step == .list, [.action, .cli, .pane].contains(entry.kind), !entry.id.hasPrefix("run:") {
             Self.remember(entry.id)
         }
-        entry.perform()
+        // What the row does in the app is caused by the palette (the events' `cause`).
+        UmiCause.during(UmiCause(kind: "palette", command: entry.title)) { entry.perform() }
     }
 
     private static func remember(_ id: String) {
@@ -528,7 +529,7 @@ final class UmiPaletteModel: ObservableObject {
         let cwd = pane.map(UmiTopology.cwd(of:)).flatMap { $0.isEmpty ? nil : $0 }
         runID += 1
         let mine = runID
-        process = UmiCLIRunner.run(argv, pane: pane, cwd: cwd) { [weak self] status, out, err in
+        process = UmiCLIRunner.run(argv, pane: pane, cwd: cwd, cause: "palette") { [weak self] status, out, err in
             guard let self, self.runID == mine else { return }
             self.process = nil
             self.busy = nil
@@ -1130,7 +1131,7 @@ final class UmiCLICatalog {
 @MainActor
 enum UmiCLIRunner {
     @discardableResult
-    static func run(_ argv: [String], pane: Ghostty.SurfaceView?, cwd: String?,
+    static func run(_ argv: [String], pane: Ghostty.SurfaceView?, cwd: String?, cause: String? = nil,
                      completion: @escaping @MainActor (Int32, String, String) -> Void) -> Process? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: UmiPaths.cliPath)
@@ -1143,6 +1144,9 @@ enum UmiCLIRunner {
             env.removeValue(forKey: "UMI_PANE_ID")
             env.removeValue(forKey: "UMI_INSTANCE")
         }
+        // The `umi` calls it makes are recorded with this cause (`palette`, `key:<keys>`).
+        env.removeValue(forKey: "UMI_CAUSE")
+        if let cause { env["UMI_CAUSE"] = cause }
         process.environment = env
         if let cwd, FileManager.default.fileExists(atPath: cwd) { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
         let out = UmiPipe.make(), err = UmiPipe.make()

@@ -128,6 +128,9 @@ final class UmiAttention: ObservableObject {
 
     private(set) var panes: [UUID: Agent] = [:]
 
+    /// When each pane, with or without an agent, was last looked at.
+    private var seen: [UUID: Date] = [:]
+
     /// The app is quitting: agents ending now come back after the relaunch, so their ends aren't
     /// recorded (UmiAppLifecycle).
     var shuttingDown = false
@@ -135,6 +138,15 @@ final class UmiAttention: ObservableObject {
     // MARK: Reading
 
     func agent(forPane id: UUID) -> Agent? { panes[id] }
+
+    /// `seen_at`: when the pane was last looked at. A new agent counts as seen when it arrives
+    /// (its first state isn't news), so a pane's agent may be seen later than the pane was.
+    func seenAt(_ id: UUID) -> Date? {
+        switch (seen[id], panes[id]?.seenAt) {
+        case let (a?, b?): return max(a, b)
+        case let (a, b): return a ?? b
+        }
+    }
 
     /// A tab's agent for its sidebar row: the focused pane's, else the pane with the strongest
     /// mark, else the one that stopped last.
@@ -191,8 +203,9 @@ final class UmiAttention: ObservableObject {
     func set(_ agent: Agent?, forPane id: UUID) {
         let old = panes[id]
         guard var agent else {
-            if old != nil {
+            if let old {
                 panes.removeValue(forKey: id)
+                emitChanges(id, old: old.attributes, new: [:])
                 changed()
             }
             return
@@ -214,17 +227,31 @@ final class UmiAttention: ObservableObject {
         if UmiLooking.lookedAt?.id == id { agent.seenAt = max(agent.changedAt, now) }
         if panes[id] == agent { return }
         panes[id] = agent
-        if old?.status != agent.status {
-            UmiEvents.shared.emit("pane.changed", ["pane": id.uuidString.lowercased(), "key": "agent.status",
-                                                   "old": old?.status.rawValue ?? NSNull(), "new": agent.status.rawValue])
-        }
+        emitChanges(id, old: old?.attributes ?? [:], new: agent.attributes)
         changed()
         // What restarts after a relaunch is saved with the layout.
         if !sameJSON(old?.restartRecord, agent.restartRecord) { UmiState.shared.layoutDidChange(persistOnly: true) }
     }
 
+    /// Each changed `agent.*` key is a `pane.changed` event, `agent.status` first (design/cli.md,
+    /// choice 7).
+    private func emitChanges(_ id: UUID, old: [String: String], new: [String: String]) {
+        let keys = Set(old.keys).union(new.keys).sorted { a, b in
+            a == "agent.status" ? b != "agent.status" : (b == "agent.status" ? false : a < b)
+        }
+        for key in keys where old[key] != new[key] {
+            UmiEvents.shared.emit("pane.changed", ["pane": id.uuidString.lowercased(), "key": key,
+                                                   "old": old[key] ?? NSNull(), "new": new[key] ?? NSNull()])
+        }
+    }
+
     /// The user looked at a pane (it has focus in the key window of the active app).
     func looked(atPane id: UUID) {
+        seen[id] = Date()
+        if seen.count > 512 {
+            let open = Set(UmiTopology.allSurfaces.map(\.id))
+            seen = seen.filter { open.contains($0.key) || UmiReopen.shared.holds($0.key) }
+        }
         guard var agent = panes[id] else { return }
         agent.seenAt = Date()
         let before = panes[id]?.mark

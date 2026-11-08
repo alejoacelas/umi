@@ -38,6 +38,11 @@ def wait_screen(inst, pane, *texts, timeout=20):
                       message=f"the pane to show {texts}")
 
 
+# Attributes Umi keeps (CLI.md, "Attributes").
+UMI_KEYS = {"kind", "cwd", "branch", "command", "focused", "hidden", "in_drawer", "seen_at", "changed_at",
+            "status_since", "idle_for", "visible_count"}
+
+
 def agent_processes(fake):
     """(pid, argv words) of every running copy of a fake agent."""
     out = subprocess.run(["ps", "-axww", "-o", "pid=,command="], capture_output=True, text=True).stdout
@@ -98,17 +103,21 @@ def test_agent_status_changes_are_pane_changed_events(inst, pane):
         seen, buffer = [], b""
         deadline = time.time() + 10
         fd = events.stdout.fileno()
-        while time.time() < deadline and len(seen) < 3:
+        # Every changed agent.* key is a pane.changed event; the status changes are those with its key.
+        def statuses():
+            return [e for e in seen if e["data"]["key"] == "agent.status"]
+        while time.time() < deadline and len(statuses()) < 3:
             ready, _, _ = select.select([fd], [], [], 0.5)
             if ready:
                 buffer += os.read(fd, 65536)
                 *lines, buffer = buffer.split(b"\n")
                 seen += [json.loads(line) for line in lines if line.strip()]
-        data = [e["data"] for e in seen]
+        data = [e["data"] for e in statuses()]
         assert [(d["key"], d.get("old"), d["new"]) for d in data] == [("agent.status", None, "idle"),
                                                                       ("agent.status", "idle", "working"),
                                                                       ("agent.status", "working", "idle")], data
         assert all(d["pane"] == pane for d in data)
+        assert all(e["cause"]["kind"] == "hook" for e in statuses()), statuses()
     finally:
         events.terminate()
         inst.hook(pane, "SessionEnd")
@@ -149,7 +158,13 @@ def test_the_plugins_hooks_are_silent_outside_umi(inst, kind, tmp_path):
         "a pane of another run": dict(base, UMI_CLI=cli, UMI_STATE_DIR=inst.dir, UMI_PANE_ID="00000000",
                                       UMI_INSTANCE="nope:nope"),
     }
-    before = {p["id"]: p.get("attributes") for w in inst.tree()["windows"] for t in w["tabs"] for p in t["panes"]}
+    # What can be written on a pane (the user's attributes and agent.*); Umi's own keys (idle_for,
+    # seen_at, …) change by themselves.
+    def written():
+        return {p["id"]: {k: v for k, v in p.get("attributes", {}).items() if k not in UMI_KEYS}
+                for w in inst.tree()["windows"] for t in w["tabs"] for p in t["panes"]}
+
+    before = written()
     for where, env in environments.items():
         for event in ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"):
             t0 = time.time()
@@ -161,7 +176,7 @@ def test_the_plugins_hooks_are_silent_outside_umi(inst, kind, tmp_path):
         proc = subprocess.run([cli, "hook", "Stop", "--agent", kind, "--pid", "1"], input="not json",
                               capture_output=True, text=True, env=env, timeout=30)
         assert (proc.returncode, proc.stdout, proc.stderr) == (0, "", ""), (where, proc)
-    after = {p["id"]: p.get("attributes") for w in inst.tree()["windows"] for t in w["tabs"] for p in t["panes"]}
+    after = written()
     assert after == before, "a hook from outside a pane changed a pane"
 
 

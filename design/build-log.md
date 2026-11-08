@@ -150,3 +150,140 @@ and `1f8bdf4af`) are superseded by these.
     out, as primitives.md defines unseen. Its sidebar mark still shows the failure. Where:
     `UmiAttention.jumpOrder`, SPEC L-12. Working panes are never jump targets, even unseen.
 
+
+## Step 2: pane data
+
+**Status:** built on `design/step2-pane-data`, ready for review. The UI half of the suite didn't run:
+mac-air-2's screen is locked (see "Not verified").
+
+**What changed**
+
+- Attributes on panes, tabs and windows: `umi pane|tab|window set|unset|get` (`UmiAttributes`).
+  Values are strings; keys are letters, digits, `.`, `-`, `_`. Panes' are kept by pane id, tabs' on
+  the `UmiTab`, windows' on the window; all three are saved in `layout.json` and come back after a
+  restart. Each changed value is a `pane.changed`, `tab.changed` or `window.changed` event.
+- Read-only keys Umi keeps, computed when read: `kind`, `cwd`, `branch`, `command`, `focused`,
+  `hidden`, `in_drawer`, `seen_at`, `changed_at`, `status_since`, `idle_for`, and `visible_count` on
+  tabs. Setting one fails with exit 1 and changes nothing, not even the other pairs of the command.
+- `role` has one holder per value among panes and among tabs. The Docs tab is now the tab with
+  `role=docs` (design/cli.md choice 10): `UmiTab.isDocs` reads the attribute, and Markdown opened
+  from outside goes to whichever tab holds it.
+- `agent.*` can be written with `pane set` and change the pane's agent in `UmiAttention` (badge,
+  ⌃⌘J, `changed_at`); the next hook overwrites them. Every changed `agent.*` key is a `pane.changed`
+  event now, `agent.status` first.
+- `ls --json`: every pane, tab and window has `attributes` holding everything; panes also have
+  `kind`, `hidden`, `in_drawer` and `indicator`. `ls` text shows each pane's own attributes.
+- Events carry `at` (ISO 8601) and `cause` (`UmiCause`): `key` with the key, `mouse`, `palette`,
+  `cli` with the command and calling pane, `hook`, `umi`. The palette runs its commands with
+  `UMI_CAUSE=palette`; the CLI sends its words and `UMI_CAUSE` with every request. `pane.moved`
+  has `from` and `to` (tab, window, index).
+- The activity log (`UmiActivityLog`): every event in day files under `<state>/logs/activity`, kept
+  30 days; `umi log [--since] [--until] [--filter] [--pane]`; `umi events --since` replays it first.
+- The focus log (`UmiFocusLog`): stretches of keyboard focus while Umi is active, the screen is
+  unlocked and the user typed or clicked in the last 3 minutes, with what the pane showed, in
+  `<state>/logs/focus`; `umi focus-log`.
+- Times on the command line: ISO 8601, a clock time today (`9am`, `14:30`), or a duration (`2h`).
+- Step 1 leftovers: the CLI no longer sends `UMI_SESSION_ID` (`UmiCaller.session` is gone); the
+  comments in `UmiInputSync.swift` and `UmiReopen.swift` no longer describe sessions; CLI.md's
+  `doctor` exit rule matches SPEC I-2 (non-zero only for a plugin that isn't installed and current);
+  COMPROMISES.md marks the rows about sessions, Take Over, the read-only view, the inbox and the
+  toasts as removed.
+- SPEC: new section D (D-1 to D-8, core tier); L-7 and T-4 reworded. CLI.md gained "Attributes"
+  and "Events and logs" from design/cli.md; the Pane, Tab and Window objects follow it.
+  TEST_CHANGES.md lists the new and changed tests.
+
+**Verified, and how**
+
+All runs are on mac-air-2, under `lockf -k ~/umi-screen.lock`, in `~/umi-test-design-step2`. The
+screen was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI tests were skipped.
+
+- Dev copy (the Debug build `app/dist/dev.sh` builds, started the way it starts it), driven by
+  `~/umi-test-design-step2-trial.py`: 32 of 32 checks read back (`~/umi-test-design-step2-trial.log`,
+  screenshots in `~/umi-test-design-step2-shots`). Tried: `ls --json`'s read-only attributes on a
+  shell pane (kind, cwd, branch, focused, hidden, in_drawer, idle_for, seen_at) and the tab's
+  `visible_count`; `pane set` from outside, its JSON, `pane get KEY`, `ls` text showing the
+  attributes; `umi pane set typed=yes && umi pane get` typed in the pane itself, read back with
+  `ls --json` and from the screen (`1-pane-get.png`), its log entry caused by `cli` with the command
+  and the calling pane; `pane set cwd=…` failing with `umi: cwd is kept by Umi and can't be set`;
+  `pane unset`; `tab set`/`window set`/`tab get`; `role=manager` moving between panes;
+  `visible_count=2` after a split; `open -a Umi.app notes.md` landing in the tab given `role=docs`
+  (`docs: true`); `agent.status` without `agent.kind` failing; `agent.kind=claude
+  agent.status=needs_input` giving Dock badge 1 and indicator `needs_you` (`2-agent-set.png`); then
+  `idle` setting `changed_at`/`status_since`; `unset agent.kind` taking the agent away; ⌃⌘T
+  (`debug.key`) giving `pane.moved` with cause `{"kind": "key", "key": "ctrl+cmd+t"}` and
+  `from`/`to`; the palette's "Set Pane Attribute…" giving cause `palette`; `umi log` typed in a pane
+  (`3-log.png`: lines with "by cli (umi pane set …)" and "by palette"); `events --since 10m`
+  replaying 15 events; `focus-log --json` and its text with the open stretch last; then quitting and
+  restarting the dev copy: the pane's, tab's and window's attributes back, the activity log still
+  holding the earlier events, and the stretch open at the quit written.
+- Acceptance suite, ReleaseLocal at `d2d7e1c60` (the app's code is the same at the head), full run
+  with `UMI_SIGN_IDENTITY=-` (`~/umi-test-design-step2-suite.log`): 355 passed, 8 failed, 85
+  skipped. All of D-1 to D-8 pass (traceability copy: `~/umi-test-design-step2-traceability.md`).
+  The 8 failures are the ones step 1 found on origin/main; run again on the step 1 worktree (the
+  same app code as origin/main), all 8 fail there too (`~/umi-test-design-step2-base8.log`):
+  `test_builds_from_a_path_with_spaces`, `test_shift_cmd_f_leaves_a_terminal_search_open`,
+  `test_markdown_opens_in_one_docs_tab_most_recent_first` (same assertion on both: a `.txt` file
+  goes to the docs tab), four synchronized-input and pane-menu tests in `test_umi_warp_panes.py`,
+  and `test_the_zoom_and_font_size_are_kept_across_restarts`. 84 skips are the locked screen, 1 a
+  window too narrow for three panes.
+- Swift unit tests (`~/umi-test-design-step2-swift.log`): all passed except
+  `TerminalSplitDropZoneTests/centerSelectsLeft`, which fails on origin/main too (step 1). The new
+  `UmiPaneDataTests` passed.
+
+**Not verified**
+
+- The `ui` tests (84: real keys, menus and the accessibility tree) were skipped: mac-air-2's screen
+  is locked. They need someone to unlock it. Nothing in this step draws new UI; the keys and the
+  palette were tried through `debug.key` and `debug.palette.perform`.
+- The focus log's screen-lock detection with a real lock: the tests stand in with
+  `debug.focus_log locked=true` and `debug.ui.assume_active` (which counts the screen as unlocked).
+- Mouse as a cause: nothing scripted clicks; it follows the same path as keys (AppKit's current event).
+
+**Choices for Alejo to check**
+
+1. `pane unset` and `pane get` (and the tab and window forms) take a first word as the target when it
+   names one and more words follow (for `get`, also when it is the only word); otherwise every word
+   is a key. `unset` with only a target fails. Where: `UmiAttributesRPC`, CLI.md "Attributes". Why:
+   design/cli.md's `unset [PANE] KEY…` can't otherwise tell `unset priority status` apart. Check: a
+   pane named like a key (`priority`) is taken as the pane.
+2. `agent.*` through `pane set`: on a pane without an agent it needs `agent.kind` (`claude` or
+   `codex`), and `agent.status`/`agent.done` must be one of their values; `agent.status` can't be
+   unset alone; `unset agent.kind` removes the agent. Where: `UmiAttributes.agentChange`. Why: Umi's
+   agent record needs a kind (icons, relaunch). Check: whether scripts running other agents should
+   be able to set `agent.kind=aider`.
+3. `command` is the command running, or the last one run (as the sidebar's line shows it), absent
+   when none ran. `idle_for` is seconds since the terminal last printed, written `90s` so it
+   compares with durations, counted from when Umi first saw the pane; absent for file and web panes.
+4. `seen_at` is now while the pane is being looked at; for a pane with an agent it is never earlier
+   than the agent's arrival (a new agent's first state isn't news), so `changed_at > seen_at` agrees
+   with the marks. `changed_at` and `status_since` exist only on panes with an agent until step 4
+   adds hiding.
+5. `focused` means focused in its tab (as `ls`'s `focused` field), not "has keyboard focus now".
+6. The read-only keys are read-only on tabs and windows too.
+7. `role` has one holder among panes and among tabs (as designed); windows' `role` is ordinary. A
+   closed pane kept for ⇧⌘T that held the role loses it quietly.
+8. Every changed `agent.*` key is its own `pane.changed` event (`agent.status` first), so hooks now
+   make more events than step 1's one per status change.
+9. Causes: Umi's own key handling and palette rows open a scope; a CLI request carries its words
+   (`umi pane set …`) and `UMI_CAUSE`; otherwise a key press or click AppKit handled in the last
+   second; else `umi`. Internal `debug.*` requests take the cause of what they simulate. A palette row
+   that acts inside the app is `palette` with the row's title as `command`.
+10. `umi log --json` prints `{"events": [...]}`, like other commands' JSON; `events` prints the
+    whole Event per line (with `ts` too).
+11. The activity log keeps every event except `update.countdown` ticks; logs are day files under
+    `<state>/logs/activity` and `<state>/logs/focus`, pruned past 30 days.
+12. Focus stretches are written when they end (a crash loses the open one, COMPROMISES.md); every
+    stretch counts, however short; `focus-log --since` lists stretches overlapping the range.
+13. Pane JSON gained `kind`, `hidden`, `in_drawer` and `indicator` now; `hidden` means a stack member
+    not on show until step 4 replaces stacks, and `indicator` is computed from today's marks.
+14. The Docs tab became the tab with `role=docs` now (design/cli.md choice 10); the tab's `docs`
+    field stays until step 4. `layout.json` keeps writing `docs: true` too.
+15. `pinned` and `visible_limit` are stored with no effect until step 4.
+16. A window reopened with ⇧⌘T comes back without its window attributes (COMPROMISES.md).
+17. New palette entries: Set Pane Attribute…, Pin Pane (Never Hidden to Make Room), Unpin Pane,
+    Remove Pane Attribute…, Show Pane Attributes, Set Tab Attribute…, Show Tab Attributes, Show
+    Activity Log (Last Hour), Show Focus Log (Today).
+18. Selectors don't take queries yet (step 3), so `pane set` acts on one pane. `pane move --back`
+    isn't built; `pane.moved`'s `from` in the log is there for it.
+19. Commands keep `UMI_PANE_ID` for the calling pane; design/cli.md names it `UMI_PANE` for palette
+    and key commands, which step 3 brings.
