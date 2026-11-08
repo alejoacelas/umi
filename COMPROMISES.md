@@ -34,7 +34,11 @@ unlocked screen. See REPORT.md, "Questions for the user".
 
 # Compromises (phase 2: managed agents)
 
-What phase 2 gives up, why, and which requirement that protects.
+> **Removed (design step 1, 2026-11-07).** Umi runs no agent sessions of its own any more
+> (design/spec-cleanup.md): every row of this table describes a removed feature, except that
+> `update --now` still refuses without `--force`, now while a pane's `agent.status` is `working`.
+
+What phase 2 gave up, why, and which requirement that protected.
 
 | What is given up | Why | What it protects |
 |---|---|---|
@@ -65,12 +69,17 @@ license in the user's name.
 | **"Later" is a fixed 24 hours**, not a choice of times. | One button, like Sparkle's "Remind Me Later", which macOS users know. | I-4 (the question comes back by itself). |
 | **An update an older build downloaded is downloaded again** after a yes, never installed from what the older build left. | Its zip and signature are gone, so it can't be verified again, and nobody agreed to it under the new rule. Costs one download (~22 MB). | I-4, P-2 (only verified, agreed builds install). |
 | **The update notification can't be answered from Notification Center**; it says nothing downloads until the user says so and clicking it shows the sidebar's question. Isolated (test) instances post none. | The question lives in one place that stays until answered (the sidebar notice, plus `tern update`); notification buttons would be a second, less reliable place. | I-4 ("stays available until answered", "never takes focus"). |
-| **While a managed session needs the user, the Dock badge counts those sessions** instead of Ghostty's bell count (`bell-features = attention`). | Background sessions have no tab to show "needs input"; the badge is the one place visible without opening anything. Bells show again when nothing needs the user. | Core: "a session that needs input is never silently stuck"; AP-3. |
-| **Background sessions are found through the Window menu, the command palette, ⌃⌘J, notifications, the Dock badge and the CLI, not the sidebar.** | S-2 forbids an agents section in the sidebar, and the user asked for workers out of the sidebar. | S-2, AP-3. |
+| ~~**While a managed session needs the user, the Dock badge counts those sessions** instead of Ghostty's bell count (`bell-features = attention`).~~ *Removed in design step 1 (2026-11-07): the Dock badge counts panes whose `agent.status` is `needs_input`.* | Background sessions have no tab to show "needs input"; the badge is the one place visible without opening anything. Bells show again when nothing needs the user. | Core: "a session that needs input is never silently stuck"; AP-3. |
+| ~~**Background sessions are found through the Window menu, the command palette, ⌃⌘J, notifications, the Dock badge and the CLI, not the sidebar.**~~ *Removed in design step 1 (2026-11-07): there are no background sessions.* | S-2 forbids an agents section in the sidebar, and the user asked for workers out of the sidebar. | S-2, AP-3. |
 
 ===================================================================================================
 
 # Compromises (agent sessions, redone)
+
+> **Removed (design step 1, 2026-11-07).** Sessions, Take Over and the read-only view are gone; agents
+> run in panes and Umi's hook plugin reports them. Two rows still hold for that plugin: status is as
+> good as the hooks (Esc or Ctrl-C with no hook for 2 s counts as an interrupt), and Codex hooks are
+> trusted for Umi's own plugin by Umi. The others describe removed features.
 
 Phase 2's agent compromises above no longer apply where this part differs (BRIEF-agents.md: "None of
 it is guidance"). What this design gives up:
@@ -155,7 +164,7 @@ it is guidance"). What this design gives up:
 | **A right-click on unselected text selects the word under the mouse, and the menu offers Copy for it** above Paste and Clear. Warp selects nothing and shows Paste and Clear alone. With text already selected, the menu is Warp's selection menu (Copy and the pane's items). | Ghostty selects the word on a right-click so Copy has something to copy; Umi keeps that. | L-31's Paste and Clear on an ordinary right-click; Ghostty's right-click copy. |
 | **Clear is in the right-click menu whenever Paste is.** Warp shows Clear Blocks only when there are blocks. | ⌘K clears the screen and scrollback whatever is in them. | L-31. |
 | **The synchronized-input mark is on the tab's row only, and there is no toast.** Warp marks each pane's row and shows "You enabled synchronized inputs in this tab. Press ⌥⌘I to undo." | Umi's sidebar rows are tabs, not panes, and Umi has no toasts. | L-32. |
-| **The sidebar keeps the width you gave it when zoomed.** Its contents grow, so fewer characters fit; Warp's panel grows with the zoom. Session read-only views, a file pane's header, a stack's strip and alerts don't zoom. | The sidebar's width is dragged in points and limited to half the window; scaling it would fight that limit. The other views are AppKit views with their own sizes. | L-33 for what's read most: terminals, sidebar text, palette, editor, preview. |
+| **The sidebar keeps the width you gave it when zoomed.** Its contents grow, so fewer characters fit; Warp's panel grows with the zoom. A file pane's header, a stack's strip and alerts don't zoom. | The sidebar's width is dragged in points and limited to half the window; scaling it would fight that limit. The other views are AppKit views with their own sizes. | L-33 for what's read most: terminals, sidebar text, palette, editor, preview. |
 | **Ghostty's own font size menu items are gone.** View ▸ Increase, Decrease and Reset Font Size are Umi's now and act on every pane. | Ghostty's act on one pane and would leave it out of step with the zoom. | L-33. |
 | **Nested rows count as one when checking the 190-point minimum.** The check measures each pane's frame in the tab's split tree, which can't tell a nested same-direction row from a flat one (see L-19's known limit). | The tree is Ghostty's binary split tree. | L-19. |
 ===================================================================================================
@@ -180,20 +189,32 @@ it is guidance"). What this design gives up:
 | What is given up | Why | What it protects |
 |---|---|---|
 | **Split sizes aren't saved**: a launch configuration's panes open in equal shares of their row or column. | Warp's format has no sizes, and Warp opens equal shares too; keeping sizes out keeps the files in Warp's format. | L-21 (Warp's format). |
-| **Only terminal panes are saved.** File and web panes, stacks' hidden members, pane names, pins and agent sessions shown in panes aren't in the file (an agent pane is saved as a terminal in its folder). | Warp saves only terminals; the format has no fields for the rest. | L-21 (Warp's format). |
+| **Only terminal panes are saved.** File and web panes, stacks' hidden members, pane names, pins and the agents running in panes aren't in the file (an agent's pane is saved as a terminal in its folder). | Warp saves only terminals; the format has no fields for the rest. | L-21 (Warp's format). |
 | **Warp's tab configs (⌃⌘T, TOML, parameters, worktree panes) aren't added.** "Save as New Config" in a row's menu writes a one-tab launch configuration instead of a tab config. | ⌃⌘T is Umi's Move Pane to New Tab, by the user's choice; one format for saved layouts is simpler. | L-21, the existing ⌃⌘T. |
 | **A tab colored pink or orange makes its saved file readable only by Umi.** Other colors are saved under Warp's names (purple as `magenta`, teal as `cyan`, graphite as `white`). | Warp's tab colors are the eight terminal colors and it skips a file with any other name; writing pink as `magenta` or orange as `red` would change the tab's color when Umi opens it again. | Umi's own tab colors surviving a save and open. |
 | **⌘Return in the launch configuration palette** (Warp: open into the current window) isn't there; Return always opens new windows. | Warp's Return opens new windows too, and ⌘Return is Ghostty's full-screen key. | ⌘Return as it is. |
 | **The YAML reader handles the block style Warp and people write**, plus one-line `[…]`/`{…}` and several documents in a file (each a configuration, as in Warp); anchors, aliases, tags and multi-line flow collections fail with the line they're on. | No YAML library is bundled; a small reader (`UmiYAML`) covers the format without a new dependency. | Licensing and build simplicity. |
 # Compromises (Warp parity, 2026-11-05: agent status, inbox, toasts, update note)
 
+The inbox, the toasts and Warp's badges were removed in design step 1 (2026-11-07); their rows are marked.
+
 | What is given up | Why | What it protects |
 |---|---|---|
-| **No desktop notifications for agents**, even when the window is in the background (Warp posts them there once the user accepts its banner). Agents' own OSC 9/777 notifications are dropped while an agent's interface runs in the pane. | S-3: the user asked for no desktop notifications; the Dock badge, the inbox (⇧⌘U) and the marks cover a window in the background. | S-3. |
-| **⌃⌘U dismisses the toasts and the update note**; Warp has only close buttons and timeouts. | The user works from the keyboard; Escape belongs to the terminal. | AG-24, I-4. |
+| **No desktop notifications for agents**, even when the window is in the background (Warp posts them there once the user accepts its banner). Agents' own OSC 9/777 notifications are dropped while an agent's interface runs in the pane. | S-3: the user asked for no desktop notifications; the Dock badge and the marks cover a window in the background. | S-3. |
+| ~~**⌃⌘U dismisses the toasts and the update note**; Warp has only close buttons and timeouts.~~ *Removed in design step 1 (2026-11-07): the toasts are gone; ⌃⌘U (View ▸ Dismiss Update Note) dismisses the update note.* | The user works from the keyboard; Escape belongs to the terminal. | AG-24, I-4. |
 | **The update note stays until ⌃⌘U** and shows the release's notes in the window; Warp's "Warp updated!" toast goes after 4 seconds and links to a changelog page. | The notes are in the note itself and take longer than 4 seconds to read; the note shows once. | I-4. |
-| **⇧⌘G (Warp's "jump to the latest agent task") isn't added.** | ⌃⌘J already goes to the next session that needs the user (L-12), and the inbox goes to any. | L-12. |
-| **Sessions no pane shows have no inbox items or toasts.** They stay in the Window menu, the palette, ⌃⌘J and the Dock badge. | The inbox goes to a pane, as Warp's goes to a terminal view; a background session has none until it's shown. | AG-24, S-2. |
-| **The badges use SF Symbols** (clock, check, stop, triangle) in Warp's colors and proportions, not Warp's icons. | Warp's icons are AGPL assets; Umi is MIT. | Licensing. |
-| **Warp's inbox and toasts have no right-click menu**, so nothing was added there for "the warp right click options". | Nothing to match in this area. | — |
+| **⇧⌘G (Warp's "jump to the latest agent task") isn't added.** | ⌃⌘J already goes to the next pane whose agent needs the user (L-12). | L-12. |
+| ~~**Sessions no pane shows have no inbox items or toasts.** They stay in the Window menu, the palette, ⌃⌘J and the Dock badge.~~ *Removed in design step 1 (2026-11-07): there are no sessions or inbox.* | The inbox goes to a pane, as Warp's goes to a terminal view; a background session has none until it's shown. | AG-24, S-2. |
+| ~~**The badges use SF Symbols** (clock, check, stop, triangle) in Warp's colors and proportions, not Warp's icons.~~ *Removed in design step 1 (2026-11-07): Warp's coloured status badges are gone.* | Warp's icons are AGPL assets; Umi is MIT. | Licensing. |
+| ~~**Warp's inbox and toasts have no right-click menu**, so nothing was added there for "the warp right click options".~~ *Removed in design step 1 (2026-11-07): the inbox and toasts are gone.* | Nothing to match in this area. | — |
 
+
+===================================================================================================
+
+# Compromises (design step 2: pane data, 2026-11-08)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **A crash loses the focus stretch going on** (up to the moment of the crash); a quit writes it. | Stretches are written when they end; writing the open one every few seconds would rewrite the day file. | D-8 stays cheap on every key press. |
+| **A window brought back with ⇧⌘T comes back without its window attributes** (its tabs and panes keep theirs). | A reopened window is a new window object; its tabs and panes are the same objects. | D-1 for panes and tabs, where scripts put most of them. |
+| **A key or click is the cause only while AppKit is handling it, or for a second after**; what it starts later (an animation's end, a focus change on the next turn of the run loop) is caused by `umi`. | AppKit says which event it handles now, not which one started a delayed change. | D-6 never names a wrong key. |
