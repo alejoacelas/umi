@@ -211,9 +211,11 @@ enum UmiSlots {
     }
 
     /// The pane that speaks for a tab in its sidebar row (`tab.summary`): the first match among its
-    /// panes on show.
+    /// panes (on show, then hidden).
     static func summaryPane(of tab: UmiTab, in window: TerminalController) -> Ghostty.SurfaceView? {
-        let leaves = UmiTopology.panes(of: tab, in: window)
+        // Its panes on show, then the hidden ones (attention-ui.md: a hidden pane that needs you
+        // still speaks for its tab).
+        let leaves = UmiTopology.panes(of: tab, in: window) + window.hiddenPanes(of: tab)
         guard !leaves.isEmpty, let query = UmiConfig.shared.slotQuery("tab.summary") else { return nil }
         let placed = leaves.map { UmiTopology.Placed(pane: $0, tab: tab, window: window) }
         return (try? UmiTopology.match(query, among: placed))?.first?.pane
@@ -352,6 +354,7 @@ enum UmiListsRPC {
                     case .success(let query): if let error = config.referenceError(query) { out["error"] = error }
                     }
                 }
+                if let error = UmiIndicator.slotError(slot.name, value) { out["error"] = error }
                 return out
             }, "problems": config.problems.map(\.text)]
 

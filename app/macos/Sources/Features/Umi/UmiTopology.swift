@@ -320,13 +320,7 @@ enum UmiTopology {
 
     /// The pane indicator's state (attention-ui.md): from its agent's status and whether it was seen.
     static func indicator(_ pane: Ghostty.SurfaceView) -> String {
-        guard let agent = UmiAttention.shared.agent(forPane: pane.id) else { return "none" }
-        if agent.status == .working { return "working" }
-        switch agent.mark {
-        case .needsYou: return "needs_you"
-        case .finished: return "finished"
-        case .none: return "none"
-        }
+        UmiIndicator.state(of: pane).rawValue
     }
 
     /// Where each pane of a tab sits in the window's terminal area (points, top-left origin),

@@ -536,13 +536,21 @@ private struct UmiStripChip: View {
     let focused: Bool
     @ObservedObject private var files = UmiFilePanes.shared
     @ObservedObject private var web = UmiWebPanes.shared
+    @ObservedObject private var attention = UmiAttention.shared
+    @ObservedObject private var indicator = UmiIndicator.shared
     @State private var dragging = false
     @State private var hovering = false
 
     var body: some View {
+        let _ = attention.revision
         let doc = files.document(of: pane)
         let label = UmiHidden.label(of: pane)
+        let state = UmiIndicator.state(of: pane)
         HStack(spacing: 5) {
+            // The pane indicator, as on the pane (the focused chip is filled, so no grey mark here).
+            if let look = indicator.look(state, focused: focused, split: false) {
+                UmiIndicatorDot(look: look)
+            }
             // A file's type icon in its colors and its unsaved dot, as Warp's file tabs show them.
             if let doc {
                 UmiFileIcon(url: doc.url)
@@ -571,17 +579,29 @@ private struct UmiStripChip: View {
         .help(onShow ? label : "\(label) (hidden: click to bring it in)")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-        .modifier(UmiStripChipValue(doc: doc, place: onShow ? (focused ? "on show, focused" : "on show") : "hidden"))
+        .modifier(UmiStripChipValue(doc: doc, place: (onShow ? (focused ? "on show, focused" : "on show") : "hidden")
+                                        + UmiStripChip.stateText(state)))
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(focused ? .isSelected : [])
         .accessibilityAction { UmiStripChip.click(pane) }
+    }
+
+    /// The pane indicator's state in a chip's accessibility value.
+    static func stateText(_ state: UmiIndicator.State) -> String {
+        switch state {
+        case .working: return ", working"
+        case .needsYou: return ", needs you"
+        case .finished: return ", finished, not seen yet"
+        case .none: return ""
+        }
     }
 
     /// The name's width: as wide as it reads, so a chip is at most 300 points wide (E-24).
     static func textWidth(_ label: String) -> CGFloat {
         let font = NSFont.systemFont(ofSize: 12, weight: .medium)
         let width = (label as NSString).size(withAttributes: [.font: font]).width + 4
-        return min(ceil(width), 300 - 16 - 15 - 13)
+        // Room for the padding, the icon and the pane indicator's mark.
+        return min(ceil(width), 300 - 16 - 15 - 13 - 14)
     }
 
     @MainActor

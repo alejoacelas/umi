@@ -262,6 +262,8 @@ struct UmiSidebarRowModel {
     let git: UmiPaneContext.Git?
     let title: String
     let agent: UmiAttention.Agent?
+    /// The pane indicator of the pane `tab.summary` picks.
+    let indicator: UmiIndicator.State
     let detail: Detail
     /// The focused pane's last command failed (Warp's red triangle before the title).
     let failed: Bool
@@ -291,6 +293,8 @@ struct UmiSidebarRowModel {
         let summary = UmiSlots.summaryPane(of: tab, in: controller)
         let agent = summary.flatMap { UmiAttention.shared.agent(forPane: $0.id) }
         self.agent = agent
+        // The row shows the pane indicator of that pane (attention-ui.md, "The pane indicator").
+        indicator = summary.map(UmiIndicator.state(of:)) ?? .none
         let command = focusedPane.flatMap { UmiPaneContext.command(for: $0) }
         failed = command?.failed ?? false
         if let line = UmiSlots.line2(summary ?? focusedPane) {
@@ -316,14 +320,8 @@ struct UmiSidebarRowModel {
         }
     }
 
-    /// The mark's name for the CLI and accessibility.
-    var markName: String {
-        switch agent?.mark ?? .none {
-        case .none: return "none"
-        case .finished: return "finished"
-        case .needsYou: return "needs_you"
-        }
-    }
+    /// The row's pane indicator, for scripted checks: `working`, `needs_you`, `finished` or `none`.
+    var markName: String { indicator.rawValue }
 
     var accessibilityValue: String {
         var parts: [String] = []
@@ -332,10 +330,10 @@ struct UmiSidebarRowModel {
         if tab.pinned { parts.append("pinned") }
         guard let agent else { return (parts + [detail.text]).joined(separator: " · ") }
         parts += [agent.kind.rawValue, Self.describe(agent.status.rawValue)]
-        switch agent.mark {
+        switch indicator {
         case .finished: parts.append("finished, not seen yet")
         case .needsYou: parts.append("needs you")
-        case .none: break
+        case .working, .none: break
         }
         return (parts + [detail.text]).joined(separator: " · ")
     }
@@ -395,6 +393,7 @@ struct UmiSidebarTabRow: View {
     var tick: Int = 0
     @ObservedObject private var state = UmiState.shared
     @ObservedObject private var attention = UmiAttention.shared
+    @ObservedObject private var indicator = UmiIndicator.shared
     @State private var hovering = false
     @State private var dropZone: UmiSidebarDrop.Zone?
     @State private var draftName = ""
@@ -571,7 +570,8 @@ struct UmiSidebarTabRow: View {
     }
 
     /// Warp's leading icon: a 24 pt circle at 10% with a 16 pt glyph at 90%. A tab with an agent
-    /// shows the agent's mark there instead (S-3).
+    /// shows the agent's logo there instead (S-3). The pane indicator of the pane `tab.summary`
+    /// picks sits on the circle's bottom-right edge.
     @ViewBuilder
     private func icon(_ row: UmiSidebarRowModel) -> some View {
         ZStack {
@@ -579,7 +579,7 @@ struct UmiSidebarTabRow: View {
             switch row.icon {
             case .claude, .codex:
                 UmiAgentMark(kind: row.agent?.kind ?? .claude)
-                    .foregroundColor(Self.markColor(row.agent?.mark ?? .none))
+                    .foregroundColor(UmiTheme.textSecondary)
                     .frame(width: 12, height: 12)
                     .help(row.accessibilityValue)
             case .pin, .terminal:
@@ -590,14 +590,17 @@ struct UmiSidebarTabRow: View {
             }
         }
         .frame(width: 24, height: 24)
+        .overlay(alignment: .bottomTrailing) {
+            if let look = indicator.look(row.indicator, focused: false, split: false) {
+                UmiIndicatorDot(look: look)
+                    // A ring of the sidebar's fill keeps the mark apart from the circle.
+                    .background(Circle().fill(UmiTheme.terminalBackground).frame(width: look.size + 3, height: look.size + 3))
+                    .offset(x: 1, y: 1)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
-    /// The agent's mark is monochrome: a little brighter when its pane finished unseen or its
-    /// agent needs the user.
-    static func markColor(_ mark: UmiAttention.Mark) -> Color {
-        // Quiet (60%), and the row title's 90% while marked.
-        mark == .none ? UmiTheme.textSecondary : UmiTheme.rowTitle
-    }
 
     /// Line 2: Warp's 10 pt at 60%.
     @ViewBuilder

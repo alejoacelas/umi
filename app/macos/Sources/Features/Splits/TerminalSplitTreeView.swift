@@ -108,12 +108,9 @@ private struct TerminalSplitLeaf: View {
             .overlay { UmiFilePaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
             // Umi: and a page, in a web pane (E-12).
             .overlay { UmiWebPaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
-            // Umi: a 2px accent line along the top edge marks the focused pane of a split.
-            .overlay(alignment: .top) {
-                if isSplit && UmiTopology.locate(surfaceView)?.tab.focusedSurface === surfaceView {
-                    Rectangle().fill(UmiTheme.accent).frame(height: 2).allowsHitTesting(false)
-                }
-            }
+            // Umi: the pane indicator at the bottom right, and the focused pane of a split a
+            // little brighter (attention-ui.md, "The pane indicator").
+            .overlay { UmiPaneIndicatorOverlay(pane: surfaceView) }
             .background {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly
