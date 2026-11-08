@@ -865,7 +865,6 @@ func printPanes(_ result: [String: Any]) {
     }
 }
 
-/// `list ls`, `list show NAME`: the named lists (`list.NAME = QUERY` in the config).
 /// `drawer show|hide|toggle|next|prev|dock|ls` (design/cli.md, "Drawer").
 func drawerCommand(_ argv: [String]) {
     let sub = argv.first ?? "ls"
@@ -919,6 +918,7 @@ func drawerCommand(_ argv: [String]) {
     }
 }
 
+/// `list ls`, `list show NAME`: the named lists (`list.NAME = QUERY` in the config).
 func listCommand(_ argv: [String]) {
     let args = parse(argv, ArgSpec())
     switch args.positional.first ?? "ls" {
