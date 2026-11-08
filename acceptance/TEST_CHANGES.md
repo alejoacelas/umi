@@ -1256,7 +1256,8 @@ counts for the Dock badge, overwritten by the next hook, `unset agent.kind` take
 events carry `at` and `cause` (cli with command and calling pane, hook, key, palette, `UMI_CAUSE`);
 `log` with `--since`/`--until`/`--filter`/`--pane`, `pane.moved`'s `from`/`to`, a bad time failing;
 `events --since` replaying then streaming; the log kept across a restart; the focus log's
-stretches, the open one, the idle limit and the screen lock.
+stretches, the open one, the idle limit and the screen lock. Swift: `UmiPaneDataTests` (attribute
+names, read-only keys, the cause a request is recorded with, a scope outranking the request).
 
 **Changed.**
 - `test_agent_panes.py::test_agent_status_changes_are_pane_changed_events`: every changed `agent.*`
