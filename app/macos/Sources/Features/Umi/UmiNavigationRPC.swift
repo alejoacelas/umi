@@ -77,7 +77,7 @@ enum UmiNavigationRPC {
                 "history": UmiTabHistory.recentFirst.map(\.idString),
                 "focus_history": UmiFocusHistory.recentFirst.map(\.umiID),
                 "can_go_back": UmiTabHistory.canGoBack,
-                "can_go_back": UmiGo.canGoBack, "walks": UmiGo.state,
+                "can_walk_back": UmiGo.canGoBack, "walks": UmiGo.state,
                 "key_monitor": UmiShortcuts.monitorInstalled,
                 "app_active": NSApp.isActive,
             ]
