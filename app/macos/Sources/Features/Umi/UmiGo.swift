@@ -265,7 +265,7 @@ enum UmiSlots {
 @MainActor
 enum UmiListsRPC {
     static let methods: Set<String> = ["go", "list.ls", "list.show", "slot.ls", "command.ls", "command.run",
-                                       "pane.match", "debug.landing"]
+                                       "pane.match", "debug.landing", "debug.config_errors"]
 
     static func handle(_ method: String, _ params: UmiParams, caller: UmiCaller) async throws -> [String: Any] {
         let config = UmiConfig.shared
@@ -350,6 +350,11 @@ enum UmiListsRPC {
             // Umi coming back to the front after `away` seconds (the `landing` slot), without the screen.
             let pane = UmiSlots.returned(after: params.double("away") ?? 0)
             return ["pane": pane?.umiID ?? NSNull()]
+
+        case "debug.config_errors":
+            // What Ghostty reported when it loaded the config file (Umi's own lines must not be among it).
+            let errors = (NSApp.delegate as? AppDelegate)?.ghostty.config.errors ?? []
+            return ["errors": errors]
 
         default:
             throw UmiError.badRequest("unknown method \(method)")
