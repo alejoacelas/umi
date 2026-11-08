@@ -167,7 +167,7 @@ enum UmiUIDebug {
             guard let targetSelector = params.string("target") else { throw UmiError.badRequest("give a target pane") }
             let target = try UmiTopology.resolvePane(targetSelector, caller: caller)
             guard let zone = params.string("zone").flatMap(TerminalSplitDropZone.init(rawValue:)) else {
-                throw UmiError.badRequest("zone is top, bottom, left, right or center")
+                throw UmiError.badRequest("zone is top, bottom, left or right")
             }
             guard let location = UmiTopology.locate(target), location.tab === location.window.selectedTab else {
                 throw UmiError.badRequest("the target pane must be in its window's shown tab")

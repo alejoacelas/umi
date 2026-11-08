@@ -537,11 +537,12 @@ private struct UmiStripChip: View {
                 .italic(!onShow)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .frame(width: UmiStripChip.textWidth(label))
         }
         .foregroundColor(Color.white.opacity(focused ? 0.95 : (onShow ? 0.80 : 0.42)))
         .padding(.horizontal, 8)
         .frame(height: 22)
-        .frame(maxWidth: 300)
+        .fixedSize()
         .background(RoundedRectangle(cornerRadius: 6).fill(focused ? UmiTheme.selectedFill : (hovering ? UmiTheme.hoverFill : .clear)))
         // The chip is its pane's drag handle; a click without a drag shows or focuses the pane.
         .overlay {
@@ -555,6 +556,13 @@ private struct UmiStripChip: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(focused ? .isSelected : [])
         .accessibilityAction { UmiStripChip.click(pane) }
+    }
+
+    /// The name's width: as wide as it reads, so a chip is at most 300 points wide (E-24).
+    static func textWidth(_ label: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let width = (label as NSString).size(withAttributes: [.font: font]).width + 4
+        return min(ceil(width), 300 - 16 - 15 - 13)
     }
 
     @MainActor

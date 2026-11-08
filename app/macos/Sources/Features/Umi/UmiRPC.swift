@@ -213,7 +213,7 @@ enum UmiRPC {
                     let shownCount = location.window.tree(of: location.tab).root?.leaves().count ?? 0
                     let hidingHere = panes.filter { location.tab.contains($0) && !location.tab.isHidden($0) }.count
                     if hidingHere >= shownCount {
-                        throw UmiError.failed("that would hide every pane on show in tab \(location.tab.idString.prefix(8)) (a tab shows at least one)")
+                        throw UmiError.failed("that would hide the last pane on show in tab \(location.tab.idString.prefix(8)) (a tab shows at least one)")
                     }
                 }
             }
