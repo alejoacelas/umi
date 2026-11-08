@@ -291,8 +291,17 @@ screen was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI test
 
 ## Step 3: queries, lists and slots
 
-**Status:** built on `design/step3-queries-slots`, ready for review and the release. The UI half of
-the suite didn't run: mac-air-2's screen was locked for every run (see "Not verified").
+**Status:** reviewed and merged into main. The UI half of the suite didn't run: mac-air-2's screen
+was locked for every run (see "Not verified").
+
+**Checked by the orchestrator at the merged head (`71e39f857`):** the builder's last Swift run
+never built (the project names the signing identity "Switcher Local Code Signing", which mac-air-2
+lacks, and `UMI_SIGN_IDENTITY` doesn't reach xcodebuild). Rerun with `CODE_SIGN_IDENTITY=-` on the
+xcodebuild line (`~/umi-test-design-step3-swift3.log` on mac-air-2): every test passed except
+`TerminalSplitDropZoneTests/centerSelectsLeft`, which fails on main too.
+`UmiQueryTests/aKeyLingeringInCurrentEventIsNotTheCause` passed. The acceptance suite's last full
+run was at `703b57ad5` (372 passed, 8 failed, 85 skipped; the 8 also fail on main); the commits
+after it are the review fixes, covered by `tests/test_queries.py` (17 of 17) and the Swift run.
 
 **What changed**
 
