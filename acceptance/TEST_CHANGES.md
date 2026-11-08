@@ -1292,7 +1292,11 @@ what reads as a query, the default `jump`, `needs-you` and `tab.summary` lists, 
 **Added after review.** `test_queries.py::test_pane_move_moves_every_match_in_order` (a query moves
 every match, in its order, to a tab and to one new tab) and
 `::test_tab_close_closes_every_tab_holding_a_match` (design/cli.md choice 3 and "Selectors": the
-build moved and closed only the first).
+build moved and closed only the first). `test_the_config_redefines_lists_and_slots` also checks
+that a list naming a missing list or itself shows an error in `list ls` and fails `ls --where`
+(it was an empty list, silently). Swift `UmiQueryTests/aKeyLingeringInCurrentEventIsNotTheCause`:
+a key taken off the queue and left in `NSApp.currentEvent` (under a second old, so the old rule
+would have named it the cause) is not the cause of what Umi does next.
 
 **Removed.** Swift `UmiJumpTests`: `UmiAttention.jumpOrder` is gone; the same three cases (needs
 input first then unseen, oldest first; a seen failed pane drops out; seen and working panes are no

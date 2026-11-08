@@ -896,7 +896,9 @@ lists", "Slots", "Keys and palette commands"; CLI.md, "Selectors", "Queries", "L
   `needs-you` (`agent.status=needs_input | sort status_since`), `unseen`, `jump` (`@needs-you then
   @unseen`) and `manager` (`role=manager`), each of which the config can redefine. `<cli> list ls`
   shows every list with its query and how many panes it holds; `list show NAME` its panes in order.
-  A list named in a query that doesn't exist fails with exit 1.
+  A list named in a query that doesn't exist fails with exit 1, and so does a list whose own query
+  names, directly or through other lists, one that doesn't exist or names it back; `list ls` and
+  `slot ls` show that problem.
 - **Q-3 [A]** `go`. `<cli> go LIST|QUERY` puts the first pane in front of the user (its window in
   front, the app active, its tab selected, focused). `go --next LIST|QUERY` walks the list: the pane
   after the one the walk last went to, re-reading the list each time; anything else that moved focus

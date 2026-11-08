@@ -183,20 +183,21 @@ final class UmiConfig {
                 }
             }
         }
-        // Lists' queries are checked once, here.
         parsed = [:]
-        for (name, query) in lists {
-            if case .failure(let error) = parse(query) {
-                problems.append(Problem(file: configFile, line: 0, message: "list \(name): \(error)"))
-            }
-        }
         userLists = lists
         userListOrder = order
         userSlots = slots
         keyBindings = keyOrder.compactMap { keys[$0] }
         lineCommands = commands
-        self.problems = problems
         self.stamps = stamps
+        // Every list is checked once, here: it parses, and the lists it names exist and don't name it.
+        let names = Self.defaultLists.map(\.name) + order.filter { name in !Self.defaultLists.contains { $0.name == name } }
+        for name in names {
+            if let error = listProblem(name) {
+                problems.append(Problem(file: configFile, line: 0, message: "list \(name): \(error)"))
+            }
+        }
+        self.problems = problems
     }
 
     /// The `=` between a key and its value: the first one, except inside a quoted key
@@ -240,9 +241,38 @@ final class UmiConfig {
         return query
     }
 
+    /// What's wrong with a list: its query doesn't parse, or a list it names (directly or through
+    /// other lists) doesn't exist, doesn't parse, or names it back.
     func listError(_ name: String) -> String? {
-        guard let text = listText(name), case .failure(let error) = parse(text) else { return nil }
-        return error.description
+        refresh()
+        return listProblem(name)
+    }
+
+    /// What's wrong with a query's lists (see `listError`), nil when nothing is.
+    func referenceError(_ query: UmiQuery.Query) -> String? { referenceError(query, path: []) }
+
+    private func storedText(_ name: String) -> String? {
+        userLists[name] ?? Self.defaultLists.first { $0.name == name }?.query
+    }
+
+    private func listProblem(_ name: String) -> String? {
+        guard let text = storedText(name) else { return nil }
+        switch parse(text) {
+        case .failure(let error): return error.description
+        case .success(let query): return referenceError(query, path: [name])
+        }
+    }
+
+    private func referenceError(_ query: UmiQuery.Query, path: [String]) -> String? {
+        for name in query.lists {
+            if path.contains(name) {
+                return "@\(name) names itself (\((path + [name]).map { "@" + $0 }.joined(separator: " → ")))"
+            }
+            guard let text = storedText(name) else { return "there's no list \"\(name)\"" }
+            guard case .success(let inner) = parse(text) else { return "list \(name) doesn't parse" }
+            if let error = referenceError(inner, path: path + [name]) { return error }
+        }
+        return nil
     }
 
     func parse(_ text: String) -> Result<UmiQuery.Query, UmiQuery.ParseError> {

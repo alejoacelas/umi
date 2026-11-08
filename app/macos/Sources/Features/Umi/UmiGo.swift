@@ -346,9 +346,11 @@ enum UmiListsRPC {
                                           "default": config.isDefault(slot: slot.name), "summary": slot.summary]
                 if let later = slot.later { out["used_from"] = later }
                 let value = config.slot(slot.name)
-                if ["jump", "badge", "landing", "tab.summary", "strip.make-room"].contains(slot.name), value != "none",
-                   case .failure(let error) = config.parse(value) {
-                    out["error"] = error.description
+                if ["jump", "badge", "landing", "tab.summary", "strip.make-room"].contains(slot.name), value != "none" {
+                    switch config.parse(value) {
+                    case .failure(let error): out["error"] = error.description
+                    case .success(let query): if let error = config.referenceError(query) { out["error"] = error }
+                    }
                 }
                 return out
             }, "problems": config.problems.map(\.text)]

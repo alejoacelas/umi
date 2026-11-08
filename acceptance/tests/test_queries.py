@@ -313,14 +313,22 @@ def test_the_config_redefines_lists_and_slots(configured):
         "slot.sidebar.line2 = owner {owner}",
         "slot.no-such-slot = x",
         "list.broken = a=",
+        "list.typo = @mine or @nosuch",
+        "list.loop = owner=me or @loop",
         "",
     ]))
     lists = {item["name"]: item for item in inst.json("list", "ls")["lists"]}
     assert lists["mine"]["query"] == "owner=me | sort -prio" and lists["mine"]["default"] is False
     assert lists["needs-you"]["default"] is False
     assert "error" in lists["broken"] and lists["broken"]["count"] == 0
+    # A list naming one that doesn't exist, or itself, is a problem, not an empty list.
+    assert "nosuch" in lists["typo"]["error"] and "names itself" in lists["loop"]["error"], (lists["typo"], lists["loop"])
     problems = inst.json("list", "ls")["problems"]
     assert any("no-such-slot" in p for p in problems), problems
+    assert any("typo" in p and "nosuch" in p for p in problems) and any("loop" in p for p in problems), problems
+    for query in ("@typo", "@loop", "qq or @typo"):
+        proc = inst.cli("ls", "--where", query, check=False)
+        assert proc.returncode == 1 and ("nosuch" in proc.stderr or "names itself" in proc.stderr), (query, proc.stderr)
     slots = {s["name"]: s for s in inst.json("slot", "ls")["slots"]}
     assert {"jump", "badge", "landing", "landing.after", "tab.summary", "sidebar.line2", "strip.make-room",
             "indicator.working", "indicator.needs_you", "indicator.finished", "done-check"} <= set(slots)
