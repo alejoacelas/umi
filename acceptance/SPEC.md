@@ -51,7 +51,7 @@ These outcomes must hold every time, with both agents: the plugin's hooks report
 on its pane, truthfully, and agents come back in their panes after a quit, a crash or an update. The
 pane data scripts read (attributes, events and their causes, the logs) tells the truth.
 
-Requirements: AG-18, AG-19, D-1 to D-8, R-3 to R-7.
+Requirements: AG-18, AG-19, D-1 to D-8, Q-1 to Q-8, R-3 to R-7.
 
 ### Negotiable
 Wanted, but these may be simplified, reworked or left out when keeping them would cost reliability in
@@ -151,8 +151,8 @@ the menu.
   groups.
 - **L-3 [A]** Focus, close, rename, zoom (and unzoom), resize and swap panes.
 - **L-4 [A]** Selectors: panes, tabs and windows can be named by id or unique id prefix, by user-given
-  name, by `.` (the focused one) and by `#N` index (tabs and windows). Ambiguous or unknown selectors
-  fail with a clear message and a non-zero exit, and change nothing.
+  name, by `.` (the focused one), by `#N` index (tabs and windows) and by a query (Q-1). Ambiguous or
+  unknown selectors fail with a clear message and a non-zero exit, and change nothing.
 - **L-5 [A]** `--worktree NAME` on tab, split and window creation starts the new pane in a git
   worktree. That's an existing worktree directory, or a worktree with that branch or folder name, or a
   new worktree created next to the repository on a new branch NAME. It works even when git hooks
@@ -201,12 +201,12 @@ the menu.
     Reduce Motion), so a tab switch looks different from a window switch, which stays as macOS
     draws it. The fade never holds up typing or clicks.
 
-- **L-12 [A+W]** ⌃⌘J (`<cli> jump`) goes to the next pane whose agent needs the user: panes whose
-  `agent.status` is `needs_input` first, then panes whose agent finished or failed (`error`) while the
-  pane wasn't looked at (S-3), oldest first in each. The pane gets focused (its tab selected, its window in front).
-  Pressed again, it goes to the next one. ⌃⌘K (`<cli> jump back`)
-  goes back to the pane the user was in before the first of those jumps. When nothing needs the
-  user, `jump` fails with a message saying so.
+- **L-12 [A+W]** ⌃⌘J (`<cli> go --next jump`) goes to the next pane of the list `jump` (Q-2), whose
+  default is the panes whose `agent.status` is `needs_input` first, then panes whose agent finished or
+  failed (`error`) while the pane wasn't looked at (S-3), oldest first in each. The pane gets focused
+  (its tab selected, its window in front). Pressed again, it goes to the next one. ⌃⌘K (`<cli> go
+  --back`) goes back to the pane the user was in before the first of those steps. When the list is
+  empty, `go` fails with "nothing in jump" and nothing moves (the key beeps).
 
 - **L-13 [A+W]** ⌃⇧← and ⌃⇧→ (`<cli> tab move [TAB] --up|--down`, and the sidebar row's menu) move
   a tab up or down the sidebar, within its group: a tab never crosses into or out of the pinned
@@ -417,7 +417,7 @@ A "live session" is a pane with a running program, its scrollback and its state.
   - A strip along the top of the place names each member; clicking one shows it, its ✕ closes it.
   - ⌘[ and ⌘] show the previous and next member of the focused pane's stack. In a pane that isn't
     stacked they go to the previous and next pane, as before.
-  - Members not on show keep running. Focusing one (`pane focus`, the palette, `jump`) shows it.
+  - Members not on show keep running. Focusing one (`pane focus`, the palette, `go`) shows it.
   - Closing the member on show, or moving it away, shows the next member in its place; a member
     whose program ends leaves its stack; a stack left with one pane is an ordinary pane again.
   - `ls` lists every member (M-7 fields in CLI.md); stacks survive a restart and undo.
@@ -565,7 +565,7 @@ A "live session" is a pane with a running program, its scrollback and its state.
   that doesn't switch tab order depending on recency". Tabs stay where they are until the user moves
   them:
   - selecting a tab never moves it, whatever selects it: a click, ⌘1–9, ⇧⌘[ / ⇧⌘], ⌃Tab, `<cli> tab
-    focus` (or `next`, `prev`, `back`), a pane focus, `jump` and `jump back`, a notification, reopen;
+    focus` (or `next`, `prev`, `back`), a pane focus, `go` and `go --back`, a notification, reopen;
   - an agent finishing its turn (or asking for something) never moves its tab; the tab shows its
     mark (S-3);
   - tabs move only when the user moves them: dragging (M-4), `<cli> tab move`, Move Tab Up/Down
@@ -832,7 +832,7 @@ What the user, their scripts and their agents build on (design/primitives.md, "A
   changes nothing. Attributes live and die with their pane, tab or window, and come back with them
   after a restart.
 - **D-2 [A]** The keys Umi keeps (`kind`, `cwd`, `branch`, `command`, `focused`, `hidden`,
-  `in_drawer`, `seen_at`, `changed_at`, `status_since`, `idle_for`, `visible_count`) can't be set:
+  `in_drawer`, `seen_at`, `changed_at`, `status_since`, `idle_for`, `unseen`, `visible_count`) can't be set:
   setting one, or a key that isn't a valid name, fails with exit 1 and changes nothing, not even the
   other pairs of the same command.
 - **D-3 [A]** Single holders. `role` has one holder per value, among panes for panes and among tabs
@@ -845,18 +845,20 @@ What the user, their scripts and their agents build on (design/primitives.md, "A
   window and the app is active; looking at another pane of the tab doesn't count), `changed_at` (set
   when `agent.status` changes), `status_since` (when `agent.status` last changed) and `idle_for`
   (how long since its terminal last printed, as `90s`); of each tab, `visible_count` (the panes it
-  shows). Times are ISO 8601 with a time zone. "Unseen" is `changed_at > seen_at`; each pane's
+  shows). Times are ISO 8601 with a time zone. "Unseen" is `changed_at > seen_at`, kept as `unseen`
+  (`true`/`false`); each pane's
   `indicator` in `ls --json` says `working`, `needs_you`, `finished` (unseen) or `none`.
 - **D-5 [A]** `agent.*` can be written with `pane set` as the hook plugin writes them (AG-18): on a
   pane without an agent, together with `agent.kind` (`claude` or `codex`); values outside each key's
   set (`agent.status`, `agent.done`) fail with exit 1. They count as the hook's would (the Dock
-  badge, `jump`, `changed_at`), and the next hook event overwrites them. `pane unset PANE agent.kind`
+  badge, the list `jump`, `changed_at`), and the next hook event overwrites them. `pane unset PANE agent.kind`
   takes the pane's agent away.
 - **D-6 [A]** Every event carries `at` and its `cause`: `{"kind": "key", "key"}` for a key press
   (`ctrl+cmd+t`), `mouse`, `palette` (with `command`), `cli` (with `command`, the words it was run
-  with, and the calling `pane` when run inside one), `hook` (an agent's hook), `config` or `umi` (the
-  app on its own). A command the palette (or a key binding) runs gets `UMI_CAUSE` in its
-  environment, and the `<cli>` calls it makes are recorded with that cause.
+  with, and the calling `pane` when run inside one), `hook` (an agent's hook), `config` (a slot) or
+  `umi` (the app on its own). A key or click is the cause only of what happens while the app handles
+  it, never of what the app does on its own later. A command the palette (or a key binding) runs gets
+  `UMI_CAUSE` in its environment, and the `<cli>` calls it makes are recorded with that cause.
 - **D-7 [A]** The activity log: every event, as `events` streams them, kept 30 days and across
   restarts. `<cli> log [--since T] [--until T] [--filter PREFIX]… [--pane P]` prints them oldest
   first (a pane that is gone can be named by its id); `events --since T` replays the log, then
@@ -869,6 +871,61 @@ What the user, their scripts and their agents build on (design/primitives.md, "A
   and its session, attributes). A stretch that ends because the user stopped ends when the 3
   minutes passed. `<cli> focus-log [--since T] [--until T] [--pane P]` lists them, the one going on
   now last (`open`). Kept 30 days. It measures keyboard focus, not where the user looked.
+
+## Q. Queries, lists, slots, keys and commands
+
+The user's and scripts' ways of deciding what deserves attention (design/primitives.md, "Queries and
+lists", "Slots", "Keys and palette commands"; CLI.md, "Selectors", "Queries", "Lists and `go`",
+"Configuration").
+
+- **Q-1 [A]** Queries. A selector containing `=`, `<`, `>`, `|`, `@`, ` and `, ` or ` or `not ` is a
+  query over the panes' attributes: `KEY OP VALUE` (`=`, `!=`, `<`, `<=`, `>`, `>=`), a bare `KEY`
+  (set and not `false`), `@LIST`, `and` (binding tighter than `or`), `or`, `not`, parentheses, then
+  `| sort KEY, -KEY` and `| limit N`; `then` joins queries, listing the next one's panes after the
+  first's. Values compare as numbers, durations (`90s`, `5m`), times (a time against a time or a
+  duration back from now: `status_since < 10m` is older than ten minutes), else text. Without
+  `sort`, matches come in `ls` order. Commands that change panes (`pane set`, `unset`, `close`) act on
+  every match; the others take the first. A tab or window selector that is a query picks the tab or
+  window holding a match. A query that doesn't parse fails with exit 1 naming the position; one that
+  matches nothing fails with exit 1 where a target is needed. `<cli> ls --where QUERY` lists the
+  matching panes with their tab and window, in the query's order, and succeeds when there are none.
+- **Q-2 [A]** Named lists: `list.NAME = QUERY` lines in `~/.config/umi/config` (`$XDG_CONFIG_HOME`),
+  read again when the file changes, without Ghostty reporting them as unknown settings. Umi defines
+  `needs-you` (`agent.status=needs_input | sort status_since`), `unseen`, `jump` (`@needs-you then
+  @unseen`) and `manager` (`role=manager`), each of which the config can redefine. `<cli> list ls`
+  shows every list with its query and how many panes it holds; `list show NAME` its panes in order.
+  A list named in a query that doesn't exist fails with exit 1.
+- **Q-3 [A]** `go`. `<cli> go LIST|QUERY` puts the first pane in front of the user (its window in
+  front, the app active, its tab selected, focused). `go --next LIST|QUERY` walks the list: the pane
+  after the one the walk last went to, re-reading the list each time; anything else that moved focus
+  since starts a new walk, skipping the pane focused now. `go --back` returns to the pane focused
+  before the walk's first step, and fails with exit 1 when there is no walk. An empty list fails with
+  exit 1 and "nothing in LIST", and nothing moves.
+- **Q-4 [A]** Slots: the decisions Umi makes instantly, each set with `slot.NAME = VALUE` in the
+  config and listed with their values by `<cli> slot ls` (`default` says whether the user changed
+  it): `jump` (the list `jump`), `badge` (the Dock badge counts its matches; default `@needs-you`),
+  `landing` (the pane focused when the app comes back to the front after `landing.after`, default
+  none), `tab.summary` (which pane gives a tab's sidebar row its agent mark and line 2: the focused
+  pane's agent, else the one most in need, else the latest), `sidebar.line2` (a template, default
+  `{agent.title or command or cwd}`), `strip.make-room`, `indicator.<state>` and `done-check` (a
+  regular expression the last line of the agent's last message must match for `agent.done=true`;
+  default `^Status: done`). The defaults behave as before this step.
+- **Q-5 [A]** Key bindings: `key.<keys> = ACTION` binds a `<cli>` command line (`go --next
+  @needs-you`), a list (`@NAME`: `go --next` to it) or a palette command by title. It runs with the
+  calling pane, tab and window (`UMI_PANE`, `UMI_TAB`, `UMI_WINDOW`) and `UMI_CAUSE=key:<keys>` in its
+  environment, and wins over Umi's own shortcut on the same keys. `<cli> shortcuts ls` lists it with
+  `"source": "config"`.
+- **Q-6 [A]** Palette commands: each executable in `~/.config/umi/commands/` (titled from its file
+  name) and each `command."Title" = SHELL COMMAND` line is a ⌘P entry, runs in the calling pane's
+  folder with `UMI_PANE`, `UMI_TAB`, `UMI_WINDOW`, `UMI_CAUSE`, `UMI_CLI` and `UMI_STATE_DIR` in its
+  environment, shows its stdout in the palette (its stderr when it fails), and can be bound to a key.
+  `<cli> command ls` lists them; `command run TITLE [--pane P]` runs one as the palette would and
+  exits 1 when it fails.
+- **Q-7 [A]** `<cli> wait --attr QUERY [--pane P] [--timeout T]` waits until the pane matches the
+  query and prints its attributes; exit 124 on timeout.
+- **Q-8 [A]** Every pane's shell has `UMI_PANE` (its id); `UMI_PANE_ID` is gone. `<cli> jump` is
+  gone (`go`). `pane get` and `pane unset` take a first word as the pane only when it is a full id, a
+  name, `.`, or a query, so a key never names a pane by an id prefix.
 
 ## AG. Agents in panes
 

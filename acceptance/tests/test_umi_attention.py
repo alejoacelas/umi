@@ -116,9 +116,9 @@ def test_jump_goes_to_the_pane_that_needs_you_then_the_unseen_one(inst, win):
         time.sleep(0.2)
         inst.hook(waiting, "SessionStart")
         inst.hook(waiting, "PermissionRequest", tool_name="Bash")
-        assert inst.json("jump")["pane"] == waiting
-        assert inst.json("jump")["pane"] == finished
-        assert inst.json("jump", "back")["pane"] == home
+        assert inst.json("go", "--next", "jump")["pane"] == waiting
+        assert inst.json("go", "--next", "jump")["pane"] == finished
+        assert inst.json("go", "--back")["pane"] == home
     finally:
         inst.hook(finished, "SessionEnd")
         inst.hook(waiting, "SessionEnd")

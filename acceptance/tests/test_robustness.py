@@ -130,7 +130,7 @@ def test_an_explicit_target_overrides_a_stale_caller(inst, win):
     """A CLI carrying the identity of a pane that's gone still creates a tab where --pane or --window
     says."""
     gone = inst.json("tab", "new", "--window", win["window"])["pane"]
-    pane_env = {"UMI_PANE_ID": gone, "UMI_INSTANCE": json.loads(inst.cli("--json", "ping").stdout)["instance"]}
+    pane_env = {"UMI_PANE": gone, "UMI_INSTANCE": json.loads(inst.cli("--json", "ping").stdout)["instance"]}
     inst.cli("pane", "close", gone)
     time.sleep(0.5)
     created = inst.json("tab", "new", "--pane", win["pane"], "--no-focus", env=pane_env)

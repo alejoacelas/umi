@@ -1267,3 +1267,44 @@ names, read-only keys, the cause a request is recorded with, a scope outranking 
   `attributes` now hold Umi's own keys too, and some change by themselves (`idle_for`, `seen_at`), so
   the comparison covers what can be written on a pane (the user's attributes and `agent.*`), which
   is what a hook could change.
+
+## Design step 3: queries, lists and slots (2026-11-08)
+
+**Added.** `tests/test_queries.py` (Q-1 to Q-8, L-4, L-12): queries in `ls --where` (comparisons,
+numbers, `and` over `or`, `not`, bare keys, `sort`, `limit`, `then`, quoted values, durations and
+times), each match with its tab and window, an empty result; `pane set`/`unset`/`close` acting on
+every match and one-pane commands on the first; tab and window selectors that are queries; bad
+queries failing with the position, a query matching nothing, an unknown list; a key never read as
+an id prefix by `pane get`/`unset` (step 2's review); `UMI_PANE` in a pane's shell and no
+`UMI_PANE_ID`; `jump` gone; Umi's lists in `list ls`/`list show`; `go`, `go --next` walking and
+wrapping, `go --back`, an empty list moving nothing; ⌃⌘J/⌃⌘K (`debug.key`) as `go --next jump` and
+`go --back`, caused by the key; in an instance with its own config: lists and slots redefined, a
+bad line reported, `slot ls`, the Dock badge from `slot.badge`, `sidebar.line2` as a template,
+`landing` (`debug.landing`, caused by `config`), Ghostty reporting no error for Umi's lines;
+`done-check` as a slot; a `key.…` binding running its command with the key as cause, listed by
+`shortcuts` with `source: config`, and overriding ⌃⌘J; palette commands from a `command."…"` line and
+from the commands folder (`command ls`, `command run` with `UMI_PANE`/`UMI_TAB`/`UMI_WINDOW`/
+`UMI_CAUSE`/`UMI_CLI`, a failing one exiting 1, the ⌘P entry); `wait --attr`. Swift: `UmiQueryTests`
+(parsing and positions of errors, comparisons, bare keys, durations and times, sort/limit/then,
+what reads as a query, the default `jump`, `needs-you` and `tab.summary` lists, templates, the
+`done-check` default, a key being the cause only while it is dispatched).
+
+**Removed.** Swift `UmiJumpTests`: `UmiAttention.jumpOrder` is gone; the same three cases (needs
+input first then unseen, oldest first; a seen failed pane drops out; seen and working panes are no
+targets) are in `UmiQueryTests` against the default `jump` list.
+
+**Changed.**
+- `test_umi_nav.py::test_jump_goes_to_sessions_needing_you_then_back`,
+  `test_umi_nav.py::test_selecting_a_tab_never_moves_it` (its ⌃⌘J part),
+  `test_umi_attention.py::test_jump_goes_to_the_pane_that_needs_you_then_the_unseen_one` and
+  `test_review_regressions.py::test_a_pane_waiting_for_the_user_stops_counting_once_it_closes`:
+  `jump` and `jump back` became `go --next jump` and `go --back` (design/cli.md removes `jump`); the
+  same panes in the same order. The empty case now checks exit 1 and "nothing in jump" (was a
+  non-zero exit and "needs you").
+- `harness.py` (`Instance.hook`), `test_pane_data.py` (`in_pane`), `test_robustness.py` and
+  `test_agent_panes.py::test_the_plugins_hooks_are_silent_outside_umi`: a pane's identity is
+  `UMI_PANE` now (`UMI_PANE_ID` is retired); same checks.
+- `test_agent_panes.py::test_a_plugin_installed_from_another_copy_of_umi_is_not_current` and
+  `::test_a_disabled_claude_plugin_is_not_current`: the installed version they fake is the bundled
+  one, now 1.2.0 (the hook script reads `UMI_PANE`), so they still test "same version, but another
+  copy" and "same version, but disabled" rather than an old version.

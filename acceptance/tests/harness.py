@@ -411,9 +411,9 @@ class Instance:
             return json.load(f)["instance"]
 
     def hook(self, pane, event, kind="claude", pid=None, **payload):
-        """Run `<cli> hook EVENT` as Umi's plugin does from an agent in `pane` (its UMI_PANE_ID and
+        """Run `<cli> hook EVENT` as Umi's plugin does from an agent in `pane` (its UMI_PANE and
         UMI_INSTANCE), with `payload` as the hook's input."""
-        env = {"UMI_PANE_ID": pane, "UMI_INSTANCE": self.instance_id(), "UMI_CLI": self.target.cli_path}
+        env = {"UMI_PANE": pane, "UMI_INSTANCE": self.instance_id(), "UMI_CLI": self.target.cli_path}
         args = ["hook", event, "--agent", kind] + (["--pid", str(pid)] if pid else [])
         payload.setdefault("hook_event_name", event)
         payload.setdefault("session_id", "00000000-0000-4000-8000-000000000001")

@@ -231,18 +231,18 @@ def test_jump_goes_to_sessions_needing_you_then_back(inst, win):
     try:
         inst.cli("pane", "focus", home)
         # Needs input comes first, then finished-and-unseen.
-        assert inst.json("jump")["pane"] == waiting["id"]
+        assert inst.json("go", "--next", "jump")["pane"] == waiting["id"]
         assert inst.tree()["current_pane"] == waiting["id"]
-        assert inst.json("jump")["pane"] == finished["id"]
+        assert inst.json("go", "--next", "jump")["pane"] == finished["id"]
         # Back returns to where the user was before the first jump.
-        assert inst.json("jump", "back")["pane"] == home
+        assert inst.json("go", "--back")["pane"] == home
         assert inst.tree()["current_pane"] == home
-        assert inst.cli("jump", "back", check=False).returncode != 0
+        assert inst.cli("go", "--back", check=False).returncode == 1
     finally:
         for pane in (finished["id"], waiting["id"]):
             rpc(inst, "debug.attention.set", pane=pane, clear=True)
-    proc = inst.cli("jump", check=False)
-    assert proc.returncode != 0 and "needs you" in proc.stderr
+    proc = inst.cli("go", "--next", "jump", check=False)
+    assert proc.returncode == 1 and "nothing in jump" in proc.stderr
 
 
 # ---- L-13: moving tabs up and down ----------------------------------------------------------------
@@ -541,10 +541,10 @@ def test_selecting_a_tab_never_moves_it(inst, win):
             rpc(inst, "debug.attention.set", pane=pane, clear=True)
         inst.cli("tab", "focus", a)
         rpc(inst, "debug.attention.set", pane=panes[d], title="d", mark="needs_you", stopped_ago=0)
-        assert inst.json("jump")["tab"] == d
-        assert_order(inst, window, order, "jump")
-        inst.json("jump", "back")
-        assert_order(inst, window, order, "jump back")
+        assert inst.json("go", "--next", "jump")["tab"] == d
+        assert_order(inst, window, order, "go --next jump")
+        inst.json("go", "--back")
+        assert_order(inst, window, order, "go --back")
         # A tab closed and reopened comes back where it was, and selecting it there moves nothing.
         inst.cli("tab", "close", b)
         wait_until(lambda: b not in tab_ids(inst, window), 5, message="closed")

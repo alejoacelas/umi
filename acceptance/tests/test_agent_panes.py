@@ -153,9 +153,9 @@ def test_the_plugins_hooks_are_silent_outside_umi(inst, kind, tmp_path):
     cli = inst.target.cli_path
     environments = {
         "another terminal": base,
-        "a terminal of an app that isn't running": dict(base, UMI_CLI=cli, UMI_STATE_DIR=stopped_dir, UMI_PANE_ID="x"),
+        "a terminal of an app that isn't running": dict(base, UMI_CLI=cli, UMI_STATE_DIR=stopped_dir, UMI_PANE="x"),
         "Umi, but no pane of it": dict(base, UMI_CLI=cli, UMI_STATE_DIR=inst.dir),
-        "a pane of another run": dict(base, UMI_CLI=cli, UMI_STATE_DIR=inst.dir, UMI_PANE_ID="00000000",
+        "a pane of another run": dict(base, UMI_CLI=cli, UMI_STATE_DIR=inst.dir, UMI_PANE="00000000",
                                       UMI_INSTANCE="nope:nope"),
     }
     # What can be written on a pane (the user's attributes and agent.*); Umi's own keys (idle_for,
@@ -217,7 +217,7 @@ def test_a_plugin_installed_from_another_copy_of_umi_is_not_current(inst):
     development build of the same plugin version, and the installed app took it as current, so its
     marketplace kept pointing at that build."""
     home = os.path.join(inst.fake_dir, "codex-home")
-    os.makedirs(os.path.join(home, "plugins", "cache", "umi", "umi", "1.1.0"), exist_ok=True)
+    os.makedirs(os.path.join(home, "plugins", "cache", "umi", "umi", "1.2.0"), exist_ok=True)
     with open(os.path.join(home, "config.toml"), "w") as f:
         f.write('[marketplaces.umi]\nsource_type = "local"\nsource = "/somewhere/else/Umi.app/Contents/Resources/agent-plugins"\n\n'
                 '[plugins."umi@umi"]\nenabled = true\n\n'
@@ -234,7 +234,7 @@ def test_a_disabled_claude_plugin_is_not_current(inst):
     config = inst.claude_config
     os.makedirs(os.path.join(config, "plugins"), exist_ok=True)
     with open(os.path.join(config, "plugins", "installed_plugins.json"), "w") as f:
-        json.dump({"version": 2, "plugins": {"umi@umi": [{"scope": "user", "version": "1.1.0"}]}}, f)
+        json.dump({"version": 2, "plugins": {"umi@umi": [{"scope": "user", "version": "1.2.0"}]}}, f)
     with open(os.path.join(config, "settings.json"), "w") as f:
         json.dump({"enabledPlugins": {}}, f)
     claude = inst.json("plugins").get("claude") or {}

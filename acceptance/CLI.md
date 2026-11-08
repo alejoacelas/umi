@@ -8,8 +8,10 @@ present. Extra fields are fine.
 This is `design/cli.md` as far as the design's steps have landed (design/plan.md). Step 1 took Umi's
 own agent sessions out: the `agent` commands are gone, and agents run in panes, reported by Umi's
 plugin through `hook` ("Agent hooks" below). Step 2 brought pane data: attributes and `pane set`,
-events with their cause, `log` and `focus-log` ("Attributes", "Events and logs"). Later steps bring
-the rest of `design/cli.md` (queries, lists and `go`, hidden panes, the drawer).
+events with their cause, `log` and `focus-log` ("Attributes", "Events and logs"). Step 3 brought
+queries in selectors and `ls --where`, named lists and `go`, slots, key bindings and palette commands
+from the config ("Selectors", "Queries", "Lists and `go`", "Configuration"). Later steps bring the
+rest of `design/cli.md` (hidden panes, the drawer).
 
 ## General
 
@@ -19,13 +21,13 @@ the rest of `design/cli.md` (queries, lists and `go`, hidden panes, the drawer).
   | Code | Meaning |
   |---|---|
   | 0 | success |
-  | 1 | usage error, unknown selector, failed action |
+  | 1 | usage error, unknown selector, a selector or list that matched nothing where something is required, failed action |
   | 124 | a wait timed out |
 
 - Errors go to stderr, prefixed `<cli>: `.
 - Inside the app's panes, the pane, tab and window arguments default to the calling pane and its tab
-  and window. Elsewhere they default to the focused ones.
-- Selectors are described in SPEC L-4. `--pane`/`-p`, `--tab`/`-t` and `--window`/`-w` take selectors.
+  and window (the pane named by `UMI_PANE`, which every pane's shell and every palette or key
+  command has). Elsewhere they default to the focused ones.
 - Times on the command line (`--since`, `--until`) are ISO 8601, a clock time today (`9am`, `14:30`),
   or a duration back from now (`90s`, `5m`, `2h`, `3d`); anything else fails with exit 1. Times in
   JSON are ISO 8601 with a time zone.
@@ -34,11 +36,56 @@ the rest of `design/cli.md` (queries, lists and `go`, hidden panes, the drawer).
 - No command ever waits for stdin unless given `-`. The exceptions are `send` (layout) with no text
   and a non-TTY stdin, `edit` with no file, and `hook`.
 
+### Selectors
+
+`--pane`/`-p`, `--tab`/`-t` and `--window`/`-w`, and positional PANE, TAB and WINDOW arguments, take a
+selector:
+
+- an id or a unique id prefix; a name the user gave; `.` (the focused one); `#N` (tabs and windows,
+  by index from 1);
+- a **query**: any selector containing `=`, `<`, `>`, `|`, `@`, ` and `, ` or ` or `not `. Queries
+  select panes; a tab or window selector that is a query selects the tab or window holding a
+  matching pane.
+
+Commands that act on one pane (`pane focus`, `info`, `get`, `read`, `send`, …) take a query's first
+match; `pane set`, `pane unset` and `pane close` act on every match (and `tab|window set|unset` on
+every tab or window holding one). An unknown or ambiguous id, prefix or name fails with exit 1 and
+changes nothing. A query that matches nothing fails with exit 1 for commands that need a target, and
+succeeds with an empty result for `ls --where`.
+
+### Queries
+
+```
+QUERY  := PART [ "then" PART ]…
+PART   := EXPR [ "|" "sort" KEY ["," KEY]… ] [ "|" "limit" N ]
+EXPR   := TERM | EXPR "and" EXPR | EXPR "or" EXPR | "not" EXPR | "(" EXPR ")"
+TERM   := KEY OP VALUE | KEY | "@" LIST
+OP     := "=" | "!=" | "<" | "<=" | ">" | ">="
+KEY    := an attribute name (letters, digits, ".", "-", "_")
+VALUE  := a word, or text in double quotes
+```
+
+- `and` binds tighter than `or`. Keys and list names are case-sensitive; values compare exactly.
+- A bare `KEY` holds when the key is set and its value isn't `false`. `KEY != VALUE` holds for a pane
+  without the key; the other comparisons don't.
+- `@NAME` holds for the panes of the named list `NAME`; a list that doesn't exist fails with exit 1.
+- Values compare as numbers when both sides read as numbers, as durations when both read as
+  durations (`90s`, `5m`, `2h`, `1h30m`; a bare number beside a duration is seconds), as times when
+  the attribute holds a time and the value is a time or a duration back from now (`status_since <
+  10m` holds for a status older than 10 minutes); otherwise as text.
+- `sort KEY` sorts ascending, `-KEY` descending, with the same comparisons. Panes missing the key
+  sort last. Ties keep the order of `ls`.
+- `then` lists the panes of the next part after those of the parts before it, each pane once (the
+  list `jump` is `@needs-you then @unseen`).
+- Without `sort`, matches come in `ls` order: windows by index, tabs in sidebar order, panes on show
+  in layout order, then the others.
+- A query that doesn't parse fails with exit 1 and names the character position of the error.
+
 ## Layout
 
 | Command | Notes |
 |---|---|
-| `ls` | JSON: `{"windows": [Window], "current_tab": id, "current_pane": id}`; the text lists each pane's own attributes |
+| `ls [--where QUERY]` | JSON: `{"windows": [Window], "current_tab": id, "current_pane": id}`; the text lists each pane's own attributes. With `--where`: `{"panes": [Pane + "tab", "window"]}`, in query order |
 | `window new [--cwd D] [--cmd C] [--name N] [--worktree W [--base REF]] [--no-focus]` | prints the new pane's id; JSON has `pane`, `tab`, `window` |
 | `window focus\|close [WINDOW]` | |
 | `tab new [NAME] [--window W] [--pane P] [--cwd D] [--cmd C] [--name N] [--color C] [--index I] [--worktree W [--base REF]] [--no-focus]` | as `window new`; the tab opens right after the current tab, or last with `--no-focus`, or at `--index` (SPEC S-7) |
@@ -49,9 +96,8 @@ the rest of `design/cli.md` (queries, lists and `go`, hidden panes, the drawer).
 | `tab color [TAB] COLOR` | red green yellow blue magenta cyan (Warp's six, from the theme's ANSI colors), purple pink orange teal graphite, none |
 | `tab pin\|unpin [TAB]` | |
 | `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down`: one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
-| `jump [back]` | the next pane whose agent needs the user (`agent.status=needs_input` first, then panes whose agent finished unseen; oldest first in each; prints the pane), or back to where the user was; JSON `{"pane", "tab", "window", …}`; fails when nothing needs the user. (`go --next jump` replaces it in step 3.) |
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions |
-| `pane focus\|close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window` |
+| `pane focus\|close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window`; `close` closes every pane a query matches |
 | `pane rename [PANE] NAME` | |
 | `pane move [PANE] (--to PANE [--dir D] \| --tab T [--dir D] \| --window W [--dir D] \| --new-tab [--window W] \| --new-window) [--no-focus]` | the pane's program keeps running |
 | `pane swap [PANE] TARGET` | |
@@ -59,7 +105,7 @@ the rest of `design/cli.md` (queries, lists and `go`, hidden panes, the drawer).
 | `send [--pane P] [--enter\|-e] TEXT…` | no TEXT plus a piped stdin sends stdin |
 | `keys [--pane P] KEY…` | enter esc tab backspace up down left right ctrl+c shift+tab … |
 | `read [--pane P] [--scrollback] [--lines N]` | prints the text as the shell and programs printed it. With Umi's look (SPEC S-9 to S-12) a zsh prompt is two blank rows, the folder, and the command line; durations, lines and the folder box are drawn, not text |
-| `wait [--pane P] (--pattern RE \| --idle SECS) [--timeout T]` | prints the matched text; 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
+| `wait [--pane P] (--pattern RE \| --idle SECS \| --attr QUERY) [--timeout T]` | prints the matched text (`--attr`: waits until the pane matches the query, for example `agent.status=idle`, and prints its attributes as `key=value` lines; JSON `{"pane", "attributes"}`); 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
 | `events [--filter PREFIX]… [--pane P] [--since T]` | streams Event objects as JSON lines ("Events and logs"); a filter keeps events whose name starts with PREFIX; `--since` replays the activity log from T first |
 | `notify [--pane P] TITLE [BODY]` | |
 | `sidebar [on\|off\|toggle\|status\|tabs\|files\|search] [--window W]` | shown or hidden per window (the given one, else the caller's, else the current); JSON: `{"visible": bool, "mode": "tabs"\|"files"\|"search", "width": points, "window": id}` |
@@ -106,23 +152,26 @@ pinned; nothing reorders them on its own (SPEC S-7).
 
 | Command | Notes |
 |---|---|
-| `pane set [PANE] KEY=VALUE…` | sets each pair on the pane; `KEY=` sets the empty string; all or nothing (a bad pair changes nothing). JSON `{"panes": [id], "set": {key: value}}` |
+| `pane set [PANE] KEY=VALUE…` | sets each pair on every matching pane; `KEY=` sets the empty string; a bad pair changes nothing. JSON `{"panes": [id], "set": {key: value}}` |
 | `pane unset [PANE] KEY…` | removes the keys; removing a missing key is not an error. JSON `{"panes": [id], "unset": [key]}` |
 | `pane get [PANE] [KEY…]` | prints each KEY's value on a line (empty when unset), or every attribute as `key=value` lines without KEY. JSON `{"pane": id, "attributes": {…}}` (only the KEYs asked for, when given) |
 | `tab set\|unset\|get [TAB] …`, `window set\|unset\|get [WINDOW] …` | the same on tabs and windows; JSON `{"tabs": [id], …}`, `{"windows": [id], …}`, `{"tab"\|"window": id, "attributes"}` |
 
 - PANE (TAB, WINDOW) is a selector (`--pane`/`-p`, `--tab`/`-t`, `--window`/`-w`, or the first word).
-  For `set`, a first word without `=` is the selector. For `unset` and `get`, the first word is the
-  selector when it names one and more words follow (for `get`, also when it is the only word);
-  otherwise every word is a key. `unset` with only a selector fails with exit 1. Without a selector:
-  the calling pane (its tab, its window) inside the app's panes, else the focused one.
+  For `set`, a first word without `=` is the selector, and so is a query that doesn't read as
+  `KEY=VALUE` (`@list`, `not hidden`, `(a=1 and b=2)`; `--pane` takes any query). For `unset` and
+  `get`, the first word is the selector only when it is a full id, a name, `.`, `#N` (tabs, windows)
+  or a query, so a key (`a`, `face`) is never read as an id prefix; otherwise every word is a key.
+  `unset` with only a selector fails with exit 1. Without a selector: the calling pane (its tab, its
+  window) inside the app's panes, else the focused one.
 - Values are strings. Keys are letters, digits, `.`, `-` and `_`.
 - **Read-only keys** (kept by Umi; setting one fails with exit 1): `kind` (`terminal`, `file`,
   `web`), `cwd`, `branch` (the git branch of the pane's folder), `command` (the command it runs, or
   last ran), `focused` (`true`/`false`: focused in its tab), `hidden`, `in_drawer`, `seen_at` (when the
   pane itself last had keyboard focus in the app's front window while the app was active; now while
   it has), `changed_at` (when its `agent.status` last changed), `status_since` (the same, for the
-  status), `idle_for` (seconds since its terminal last printed, as `90s`), and on tabs
+  status), `idle_for` (seconds since its terminal last printed, as `90s`), `unseen` (`true` while
+  `changed_at > seen_at`), and on tabs
   `visible_count` (the panes it shows). Times are ISO 8601 with a time zone. A key Umi has nothing
   for is absent (`branch` outside git, `changed_at` without an agent).
 - **Keys written by the hook plugin** ("Agent hooks" below): anyone may write them with `pane set`;
@@ -136,6 +185,71 @@ pinned; nothing reorders them on its own (SPEC S-7).
   and take effect with hidden panes.
 - Attributes live and die with their pane (or tab, window). They are saved and restored with the
   layout.
+
+## Lists and `go`
+
+| Command | Notes |
+|---|---|
+| `list ls` | the named lists, Umi's and the config's: JSON `{"lists": [{"name", "query", "count", "default": bool, "error"?}], "problems": [str]}` |
+| `list show NAME` | the list's panes, in order; JSON `{"panes": [Pane + "tab", "window"]}` |
+| `go LIST\|QUERY` | puts the first pane in front of the user: its window in front, the app active, its tab selected, focused. JSON `{"pane", "tab", "window"}`. Exit 1 with "nothing in LIST" when empty; nothing moves |
+| `go --next LIST\|QUERY` | the next pane of the walk: the first after the one the walk last went to (wrapping round), re-reading the list each time. A new walk starts when anything other than `go --next` moved focus since the last step; its first step skips the pane focused now |
+| `go --back` | back to the pane focused before the walk's first step. One walk per window. Exit 1 when there is no walk |
+
+⌃⌘J runs `go --next jump` and ⌃⌘K runs `go --back`. `jump` is a named list; its default is "needs you,
+then unseen, oldest first in each". A LIST is a list's name; anything else is read as a query.
+
+Umi's lists (the config can redefine each):
+
+| List | Query |
+|---|---|
+| `needs-you` | `agent.status=needs_input \| sort status_since` |
+| `unseen` | `unseen and agent.status!=working and agent.status!=needs_input \| sort changed_at` |
+| `jump` | `@needs-you then @unseen` |
+| `manager` | `role=manager` |
+
+## Configuration
+
+Lists, slots, key bindings and palette commands live in `~/.config/umi/config` (`$XDG_CONFIG_HOME/umi/config`),
+next to the Ghostty settings, and in the files it includes with `config-file`. Umi reads them again
+when the file changes; Ghostty skips these keys. Editing is done in the file (⌘, opens it).
+
+```
+list.NAME = QUERY
+slot.NAME = VALUE
+key.KEYS = ACTION                       # KEYS as in `shortcuts` (ctrl+cmd+y)
+command."Title" = SHELL COMMAND
+```
+
+| Command | Notes |
+|---|---|
+| `slot ls` | every slot with its value and whether it is the default; JSON `{"slots": [{"name", "value", "default": bool, "summary", "used_from"?, "error"?}], "problems": [str]}` |
+| `command ls` | palette commands: JSON `{"commands": [{"title", "path"?, "line"?, "keys"?: [str]}]}` |
+| `command run TITLE [--pane P]` | runs one as the palette would; prints its stdout (and stderr); exit 1 when it fails. JSON `{"title", "status", "stdout", "stderr"}` |
+| `shortcuts [ls]` | key bindings from the config appear with `"kind": "config"`, `"source": "config"` |
+
+Slots:
+
+| Slot | Default | Notes |
+|---|---|---|
+| `jump` | `@needs-you then @unseen` | the list `jump` (`slot.jump` sets it too) |
+| `badge` | `@needs-you` | the Dock badge counts its matches |
+| `landing` | `none` | a query: the pane focused when the app comes back to the front after `landing.after` |
+| `landing.after` | `10m` | |
+| `tab.summary` | `focused and agent.kind then (agent.status=needs_input or agent.status=error) \| sort -status_since then unseen \| sort -status_since then agent.kind \| sort -status_since` | the pane of a tab, among those on show, that gives its sidebar row the agent mark and line 2 |
+| `sidebar.line2` | `{agent.title or command or cwd}` | a template: each `{…}` is the first of its keys that is set; the default keeps the built-in line |
+| `strip.make-room` | `not pinned and not focused \| sort seen_at` | stored; takes effect with hidden panes |
+| `indicator.working`, `indicator.needs_you`, `indicator.finished` | `muted`, `amber`, `muted` | stored; take effect with the pane indicator |
+| `done-check` | `^Status: done` | a regular expression; `agent.done=true` when the last line of the agent's last message matches |
+
+- A key binding's ACTION is a palette command's title, `@LIST` (`go --next @LIST`), or a `<cli>`
+  command line (`go --next @needs-you`, `pane set pinned=true`). It wins over Umi's own shortcut on
+  the same keys.
+- Each executable in `~/.config/umi/commands/` is a palette command titled from its file name
+  (`organize-into-tabs.sh` is "Organize into tabs").
+- A palette or key command runs with `UMI_PANE`, `UMI_TAB`, `UMI_WINDOW` (the caller's), `UMI_CAUSE`
+  (`palette` or `key:<keys>`), `UMI_CLI` (the path of `<cli>`) and `UMI_STATE_DIR` in its environment,
+  in the calling pane's folder. Its stdout shows in the palette; a non-zero exit shows its stderr.
 
 ## Events and logs
 
@@ -193,7 +307,7 @@ state on its pane.
 
 | Command | Notes |
 |---|---|
-| `hook EVENT --agent claude\|codex [--pid PID]` | run by Umi's plugins: reads the agent's hook input (JSON) on stdin and writes `agent.*` on the pane the agent runs in (the caller's pane, `UMI_PANE_ID`); prints nothing; exits 0 always, also when no pane matches or nothing runs |
+| `hook EVENT --agent claude\|codex [--pid PID]` | run by Umi's plugins: reads the agent's hook input (JSON) on stdin and writes `agent.*` on the pane the agent runs in (the caller's pane, `UMI_PANE`); prints nothing; exits 0 always, also when no pane matches or nothing runs |
 | `plugins [status\|install [--force]\|remove]` | Umi's plugins in Claude Code and Codex (SPEC AG-18); JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}`; current means this app's version, from this copy of the app, enabled and (Codex) its hooks trusted; `--force` reinstalls even when current |
 | `doctor` | reports whether `<cli>` is on the login PATH and whether the hook plugins are installed and current (for each agent that is installed); exits non-zero when a plugin isn't installed and current (SPEC I-2), and 0 otherwise, also when `<cli>` isn't on PATH (that is reported, not required); JSON `{"ok", "checks": [{"check", "ok", "detail", "required"}]}` |
 
@@ -205,9 +319,10 @@ Keys written by the hooks, in each pane's `attributes`:
 | `agent.status` | `working`, `needs_input`, `idle`, `stopped` or `error` (SPEC AG-19) |
 | `agent.title` | the conversation's first prompt, on one line |
 | `agent.summary` | the first line of the agent's last reply |
-| `agent.done` | `true` or `false`, set at the end of each turn: the reply's last line starts with `Status: done` |
+| `agent.done` | `true` or `false`, set at the end of each turn by the `done-check` slot (default: the reply's last line starts with `Status: done`) |
 | `agent.session` | the agent's own session (Claude Code) or thread (Codex) id; a relaunch resumes it |
 
 Removed (design/cli.md): every `agent …` command (an old one fails with exit 1 and says what to do),
 the `claude` and `codex` shortcuts, the Session, Report, Message, Request, Item and Startup objects,
-the `agent` pane field, and exit codes 2 and 3.
+the `agent` pane field, `jump` (use `go --next jump` and `go --back`), `UMI_PANE_ID` (now
+`UMI_PANE`), and exit codes 2 and 3.
