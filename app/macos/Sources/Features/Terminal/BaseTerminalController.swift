@@ -775,12 +775,6 @@ class BaseTerminalController: NSWindowController,
     @objc private func ghosttyDidToggleSplitZoom(_ notification: Notification) {
         // The target must be within our tree
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
-        // Umi: a hidden pane's chip dragged out of the window: the pane gets a window of its own.
-        if surfaceTree.root?.node(view: target) == nil,
-           let tab = (self as? TerminalController)?.selectedTab, tab.isHidden(target) {
-            _ = try? UmiLayout.move(target, to: .newWindow, focus: true)
-            return
-        }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
 
         // Toggle the zoomed state
@@ -861,6 +855,18 @@ class BaseTerminalController: NSWindowController,
 
     @objc private func ghosttySurfaceDragEndedNoTarget(_ notification: Notification) {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        // Umi: a hidden pane's chip dragged out of the window: the pane gets a window of its own
+        // (H-8). A hidden pane is in no split tree, so Ghostty's path below can't see it.
+        if let controller = self as? TerminalController,
+           controller.tab(containing: target)?.isHidden(target) == true {
+            let point = notification.userInfo?[Notification.Name.ghosttySurfaceDragEndedNoTargetPointKey] as? NSPoint
+            do {
+                try UmiLayout.move(target, to: .newWindow(at: point), focus: true)
+            } catch {
+                Ghostty.logger.warning("moving a hidden pane to a new window failed: \(error, privacy: .public)")
+            }
+            return
+        }
         guard let targetNode = surfaceTree.root?.node(view: target) else { return }
 
         // If our tree isn't split, then we never create a new window, because

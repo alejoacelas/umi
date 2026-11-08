@@ -288,7 +288,7 @@ enum UmiRPC {
                 guard let window else { throw UmiError.notFound("the pane isn't in a window") }
                 destination = .newTab(window, index: nil)
             } else if params.bool("new_window") ?? false {
-                destination = .newWindow
+                destination = .newWindow()
             } else if let windowSelector = params.string("window") {
                 let window = try UmiTopology.resolveWindow(windowSelector, caller: caller)
                 let tab = window.selectedTab

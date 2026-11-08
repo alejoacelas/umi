@@ -476,7 +476,7 @@ enum UmiShortcuts {
             case .newTab:
                 try UmiLayout.move(pane, to: .newTab(window, index: nil), focus: true)
             case .newWindow:
-                try UmiLayout.move(pane, to: .newWindow, focus: true)
+                try UmiLayout.move(pane, to: .newWindow(), focus: true)
             case .adjacentTab(let delta):
                 guard let index = window.index(of: window.selectedTab) else { return }
                 let targetIndex = index + delta

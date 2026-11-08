@@ -390,8 +390,8 @@ enum UmiLayout {
         case besidePane(Ghostty.SurfaceView, SplitTree<Ghostty.SurfaceView>.NewDirection)
         /// A new tab in a window.
         case newTab(TerminalController, index: Int?)
-        /// A new window.
-        case newWindow
+        /// A new window, its top left at `at` (screen coordinates) when given.
+        case newWindow(at: NSPoint? = nil)
     }
 
     /// Move a live pane (its program and scrollback) somewhere else. The source tab (and
@@ -479,12 +479,12 @@ enum UmiLayout {
             UmiEvents.shared.emit("tab.created", ["tab": tab.idString, "window": window.umiIDString])
             return UmiTopology.Location(window: window, tab: tab, pane: pane)
 
-        case .newWindow:
+        case .newWindow(let point):
             let tab = UmiTab(tree: .init(view: pane))
             removeFromSource(pane, node: node, source: source)
             if size.width > 0, size.height > 0 { pane.frame.size = size }
             let controller = TerminalController.newWindow(
-                ghostty, tabs: [tab], selected: tab,
+                ghostty, tabs: [tab], selected: tab, position: point,
                 inheritBackgroundOpacity: source.window.isBackgroundOpaque,
                 focus: focus, registerUndo: false)
             return UmiTopology.Location(window: controller, tab: tab, pane: pane)
