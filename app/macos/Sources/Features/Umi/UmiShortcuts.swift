@@ -205,14 +205,14 @@ enum UmiShortcuts {
                      UmiTabGroups.ungroup(group, in: window)
                  }, enabled: { UmiTabGroups.currentGroup() != nil }),
 
-            // Panes whose agent needs the user (L-12).
+            // Panes whose agent needs the user (L-12): `go --next jump` and `go --back`.
             Item(id: "session.next_needing_you", title: "Jump to Next Pane Needing You", key: "j", modifiers: [.command, .control],
                  symbol: "exclamationmark.bubble", menu: "Window",
-                 action: { if UmiNavigation.jumpToNextNeedingYou() == nil { NSSound.beep() } }),
+                 action: { if (try? UmiGo.go("jump", next: true)) == nil { NSSound.beep() } }),
             Item(id: "session.jump_back", title: "Jump Back", key: "k", modifiers: [.command, .control],
                  symbol: "arrow.uturn.backward.circle", menu: "Window",
-                 action: { if UmiNavigation.jumpBack() == nil { NSSound.beep() } },
-                 enabled: { UmiNavigation.canJumpBack }),
+                 action: { if (try? UmiGo.back()) == nil { NSSound.beep() } },
+                 enabled: { UmiGo.canGoBack }),
             // The note after an update (I-4).
             Item(id: "view.dismiss_toasts", title: "Dismiss Update Note", key: "u", modifiers: [.command, .control],
                  symbol: "xmark.circle", menu: "View", action: { UmiUpdateNote.shared.dismiss() },
@@ -418,12 +418,17 @@ enum UmiShortcuts {
         let isFunctionKey = event.specialKey.map { (NSF1FunctionKey...NSF35FunctionKey).contains($0.rawValue) } ?? false
         let isOptionShift = event.modifierFlags.contains([.option, .shift])
         guard !event.modifierFlags.isDisjoint(with: [.command, .control]) || isFunctionKey || isOptionShift else { return false }
-        guard let pressed = UmiShortcut(event: event), let candidates = byShortcut[pressed], !candidates.isEmpty else {
-            return false
-        }
+        guard let pressed = UmiShortcut(event: event) else { return false }
+        let candidates = byShortcut[pressed] ?? []
+        guard !candidates.isEmpty || UmiConfig.shared.binding(for: pressed) != nil else { return false }
         // A modal panel or alert keeps its keys.
         if NSApp.modalWindow != nil { return false }
         if let sheetParent = NSApp.keyWindow, sheetParent.attachedSheet != nil { return false }
+        // A `key.…` line in the config wins over Umi's own item on the same keys.
+        if let binding = UmiConfig.shared.binding(for: pressed) {
+            UmiCommandRunner.runBinding(binding)
+            return true
+        }
         guard let menuItem = candidates.first(where: { handlers[$0]?.enabled() ?? false }), let item = handlers[menuItem] else {
             if candidates.allSatisfy({ handlers[$0]?.passesThrough ?? false }) { return false }
             NSSound.beep()

@@ -177,7 +177,8 @@ enum UmiEnvironment {
         let env = ProcessInfo.processInfo.environment
         let exact: Set<String> = [
             "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "CLAUDE_AGENT_SDK_VERSION",
-            "UMI_PANE_ID", "UMI_INSTANCE", "UMI_TAB_ID", "UMI_WINDOW_ID",
+            "UMI_PANE", "UMI_INSTANCE", "UMI_TAB", "UMI_WINDOW", "UMI_CAUSE",
+            "UMI_PANE_ID", "UMI_TAB_ID", "UMI_WINDOW_ID",
             "TERM_SESSION_ID", "ITERM_SESSION_ID", "WEZTERM_PANE", "KITTY_WINDOW_ID",
         ]
         let prefixes = ["CLAUDE_CODE_", "CODEX_"]
@@ -200,7 +201,7 @@ enum UmiEnvironment {
     /// Variables every pane gets: who it is and how to reach this instance.
     static func paneVariables(paneID: UUID) -> [String: String] {
         [
-            "UMI_PANE_ID": paneID.uuidString.lowercased(),
+            "UMI_PANE": paneID.uuidString.lowercased(),
             "UMI_INSTANCE": UmiPaths.instanceID,
             "UMI_STATE_DIR": UmiPaths.stateDirectory,
             // Umi's plugins for Claude Code and Codex report through this CLI; they stay

@@ -287,11 +287,16 @@ struct UmiSidebarRowModel {
         // "Copy pull request link" at its first right-click.
         if let cwd, let branch = git?.branch, !branch.isEmpty { UmiPullRequests.shared.prefetch(cwd: cwd, branch: branch) }
         title = tab.name.flatMap { $0.isEmpty ? nil : $0 } ?? cwd.map(UmiPaneContext.folderName) ?? tab.title
-        let agent = UmiAttention.shared.agent(for: tab, in: controller)
+        // The pane that speaks for the tab (the `tab.summary` slot) gives the agent's mark and line 2.
+        let summary = UmiSlots.summaryPane(of: tab, in: controller)
+        let agent = summary.flatMap { UmiAttention.shared.agent(forPane: $0.id) }
         self.agent = agent
         let command = focusedPane.flatMap { UmiPaneContext.command(for: $0) }
         failed = command?.failed ?? false
-        if let agent {
+        if let line = UmiSlots.line2(summary ?? focusedPane) {
+            // The user's `sidebar.line2` template.
+            detail = .folder(line)
+        } else if let agent {
             detail = .session(title: agent.title.isEmpty ? Self.describe(agent.status.rawValue) : agent.title, status: agent.status.rawValue)
         } else if let command {
             detail = .command(text: command.text, running: command.running)

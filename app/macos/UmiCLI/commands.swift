@@ -60,8 +60,10 @@ let colorNames = ["red", "green", "yellow", "blue", "magenta", "cyan", "purple",
 
 let commandTable: [CommandHelp] = [
     // Layout
-    CommandHelp(section: "Layout", usage: "ls", summary: "windows, tabs and panes",
-                actions: [PaletteAction(title: "List Windows, Tabs and Panes", argv: ["ls"])]),
+    CommandHelp(section: "Layout", usage: "ls [--where QUERY]", summary: "windows, tabs and panes (--where: the panes a query picks)",
+                actions: [PaletteAction(title: "List Windows, Tabs and Panes", argv: ["ls"]),
+                          PaletteAction(title: "List Panes Matching…", argv: ["ls", "--where"],
+                                        ask: [Ask(name: "QUERY", prompt: "Query (e.g. agent.status=idle and not hidden)")])]),
     CommandHelp(section: "Layout", usage: "window new [--cwd D] [--cmd C] [--name N] [--worktree W [--base REF]] [--no-focus]",
                 actions: [PaletteAction(title: "New Window", argv: ["window", "new"]),
                           PaletteAction(title: "New Window in Folder…", argv: ["window", "new"],
@@ -147,10 +149,6 @@ let commandTable: [CommandHelp] = [
                 actions: [PaletteAction(title: "Resize Pane…", argv: ["pane", "resize"],
                                         ask: [Ask(name: "DIRECTION", prompt: "Direction", choices: ["up", "down", "left", "right"]),
                                               Ask(name: "AMOUNT", prompt: "Cells (empty: 10)", optional: true, kind: "number")])]),
-    CommandHelp(section: "Layout", usage: "jump [back]",
-                summary: "the next pane whose agent needs you | back to where you were",
-                actions: [PaletteAction(title: "Jump to Next Pane Needing You", argv: ["jump"]),
-                          PaletteAction(title: "Jump Back", argv: ["jump", "back"])]),
     CommandHelp(section: "Layout", usage: "worktree ls",
                 actions: [PaletteAction(title: "List Git Worktrees", argv: ["worktree", "ls"])]),
     CommandHelp(section: "Layout", usage: "layout ls|save NAME [--replace]|open NAME [--no-focus]",
@@ -183,6 +181,24 @@ let commandTable: [CommandHelp] = [
                 summary: "stretches of keyboard focus on each pane, with what it showed (kept 30 days)",
                 actions: [PaletteAction(title: "Show Focus Log (Today)", argv: ["focus-log", "--since", "00:00"])]),
 
+    // Lists and go
+    CommandHelp(section: "Lists and go", usage: "list ls", summary: "named lists (list.NAME = QUERY in the config) and how many panes each holds",
+                actions: [PaletteAction(title: "List Named Lists", argv: ["list", "ls"])]),
+    CommandHelp(section: "Lists and go", usage: "list show NAME", summary: "a list's panes, in order",
+                actions: [PaletteAction(title: "Show List…", argv: ["list", "show"], ask: [Ask(name: "NAME", prompt: "List name (e.g. jump)")])]),
+    CommandHelp(section: "Lists and go", usage: "go LIST|QUERY", summary: "put the first pane in front of you",
+                actions: [PaletteAction(title: "Go to First Pane of List…", argv: ["go"],
+                                        ask: [Ask(name: "LIST", prompt: "List name or query")])]),
+    CommandHelp(section: "Lists and go", usage: "go --next LIST|QUERY", summary: "the next pane of the walk (⌃⌘J: go --next jump)",
+                actions: [PaletteAction(title: "Jump to Next Pane Needing You", argv: ["go", "--next", "jump"])]),
+    CommandHelp(section: "Lists and go", usage: "go --back", summary: "back to where the walk started (⌃⌘K)",
+                actions: [PaletteAction(title: "Jump Back", argv: ["go", "--back"])]),
+    CommandHelp(section: "Lists and go", usage: "slot ls", summary: "the slots (slot.NAME = VALUE in the config): each one's value",
+                actions: [PaletteAction(title: "List Slots", argv: ["slot", "ls"])]),
+    CommandHelp(section: "Lists and go", usage: "command ls", summary: "palette commands from the config and its commands/ folder",
+                actions: [PaletteAction(title: "List Palette Commands", argv: ["command", "ls"])]),
+    CommandHelp(section: "Lists and go", usage: "command run TITLE [--pane P]", summary: "run one as the palette would"),
+
     // Input and output
     CommandHelp(section: "Input and output", usage: "send [--pane P] [--enter|-e] TEXT…",
                 summary: "type text (no TEXT: read piped stdin; - reads stdin)",
@@ -196,8 +212,8 @@ let commandTable: [CommandHelp] = [
                                         ask: [Ask(name: "KEY", prompt: "Keys (e.g. ctrl+c, esc, enter)", words: true)])]),
     CommandHelp(section: "Input and output", usage: "read [--pane P] [--scrollback] [--lines N]",
                 actions: [PaletteAction(title: "Read Pane's Screen", argv: ["read"])]),
-    CommandHelp(section: "Input and output", usage: "wait [--pane P] (--pattern RE | --idle SECS) [--timeout T]",
-                summary: "exits 124 on timeout"),
+    CommandHelp(section: "Input and output", usage: "wait [--pane P] (--pattern RE | --idle SECS | --attr QUERY) [--timeout T]",
+                summary: "exits 124 on timeout; --attr: until the pane matches the query"),
     CommandHelp(section: "Input and output", usage: "events [--filter PREFIX]… [--pane P] [--since T]",
                 summary: "JSON lines (pane.created, pane.changed, …), each with its cause; --since replays the log first"),
     CommandHelp(section: "Input and output", usage: "notify [--pane P] TITLE [BODY]",
@@ -300,8 +316,10 @@ func renderHelp() -> String {
     }
     lines += [
         "",
-        "Selectors: an id or unique id prefix, a name, `.` (the focused one) or #N (tabs, windows).",
-        "Inside \(productName)'s terminals, commands default to the calling pane, its tab and window.",
+        "Selectors: an id or unique id prefix, a name, `.` (the focused one) or #N (tabs, windows),",
+        "or a query: agent.status=idle and not hidden | sort -status_since (@NAME is a named list).",
+        "Commands that change panes act on every match; the others on the first.",
+        "Inside \(productName)'s terminals (UMI_PANE), commands default to the calling pane, its tab and window.",
         "Times (T): ISO 8601, a clock time today (9am, 14:30), or a duration back from now (2h).",
         "Add --json (before any --) for JSON output.",
     ]

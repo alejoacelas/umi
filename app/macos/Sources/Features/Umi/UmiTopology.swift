@@ -142,6 +142,11 @@ enum UmiTopology {
             guard let pane = currentPane else { throw UmiError.notFound("there is no focused pane") }
             return pane
         }
+        // A query: its first match (design/cli.md choice 3).
+        if UmiQuery.looksLikeQuery(selector) {
+            guard let first = try match(selector).first else { throw UmiError.notFound("no pane matches \(selector)") }
+            return first.pane
+        }
         let all = allSurfaces
         return try pick(selector, kind: "pane", candidates: all,
                         id: { $0.umiID }, name: { UmiState.shared.paneName($0.id) })
@@ -171,6 +176,12 @@ enum UmiTopology {
             }
             return (base, base.tabs[n - 1])
         }
+        // A query: the tab holding its first match.
+        if UmiQuery.looksLikeQuery(selector) {
+            let found = try match(selector).first { window == nil || $0.window === window }
+            guard let found else { throw UmiError.notFound("no tab holds a pane matching \(selector)") }
+            return (found.window, found.tab)
+        }
         let pairs = (window.map { [$0] } ?? windows).flatMap { w in w.tabs.map { (w, $0) } }
         let found = try pick(selector, kind: "tab", candidates: pairs,
                              id: { $0.1.idString }, name: { $0.1.name })
@@ -181,6 +192,10 @@ enum UmiTopology {
         if selector == "." {
             guard let window = currentWindow else { throw UmiError.notFound("there is no focused window") }
             return window
+        }
+        if UmiQuery.looksLikeQuery(selector) {
+            guard let found = try match(selector).first else { throw UmiError.notFound("no window holds a pane matching \(selector)") }
+            return found.window
         }
         let all = windows
         if selector.hasPrefix("#") {

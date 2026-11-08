@@ -107,7 +107,7 @@ final class UmiEvents {
 ///
 /// Where it comes from, most specific first: a scope Umi's own key handling or the palette opens
 /// around what it does (`during`), the control request being handled (a task-local set by the
-/// control server), the AppKit event being handled right now (a key press or a click), else Umi.
+/// control server), the key press or click AppKit is dispatching at that moment, else Umi.
 struct UmiCause: Sendable, Equatable {
     var kind: String
     var command: String?
@@ -145,12 +145,47 @@ struct UmiCause: Sendable, Equatable {
         return .umi
     }
 
-    /// A key press or click AppKit is handling now. AppKit's `currentEvent` stays set after the
-    /// event was handled, so only an event from the last second counts.
+    /// The key presses and clicks AppKit is dispatching right now, innermost last
+    /// (`dispatching(_:_:)`, from the windows' `sendEvent`), and the one a local event monitor saw
+    /// last, which counts until the run loop's current turn ends (`noteDispatch`).
+    @MainActor private static var dispatched: [NSEvent] = []
+    @MainActor private static var monitored: NSEvent?
+    @MainActor private static var monitor: Any?
+
+    /// Run `body` while AppKit dispatches `event` to a window: what it changes is caused by the event.
+    @MainActor
+    static func dispatching<T>(_ event: NSEvent, _ body: () throws -> T) rethrows -> T {
+        dispatched.append(event)
+        defer { dispatched.removeLast() }
+        return try body()
+    }
+
+    /// Watch the key presses and clicks the app receives (also those a menu or the app handles
+    /// before any window: key equivalents). Each counts only until the run loop's turn that
+    /// dispatches it ends.
+    @MainActor
+    static func startWatchingEvents() {
+        guard monitor == nil else { return }
+        let types: NSEvent.EventTypeMask = [.keyDown, .keyUp, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+                                            .otherMouseDown, .otherMouseUp, .scrollWheel]
+        monitor = NSEvent.addLocalMonitorForEvents(matching: types) { event in
+            MainActor.assumeIsolated {
+                monitored = event
+                // Cleared on the next turn of the main run loop, after AppKit dispatched it.
+                RunLoop.main.perform(inModes: [.common]) {
+                    MainActor.assumeIsolated { if monitored === event { monitored = nil } }
+                }
+            }
+            return event
+        }
+    }
+
+    /// The key press or click AppKit is dispatching at this moment, if any. `NSApp.currentEvent`
+    /// alone isn't enough: it stays set after the event was handled, so changes Umi makes on its own
+    /// later would be put down to the user's last key.
     @MainActor
     private static func fromCurrentEvent() -> UmiCause? {
-        guard let event = NSApp?.currentEvent,
-              ProcessInfo.processInfo.systemUptime - event.timestamp < 1 else { return nil }
+        guard let event = dispatched.last ?? monitored else { return nil }
         switch event.type {
         case .keyDown, .keyUp:
             return key(event)

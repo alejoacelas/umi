@@ -389,7 +389,7 @@ final class UmiShortcutStore {
     // MARK: Listing
 
     struct Entry {
-        enum Kind: String { case umi, ghostty }
+        enum Kind: String { case umi, ghostty, config }
         let id: String
         let title: String
         let kind: Kind
@@ -402,7 +402,7 @@ final class UmiShortcutStore {
 
         var json: [String: Any] {
             var out: [String: Any] = ["id": id, "title": title, "kind": kind.rawValue,
-                                      "keys": kind == .umi ? shortcuts.map(\.spec) : triggers,
+                                      "keys": kind == .ghostty ? triggers : shortcuts.map(\.spec),
                                       "display": shortcuts.map(\.display), "default": defaults, "changed": changed]
             if let menu { out["menu"] = menu }
             if let source { out["source"] = source }
@@ -416,6 +416,11 @@ final class UmiShortcutStore {
             Entry(id: item.id, title: item.title, kind: .umi, menu: item.submenu.map { "\(item.menu) > \($0)" } ?? item.menu,
                   shortcuts: item.shortcut.map { [$0] } ?? [], triggers: [],
                   defaults: item.defaultShortcut.map { [$0.spec] } ?? [], changed: isChanged(item), source: nil)
+        }
+        // `key.… = …` lines in the config (they win over Umi's own items on the same keys).
+        for binding in UmiConfig.shared.keyBindings {
+            out.append(Entry(id: "config:" + binding.shortcut.spec, title: binding.action, kind: .config, menu: nil,
+                             shortcuts: [binding.shortcut], triggers: [], defaults: [], changed: false, source: "config"))
         }
         let effective = UmiGhosttyBindings.effective()
         var actions: [String] = []

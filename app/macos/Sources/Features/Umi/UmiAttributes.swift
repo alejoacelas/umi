@@ -22,7 +22,7 @@ final class UmiAttributes {
 
     /// Keys Umi keeps; setting one fails (design/cli.md, choice 12).
     static let readOnly: Set<String> = ["kind", "cwd", "branch", "command", "focused", "hidden", "in_drawer",
-                                        "seen_at", "changed_at", "status_since", "idle_for", "visible_count"]
+                                        "seen_at", "changed_at", "status_since", "idle_for", "visible_count", "unseen"]
     /// Keys the hook plugin writes, held by the pane's agent (`UmiAttention`).
     static let agentKeys: Set<String> = ["agent.kind", "agent.status", "agent.title", "agent.summary",
                                          "agent.done", "agent.session"]
@@ -35,7 +35,7 @@ final class UmiAttributes {
     // MARK: Names
 
     /// Letters, digits, ".", "-" and "_" (design/cli.md, "Queries").
-    static func isValidKey(_ key: String) -> Bool {
+    nonisolated static func isValidKey(_ key: String) -> Bool {
         !key.isEmpty && key.unicodeScalars.allSatisfy {
             CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "-" || $0 == "_"
         }
@@ -68,28 +68,65 @@ final class UmiAttributes {
 
     /// The read-only attributes Umi keeps for a pane.
     func computed(_ pane: Ghostty.SurfaceView, focused: Bool? = nil) -> [String: String] {
+        var out: [String: String] = [:]
         let location = UmiTopology.locate(pane)
-        let cwd = UmiTopology.cwd(of: pane)
-        var out: [String: String] = ["kind": Self.kind(of: pane), "cwd": cwd, "in_drawer": "false"]
-        let isFocused = focused ?? (location.map { $0.tab.effectiveFocusedSurface === pane } ?? false)
-        out["focused"] = isFocused ? "true" : "false"
-        let shown = location.map { $0.window.tree(of: $0.tab).contains(pane) } ?? true
-        out["hidden"] = shown ? "false" : "true"
-        if !cwd.isEmpty, let git = UmiPaneContext.git(for: cwd) { out["branch"] = git.branch }
-        if out["kind"] == "terminal", let command = UmiPaneContext.command(for: pane) { out["command"] = command.text }
-        let attention = UmiAttention.shared
-        // Seen while it is being looked at, so now.
-        if UmiLooking.lookedAt === pane {
-            out["seen_at"] = UmiTime.iso(Date())
-        } else if let seen = attention.seenAt(pane.id) {
-            out["seen_at"] = UmiTime.iso(seen)
+        for key in Self.computedKeys {
+            if let value = computedValue(key, of: pane, location: location, focused: focused) { out[key] = value }
         }
-        if let agent = attention.agent(forPane: pane.id) {
-            out["changed_at"] = UmiTime.iso(agent.changedAt)
-            out["status_since"] = UmiTime.iso(agent.statusSince)
-        }
-        if let idle = UmiPaneOutput.shared.idleFor(pane) { out["idle_for"] = "\(Int(idle))s" }
         return out
+    }
+
+    /// The pane-level keys `computed` holds (`visible_count` is a tab's).
+    static let computedKeys = ["kind", "cwd", "in_drawer", "focused", "hidden", "branch", "command",
+                               "seen_at", "changed_at", "status_since", "idle_for", "unseen"]
+
+    /// One read-only attribute of a pane, computed alone (queries read only the keys they name).
+    func computedValue(_ key: String, of pane: Ghostty.SurfaceView, location: UmiTopology.Location?? = nil,
+                       focused: Bool? = nil) -> String? {
+        func place() -> UmiTopology.Location? {
+            if let location { return location }
+            return UmiTopology.locate(pane)
+        }
+        let attention = UmiAttention.shared
+        switch key {
+        case "kind": return Self.kind(of: pane)
+        case "cwd": return UmiTopology.cwd(of: pane)
+        case "in_drawer": return "false"
+        case "focused":
+            let isFocused = focused ?? (place().map { $0.tab.effectiveFocusedSurface === pane } ?? false)
+            return isFocused ? "true" : "false"
+        case "hidden":
+            let shown = place().map { $0.window.tree(of: $0.tab).contains(pane) } ?? true
+            return shown ? "false" : "true"
+        case "branch":
+            let cwd = UmiTopology.cwd(of: pane)
+            guard !cwd.isEmpty else { return nil }
+            return UmiPaneContext.git(for: cwd)?.branch
+        case "command":
+            guard Self.kind(of: pane) == "terminal" else { return nil }
+            return UmiPaneContext.command(for: pane)?.text
+        case "seen_at":
+            // Seen while it is being looked at, so now.
+            if UmiLooking.lookedAt === pane { return UmiTime.iso(Date()) }
+            return attention.seenAt(pane.id).map(UmiTime.iso)
+        case "changed_at": return attention.agent(forPane: pane.id).map { UmiTime.iso($0.changedAt) }
+        case "status_since": return attention.agent(forPane: pane.id).map { UmiTime.iso($0.statusSince) }
+        case "idle_for": return UmiPaneOutput.shared.idleFor(pane).map { "\(Int($0))s" }
+        case "unseen":
+            // `changed_at > seen_at` (primitives.md): only a pane with an agent has `changed_at`.
+            guard let agent = attention.agent(forPane: pane.id) else { return "false" }
+            if UmiLooking.lookedAt === pane { return "false" }
+            return agent.unseen ? "true" : "false"
+        default: return nil
+        }
+    }
+
+    /// One attribute of a pane, whoever keeps it: Umi's read-only keys, else the pane's agent,
+    /// else the pane's own.
+    func value(_ key: String, of pane: Ghostty.SurfaceView) -> String? {
+        if Self.readOnly.contains(key) { return computedValue(key, of: pane) }
+        if Self.agentKeys.contains(key) { return UmiAttention.shared.agent(forPane: pane.id)?.attributes[key] }
+        return panes[pane.id]?[key]
     }
 
     static func kind(of pane: Ghostty.SurfaceView) -> String {
@@ -162,6 +199,8 @@ final class UmiAttributes {
         if panes[id]?.isEmpty == true { panes.removeValue(forKey: id) }
         emit("pane.changed", ["pane": id.uuidString.lowercased(), "key": key, "old": old ?? NSNull(), "new": value ?? NSNull()])
         UmiState.shared.layoutDidChange(persistOnly: true)
+        // A `badge` slot may count by any attribute.
+        (NSApp?.delegate as? AppDelegate)?.refreshDockBadge()
     }
 
     /// Check `agent.*` values; returns what writes them (nil: nothing to write).
@@ -325,23 +364,34 @@ enum UmiAttributesRPC {
         let parts = method.split(separator: ".").map(String.init)
         let (object, verb) = (parts[0], parts[1])
         var words = params.strings("words") ?? []
-        // The target: the option given, else a leading word that names one, else the caller's.
+        // The target: the option given, else a leading word that is one, else the caller's.
         var selector = params.string(object)
         if selector == nil, let first = words.first {
             switch verb {
             case "set":
-                if !first.contains("=") { selector = words.removeFirst() }
+                // Pairs always hold "="; a first word without one is the target, and so is a query that
+                // doesn't read as KEY=VALUE (`@list`, `not hidden`, `(a=1 and b=2)`).
+                if !first.contains("=") || (UmiQuery.looksLikeQuery(first) && !isPair(first)) {
+                    selector = words.removeFirst()
+                }
             default:
-                // `unset [PANE] KEY…`, `get [PANE] [KEY…]`: a first word that names one is it.
-                let names = (try? resolve(object, first, caller: caller)) != nil
+                // `unset [PANE] KEY…`, `get [PANE] [KEY…]`: only a word that can't be a key is the
+                // target: a full id, a name, `.`, `#N` or a query. A unique id prefix isn't, so a key
+                // like `a` or `face` never picks a pane.
+                let names = namesTarget(object, first, caller: caller)
                 if verb == "unset" && words.count == 1 && names {
                     throw UmiError.badRequest("\(object) unset: give a KEY after the \(object)")
                 }
-                let minimum = verb == "unset" ? 2 : 1
-                if words.count >= minimum, names { selector = words.removeFirst() }
+                if names { selector = words.removeFirst() }
             }
         }
-        let target = try selector.map { try resolve(object, $0, caller: caller) } ?? defaultTarget(object, caller: caller)
+        let targets: [Target]
+        if let selector {
+            targets = try resolveAll(object, selector, caller: caller)
+        } else {
+            targets = [try defaultTarget(object, caller: caller)]
+        }
+        let attributes = UmiAttributes.shared
         switch verb {
         case "set":
             guard !words.isEmpty else { throw UmiError.badRequest("\(object) set: give KEY=VALUE") }
@@ -352,33 +402,76 @@ enum UmiAttributesRPC {
                 }
                 pairs.append((String(word[..<eq]), String(word[word.index(after: eq)...])))
             }
-            let attributes = UmiAttributes.shared
-            switch target {
-            case .pane(let pane): try attributes.set(pairs, on: pane)
-            case .tab(let window, let tab): try attributes.set(pairs, on: tab, in: window)
-            case .window(let window): try attributes.set(pairs, on: window)
+            for (key, _) in pairs { try UmiAttributes.checkWritable(key) }
+            for target in targets {
+                switch target {
+                case .pane(let pane): try attributes.set(pairs, on: pane)
+                case .tab(let window, let tab): try attributes.set(pairs, on: tab, in: window)
+                case .window(let window): try attributes.set(pairs, on: window)
+                }
             }
             var set: [String: String] = [:]
             for (key, value) in pairs { set[key] = value }
-            return ["\(object)s": [id(target)], "set": set]
+            return ["\(object)s": targets.map(id), "set": set]
         case "unset":
             guard !words.isEmpty else { throw UmiError.badRequest("\(object) unset: give a KEY") }
-            let attributes = UmiAttributes.shared
-            switch target {
-            case .pane(let pane): try attributes.unset(words, on: pane)
-            case .tab(let window, let tab): try attributes.unset(words, on: tab, in: window)
-            case .window(let window): try attributes.unset(words, on: window)
+            for target in targets {
+                switch target {
+                case .pane(let pane): try attributes.unset(words, on: pane)
+                case .tab(let window, let tab): try attributes.unset(words, on: tab, in: window)
+                case .window(let window): try attributes.unset(words, on: window)
+                }
             }
-            return ["\(object)s": [id(target)], "unset": words]
+            return ["\(object)s": targets.map(id), "unset": words]
         default:
+            // One target: a query's first match.
+            let target = targets[0]
             var all: [String: String]
             switch target {
-            case .pane(let pane): all = UmiAttributes.shared.all(pane)
-            case .tab(let window, let tab): all = UmiAttributes.shared.all(tab, in: window)
+            case .pane(let pane): all = attributes.all(pane)
+            case .tab(let window, let tab): all = attributes.all(tab, in: window)
             case .window(let window): all = window.umiAttributes
             }
             if !words.isEmpty { all = all.filter { words.contains($0.key) } }
             return [object: id(target), "attributes": all, "keys": words]
+        }
+    }
+
+    /// `KEY=VALUE` with a valid key.
+    private static func isPair(_ word: String) -> Bool {
+        guard let eq = word.firstIndex(of: "=") else { return false }
+        return UmiAttributes.isValidKey(String(word[..<eq]))
+    }
+
+    /// Whether a first word of `get`/`unset` is the target: `.`, `#N` (tabs, windows), a query, a
+    /// full id or a name.
+    private static func namesTarget(_ object: String, _ word: String, caller: UmiCaller) -> Bool {
+        if word == "." || UmiQuery.looksLikeQuery(word) { return true }
+        if object != "pane", word.hasPrefix("#"), Int(word.dropFirst()) != nil { return true }
+        let lowered = word.lowercased()
+        switch object {
+        case "pane":
+            return UmiTopology.allSurfaces.contains { $0.umiID == lowered || UmiState.shared.paneName($0.id) == word }
+        case "tab":
+            return UmiTopology.windows.flatMap(\.tabs).contains { $0.idString == lowered || $0.name == word }
+        default:
+            return UmiTopology.windows.contains { $0.umiIDString == lowered || $0.windowName == word }
+        }
+    }
+
+    /// Every target a selector names: a query's matches (the tabs or windows holding them), else one.
+    private static func resolveAll(_ object: String, _ selector: String, caller: UmiCaller) throws -> [Target] {
+        guard UmiQuery.looksLikeQuery(selector) else { return [try resolve(object, selector, caller: caller)] }
+        let found = try UmiTopology.match(selector)
+        guard !found.isEmpty else { throw UmiError.notFound("no pane matches \(selector)") }
+        switch object {
+        case "pane": return found.map { .pane($0.pane) }
+        case "tab":
+            var seen = Set<ObjectIdentifier>()
+            return found.filter { seen.insert(ObjectIdentifier($0.tab)).inserted }.map { .tab($0.window, $0.tab) }
+        default:
+            var seen = Set<ObjectIdentifier>()
+            return found.filter { seen.insert(ObjectIdentifier($0.window)).inserted }.map { .window($0.window) }
         }
     }
 

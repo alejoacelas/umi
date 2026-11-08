@@ -37,6 +37,7 @@ enum UmiRPC {
             return ["ok": true]
 
         case "tree", "ls":
+            if let query = params.string("where") { return try UmiTopology.whereJSON(query) }
             return UmiTopology.treeJSON()
 
         // MARK: Windows
@@ -176,9 +177,10 @@ enum UmiRPC {
             return ["pane": pane.umiID]
 
         case "pane.close":
-            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
-            try UmiLayout.closePane(pane)
-            return ["pane": pane.umiID, "closed": true]
+            // Every pane a query matches (design/cli.md choice 3).
+            let panes = try UmiTopology.panes(params.string("pane"), caller: caller)
+            for pane in panes { try UmiLayout.closePane(pane) }
+            return ["pane": panes[0].umiID, "panes": panes.map(\.umiID), "closed": true]
 
         case "pane.zoom":
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
@@ -493,6 +495,9 @@ enum UmiRPC {
         default:
             if UmiNavigationRPC.methods.contains(method) {
                 return try await UmiNavigationRPC.handle(method, params, caller: caller)
+            }
+            if UmiListsRPC.methods.contains(method) {
+                return try await UmiListsRPC.handle(method, params, caller: caller)
             }
             if UmiAttributesRPC.methods.contains(method) {
                 return try UmiAttributesRPC.handle(method, params, caller: caller)

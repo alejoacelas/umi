@@ -329,7 +329,7 @@ enum UmiUIDebug {
                                                  "mark": agent.mark == .none ? "none" : (agent.mark == .finished ? "finished" : "needs_you"),
                                                  "unseen": agent.unseen, "attributes": agent.attributes]
         }
-        return ["panes": panes, "needing_you": UmiAttention.shared.needingYouCount,
+        return ["panes": panes, "needing_you": UmiSlots.badgeCount,
                 "badge": NSApp.dockTile.badgeLabel ?? "", "looked_at": UmiLooking.lookedAt?.umiID ?? "",
                 "active": NSApp.isActive]
     }

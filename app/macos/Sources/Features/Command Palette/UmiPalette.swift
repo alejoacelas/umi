@@ -405,6 +405,16 @@ final class UmiPaletteModel: ObservableObject {
                 self?.begin(action)
             })
         }
+        // The user's own commands (`command."Title" = …`, executables in the commands folder).
+        let config = UmiConfig.shared
+        for command in config.commands where !out.contains(where: { $0.title == command.title }) {
+            let keys = config.keys(for: command).compactMap { UmiShortcut(spec: $0)?.symbols }.first
+            out.append(UmiPaletteEntry(id: "command:" + command.title, title: command.title,
+                                        subtitle: command.path.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? command.line,
+                                        symbols: keys, icon: "command", kind: .cli) { [weak self] in
+                self?.runCommand(command)
+            })
+        }
         var titles = Set(out.map(\.title))
         // Launch configurations by name, as in Warp's command palette (L-21).
         return out + ghostty.filter { titles.insert($0.title).inserted } + launchConfigEntries(inCommands: true)
@@ -541,6 +551,30 @@ final class UmiPaletteModel: ObservableObject {
             }
             guard self.isPresented else { return }
             self.output = (title, text.isEmpty ? "(exit \(status))" : text, status != 0)
+            self.step = .output
+            self.query = ""
+        }
+    }
+
+    /// Run one of the user's commands; its stdout shows here, a failure shows its stderr.
+    private func runCommand(_ command: UmiConfig.Command) {
+        step = .running
+        busy = "Running \(command.title)…"
+        entries = []
+        runID += 1
+        let mine = runID
+        process = UmiCommandRunner.start(command, pane: pane, cause: "palette") { [weak self] status, out, err in
+            guard let self, self.runID == mine else { return }
+            self.process = nil
+            self.busy = nil
+            UmiEvents.shared.emit("palette.ran", ["command": command.title, "status": Int(status)])
+            let text = (status == 0 ? out : (err.isEmpty ? out : err)).trimmingCharacters(in: .newlines)
+            if status == 0 && text.isEmpty {
+                self.close()
+                return
+            }
+            guard self.isPresented else { return }
+            self.output = (command.title, text.isEmpty ? "(exit \(status))" : text, status != 0)
             self.step = .output
             self.query = ""
         }
@@ -1136,17 +1170,10 @@ enum UmiCLIRunner {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: UmiPaths.cliPath)
         process.arguments = argv
-        var env = ProcessInfo.processInfo.environment
-        if let pane {
-            for (key, value) in UmiEnvironment.paneVariables(paneID: pane.id) { env[key] = value }
-        } else {
-            env["UMI_STATE_DIR"] = UmiPaths.stateDirectory
-            env.removeValue(forKey: "UMI_PANE_ID")
-            env.removeValue(forKey: "UMI_INSTANCE")
-        }
-        // The `umi` calls it makes are recorded with this cause (`palette`, `key:<keys>`).
-        env.removeValue(forKey: "UMI_CAUSE")
-        if let cause { env["UMI_CAUSE"] = cause }
+        // The calling pane, tab and window, and the cause its `umi` calls are recorded with
+        // (`palette`, `key:<keys>`).
+        var env = UmiCommandRunner.environment(pane: pane, cause: cause ?? "")
+        if cause == nil { env.removeValue(forKey: "UMI_CAUSE") }
         process.environment = env
         if let cwd, FileManager.default.fileExists(atPath: cwd) { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
         let out = UmiPipe.make(), err = UmiPipe.make()

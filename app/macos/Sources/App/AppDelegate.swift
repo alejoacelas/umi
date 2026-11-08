@@ -235,6 +235,8 @@ class AppDelegate: NSObject,
         UmiUndoTrace.install(undoManager)
         UmiShortcuts.install()
         UmiLooking.start()
+        UmiCause.startWatchingEvents()
+        UmiSlots.start()
         UmiPersistence.shared.restoreUI()
         undoManager.disableUndoRegistration()
         UmiPersistence.shared.restoreLayout()
@@ -826,8 +828,8 @@ class AppDelegate: NSObject,
             .reduce(0) { $0 + ($1.bell ? 1 : 0) }
         let wantsBadge = ghostty.config.bellFeatures.contains(.attention) && bellCount > 0
         var label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
-        // Umi: panes whose agent needs the user come first (UmiAttention).
-        let needingInput = MainActor.assumeIsolated { UmiAttention.shared.needingYouCount }
+        // Umi: the panes the `badge` slot counts (default: whose agent needs the user) come first.
+        let needingInput = MainActor.assumeIsolated { UmiSlots.badgeCount }
         if needingInput > 0 { label = needingInput > 99 ? "99+" : String(needingInput) }
         NSApp.dockTile.badgeLabel = label
         NSApp.dockTile.display()

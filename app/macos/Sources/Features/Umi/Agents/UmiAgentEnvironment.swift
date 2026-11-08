@@ -101,8 +101,8 @@ enum UmiAgentEnvironment {
     static func isForeignMarker(_ key: String) -> Bool {
         let exact: Set<String> = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT",
                                   "CLAUDE_AGENT_SDK_VERSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID",
-                                  "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "UMI_PANE_ID",
-                                  "UMI_TAB_ID", "UMI_WINDOW_ID", "UMI_SESSION_ID", "UMI_INSTANCE",
+                                  "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "UMI_PANE", "UMI_PANE_ID",
+                                  "UMI_TAB", "UMI_WINDOW", "UMI_CAUSE", "UMI_TAB_ID", "UMI_WINDOW_ID", "UMI_SESSION_ID", "UMI_INSTANCE",
                                   "UMI_STATE_DIR", "UMI_SESSION_NAME", "TERM_SESSION_ID", "ITERM_SESSION_ID",
                                   "UMI_HEADLESS", "UMI_PLUGIN_ROOT", "UMI_CLI"]
         return exact.contains(key)
