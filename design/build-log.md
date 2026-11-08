@@ -137,6 +137,10 @@ and `1f8bdf4af`) are superseded by these.
    `sessions/` folder stays on disk untouched.
 10. Menu ids kept for users' `shortcuts.json`: `session.next_needing_you` (now "Jump to Next Pane
     Needing You") and `view.dismiss_toasts` ("Dismiss Update Note").
+11. `AGENTS.md` still mentions agent sessions and `app/macos/UmiTests/verify_agent_panes.py` (removed
+    with the read-only view). I left it alone: AGENTS.md changes need Alejo's go-ahead.
+12. The real-agent runs (`ACCEPTANCE_REAL=1`) have no tests left; their fixture in `conftest.py`
+    stays harmless. A real Claude/Codex check of the hooks in a pane would be the next one to add.
 13. ⌃⌘U stays, as View ▸ Dismiss Update Note, though spec-cleanup.md lists it with the inbox keys
     that leave. Where: `UmiShortcuts` (`view.dismiss_toasts`), SPEC I-4 and L-9. Why: spec-cleanup
     also says the update note needs a home of its own, and the note needs a way to go away; the key
@@ -145,7 +149,4 @@ and `1f8bdf4af`) are superseded by these.
 14. ⌃⌘J takes a pane whose agent failed (`error`) only while it is unseen; once looked at it drops
     out, as primitives.md defines unseen. Its sidebar mark still shows the failure. Where:
     `UmiAttention.jumpOrder`, SPEC L-12. Working panes are never jump targets, even unseen.
-11. `AGENTS.md` still mentions agent sessions and `app/macos/UmiTests/verify_agent_panes.py` (removed
-    with the read-only view). I left it alone: AGENTS.md changes need Alejo's go-ahead.
-12. The real-agent runs (`ACCEPTANCE_REAL=1`) have no tests left; their fixture in `conftest.py`
-    stays harmless. A real Claude/Codex check of the hooks in a pane would be the next one to add.
+
