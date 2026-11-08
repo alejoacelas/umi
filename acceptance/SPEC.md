@@ -549,7 +549,8 @@ From design/attention-ui.md ("The drawer") and prototypes/drawer.html (option B:
 
 - **DR-1 [A+W]** Each window has a drawer: it rises over the lower half of the window's panes, at
   their full width, without changing the tab's layout, and belongs to the window (it stays open
-  across tab switches). Its header has a chip per drawer pane (its indicator and name; the one on
+  across tab switches). It slides up from the bottom edge over 0.26 s when it opens and back down
+  when put away (none with Reduce Motion on). Its header has a chip per drawer pane (its indicator and name; the one on
   show highlighted, a click shows another) and Dock, Hide and Put away. `<cli> drawer show PANE`
   moves the pane into the drawer and opens it there, focused: the pane leaves its tab (no strip chip,
   no place among the tab's `visible_limit`), keeps running, and the tab's focus moves to its pane
