@@ -1323,3 +1323,50 @@ targets) are in `UmiQueryTests` against the default `jump` list.
   pane's PATH: on mac-air-2 the installed 0.6.3, which reads the retired `UMI_PANE_ID`, so the build
   under test was never the one checked. They now type the build's own CLI by its path; the P-4 test
   first checks that `<cli>` is on PATH in the pane, which it did implicitly before.
+
+## Design step 4: hidden panes and the pane strip (2026-11-08)
+
+Stacks (M-7), E-9's "three panes, then a new tab" rule, the Docs tab as a stack (E-10), the header
+grips and Ghostty's hover handle left with this step (design/spec-cleanup.md); hidden panes, the
+three-pane limit, the pane strip and ⌘[ ⌘] over every pane came in (SPEC H-1 to H-8).
+
+**Added.** `test_hidden_panes.py`: a fourth pane hides one (`hid`; never the arriving or focused
+pane; the hidden pane keeps running; `strip` and `ls` order); pinned panes are never hidden to make
+room (and an all-pinned tab shows more); every way a pane arrives makes room (a file, a move, a
+reopen, focusing a hidden pane, a lower `visible_limit`); `pane hide`/`show` (events, `changed_at`,
+the last pane on show refused, `--focus`, queries); `--until` with a query and a duration
+(`by_condition`, cause `config`, `unseen`, `pane until`); closing the last pane on show brings a
+hidden one in; ⌘[ ⌘] walking with ⌘ held (`debug.key` with `hold`, then `debug.release`) and through
+the menu; undo of a move that made room; hidden panes and conditions after a restart; launch
+configurations saving `is_hidden` and opening the rest hidden. UI (unlocked screen): the strip's
+chips (order, values, place above the panes, click to bring in, no grab handle), real ⌘] held and
+released, a hidden pane's chip dragged onto a pane's edge.
+
+**Removed** with stacks: `test_umi_stacks.py` (all four tests: dropping on a pane's middle, undoing a
+stack, files stacking, ⌘[ ⌘] cycling a stack and its strip). The "Stack here" zone is gone; the Swift
+test `TerminalSplitDropZoneTests/centerSelectsLeft`, which failed on main since stacks added the
+centre zone, passes again unchanged.
+
+**Changed.**
+- `test_editor.py::test_files_open_in_panes_beside_the_caller_three_to_a_tab` became
+  `…_and_a_full_tab_makes_room`: the third file now stays in the caller's tab and one earlier file is
+  hidden (`hid`), instead of a new tab (E-9 as rewritten). The rest is kept: order to the right of the
+  caller, a file already open shown where it is (now brought in when hidden), focus kept, modes;
+  `editor ls` documents now carry `hidden`.
+- `test_umi_panes_ui.py::test_markdown_opens_in_one_docs_tab_most_recent_first` became
+  `…_in_the_docs_tab_at_its_right_end_three_on_show`: the Docs tab is ordinary (E-10 as rewritten):
+  each new document at its right end, three on show, the rest hidden; one opened again is brought in.
+  Its last check (a text file goes by folder, not to the Docs tab) put the text file in a folder the
+  Docs tab's own panes started in, so the Docs tab was the closest tab and the check failed on main
+  too (steps 1 to 3 list it as failing there); the text file now gets a folder of its own, which is
+  what that check means.
+- `test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`:
+  drags the pane's strip chip instead of Ghostty's hover handle, which is gone (H-8); same targets.
+- `test_umi_editor_warp.py::test_header_shows_the_unsaved_dot_and_chips_show_type_icons`: the chips
+  are in the pane strip (no stacking needed); a chip's accessibility value now says where its pane is,
+  so the dirty check reads ", unsaved changes" at its end instead of the whole value.
+- `test_umi_web.py::test_a_web_pane_moves_and_stacks_without_reloading` became
+  `…_moves_hides_and_comes_back_without_reloading`: dropped on a pane's edge, hidden and shown instead
+  of stacked; still checks the page doesn't load again.
+- `test_pane_data.py::test_the_docs_tab_is_the_tab_with_role_docs`: the tab's `docs` field is gone
+  (design/cli.md, "Removed"); it checks `role=docs` and its single holder instead.

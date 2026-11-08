@@ -399,7 +399,8 @@ enum UmiLayout {
     @discardableResult
     static func move(_ pane: Ghostty.SurfaceView, to destination: PaneDestination, focus: Bool) throws -> UmiTopology.Location {
         guard var source = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
-        if source.tab.isHidden(pane) {
+        let wasHidden = source.tab.isHidden(pane)
+        if wasHidden {
             // A hidden pane moves from the end of its tab: it comes in there first, without
             // hiding another for it, then leaves.
             UmiHidden.withoutMakingRoom { UmiHidden.quietly { _ = try? UmiHidden.show(pane, focus: false) } }
@@ -426,6 +427,9 @@ enum UmiLayout {
         var result: UmiTopology.Location?
         try undoable("Move Pane", windows: involved) {
             result = try moveUngrouped(pane, from: source, to: destination, focus: focus, size: size)
+            // A hidden pane moved within its own tab arrived without the tree noticing (it was in
+            // it for the move): the tab makes room now.
+            if wasHidden, let result { UmiHidden.makeRoom(in: result.tab, window: result.window, keeping: [pane]) }
         }
         guard let result else { throw UmiError.failed("the move didn't happen") }
         let toIndex = (result.window.tree(of: result.tab).root?.leaves().firstIndex { $0 === pane } ?? 0) + 1

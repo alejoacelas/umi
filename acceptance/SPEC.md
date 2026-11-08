@@ -44,7 +44,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
 
 ### Core: agents in panes
 These outcomes must hold every time, with both agents: the plugin's hooks report each agent's state
@@ -67,7 +67,8 @@ tests:
 
 Requirements that left with Umi's own agent sessions (design step 1, 2026-11-07; design/spec-cleanup.md):
 AG-1 to AG-17, AG-20 to AG-24 (sessions, the read-only view, Take Over, `agent` commands, the inbox and
-toasts), and the delivery phases that built them. Their IDs are not reused.
+toasts), and the delivery phases that built them. Their IDs are not reused. Design step 4
+(2026-11-08) replaced stacks (M-7) with hidden panes and the pane strip (H-1 to H-8).
 
 ---------------------------------------------------------------------------------------------------
 
@@ -179,6 +180,7 @@ the menu.
   - ⌃⌘P pins or unpins the tab;
   - ⌃⌘R / ⌃⇧⌘R rename the tab or pane;
   - ⌃⌘J goes to the next pane whose agent needs the user, and ⌃⌘K goes back (L-12);
+  - ⌘[ and ⌘] walk the tab's panes, those on show then the hidden ones (H-6);
   - ⇧⌘T reopens the last closed pane, tab or window (L-20);
   - (Warp parity, 2026-11-05) ⌥⌘I and ⌥⇧⌘I synchronize input and stop it (L-32); ⌘= ⌘- ⌘0 zoom
     the interface and ⌥⇧> ⌥⇧< change the terminals' font size (L-33).
@@ -269,7 +271,8 @@ the menu.
   source, ⌘/ is the editor's key and the page stays closed.
 
 - **L-18 [A]** After a pane closes (⌘W, `pane close`, its program exiting), focus goes to the pane
-  of that tab the user used most recently, as in Warp; tree order only when there's no history.
+  on show of that tab the user used most recently, as in Warp; tree order only when there's no
+  history. Hidden panes don't come in by themselves (except when the last pane on show closes, H-4).
 - **L-19 [A]** Panes share the space equally, as in Warp. Panes in the same row (or column) share
   it equally after every split and close:
   - splitting a pane along its row adds a pane with an equal share: two panes are 50/50, a third
@@ -392,6 +395,8 @@ A "live session" is a pane with a running program, its scrollback and its state.
 - **M-3 [A]** Moves can be undone and redone. After undo, each tab's focused pane is what it was.
 - **M-4 [W]** Panes can be dragged onto other panes, including in other windows. Tabs can be dragged
   in the sidebar to reorder them and onto another window's sidebar. Also, as in Warp:
+  - a pane is dragged by its chip in the pane strip (H-8); Ghostty's hover handle at the top of a
+    terminal and the grips of file and web headers are gone;
   - a pane dropped on a tab's row moves into that tab (beside its focused pane, as ⌃⌘←/→ and
     `pane move --tab` place it); dropped between rows (the top or bottom quarter of a row) or below
     the rows, it becomes a new tab at that position. A thin accent line shows where it lands;
@@ -409,18 +414,62 @@ A "live session" is a pane with a running program, its scrollback and its state.
   and a window never ends up unusably small.
 - **M-6 [A]** A new window created by moving is a separate window. It isn't merged into an existing
   window's tabs.
-- **M-7 [A+W]** Stacks, in the user's words (2026-11-04): "if I drag a session on top of another, they
-  should come to occupy the same pane space and be accessible through the cmd [] shortcuts + a small
-  tab thing at the top similarly to what we currently do for files". A pane dropped on the middle of
-  another pane (the middle third each way; "Stack here" shows) joins it in its place, on show and
-  focused; its old place closes. Any panes can stack: terminals and file panes.
-  - A strip along the top of the place names each member; clicking one shows it, its ✕ closes it.
-  - ⌘[ and ⌘] show the previous and next member of the focused pane's stack. In a pane that isn't
-    stacked they go to the previous and next pane, as before.
-  - Members not on show keep running. Focusing one (`pane focus`, the palette, `go`) shows it.
-  - Closing the member on show, or moving it away, shows the next member in its place; a member
-    whose program ends leaves its stack; a stack left with one pane is an ordinary pane again.
-  - `ls` lists every member (M-7 fields in CLI.md); stacks survive a restart and undo.
+- **M-7** (removed in design step 4, 2026-11-08: hidden panes and the pane strip, H-1 to H-8, replace
+  stacks; design/spec-cleanup.md.)
+
+## H. Hidden panes and the pane strip
+
+From design/attention-ui.md ("Panes per tab", "Hidden panes", "The pane strip") and design/cli.md
+("Hidden panes").
+
+- **H-1 [A]** A tab shows at most three panes (the tab attribute `visible_limit`, default 3, at least
+  1), counting places on show whatever the direction of the splits. Anything that adds a pane to a
+  tab already showing its limit (a split, from the CLI, a key, the menu or a drop; opening a file or
+  a page; a move; a reopen; focusing a hidden pane from the palette, `pane focus` or `go`) brings it
+  in, and the pane the `strip.make-room` slot picks is hidden: by default not `pinned`, not the tab's
+  focused pane, the one looked at longest ago first (Q-3). The pane arriving is never the one hidden.
+  When the slot picks nothing (every other pane pinned) the tab shows more than its limit. `split`,
+  `pane focus`, `pane move` and `edit` report what they hid (`hid`). Lowering `visible_limit` hides
+  panes at once.
+- **H-2 [A]** Any pane can be hidden (`pane hide`, Window ▸ Hide Pane): it leaves its tab's layout,
+  stays in its tab, and its program keeps running; `ls` lists it after the panes on show with
+  `hidden: true`, without a frame, and the tab's `strip` lists every pane in strip order. Hiding the
+  last pane on show fails with exit 1 and changes nothing. `pane show` brings it back at the right end
+  of the tab; keyboard focus stays where it is unless `--focus`. Hiding and showing set the pane's
+  `changed_at` and are `pane.hidden` / `pane.shown` events. `send`, `read`, `keys`, `wait` and
+  `pane set` work on hidden panes.
+- **H-3 [A]** `pane hide P --until CONDITION` brings the pane back by itself when the condition
+  holds: a query about the pane (`agent.done=false or agent.status=needs_input`), a duration
+  (`2h`), or both as two options, the first to hold winning. It is checked whenever the pane's
+  attributes change and once a minute. Coming back never moves keyboard focus; the pane counts as
+  `unseen` until looked at, and its `pane.shown` event has `by_condition` and cause `config`. `pane
+  until` lists the pending conditions; showing the pane by any means clears them.
+- **H-4 [A]** After a close, focus goes to the pane on show used most recently (L-18); hidden panes
+  don't come in by themselves. Closing the last pane on show of a tab with hidden panes brings in the
+  hidden one used most recently, so the tab stays. A hidden pane whose program ends leaves its tab.
+- **H-5 [A+W]** The pane strip (prototypes/pane-strip.html; where-panes-live.html, option C) sits in
+  the window's title bar, above the panes, adding no height. It has a chip for every pane of the tab:
+  those on show in layout order, then the hidden ones, dim and in italics; the focused pane's chip is
+  filled. A chip shows its pane's icon (a file's type icon and unsaved dot, E-24) and title. Clicking
+  a hidden pane's chip brings it in (at the right end) with focus; clicking another focuses its pane.
+  When a hidden pane is brought in and another hidden for it, the outgoing pane takes the incoming
+  one's place among the hidden chips. Terminals have no pane headers; file and web panes keep their
+  headers without a grip.
+- **H-6 [A+W]** ⌘[ and ⌘] walk every pane of the tab in strip order: those on show, then the hidden
+  ones, wrapping round. Stepping onto a hidden pane brings it in where it would go (the right end
+  with ⌘], the left end with ⌘[), hiding the pane `strip.make-room` picks, never the pane the walk
+  began on; stepping on puts the layout back and brings in the next one. Releasing ⌘ lands the walk:
+  on a hidden pane it stays in; back on a pane that was on show, the layout is as it was. Only where
+  the walk lands is reported (`pane.shown`, `pane.hidden`). Without ⌘ held (Window ▸ Previous Pane /
+  Next Pane), each step lands at once.
+- **H-7 [A]** Hidden panes, in strip order, and their pending conditions come back after a restart.
+  Undo of a step that hid panes to make room brings them back on show. Launch configurations (L-21)
+  save hidden terminal panes, marked `is_hidden: true`; opening one, panes marked so, and those past
+  a tab's limit, open hidden.
+- **H-8 [W]** A chip is its pane's drag handle: dragged onto a pane's edge it moves the pane there,
+  onto a tab's row into that tab, onto the "Move to previous / next tab" targets (M-4) there, and
+  out of the window into a window of its own; a hidden pane's chip moves the hidden pane. A chip
+  click that doesn't move is a click (H-5).
 
 ## T. Terminal input and output, and events
 
@@ -658,7 +707,7 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
 ## E. Editor and Markdown
 
 - **E-1 [A+W]** Opening a Markdown or text file shows it in a pane of its own: a file pane, which
-  splits, moves, stacks (M-7), closes and is restored like a terminal pane, with the file's name, the
+  splits, moves, hides (H-2), closes and is restored like a terminal pane, with the file's name, the
   preview/source control and a close button along its top. Markdown opens rendered (headings, lists, task lists, tables, code blocks, links,
   images); JSON opens as a tree whose objects and arrays fold, keys in file order; CSV and TSV open
   as a table (row numbers, a header that stays in view, numbers right-aligned); other text opens as
@@ -685,22 +734,20 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   document, in Markdown or raw HTML, display, and so do remote images and linked badges. Page
   scripts never run.
 - **E-8 [W]** Editor shortcuts work regardless of Caps Lock.
-- **E-9 [A]** Where a new file pane goes, in the user's words (2026-11-04): "by default new files
-  should be opened on a new pane, up to three per tab, then go to new tab. and if opened from umi
-  the file should show on a pane next to the pane that called to open it". A file opened from a
-  pane (`<cli> edit FILE` in it, the palette, the file tree, a link in a preview) goes to the right
-  of that pane, or of the given pane or the given tab's focused pane; several files go one after
-  another. When the tab already shows three panes (a stack counts once), the file gets a new tab
-  right after it. A file already open shows where it is, without a second pane. An explicitly named
-  pane or tab that doesn't exist is an error, never a fallback to another tab.
+- **E-9 [A]** Where a new file pane goes. A file opened from a pane (`<cli> edit FILE` in it, the
+  palette, the file tree, a link in a preview) goes to the right of that pane, or of the given pane
+  or the given tab's focused pane (the right end of the tab when that pane is hidden); several files
+  go one after another. In a tab already showing its limit, `strip.make-room` hides a pane for each
+  (H-1); the file stays in that tab (the 2026-11-04 rule "three per tab, then a new tab" left in
+  design step 4). A file already open shows where it is, brought in if hidden, without a second pane.
+  An explicitly named pane or tab that doesn't exist is an error, never a fallback to another tab.
 - **E-10 [A]** A file opened from outside the app (Finder, `open FILE`, the app being the default
   for these types):
-  - Markdown (asked 2026-11-05) opens in one shared tab, the docs tab (`docs: true` in `ls`, named
-    Docs). Its documents share one place as a stack (M-7), the most recently opened first. The
-    strip names the three most recent (and the one on show, if older), then "+N · ⌘[ ⌘]" for the
-    rest, which ⌘[ and ⌘] reach. A new document goes first and on show; one already open anywhere shows where it
-    is (in the docs tab it becomes the most recent). Without a docs tab, one is made in the current
-    window (a new window if there is none). Closing the last document closes the tab.
+  - Markdown (asked 2026-11-05) opens in one shared tab, the Docs tab: an ordinary tab named Docs,
+    the one with the tab attribute `role=docs`. A new document opens at the right end of its panes,
+    focused, under the same three-pane rule as any tab (H-1: the pane `strip.make-room` picks is
+    hidden); one already open anywhere shows where it is (brought in if hidden). Without a docs tab,
+    one is made in the current window (a new window if there is none).
   - Text, JSON, CSV, TSV and YAML files open in the tab whose folder is closest to the file: the
     tab with a pane whose working directory is the deepest folder containing the file. Any pane of
     a tab counts; `/` doesn't. A file already open somewhere shows there. Ties go to the current
@@ -736,7 +783,7 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   `umi-web-origin` (repeatable, no default) lists origins, such as
   `https://agent-server.tail622085.ts.net`. A link from a listed origin ⌘-clicked in a terminal pane,
   or given to `<cli> edit URL`, opens in a web pane instead of the browser: a pane placed as a file
-  pane is (E-9) that splits, moves, stacks (M-7), closes and is restored like any other pane. It
+  pane is (E-9) that splits, moves, hides (H-2), closes and is restored like any other pane. It
   shows the page with its title, Reload (⌘R), Open in Browser and a close button along its top;
   there is no address bar. Pages run their scripts, and their cookies and local storage persist
   across relaunches. A relaunch restores the page by its URL. Links and navigation to other origins
@@ -776,7 +823,7 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   text and focus and this one closes; with unsaved edits there, Save As refuses and says why); ⌘S shows a "File saved." toast at the top of the tab for 4
   seconds. Saving never reformats the file. When no file pane is focused these keys go to whatever
   is (a terminal gets ⌃G).
-- **E-24 [A+W]** File pane header and stack chips, as Warp's (Warp parity, 2026-11-05): the file's
+- **E-24 [A+W]** File pane header and strip chips, as Warp's (Warp parity, 2026-11-05): the file's
   name centred, with an 8-point dot 4 points before it while there are unsaved changes; on the right
   the preview/source control (E-2), ⋯ and close. ⋯ opens the pane menu, as Warp's for each view
   (W: `code/view.rs`, `notebooks/file/mod.rs`); a right-click on the header opens the same menu (an
@@ -784,7 +831,8 @@ changes how the terminal looks. Colors and spacing come from Warp's own source.
   maximized; outside a split it does nothing), Copy file path, Reveal in Finder, and View Markdown
   preview for Markdown. In a preview: Maximize pane, Refresh file (asks first when there are unsaved
   changes), Open in editor (the source view), Copy file path. A right-click in the source text offers
-  Cut, Copy and Paste. A stack chip (M-7) for a file shows
+  Cut, Copy and Paste. The header has no grip (a pane is dragged by its strip chip, H-8). A file's
+  chip in the pane strip (H-5) shows
   the file type's colored icon and the same dot, and is at most 300 points wide.
 ### The Markdown preview as Warp's (Warp parity, 2026-11-05)
 

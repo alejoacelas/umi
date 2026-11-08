@@ -10,8 +10,10 @@ own agent sessions out: the `agent` commands are gone, and agents run in panes, 
 plugin through `hook` ("Agent hooks" below). Step 2 brought pane data: attributes and `pane set`,
 events with their cause, `log` and `focus-log` ("Attributes", "Events and logs"). Step 3 brought
 queries in selectors and `ls --where`, named lists and `go`, slots, key bindings and palette commands
-from the config ("Selectors", "Queries", "Lists and `go`", "Configuration"). Later steps bring the
-rest of `design/cli.md` (hidden panes, the drawer).
+from the config ("Selectors", "Queries", "Lists and `go`", "Configuration"). Step 4 brought hidden
+panes and the three-pane limit ("Hidden panes"; `hid` on `split`, `pane focus`, `pane move` and
+`edit`; the tab's `visible_limit` and `strip`) and removed stacks and the tab's `docs` field. Later
+steps bring the rest of `design/cli.md` (the drawer).
 
 ## General
 
@@ -99,10 +101,11 @@ VALUE  := a word, or text in double quotes
 | `tab color [TAB] COLOR` | red green yellow blue magenta cyan (Warp's six, from the theme's ANSI colors), purple pink orange teal graphite, none |
 | `tab pin\|unpin [TAB]` | |
 | `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down`: one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
-| `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions |
-| `pane focus\|close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window`; `close` closes every pane a query matches |
+| `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions. When the tab already shows its limit, `strip.make-room` hides one; JSON `{"pane", "tab", "window", "hid"?: id}` |
+| `pane focus [PANE]` | a hidden pane is brought in first (it takes the right end of the tab; `strip.make-room` hides one); JSON `{"pane", "tab", "window", "hid"?}` |
+| `pane close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window`; `close` closes every pane a query matches |
 | `pane rename [PANE] NAME` | |
-| `pane move [PANE] (--to PANE [--dir D] \| --tab T [--dir D] \| --window W [--dir D] \| --new-tab [--window W] \| --new-window) [--no-focus]` | the pane's program keeps running. A query moves every match in its order: the first goes where the options say, each next one beside the one before it (`--to`'s own pane stays put). JSON `{"pane", "panes", "tab", "window"}` |
+| `pane move [PANE] (--to PANE [--dir D] \| --tab T [--dir D] \| --window W [--dir D] \| --new-tab [--window W] \| --new-window) [--no-focus]` | the pane's program keeps running. A query moves every match in its order: the first goes where the options say, each next one beside the one before it (`--to`'s own pane stays put). A hidden pane moves too. Landing in a tab at its limit hides one there; JSON `{"pane", "panes", "tab", "window", "hid"?}` |
 | `pane swap [PANE] TARGET` | |
 | `pane resize [PANE] up\|down\|left\|right [AMOUNT]` | |
 | `send [--pane P] [--enter\|-e] TEXT…` | no TEXT plus a piped stdin sends stdin |
@@ -113,28 +116,27 @@ VALUE  := a word, or text in double quotes
 | `notify [--pane P] TITLE [BODY]` | |
 | `sidebar [on\|off\|toggle\|status\|tabs\|files\|search] [--window W]` | shown or hidden per window (the given one, else the caller's, else the current); JSON: `{"visible": bool, "mode": "tabs"\|"files"\|"search", "width": points, "window": id}` |
 | `sidebar width [N] [--window W]` | prints the window's sidebar width in points; with N sets it (clamped to 180–600) |
-| `reopen [--list]` | reopens the last closed pane, tab or window (closed in the last 60 s); prints the pane's id (the window's for a window); JSON `{"kind": "pane"\|"tab"\|"window", "pane"?, "tab", "window"}`; exit 1 when there's nothing to reopen. `--list`: JSON `{"items": [{"kind", "closed_at", "expires_in", "panes": [id], "tab"?, "title"?, "tabs"?}]}`, most recent first |
+| `reopen [--list]` | reopens the last closed pane, tab or window (closed in the last 60 s; a pane reopened into a tab at its limit hides one there); prints the pane's id (the window's for a window); JSON `{"kind": "pane"\|"tab"\|"window", "pane"?, "tab", "window"}`; exit 1 when there's nothing to reopen. `--list`: JSON `{"items": [{"kind", "closed_at", "expires_in", "panes": [id], "tab"?, "title"?, "tabs"?}]}`, most recent first |
 | `screenshot [--window W] OUT.png` | an image of the window, terminal contents included |
 | `worktree ls` | |
 | `layout ls` | launch configurations (SPEC L-21) in `$XDG_CONFIG_HOME/umi/launch_configurations` (default `~/.config/umi/…`), by name; one per YAML document, so a file with several documents (separated by `---`) lists several; JSON `{"directory", "configs": [{"name", "file", "path", "document", "windows", "tabs"} or {"file", "path", "document", "error"}]}` (`document` counts from 0; a file that can't be read is listed once, with `error` and the line) |
-| `layout save NAME [--replace]` | saves every window as `NAME.yaml` (unless NAME ends in `.yaml`/`.yml`), named after the file (`my_work` → "My Work"); prints the path; JSON `{"path", "name", "windows", "tabs"}`; fails when the file exists, unless `--replace` |
-| `layout open NAME [--no-focus]` | NAME is a configuration's name or file name (case doesn't matter; a file holding several configurations fails and lists their names); opens each of its windows as a new window, the active one in front; prints the windows' ids; JSON `{"name", "windows": [id], "panes": [id]}` |
+| `layout save NAME [--replace]` | saves every window, hidden panes included (marked `is_hidden: true`), as `NAME.yaml` (unless NAME ends in `.yaml`/`.yml`), named after the file (`my_work` → "My Work"); prints the path; JSON `{"path", "name", "windows", "tabs"}`; fails when the file exists, unless `--replace` |
+| `layout open NAME [--no-focus]` | NAME is a configuration's name or file name (case doesn't matter; a file holding several configurations fails and lists their names); opens each of its windows as a new window, the active one in front (a tab with more panes than its limit, or panes marked `is_hidden`, opens the rest hidden); prints the windows' ids; JSON `{"name", "windows": [id], "panes": [id]}` |
 
 Objects in JSON:
 - **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab], "attributes": {…}}`
-- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "docs": bool (it has
-  `role=docs`), "color"?, "group"?: its tab group's name, "focused_pane": id, "panes": [Pane],
-  "attributes": {…}}`
+- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "color"?, "group"?:
+  its tab group's name, "focused_pane": id, "visible_limit": int, "strip": [id] (every pane's chip,
+  in strip order), "panes": [Pane], "attributes": {…}}`
 - **Pane**: `{"id", "kind": "terminal"|"file"|"web", "cwd", "name"?, "focused": bool, "zoomed": bool,
-  "hidden": bool (a stack member that isn't on show), "in_drawer": bool,
+  "hidden": bool, "in_drawer": bool,
   "indicator": "working"|"needs_you"|"finished"|"none", "attributes": {key: value} (every attribute:
   the user's, `agent.*`, and Umi's read-only ones; "Attributes" below), "file"?: path (a file pane),
-  "shown": bool (false for a stack member that isn't on show), "stack"?: [id] (the panes sharing its
-  place, in strip order), "frame"?: {"x", "y", "width", "height"} (points, top-left origin, in the
-  window's terminal area), "url"?: the page's address and "title": its title (a web pane, SPEC
+  "frame"?: {"x", "y", "width", "height"} (points, top-left origin, in the window's terminal area;
+  panes on show only), "url"?: the page's address and "title": its title (a web pane, SPEC
   E-12)}`. `indicator` is `needs_you` while its agent needs input or failed, `finished` while it
   finished and the pane is unseen (`changed_at > seen_at`), `working` while it works.
-  A tab's `panes` lists the panes on show, then stack members that aren't.
+  A tab's `panes` lists the panes on show in layout order, then the hidden ones in strip order.
 
 Events: `pane.created` and `tab.created` carry `"reopened": true` when `reopen` brought them back;
 `sidebar.changed` is emitted when a window's sidebar is shown or hidden or its width changes. Events,
@@ -150,6 +152,26 @@ Other commands:
 
 Events also include `palette.opened` and `palette.ran`. Tabs change places only when moved (`tab.moved`) or
 pinned; nothing reorders them on its own (SPEC S-7).
+
+## Hidden panes
+
+| Command | Notes |
+|---|---|
+| `pane hide [PANE] [--until CONDITION]…` | takes each matching pane out of its tab's layout; it stays in its tab and keeps running. Hiding the last pane on show fails with exit 1 and changes nothing. JSON `{"panes": [id]}` |
+| `pane show [PANE] [--focus]` | brings each pane back into its tab, at the right end (`strip.make-room` hides one if the tab is at its limit). Keyboard focus stays where it is unless `--focus`. JSON `{"panes": [id], "hid": [id]}` |
+| `pane until [PANE]` | the pane's pending conditions; JSON `{"pane", "until": [{"query"?, "at"?}]}` |
+
+- `--until` takes a query about the pane itself (`--until 'agent.done=false or agent.status=needs_input'`),
+  a duration (`--until 2h`), or both as two options; the first to hold shows the pane. A query that
+  doesn't parse fails with exit 1. The condition is checked whenever the pane's attributes change and
+  once a minute; conditions are saved with the layout. Showing the pane by any means clears them.
+- A pane shown by a condition never takes keyboard focus. Its `changed_at` is set, so it counts as
+  `unseen` until looked at; its `pane.shown` event has `"by_condition": true` and cause `config`.
+- Events: `pane.hidden` and `pane.shown` `{"pane", "tab", "window", "by_condition"?}`, for every way a
+  pane is hidden or shown (making room is caused by what made it). A ⌘[ ⌘] walk reports only where
+  it lands.
+- Closing the last pane on show of a tab with hidden panes brings in the hidden one used most
+  recently; otherwise hidden panes never come in by themselves.
 
 ## Attributes
 
@@ -172,11 +194,12 @@ pinned; nothing reorders them on its own (SPEC S-7).
   `web`), `cwd`, `branch` (the git branch of the pane's folder), `command` (the command it runs, or
   last ran), `focused` (`true`/`false`: focused in its tab), `hidden`, `in_drawer`, `seen_at` (when the
   pane itself last had keyboard focus in the app's front window while the app was active; now while
-  it has), `changed_at` (when its `agent.status` last changed), `status_since` (the same, for the
-  status), `idle_for` (seconds since its terminal last printed, as `90s`), `unseen` (`true` while
-  `changed_at > seen_at`), and on tabs
+  it has), `changed_at` (when its `agent.status` last changed, or it was last hidden or shown),
+  `status_since` (when its `agent.status` last changed), `idle_for` (seconds since its terminal last
+  printed, as `90s`), `unseen` (`true` while its agent's status changed since `seen_at`, or it came
+  back on show since then; being hidden doesn't make a pane unseen), and on tabs
   `visible_count` (the panes it shows). Times are ISO 8601 with a time zone. A key Umi has nothing
-  for is absent (`branch` outside git, `changed_at` without an agent).
+  for is absent (`branch` outside git, `changed_at` on a pane with no agent that was never hidden).
 - **Keys written by the hook plugin** ("Agent hooks" below): anyone may write them with `pane set`;
   the next hook event overwrites them. On a pane without an agent they need `agent.kind` (`claude` or
   `codex`) in the same command, else exit 1. `agent.status` is one of its five values and
@@ -184,8 +207,9 @@ pinned; nothing reorders them on its own (SPEC S-7).
   `agent.status` can't be unset on its own.
 - **Keys with a meaning to Umi**: `role` has one holder per value, among panes for panes and among
   tabs for tabs: setting `role=manager` on a pane removes it from the pane that had it. The Docs tab
-  (SPEC E-10) is the tab with `role=docs`. `pinned` (panes) and `visible_limit` (tabs) are stored now
-  and take effect with hidden panes.
+  (SPEC E-10) is the tab with `role=docs`. `pinned` (panes): never hidden to make room.
+  `visible_limit` (tabs): how many panes the tab shows; default 3, at least 1; lowering it hides
+  panes at once.
 - Attributes live and die with their pane (or tab, window). They are saved and restored with the
   layout.
 
@@ -241,7 +265,7 @@ Slots:
 | `landing.after` | `10m` | |
 | `tab.summary` | `focused and agent.kind then (agent.status=needs_input or agent.status=error) \| sort -status_since then unseen \| sort -status_since then agent.kind \| sort -status_since` | the pane of a tab, among those on show, that gives its sidebar row the agent mark and line 2 |
 | `sidebar.line2` | `{agent.title or command or cwd}` | a template: each `{…}` is the first of its keys that is set; the default keeps the built-in line |
-| `strip.make-room` | `not pinned and not focused \| sort seen_at` | stored; takes effect with hidden panes |
+| `strip.make-room` | `not pinned and not focused \| sort seen_at` | which pane on show is hidden when one comes into a tab at its limit: the first match among its panes on show, never one that is arriving. When nothing matches, the tab shows more than its limit |
 | `indicator.working`, `indicator.needs_you`, `indicator.finished` | `muted`, `amber`, `muted` | stored; take effect with the pane indicator |
 | `done-check` | `^Status: done` | a regular expression; `agent.done=true` when the last line of the agent's last message matches |
 
@@ -282,8 +306,8 @@ Slots:
 
 | Command | Notes |
 |---|---|
-| `edit FILE\|URL… [--source\|--preview] [--tab T \| --pane P]` | opens each file in a pane of its own: the first to the right of the pane (the calling pane, or the tab's focused pane), each next one to the right of the one before; a tab already showing three panes gets a new tab after it instead. A file already open shows where it is. Keyboard focus stays where it was. An http(s) URL whose origin is an `umi-web-origin` opens the same way in a web pane (SPEC E-12); other URLs are refused. JSON: `{"documents": [{"path", "pane", …}], "pages": [{"url", "pane"}], "tab", "window"}`. `open` is the same command |
-| `editor ls [--tab T \| --pane P]` | JSON: `{"documents": [{"path", "pane", "mode": "preview"\|"source", "dirty": bool}], "active"}`: the files open in that tab's panes |
+| `edit FILE\|URL… [--source\|--preview] [--tab T \| --pane P]` | opens each file in a pane of its own: the first to the right of the pane (the calling pane, or the tab's focused pane; the right end of the tab when that pane is hidden), each next one to the right of the one before; in a tab at its limit, `strip.make-room` hides one for each. A file already open shows where it is (brought in if hidden). Keyboard focus stays where it was. An http(s) URL whose origin is an `umi-web-origin` opens the same way in a web pane (SPEC E-12); other URLs are refused. JSON: `{"documents": [{"path", "pane", …}], "pages": [{"url", "pane"}], "tab", "window", "hid": [id]}`. `open` is the same command |
+| `editor ls [--tab T \| --pane P]` | JSON: `{"documents": [{"path", "pane", "mode": "preview"\|"source", "dirty": bool, "hidden": bool}], "active"}`: the files open in that tab's panes |
 | `editor close [FILE] [--force]` | refuses dirty documents without `--force` |
 | `editor mode [preview\|source] [FILE]` | toggles without a mode; FILE picks one of the tab's files (default: the focused one) |
 | `editor default [--dry-run]` | make the app the default for Markdown, plain text, JSON, CSV, TSV and YAML; `--dry-run` prints the app bundle path |
