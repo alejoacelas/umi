@@ -133,6 +133,11 @@ pub fn parse(
             break :value null;
         };
 
+        // Umi: keys Umi's own code reads from the config file (Config.umiOwnsKey).
+        if (comptime @hasDecl(T, "umiOwnsKey")) {
+            if (T.umiOwnsKey(key)) continue;
+        }
+
         parseIntoField(T, arena_alloc, dst, key, value) catch |err| err: {
             // If we get an error parsing a field, then we try to fall
             // back to compatibility handlers if able.
