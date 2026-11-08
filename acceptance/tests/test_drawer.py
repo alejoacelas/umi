@@ -505,3 +505,46 @@ def test_real_ctrl_cmd_m_and_the_drawers_buttons_ui(inst, win, ui, closing):
         wait_until(lambda: c in shown(inst, win["tab"]), 5, message="Dock put it in the tab")
     finally:
         inst.cli("pane", "unset", c, "role", check=False)
+
+
+@pytest.mark.req("DR-1", "DR-3", "DR-4")
+def test_real_clicks_on_a_chip_hide_and_the_waiting_line_ui(inst, win, ui, closing):
+    """Real mouse clicks (not accessibility presses) on the drawer's header: a chip shows its pane,
+    Hide puts the pane on show back hidden in its tab; and on the waiting line's label, which opens the
+    drawer on the pane that waits."""
+    from test_umi_panes_ui import _frame
+    from test_umi_sidebar_warp import click, front
+    a, b, c = three(inst, win)
+    d4 = split(inst, "down", a, "--no-focus")
+    inst.cli("pane", "rename", c, "chip-one")
+    inst.cli("pane", "rename", d4, "chip-two")
+    front(inst, win, ui, a)
+    inst.cli("drawer", "show", c)
+    inst.cli("drawer", "show", d4)
+    settled(inst, win)
+    assert drawer(inst, win)["current"] == d4
+    panel = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Drawer"), 5, message="the drawer in the accessibility tree")
+    # A click on the other pane's chip shows it.
+    chip = wait_until(lambda: ui.find(lambda e: ui.role(e) == "AXButton" and ui.label(e) == "chip-one", root=panel), 5,
+                      message="chip-one's chip")
+    click(_frame(ui, chip))
+    wait_until(lambda: drawer(inst, win)["current"] == c and drawer(inst, win)["open"], 5, message="the chip's click showed chip-one")
+    wait_until(lambda: inst.tree()["current_pane"] == c, 5, message="chip-one has focus")
+    # Hide: back, hidden, in the tab it came from; the drawer goes down; chip-two stays in it.
+    settled(inst, win)
+    panel = ui.find(lambda e: ui.label(e) == "Drawer")
+    click(_frame(ui, ui.button("Hide", root=panel)))
+    wait_until(lambda: c in hidden(inst, win["tab"]), 5, message="Hide put it back hidden in its tab")
+    d = settled(inst, win)
+    assert not d["open"] and [p["id"] for p in d["panes"]] == [d4], d
+    # The waiting line's label opens the drawer on the pane that waits.
+    try:
+        rpc(inst, "debug.attention.set", pane=d4, status="needs_input")
+        label = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Drawer: chip-two · needs you"), 5,
+                           message="the waiting line's label")
+        click(_frame(ui, label))
+        wait_until(lambda: drawer(inst, win)["open"] and drawer(inst, win)["current"] == d4, 5,
+                   message="the label's click opened the drawer on chip-two")
+        wait_until(lambda: inst.tree()["current_pane"] == d4, 5, message="chip-two has focus")
+    finally:
+        rpc(inst, "debug.attention.set", pane=d4, clear=True)
