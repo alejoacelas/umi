@@ -472,3 +472,24 @@ was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI tests were 
     `UmiCause`, `TerminalWindow.sendEvent` (marked Umi).
 17. `focusPane` now sets the tab's focused pane before selecting the tab (found by the trial; it
     cleared a neighbour's unseen state). Where: `UmiLayout.focusPane`.
+
+## Releases
+
+### 0.10.0: steps 1–3
+
+Released from main at the commit after `69480b751` (this entry). Planned after step 1 and again
+after step 3; mac-air-2's screen was locked from step 1 until 19:13 GMT on 8 November, so no UI
+test could run and both releases became this one.
+
+Verified before release: the whole acceptance suite with the UI tests, on mac-air-2 under the
+screen lock, ReleaseLocal build at `69480b751` (`~/umi-final-main.log`): 459 passed, 4 failed,
+2 skipped (a window covering the screen; a window too narrow for three panes). The four
+failures were all there before these steps:
+
+- `test_builds_from_a_path_with_spaces` and `test_markdown_opens_in_one_docs_tab_most_recent_first`
+  fail on the 0.9.0 code too (step 1's base runs).
+- `test_closed_items_expire_after_60_seconds_and_their_programs_end`: a closed pane's shell
+  outlives its reopen period when the sidebar is hidden. It is on main since before step 1 and
+  fixed in step 7.
+- `test_umi_keeps_read_only_attributes`: an `idle_for` timing check that flakes (step 4's
+  reruns).
