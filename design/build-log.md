@@ -677,6 +677,69 @@ rest of the UI tests. The drag out of the window was never seen working.
 17. The walk follows a rebound key, but it is held only while ⌘ is down: a rebinding without ⌘
     lands each step at once, like a menu click. Where: `UmiPaneWalk.held`.
 
+### After the UI tests ran (2026-11-08)
+
+The first full run with an unlocked screen, at `b9992f8cd` (step 5's head, so step 4's code too):
+8 failed, 475 passed, 3 skipped (`~/umi-final-step5.log` on mac-air-2). Step 4's share:
+
+- **The strip was invisible on screen** (found watching the window, not by a test): Ghostty paints
+  the titlebar in the terminal's background, over the content that runs under it, so the chips were
+  in the accessibility tree but covered. The dev-copy screenshots showed them only because
+  `screenshot` draws the content view. Fixed in `UmiTerminalWindow.syncAppearance`: the titlebar
+  stays clear. This also lets the sidebar's own colour run to the window's top, as S-1 says.
+- **A chip drag moved the window** (`test_a_chip_dragged_onto_a_pane_edge…`, and the drag-out and
+  between-tabs tests): the title bar's window drag starts in the window server at the mouse down.
+  While the pointer is over a chip (entered or moved over it) the window is now not movable
+  (`SurfaceDragSourceView`); the empty part of the band still drags the window (seen: dragged 80
+  points left and 20 down). Setting `mouseDownCanMoveWindow` alone didn't stop it.
+- **Dragging a lone pane's chip onto the previous-tab target did nothing**
+  (`test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre…`): the pane's own place
+  still took the drop, because a chip drag didn't count as the pane dragging itself (Ghostty's grab
+  handle did). `UmiStripDrag` tells the pane's place, which then takes no drop.
+- **A renamed pane's chip kept its old name** (same test, "the chip" not found): chips didn't
+  observe `UmiState`, where names live. They do now.
+- **Tests looked in the wrong window**: a split's panes are "Left pane"/"Right pane", so a search for
+  "Terminal pane" across every window found the instance's first window. `test_the_strip_names…`
+  and `test_a_chip_dragged…` now look in the test's window. `test_a_rebound_next_pane_key…` expected
+  the last pane on show to be hidden for the walk; `strip.make-room` hides the one looked at
+  longest ago, which the walk makes the second; the test now checks H-6's wording instead (details in
+  TEST_CHANGES.md).
+- **In a full run the sidebar is hidden** in new windows (they take the last window's choice, and
+  earlier tests hide it), so the window lookup also accepts the main window with a chip per pane, the
+  row test turns the sidebar on, and the ⌘ walk tests park the pointer first: left over the green
+  window button by the strip test's clicks, it opened macOS's Move & Resize menu, which took the
+  keys. Found by a second full run at `52cb55a6f` (6 failed, 479 passed, 1 skipped,
+  `~/umi-final-step5-run2.log`): five of those were this, one the base failure.
+- **The chip dragged out of the window** never ran: it skipped because a new window leaves no room on
+  a 1440 by 900 screen. It now makes the window smaller and drops outside every window of the app (a
+  point beside the test's window fell inside the instance's first one). The same for
+  `test_dragging_a_tab_row_out_of_the_window_makes_a_window_ui`. Both pass.
+- **The Docs tab sometimes left focus on the second-to-last file**
+  (`test_markdown_opens_in_the_docs_tab_at_its_right_end_three_on_show`, step 4's test, failed in the
+  third full run at `8d571d3e3`, 2 failed, 483 passed, 1 skipped, `~/umi-final-step5-run3.log`): a
+  file pane hands its keyboard focus to its editor just after taking it, and when the next file was
+  focused in between, that late hand-off focused the earlier file again and took the tab's focus
+  back. The hand-off now happens only if no other pane was asked for since (`UmiLayout.focusRequests`,
+  `SurfaceView.becomeFirstResponder`). Opening five files in a row, 25 times: wrong focus 6 times
+  before, 0 of 40 after.
+- `test_umi_editor_warp.py::test_header_menu_has_warps_items` was not the app: a macOS notification
+  ("App Background Activity: dim-idle can run in the background") sat over the file header, so the
+  right-click hit the notification. Dismissed, the test passes at `b9992f8cd`. Such banners on
+  mac-air-2 can fail any UI test that clicks near the screen's top right.
+
+**Final counts** (mac-air-2, unlocked screen, under the screen lock, ReleaseLocal at `757b8f8b0`;
+later commits only change this log): acceptance suite 484 passed, 1 failed, 1 skipped
+(`~/umi-final-step5.log`, copy `~/umi-final-step5-run4.log`). The failure is
+`test_builds_from_a_path_with_spaces`, which fails on main too; the skip is
+`test_umi_warp_panes.py`'s four-panes-in-a-row check on a window too narrow for it, as before. Swift
+unit tests: 431 passed, 1 skipped (a benchmark), none failed (`~/umi-final-step5-swift.log`).
+
+**Choice for Alejo to check**
+
+18. The titlebar is clear rather than painted in the terminal background, so the sidebar's colour
+    reaches the top of the window and the strip shows; in native full screen the titlebar that slides
+    down over the content is clear too (untried).
+
 
 ## Step 5: the pane indicator
 
@@ -785,3 +848,24 @@ uncommitted `app/dist/signing.sh` edit as step 4 (`~/umi-test-design-step5-{buil
 8. On a light theme the lift does nearly nothing (white over white); untried.
 9. "Nothing for a pane with no agent" (attention-ui.md open point 1) is kept: a long-running command
    or an unsaved file shows no mark.
+
+### After the UI tests ran (2026-11-08)
+
+Step 5's share of the first run with an unlocked screen (`b9992f8cd`, `~/umi-final-step5.log`):
+
+- `test_pane_indicator.py::test_the_marks_and_the_lift_on_screen_ui` (read the background, 5,5,5,
+  where the amber mark should be) and `::test_chips_and_rows_say_the_state_to_accessibility_ui` (no
+  row said "needs you"): both looked for "Terminal pane" across every window and so captured or
+  searched the instance's first window. With the test's own window they pass, unchanged otherwise.
+  The app was right.
+- Watched on the live screen (`~/umi-step5-look/` on mac-air-2: `window.png`, `strip.png`,
+  `strip-no-sidebar.png`): four panes, three on show. The strip in the title band beside the
+  window's buttons: the focused chip filled, an amber mark on the chip that needs you, a muted grey
+  one on the working chip, the separator, then the hidden chip dim and italic with its own amber
+  mark; with the sidebar hidden it starts after the window's buttons. On the panes: the focused idle
+  pane's grey mark, amber at the bottom right of the pane that needs you, the working pane's muted
+  mark, the focused pane a little brighter, no cyan line; the row shows the summary pane's amber mark
+  on its icon. This matches pane-strip.html (option C) and pane-indicator.html, with the differences
+  already logged (step 5 choices 2 and 5: the 9-point focused mark and grey idle dot, the row
+  keeping its icon).
+- Final counts: as in step 4's "After the UI tests ran" (the same run covers both steps).
