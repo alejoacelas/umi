@@ -933,8 +933,9 @@ on main's code overwrote `~/umi-test-design-step3-suite.log` on mac-air-2.)
 ## Step 7: the drawer
 
 **Status:** built on `design/step7-drawer` (from `design/step6-moving`, on steps 4 and 5; none of them
-is in main yet), ready for review. The UI tests didn't run: mac-air-2's screen was locked for every run
-(see "Not verified").
+is in main yet). Reviewed and approved; the review's follow-up is done (see "After review" at the end
+of this section). The UI tests didn't run: mac-air-2's screen was locked for every run (see "Not
+verified").
 
 **What changed**
 
@@ -1083,3 +1084,74 @@ pass `CODE_SIGN_IDENTITY=-`; the suite and Swift runs use the same local, uncomm
     period ends, when its view is still alive but in no window and no tab. The SwiftUI reference that
     kept it alive wasn't pinned down (leaks shows no strong owner in Umi's code; any later update of
     the window's views releases it).
+
+**After review**
+
+What changed (from `6fa8aa8c7` to `36ea65334`):
+
+- The slide (finding 1). The drawer rises from below the bottom edge over 0.26 s with CSS's `ease`
+  curve, as drawer.html option B does, and goes back down the same way. A timer moves it
+  (`UmiDrawerModel.slide`, `rise` from 0 to 1). Going down, it slides as a picture of itself: the
+  header from the view cache and the terminal's own image. Opened again part way down, it rises
+  from where it is, in that share of the 0.26 s. `debug.drawer` reports `rise`, `sliding` and
+  `leaving`, and writes the picture out on request (`leaving_png`).
+- Closing a drawer pane (finding 3) ends its shell at once. The new pid check passed alone and
+  then failed once in the full suite: SwiftUI kept the drawer's last view of the pane, so the shell
+  ran on. `UmiDrawer.closePane` now takes the pane out of any view still holding it and frees its
+  surface.
+- `pane.closed` for a drawer pane has `tab` (finding 4): the tab the drawer is over, the window's
+  selected tab, as `UmiTopology.locate` gives.
+- Window ▸ Hide Pane (finding 7) is on for a focused drawer pane. For a tab's pane, it is on only when
+  the tab shows more than one pane, whether or not the drawer is open.
+- The CLI's doc comments (finding 6): `listCommand` has its own comment again, after
+  `drawerCommand`.
+- SPEC DR-1 says the drawer slides up and down over 0.26 s.
+- Tests (findings 2 and 5; details in TEST_CHANGES.md): the slide (sampled positions and the
+  picture's pixels); a closed drawer pane's pid gone, drawer open and closed; Hide Pane's enabled
+  state; a `key.ctrl+cmd+m` config line replacing ⌃⌘M; the UI test
+  `test_real_clicks_on_a_chip_hide_and_the_waiting_line_ui`, with real CGEvent clicks; and four Swift
+  tests in `UmiDrawerTests` for the curve, the slide's frames, the timer and Reduce Motion.
+- The branch was force-pushed once (`--force-with-lease`), right after the first commits of this
+  follow-up. They had gone out with the wrong files in two commits, and the rewrite only regrouped
+  them. Nothing else in the branch's history changed.
+
+Verified, and how (mac-air-2, `~/umi-test-design-step7`, each run under `lockf -k ~/umi-screen.lock`,
+with nothing else built in that worktree during a run; screen locked, `CGSSessionScreenIsLocked` true):
+
+- Full acceptance suite at `36ea65334`, ReleaseLocal (`~/umi-test-design-step7-suite-final.log`):
+  419 passed, 7 failed, 95 skipped. The 7 failures are exactly the base failures listed above:
+  `test_builds_from_a_path_with_spaces`, `test_shift_cmd_f_leaves_a_terminal_search_open`, and five
+  in `test_umi_warp_panes.py` (one ⌥⌘I, the synced paste, the synced file and web panes, the pane
+  menu with a selection, zoom across restarts). The skips are 94 UI tests (the locked screen) and
+  one test that needs a wider window. Every step 7 test passed.
+- The run before it, at `40680149d` (`~/umi-test-design-step7-suite-review.log`), had 10 failures:
+  - the base failures, with both ⌥⌘I tests failing that time;
+  - `test_closing_a_drawer_pane_ends_its_program`, which `36ea65334` fixes;
+  - `test_markdown_opens_in_the_docs_tab_at_its_right_end_three_on_show`, which also fails on
+    step 6's build: 1 in 10 runs there (`~/umi-test-design-step7-markdown-on-step6.log`), 2 in 8 here.
+    It is an older flaky test, and this follow-up doesn't touch its code.
+- Swift unit tests at `36ea65334`'s code (`~/umi-test-design-step7-swift-final.log`): 431 passed, 1
+  skipped (the benchmark), none failed. The first version of the slide test failed under parallel
+  tests: the main actor's other work delayed its wake-ups past the whole 0.26 s. It now drives the
+  slide's frames at chosen times, and a separate test checks that the timer runs the slide to the end.
+- The picture the drawer goes down as, written out in a test run and looked at: the header with
+  its chip and Dock, Hide and Put away, over the terminal's red rows.
+- The docs commit after `36ea65334` (this build log) changes no code.
+
+Not verified:
+
+- Every UI test, 94 of them (the locked screen). For this step:
+  `test_drawer.py::test_real_ctrl_cmd_m_and_the_drawers_buttons_ui`,
+  `test_drawer.py::test_real_clicks_on_a_chip_hide_and_the_waiting_line_ui` (new), and
+  `test_layout.py::test_shortcuts_are_menu_items`. The slide was never seen on a live screen. Its
+  positions are read from the views' frames (`debug.drawer`), and screenshots were too slow to
+  catch it part way.
+
+Choices for Alejo to check:
+
+13. The drawer goes down as a picture of itself, not its live terminal. Dock, Hide and the pane's
+    program ending take the pane out at once, so the live view can't slide down with it. Where:
+    `UmiDrawer.picture(of:)`, `UmiDrawerOverlay`.
+14. With Reduce Motion on, the drawer appears and disappears without sliding (the prototype's
+    `prefers-reduced-motion` rule). A slide reversed part way takes only that share of the 0.26 s.
+15. The suite's final run is at `36ea65334`. The build log commit after it changes no code.
