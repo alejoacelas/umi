@@ -458,6 +458,12 @@ final class UmiPaneWalk {
         }
     }
 
+    /// Whether the key press is one of Previous Pane / Next Pane's shortcuts in effect.
+    private static func isWalkKey(_ event: NSEvent) -> Bool {
+        guard let pressed = UmiShortcut(event: event) else { return false }
+        return ["pane.stack_previous", "pane.stack_next"].contains { UmiShortcuts.item(id: $0)?.shortcut == pressed }
+    }
+
     /// Releasing ⌘ lands the walk; so does any other key press or a click.
     private static func startMonitoring() {
         guard monitor == nil else { return }
@@ -468,10 +474,8 @@ final class UmiPaneWalk {
                 case .flagsChanged:
                     if !event.modifierFlags.contains(.command) { debugHold = false; walk.land() }
                 case .keyDown:
-                    // ⌘[ and ⌘] themselves go on walking.
-                    let walking = event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
-                        && (event.keyCode == 30 || event.keyCode == 33)
-                    if !walking { walk.land() }
+                    // The walk's own keys (⌘[ and ⌘], or what the user bound them to) go on walking.
+                    if !isWalkKey(event) { walk.land() }
                 default:
                     walk.land()
                 }
