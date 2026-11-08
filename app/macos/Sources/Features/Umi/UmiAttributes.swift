@@ -333,8 +333,12 @@ enum UmiAttributesRPC {
                 if !first.contains("=") { selector = words.removeFirst() }
             default:
                 // `unset [PANE] KEY…`, `get [PANE] [KEY…]`: a first word that names one is it.
+                let names = (try? resolve(object, first, caller: caller)) != nil
+                if verb == "unset" && words.count == 1 && names {
+                    throw UmiError.badRequest("\(object) unset: give a KEY after the \(object)")
+                }
                 let minimum = verb == "unset" ? 2 : 1
-                if words.count >= minimum, (try? resolve(object, first, caller: caller)) != nil { selector = words.removeFirst() }
+                if words.count >= minimum, names { selector = words.removeFirst() }
             }
         }
         let target = try selector.map { try resolve(object, $0, caller: caller) } ?? defaultTarget(object, caller: caller)

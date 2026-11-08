@@ -53,7 +53,8 @@ enum UmiDocsTab {
                   let location = UmiTopology.locate(made) else {
                 throw UmiError.failed("couldn't make a tab for \(url.lastPathComponent)")
             }
-            location.tab.isDocs = true
+            // The Docs tab is the tab with `role=docs` (a `tab.changed` event, like any attribute).
+            try UmiAttributes.shared.set([("role", "docs")], on: location.tab, in: location.window)
             UmiFilePanes.shared.attach(doc, to: made)
             UmiEvents.shared.emit("editor.opened", ["path": doc.url.path, "pane": made.umiID,
                                                     "tab": location.tab.idString, "window": location.window.umiIDString])
