@@ -105,6 +105,35 @@ def test_commands_that_change_panes_act_on_every_match(inst, win):
     wait_until(lambda: where(inst, "doomed") == [], 10, message="both closed")
 
 
+@pytest.mark.req("Q-1")
+def test_pane_move_moves_every_match_in_order(inst, win):
+    c = tab_new(inst, win)
+    d = split(inst, "right", c, "--no-focus")
+    inst.cli("pane", "set", d, "mv=1", "ord=1")
+    inst.cli("pane", "set", c, "mv=1", "ord=2")
+    home = inst.json("pane", "info", win["pane"])["tab"]
+    out = inst.json("pane", "move", "mv | sort ord", "--tab", home, "--no-focus")
+    assert out["panes"] == [d, c], out
+    assert {inst.json("pane", "info", p)["tab"] for p in (c, d)} == {home}
+    # To a new tab: the first opens it, the next joins it.
+    out = inst.json("pane", "move", "mv | sort ord", "--new-tab", "--no-focus")
+    tabs = {inst.json("pane", "info", p)["tab"] for p in (c, d)}
+    assert out["panes"] == [d, c] and len(tabs) == 1 and tabs != {home}, (out, tabs)
+    inst.cli("pane", "close", "mv=1")
+
+
+@pytest.mark.req("Q-1", "L-4")
+def test_tab_close_closes_every_tab_holding_a_match(inst, win):
+    c, d = tab_new(inst, win), tab_new(inst, win)
+    inst.cli("pane", "set", c, "tc=1")
+    inst.cli("pane", "set", d, "tc=1")
+    tabs = {inst.json("pane", "info", p)["tab"] for p in (c, d)}
+    out = inst.json("tab", "close", "tc=1")
+    assert set(out["tabs"]) == tabs and len(tabs) == 2, out
+    wait_until(lambda: where(inst, "tc") == [], 10, message="both tabs closed")
+    assert inst.json("pane", "info", win["pane"])["window"] == win["window"]
+
+
 @pytest.mark.req("Q-1", "L-4")
 def test_a_tab_or_window_query_picks_the_one_holding_a_match(inst, win):
     c = tab_new(inst, win)

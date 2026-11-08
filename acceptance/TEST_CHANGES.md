@@ -1289,6 +1289,11 @@ from the commands folder (`command ls`, `command run` with `UMI_PANE`/`UMI_TAB`/
 what reads as a query, the default `jump`, `needs-you` and `tab.summary` lists, templates, the
 `done-check` default, a key being the cause only while it is dispatched).
 
+**Added after review.** `test_queries.py::test_pane_move_moves_every_match_in_order` (a query moves
+every match, in its order, to a tab and to one new tab) and
+`::test_tab_close_closes_every_tab_holding_a_match` (design/cli.md choice 3 and "Selectors": the
+build moved and closed only the first).
+
 **Removed.** Swift `UmiJumpTests`: `UmiAttention.jumpOrder` is gone; the same three cases (needs
 input first then unseen, oldest first; a seen failed pane drops out; seen and working panes are no
 targets) are in `UmiQueryTests` against the default `jump` list.

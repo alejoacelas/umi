@@ -878,16 +878,18 @@ The user's and scripts' ways of deciding what deserves attention (design/primiti
 lists", "Slots", "Keys and palette commands"; CLI.md, "Selectors", "Queries", "Lists and `go`",
 "Configuration").
 
-- **Q-1 [A]** Queries. A selector containing `=`, `<`, `>`, `|`, `@`, ` and `, ` or ` or `not ` is a
+- **Q-1 [A]** Queries. A selector containing `=`, `<`, `>`, `|`, `@`, ` and `, ` or `, `not ` or ` then ` is a
   query over the panes' attributes: `KEY OP VALUE` (`=`, `!=`, `<`, `<=`, `>`, `>=`), a bare `KEY`
   (set and not `false`), `@LIST`, `and` (binding tighter than `or`), `or`, `not`, parentheses, then
   `| sort KEY, -KEY` and `| limit N`; `then` joins queries, listing the next one's panes after the
   first's. Values compare as numbers, durations (`90s`, `5m`), times (a time against a time or a
   duration back from now: `status_since < 10m` is older than ten minutes), else text. Without
-  `sort`, matches come in `ls` order. Commands that change panes (`pane set`, `unset`, `close`) act on
-  every match; the others take the first. A tab or window selector that is a query picks the tab or
-  window holding a match. A query that doesn't parse fails with exit 1 naming the position; one that
-  matches nothing fails with exit 1 where a target is needed. `<cli> ls --where QUERY` lists the
+  `sort`, matches come in `ls` order. Commands that change panes (`pane set`, `unset`, `close`, `move`)
+  act on every match in its order; the others take the first. A tab or window selector that is a
+  query selects the tabs or windows holding a match: closing, equalizing, coloring, pinning and
+  setting act on each, focusing, renaming and moving take the first. A query that doesn't parse
+  fails with exit 1 naming the position; one that matches nothing fails with exit 1 where a target
+  is needed. `<cli> ls --where QUERY` lists the
   matching panes with their tab and window, in the query's order, and succeeds when there are none.
 - **Q-2 [A]** Named lists: `list.NAME = QUERY` lines in `~/.config/umi/config` (`$XDG_CONFIG_HOME`),
   read again when the file changes, without Ghostty reporting them as unknown settings. Umi defines

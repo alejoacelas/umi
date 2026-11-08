@@ -69,6 +69,25 @@ extension UmiTopology {
         return [try pane(nil, caller: caller)]
     }
 
+    /// Every tab a selector names: for a query, each tab holding a match (in the order of the
+    /// first match in it); else the selector's one tab, or the request's own.
+    static func everyTab(_ selector: String?, caller: UmiCaller) throws -> [(TerminalController, UmiTab)] {
+        guard let selector, UmiQuery.looksLikeQuery(selector) else { return [try tab(selector, caller: caller)] }
+        let found = try match(selector)
+        guard !found.isEmpty else { throw UmiError.notFound("no tab holds a pane matching \(selector)") }
+        var seen = Set<ObjectIdentifier>()
+        return found.filter { seen.insert(ObjectIdentifier($0.tab)).inserted }.map { ($0.window, $0.tab) }
+    }
+
+    /// Every window a selector names: for a query, each window holding a match; else one.
+    static func everyWindow(_ selector: String?, caller: UmiCaller) throws -> [TerminalController] {
+        guard let selector, UmiQuery.looksLikeQuery(selector) else { return [try window(selector, caller: caller)] }
+        let found = try match(selector)
+        guard !found.isEmpty else { throw UmiError.notFound("no window holds a pane matching \(selector)") }
+        var seen = Set<ObjectIdentifier>()
+        return found.filter { seen.insert(ObjectIdentifier($0.window)).inserted }.map(\.window)
+    }
+
     /// `ls --where QUERY`: the matching panes, each with its tab and window.
     static func whereJSON(_ text: String) throws -> [String: Any] {
         ["panes": try match(text).map { paneInfoJSON($0.pane) }]

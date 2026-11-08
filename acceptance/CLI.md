@@ -43,13 +43,15 @@ selector:
 
 - an id or a unique id prefix; a name the user gave; `.` (the focused one); `#N` (tabs and windows,
   by index from 1);
-- a **query**: any selector containing `=`, `<`, `>`, `|`, `@`, ` and `, ` or ` or `not `. Queries
-  select panes; a tab or window selector that is a query selects the tab or window holding a
-  matching pane.
+- a **query**: any selector containing `=`, `<`, `>`, `|`, `@`, ` and `, ` or `, `not ` or ` then `.
+  Queries select panes; a tab or window selector that is a query selects the tabs or windows holding
+  a matching pane.
 
 Commands that act on one pane (`pane focus`, `info`, `get`, `read`, `send`, …) take a query's first
-match; `pane set`, `pane unset` and `pane close` act on every match (and `tab|window set|unset` on
-every tab or window holding one). An unknown or ambiguous id, prefix or name fails with exit 1 and
+match; `pane set`, `pane unset`, `pane close` and `pane move` act on every match, in the query's
+order. `tab close|equalize|color|pin|unpin|set|unset` and `window close|set|unset` act on every tab
+or window holding a match; `tab focus|rename|move` and `window focus` take the one holding the first
+match. An unknown or ambiguous id, prefix or name fails with exit 1 and
 changes nothing. A query that matches nothing fails with exit 1 for commands that need a target, and
 succeeds with an empty result for `ls --where`.
 
@@ -100,7 +102,7 @@ VALUE  := a word, or text in double quotes
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions |
 | `pane focus\|close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window`; `close` closes every pane a query matches |
 | `pane rename [PANE] NAME` | |
-| `pane move [PANE] (--to PANE [--dir D] \| --tab T [--dir D] \| --window W [--dir D] \| --new-tab [--window W] \| --new-window) [--no-focus]` | the pane's program keeps running |
+| `pane move [PANE] (--to PANE [--dir D] \| --tab T [--dir D] \| --window W [--dir D] \| --new-tab [--window W] \| --new-window) [--no-focus]` | the pane's program keeps running. A query moves every match in its order: the first goes where the options say, each next one beside the one before it (`--to`'s own pane stays put). JSON `{"pane", "panes", "tab", "window"}` |
 | `pane swap [PANE] TARGET` | |
 | `pane resize [PANE] up\|down\|left\|right [AMOUNT]` | |
 | `send [--pane P] [--enter\|-e] TEXT…` | no TEXT plus a piped stdin sends stdin |
