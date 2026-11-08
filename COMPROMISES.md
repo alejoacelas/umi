@@ -225,6 +225,6 @@ The inbox, the toasts and Warp's badges were removed in design step 1 (2026-11-0
 
 | What is given up | Why | What it protects |
 |---|---|---|
-| **The Dock badge follows attribute and agent changes, not a config edit alone**: after changing `slot.badge` the badge updates at the next change of any pane's attributes or agent. | Watching the config file for the badge alone would add a timer; the badge is recomputed whenever what it counts changes. | Q-4 without a polling loop. |
+| **The Dock badge follows changes to panes, tabs and windows, not a config edit alone**: after changing `slot.badge` the badge updates at the next such change (any event about a pane, tab or window). | Watching the config file for the badge alone would add a timer; the badge is recounted whenever what it can count changes. | Q-4 without a polling loop. |
 | **Problems in the config's Umi lines show in `list ls` and `slot ls` (`problems`, `error`), not in Ghostty's configuration-errors window.** | Ghostty skips these keys before it parses them; Umi reads them itself. | Q-2: Ghostty never calls Umi's own lines unknown. |
 | **A key binding's command runs as a `umi` process** (≈30 ms before it acts); Umi's own ⌃⌘J and ⌃⌘K stay in the app. | The CLI parses its arguments itself; running it is the one way a binding behaves exactly as the command typed. | Q-5: a binding does what the same command line does. |

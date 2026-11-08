@@ -228,9 +228,26 @@ enum UmiSlots {
     private static var resignedAt: Date?
     private static var observers: [NSObjectProtocol] = []
 
-    /// Watch Umi going to the background and coming back, for `landing`.
+    private static var badgePending = false
+
+    /// The `badge` slot may count by any attribute: recount after any change to panes (once per turn
+    /// of the run loop, however many changes it made).
+    private static func badgeMayHaveChanged(_ event: String) {
+        guard event.hasPrefix("pane.") || event.hasPrefix("tab.") || event.hasPrefix("window."), !badgePending else { return }
+        badgePending = true
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                badgePending = false
+                (NSApp.delegate as? AppDelegate)?.refreshDockBadge()
+            }
+        }
+    }
+
+    /// Watch Umi going to the background and coming back, for `landing`, and changes to panes, for
+    /// `badge`.
     static func start() {
         guard observers.isEmpty else { return }
+        UmiEvents.shared.addListener { name, _ in MainActor.assumeIsolated { badgeMayHaveChanged(name) } }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { resignedAt = Date() }

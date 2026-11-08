@@ -199,8 +199,6 @@ final class UmiAttributes {
         if panes[id]?.isEmpty == true { panes.removeValue(forKey: id) }
         emit("pane.changed", ["pane": id.uuidString.lowercased(), "key": key, "old": old ?? NSNull(), "new": value ?? NSNull()])
         UmiState.shared.layoutDidChange(persistOnly: true)
-        // A `badge` slot may count by any attribute.
-        (NSApp?.delegate as? AppDelegate)?.refreshDockBadge()
     }
 
     /// Check `agent.*` values; returns what writes them (nil: nothing to write).
