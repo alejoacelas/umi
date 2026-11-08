@@ -3,7 +3,7 @@ import Darwin
 
 /// What Umi's plugins for Claude Code and Codex tell it, written on the pane the agent runs in
 /// (design/primitives.md, "Agent hook plugin"; SPEC AG-18, AG-19). Inside a pane, each hook event
-/// runs `umi hook EVENT --agent claude|codex --pid PID`; the pane is the caller's (`UMI_PANE_ID`).
+/// runs `umi hook EVENT --agent claude|codex --pid PID`; the pane is the caller's (`UMI_PANE`).
 ///
 /// The status stays truthful:
 /// - a turn that ends with background work still pending (Claude Code's background tasks and
@@ -153,12 +153,9 @@ enum UmiAgentHooks {
         }
     }
 
-    /// The `done-check` slot's default: the last line of the agent's last message starts with
-    /// `Status: done`.
-    static func doneCheck(_ reply: String) -> Bool {
-        let last = reply.split(whereSeparator: \.isNewline).last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        return last.map { $0.trimmingCharacters(in: .whitespaces).hasPrefix("Status: done") } ?? false
-    }
+    /// The `done-check` slot (default: the last line of the agent's last message starts with
+    /// `Status: done`).
+    static func doneCheck(_ reply: String) -> Bool { UmiSlots.doneCheck(reply) }
 
     static func oneLine(_ text: String, max: Int) -> String {
         let flat = text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)

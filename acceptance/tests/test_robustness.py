@@ -57,7 +57,7 @@ def test_paths_with_spaces_and_long_state_dirs(target, fresh):
                message="a pane in a folder with spaces")
     other.cli("send", "--pane", pane, "-e", "echo spaced-$((40+2))")
     other.cli("wait", "--pane", pane, "--pattern", "^spaced-42", "--timeout", "15")
-    inner = other.cli("send", "--pane", pane, "-e", f"{other.target.cli_name} pane rename spaced-ok; echo RENAMED")
+    inner = other.cli("send", "--pane", pane, "-e", f"'{other.target.cli_path}' pane rename spaced-ok; echo RENAMED")
     other.cli("wait", "--pane", pane, "--pattern", "^RENAMED", "--timeout", "15")
     assert other.json("pane", "info", pane).get("name") == "spaced-ok", "the CLI inside the pane reaches its app"
     shutil.rmtree(base, ignore_errors=True)
@@ -87,7 +87,7 @@ def test_instances_never_talk_to_each_other(fresh):
     assert "only-in-a" not in names_b
     assert b.cli("pane", "info", a_pane, check=False).returncode != 0, "B doesn't know A's panes"
     # The CLI inside one of A's panes reaches A.
-    a.cli("send", "--pane", a_pane, "-e", f"{a.target.cli_name} --json ls > '{a.dir}/from-pane.json'; echo LISTED")
+    a.cli("send", "--pane", a_pane, "-e", f"'{a.target.cli_path}' --json ls > '{a.dir}/from-pane.json'; echo LISTED")
     a.cli("wait", "--pane", a_pane, "--pattern", "^LISTED", "--timeout", "15")
     with open(os.path.join(a.dir, "from-pane.json")) as f:
         seen = [p["id"] for w in json.load(f)["windows"] for t in w["tabs"] for p in t["panes"]]
@@ -130,7 +130,7 @@ def test_an_explicit_target_overrides_a_stale_caller(inst, win):
     """A CLI carrying the identity of a pane that's gone still creates a tab where --pane or --window
     says."""
     gone = inst.json("tab", "new", "--window", win["window"])["pane"]
-    pane_env = {"UMI_PANE_ID": gone, "UMI_INSTANCE": json.loads(inst.cli("--json", "ping").stdout)["instance"]}
+    pane_env = {"UMI_PANE": gone, "UMI_INSTANCE": json.loads(inst.cli("--json", "ping").stdout)["instance"]}
     inst.cli("pane", "close", gone)
     time.sleep(0.5)
     created = inst.json("tab", "new", "--pane", win["pane"], "--no-focus", env=pane_env)

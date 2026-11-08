@@ -175,7 +175,8 @@ class TerminalWindow: NSWindow {
             return
         }
 
-        super.sendEvent(event)
+        // Umi: what the event changes is caused by it (UmiCause), only while it is dispatched.
+        UmiCause.dispatching(event) { super.sendEvent(event) }
     }
 
     override func close() {

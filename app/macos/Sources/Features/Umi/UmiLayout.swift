@@ -48,7 +48,7 @@ enum UmiLayout {
         }
         config.context = context
         // A new pane gets its own identity, never its source's.
-        for key in ["UMI_PANE_ID", "UMI_INSTANCE"] { config.environmentVariables.removeValue(forKey: key) }
+        for key in ["UMI_PANE", "UMI_INSTANCE", "UMI_TAB", "UMI_WINDOW", "UMI_CAUSE"] { config.environmentVariables.removeValue(forKey: key) }
 
         if let cwd = options.cwd {
             var isDir = ObjCBool(false)
@@ -194,8 +194,10 @@ enum UmiLayout {
         if let zoomed = tree.zoomed, zoomed != tree.root?.node(view: pane) {
             window.setTree(SplitTree(root: tree.root, zoomed: nil), for: location.tab)
         }
-        window.selectTab(location.tab, focus: false)
+        // The tab comes up with this pane focused: selecting it first with its old focused pane
+        // would count that pane as looked at (its `seen_at`), clearing its unseen state.
         location.tab.focusedSurface = pane
+        window.selectTab(location.tab, focus: false)
         if window.surfaceTree.contains(pane) { window.focusedSurface = pane }
         UmiTopology.windowBecameCurrent(window)
         UmiLooking.focusChanged(in: window)

@@ -1,8 +1,8 @@
 import AppKit
 
 /// Moving between tabs and panes from the keyboard, the menus and the CLI: next and previous
-/// tab in sidebar order, ⌘1–9, back through the tabs visited (L-11), the panes whose agent
-/// needs the user (L-12), and moving tabs up and down (L-13).
+/// tab in sidebar order, ⌘1–9, back through the tabs visited (L-11), and moving tabs up and down
+/// (L-13). The panes that need the user are `UmiGo`'s (`go --next jump`, L-12).
 ///
 /// Everything here acts on Umi's own record of the current window, so it works whatever
 /// has keyboard focus (L-10).
@@ -84,50 +84,6 @@ enum UmiNavigation {
         UmiEvents.shared.emit("tab.moved", ["tab": tab.idString, "from_window": window.umiIDString,
                                              "window": window.umiIDString, "index": (window.index(of: tab) ?? target) + 1])
         return true
-    }
-
-    // MARK: Panes whose agent needs the user
-
-    /// Where "back" returns to: the pane focused when a run of jumps started.
-    private static var jumpOrigin: Weak<Ghostty.SurfaceView>?
-    /// Where the last jump went, to tell a run of jumps from a fresh start.
-    private static var landing: UUID?
-
-    /// ⌃⌘J: the next pane whose agent needs the user (needs input first, then finished and
-    /// unseen; oldest first).
-    @discardableResult
-    static func jumpToNextNeedingYou() -> Ghostty.SurfaceView? {
-        let here = UmiTopology.currentPane
-        let targets = UmiAttention.shared.targetsNeedingYou().filter { $0 != here?.id && pane($0) != nil }
-        guard let id = targets.first, let view = pane(id) else { return nil }
-        if !isAtLanding(here) { jumpOrigin = here.map { Weak($0) } }
-        landing = id
-        UmiLayout.focusPane(view, activate: true)
-        return view
-    }
-
-    /// ⌃⌘K: back to where the user was before jumping to panes that need them.
-    @discardableResult
-    static func jumpBack() -> Ghostty.SurfaceView? {
-        guard let origin = jumpOrigin?.value, UmiTopology.locate(origin) != nil else { return nil }
-        jumpOrigin = nil
-        landing = nil
-        UmiLayout.focusPane(origin, activate: true)
-        return origin
-    }
-
-    static var canJumpBack: Bool {
-        guard let origin = jumpOrigin?.value else { return false }
-        return UmiTopology.locate(origin) != nil
-    }
-
-    private static func isAtLanding(_ here: Ghostty.SurfaceView?) -> Bool {
-        guard let here, let landing, jumpOrigin?.value != nil else { return false }
-        return here.id == landing
-    }
-
-    private static func pane(_ id: UUID) -> Ghostty.SurfaceView? {
-        UmiTopology.allSurfaces.first { $0.id == id }
     }
 }
 

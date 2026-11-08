@@ -5,8 +5,8 @@ import Combine
 /// "Agent hook plugin"). Umi runs no agents of its own: Claude Code and Codex run in panes, and Umi's
 /// plugin calls `umi hook EVENT`, which lands in `UmiAgentHooks` and is written here.
 ///
-/// What the chrome reads from it: the sidebar's agent mark and line 2, the Dock badge (panes whose
-/// agent needs the user), ⌃⌘J's order (needs you, then unseen), `ls --json`'s `agent.*`
+/// What the chrome reads from it: the sidebar's agent mark and line 2, the default lists (`needs-you`,
+/// `unseen`) behind the Dock badge and ⌃⌘J, `ls --json`'s `agent.*`
 /// attributes, and the quiet moment for updates.
 ///
 /// Attention is facts, not flags: a pane is "unseen" while its `changedAt` (the last change of its
@@ -148,19 +148,6 @@ final class UmiAttention: ObservableObject {
         }
     }
 
-    /// A tab's agent for its sidebar row: the focused pane's, else the pane with the strongest
-    /// mark, else the one that stopped last.
-    func agent(for tab: UmiTab, in controller: TerminalController) -> Agent? {
-        let leaves = controller.tree(of: tab).root?.leaves() ?? []
-        let agents = leaves.compactMap { panes[$0.id] }
-        guard !agents.isEmpty else { return nil }
-        if let focused = tab.effectiveFocusedSurface, let agent = panes[focused.id] { return agent }
-        return agents.max { a, b in
-            if a.mark != b.mark { return a.mark < b.mark }
-            return (a.lastStop ?? .distantPast) < (b.lastStop ?? .distantPast)
-        }
-    }
-
     /// Panes in a window (not closed ones kept for reopening) and their agents.
     var openPanes: [(UUID, Agent)] {
         let open = Set(UmiTopology.allSurfaces.map(\.id))
@@ -169,25 +156,6 @@ final class UmiAttention: ObservableObject {
 
     /// Panes whose agent is working: an update now would cut their turns off.
     var workingCount: Int { openPanes.filter { $0.1.status == .working }.count }
-
-    /// The Dock badge: panes whose agent needs the user (`agent.status=needs_input`).
-    var needingYouCount: Int {
-        openPanes.filter { $0.1.status == .needsInput }.count
-    }
-
-    /// Where ⌃⌘J goes, in order: panes whose agent needs input (oldest first), then unseen ones
-    /// whose agent finished or failed (oldest first).
-    func targetsNeedingYou() -> [UUID] { Self.jumpOrder(openPanes) }
-
-    /// `targetsNeedingYou` for given panes. "Unseen" is `changedAt > seenAt` (primitives.md), so a
-    /// pane whose agent failed drops out once the user has looked at it; a working one isn't a
-    /// place to jump to.
-    static func jumpOrder(_ all: [(UUID, Agent)]) -> [UUID] {
-        let needs = all.filter { $0.1.status == .needsInput }.sorted { $0.1.statusSince < $1.1.statusSince }
-        let unseen = all.filter { $0.1.status != .needsInput && $0.1.status != .working && $0.1.unseen }
-            .sorted { $0.1.changedAt < $1.1.changedAt }
-        return (needs + unseen).map(\.0)
-    }
 
     // MARK: Writing (UmiAgentHooks)
 

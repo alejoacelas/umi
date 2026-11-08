@@ -37,6 +37,7 @@ enum UmiRPC {
             return ["ok": true]
 
         case "tree", "ls":
+            if let query = params.string("where") { return try UmiTopology.whereJSON(query) }
             return UmiTopology.treeJSON()
 
         // MARK: Windows
@@ -53,11 +54,12 @@ enum UmiRPC {
             return ["window": window.umiIDString]
 
         case "window.close":
-            let window = try UmiTopology.window(params.string("window"), caller: caller)
-            let id = window.umiIDString
+            // A query closes every window holding a match.
+            let windows = try UmiTopology.everyWindow(params.string("window"), caller: caller)
+            let ids = windows.map(\.umiIDString)
             // Closing from the CLI is deliberate: no confirmation dialog.
-            window.closeWindowImmediately()
-            return ["window": id, "closed": true]
+            for window in windows { window.closeWindowImmediately() }
+            return ["window": ids[0], "windows": ids, "closed": true]
 
         // MARK: Tabs
         case "tab.new":
@@ -102,14 +104,15 @@ enum UmiRPC {
             return ["tab": tab.idString, "window": window.umiIDString]
 
         case "tab.close":
-            let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
-            window.closeTabImmediately(tab)
-            return ["tab": tab.idString, "closed": true]
+            // A query closes every tab holding a match; so do equalize, color, pin and unpin.
+            let tabs = try UmiTopology.everyTab(params.string("tab"), caller: caller)
+            for (window, tab) in tabs { window.closeTabImmediately(tab) }
+            return ["tab": tabs[0].1.idString, "tabs": tabs.map(\.1.idString), "closed": true]
 
         case "tab.equalize":
-            let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
-            UmiLayout.equalize(tab, in: window)
-            return ["tab": tab.idString]
+            let tabs = try UmiTopology.everyTab(params.string("tab"), caller: caller)
+            for (window, tab) in tabs { UmiLayout.equalize(tab, in: window) }
+            return ["tab": tabs[0].1.idString, "tabs": tabs.map(\.1.idString)]
 
         case "tab.rename":
             let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
@@ -121,22 +124,28 @@ enum UmiRPC {
             return ["tab": tab.idString, "name": name]
 
         case "tab.color":
-            let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
+            let tabs = try UmiTopology.everyTab(params.string("tab"), caller: caller)
             let name = params.string("color") ?? ""
             guard let color = UmiTopology.color(named: name) else { throw badColor(name) }
-            tab.color = color
-            UmiEvents.shared.emit("tab.colored", ["tab": tab.idString, "color": name, "window": window.umiIDString])
+            for (window, tab) in tabs {
+                tab.color = color
+                UmiEvents.shared.emit("tab.colored", ["tab": tab.idString, "color": name, "window": window.umiIDString])
+            }
             UmiState.shared.layoutDidChange()
-            return ["tab": tab.idString, "color": name]
+            return ["tab": tabs[0].1.idString, "tabs": tabs.map(\.1.idString), "color": name]
 
         case "tab.pin", "tab.unpin":
-            let (window, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
+            let tabs = try UmiTopology.everyTab(params.string("tab"), caller: caller)
             let pin = method == "tab.pin"
-            UmiLayout.undoable(pin ? "Pin Tab" : "Unpin Tab", windows: [window]) {
-                window.setPinned(tab, pin)
+            var windows: [TerminalController] = []
+            for (window, _) in tabs where !windows.contains(where: { $0 === window }) { windows.append(window) }
+            UmiLayout.undoable(pin ? "Pin Tab" : "Unpin Tab", windows: windows) {
+                for (window, tab) in tabs { window.setPinned(tab, pin) }
             }
-            UmiEvents.shared.emit(pin ? "tab.pinned" : "tab.unpinned", ["tab": tab.idString, "window": window.umiIDString])
-            return ["tab": tab.idString, "pinned": pin]
+            for (window, tab) in tabs {
+                UmiEvents.shared.emit(pin ? "tab.pinned" : "tab.unpinned", ["tab": tab.idString, "window": window.umiIDString])
+            }
+            return ["tab": tabs[0].1.idString, "tabs": tabs.map(\.1.idString), "pinned": pin]
 
         case "tab.move":
             let (source, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)
@@ -176,9 +185,10 @@ enum UmiRPC {
             return ["pane": pane.umiID]
 
         case "pane.close":
-            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
-            try UmiLayout.closePane(pane)
-            return ["pane": pane.umiID, "closed": true]
+            // Every pane a query matches (design/cli.md choice 3).
+            let panes = try UmiTopology.panes(params.string("pane"), caller: caller)
+            for pane in panes { try UmiLayout.closePane(pane) }
+            return ["pane": panes[0].umiID, "panes": panes.map(\.umiID), "closed": true]
 
         case "pane.zoom":
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
@@ -196,12 +206,17 @@ enum UmiRPC {
             return ["pane": pane.umiID, "name": name]
 
         case "pane.move":
-            let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
+            // Every pane a query matches, in its order (design/cli.md choice 3): the first goes where
+            // the options say, each next one beside the one moved before it.
+            var panes = try UmiTopology.panes(params.string("pane"), caller: caller)
             let focus = params.bool("focus") ?? true
             let direction = try UmiLayout.direction(params.string("direction"))
+            let target = try params.string("to").map { try UmiTopology.resolvePane($0, caller: caller) }
+            if let target, panes.count > 1 { panes.removeAll { $0 === target } }
+            let pane = panes[0]
             let destination: UmiLayout.PaneDestination
-            if let to = params.string("to") {
-                destination = .besidePane(try UmiTopology.resolvePane(to, caller: caller), direction)
+            if let target {
+                destination = .besidePane(target, direction)
             } else if let tabSelector = params.string("tab") {
                 let (window, tab) = try UmiTopology.resolveTab(tabSelector, caller: caller)
                 guard let anchor = (tab === window.selectedTab ? window.focusedSurface : nil)
@@ -231,8 +246,11 @@ enum UmiRPC {
             } else {
                 throw UmiError.badRequest("give one of --to PANE, --tab T, --window W, --new-tab or --new-window")
             }
-            let location = try UmiLayout.move(pane, to: destination, focus: focus)
-            return ["pane": pane.umiID, "tab": location.tab.idString, "window": location.window.umiIDString]
+            var location = try UmiLayout.move(pane, to: destination, focus: focus && panes.count == 1)
+            for (index, next) in panes.enumerated().dropFirst() {
+                location = try UmiLayout.move(next, to: .besidePane(panes[index - 1], direction), focus: focus && index == panes.count - 1)
+            }
+            return ["pane": pane.umiID, "panes": panes.map(\.umiID), "tab": location.tab.idString, "window": location.window.umiIDString]
 
         case "pane.swap":
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
@@ -493,6 +511,9 @@ enum UmiRPC {
         default:
             if UmiNavigationRPC.methods.contains(method) {
                 return try await UmiNavigationRPC.handle(method, params, caller: caller)
+            }
+            if UmiListsRPC.methods.contains(method) {
+                return try await UmiListsRPC.handle(method, params, caller: caller)
             }
             if UmiAttributesRPC.methods.contains(method) {
                 return try UmiAttributesRPC.handle(method, params, caller: caller)

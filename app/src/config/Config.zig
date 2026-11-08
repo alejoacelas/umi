@@ -4994,6 +4994,27 @@ pub fn finalize(self: *Config) !void {
     self.@"key-remap".finalize();
 }
 
+/// Umi: keys Umi reads from the config file itself (named lists, slots, key bindings and
+/// palette commands: `list.NAME`, `slot.NAME`, `key.KEYS`, `command."Title"`). Ghostty skips them
+/// instead of reporting an unknown field.
+pub fn umiOwnsKey(key: []const u8) bool {
+    const prefixes = [_][]const u8{ "list.", "slot.", "key.", "command." };
+    for (prefixes) |prefix| {
+        if (std.mem.startsWith(u8, key, prefix) and key.len > prefix.len) return true;
+    }
+    return false;
+}
+
+test "umiOwnsKey" {
+    try std.testing.expect(umiOwnsKey("list.needs-you"));
+    try std.testing.expect(umiOwnsKey("key.ctrl+cmd+j"));
+    try std.testing.expect(umiOwnsKey("command.\"Organize into tabs\""));
+    try std.testing.expect(umiOwnsKey("slot.badge"));
+    try std.testing.expect(!umiOwnsKey("keybind"));
+    try std.testing.expect(!umiOwnsKey("font-size"));
+    try std.testing.expect(!umiOwnsKey("list."));
+}
+
 /// Callback for src/cli/args.zig to allow us to handle special cases
 /// like `--help` or `-e`. Returns "false" if the CLI parsing should halt.
 pub fn parseManuallyHook(

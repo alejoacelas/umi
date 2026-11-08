@@ -158,7 +158,7 @@ final class UmiShortcutsPageModel: ObservableObject {
                 let menu = entry.menu?.components(separatedBy: " > ").first ?? "Umi"
                 section = menu == "App" ? "Umi" : (sectionOrder.contains(menu) ? menu : "Umi")
             }
-            let specs = entry.kind == .umi ? entry.shortcuts.map(\.spec) : entry.triggers
+            let specs = entry.kind == .ghostty ? entry.triggers : entry.shortcuts.map(\.spec)
             return Row(id: entry.id, title: entry.title, section: section, keys: shown, specs: specs,
                        shortcuts: entry.shortcuts)
         }

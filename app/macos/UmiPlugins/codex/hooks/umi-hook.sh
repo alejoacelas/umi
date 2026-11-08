@@ -5,6 +5,6 @@
 agent="$1"
 event="$2"
 quiet() { cat >/dev/null 2>&1; exit 0; }
-# Only inside Umi: its terminals set UMI_CLI, UMI_STATE_DIR and the pane's UMI_PANE_ID.
-[ -n "$UMI_CLI" ] && [ -n "$UMI_STATE_DIR" ] && [ -n "$UMI_PANE_ID" ] && [ -x "$UMI_CLI" ] || quiet
+# Only inside Umi: its terminals set UMI_CLI, UMI_STATE_DIR and the pane's UMI_PANE.
+[ -n "$UMI_CLI" ] && [ -n "$UMI_STATE_DIR" ] && [ -n "$UMI_PANE" ] && [ -x "$UMI_CLI" ] || quiet
 exec "$UMI_CLI" hook "$event" --agent "$agent" --pid "$PPID" >/dev/null 2>&1

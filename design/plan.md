@@ -44,7 +44,8 @@ merged only when it passes the checks below, so main always works and every step
 
 6. **Moving panes and tabs.** Hold ⌃⌘ with arrows, with the landed-tab preview and the sidebar
    listing each tab's panes; ⌃⇧↑/↓ for tabs; ⇧⌘[ ⇧⌘] as Warp's; remove keyboard split resizing,
-   ⌃⌘←/→ and L-19's hand-placed divider rules.
+   ⌃⌘←/→ and L-19's hand-placed divider rules. Remove `tab back` (design/cli.md choice 11; step 3
+   kept it only while ⇧⌘[ still went back through the tabs visited).
 
 7. **The drawer.** The bottom drawer, its waiting line, `drawer` actions, ⌃⌘M for the
    `role=manager` pane. *Release.*

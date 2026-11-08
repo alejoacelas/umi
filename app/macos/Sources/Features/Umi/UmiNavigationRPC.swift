@@ -6,7 +6,7 @@ import AppKit
 @MainActor
 enum UmiNavigationRPC {
     static let methods: Set<String> = [
-        "tab.back", "tab.next", "tab.prev", "jump.next", "jump.back",
+        "tab.back", "tab.next", "tab.prev",
         "shortcuts.list", "shortcuts.set", "shortcuts.reset",
         "debug.attention.set", "debug.navigation",
         "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.shortcuts_page", "debug.key",
@@ -27,18 +27,6 @@ enum UmiNavigationRPC {
                 throw UmiError.failed("couldn't change tabs")
             }
             return tabResult(tab, in: window)
-
-        case "jump.next":
-            guard let pane = UmiNavigation.jumpToNextNeedingYou() else { throw UmiError.notFound("no pane needs you") }
-            var result = UmiTopology.paneInfoJSON(pane)
-            result["pane"] = pane.umiID
-            return result
-
-        case "jump.back":
-            guard let pane = UmiNavigation.jumpBack() else { throw UmiError.notFound("there's nowhere to jump back to") }
-            var result = UmiTopology.paneInfoJSON(pane)
-            result["pane"] = pane.umiID
-            return result
 
         // MARK: Shortcuts
 
@@ -89,7 +77,7 @@ enum UmiNavigationRPC {
                 "history": UmiTabHistory.recentFirst.map(\.idString),
                 "focus_history": UmiFocusHistory.recentFirst.map(\.umiID),
                 "can_go_back": UmiTabHistory.canGoBack,
-                "can_jump_back": UmiNavigation.canJumpBack,
+                "can_walk_back": UmiGo.canGoBack, "walks": UmiGo.state,
                 "key_monitor": UmiShortcuts.monitorInstalled,
                 "app_active": NSApp.isActive,
             ]

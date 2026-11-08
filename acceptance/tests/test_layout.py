@@ -471,7 +471,11 @@ def test_screenshot(inst, win, tmp_path):
 @pytest.mark.req("P-4")
 def test_cli_inside_panes_defaults_to_this_pane(inst, win):
     name = "from-inside-" + uuid.uuid4().hex[:4]
-    cli = inst.target.cli_name
+    # <cli> is on PATH in the pane. (That may be an installed copy of another version, so what
+    # follows runs the build under test by its path.)
+    inst.cli("send", "--pane", win["pane"], "-e", f"command -v {inst.target.cli_name} >/dev/null && echo ON-PATH")
+    inst.cli("wait", "--pane", win["pane"], "--pattern", "^ON-PATH$", "--timeout", "15")
+    cli = f"'{inst.target.cli_path}'"
     inst.cli("send", "--pane", win["pane"], "-e", f"{cli} pane rename {name} && echo RENAMED-OK")
     inst.cli("wait", "--pane", win["pane"], "--pattern", "^RENAMED-OK$", "--timeout", "15")
     assert pane_info(inst, win["pane"]).get("name") == name

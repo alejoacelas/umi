@@ -149,7 +149,7 @@ def test_refuses_what_it_cannot_edit(inst, win, tmp_path):
 def test_edit_targets_the_calling_pane_and_never_falls_back(inst, win, files):
     _, md, _ = files
     other = inst.cli("tab", "new", "--window", win["window"]).stdout.strip()
-    inst.cli("send", "--pane", other, "-e", f"{inst.target.cli_name} edit '{md}' && echo EDIT-OK")
+    inst.cli("send", "--pane", other, "-e", f"'{inst.target.cli_path}' edit '{md}' && echo EDIT-OK")
     inst.cli("wait", "--pane", other, "--pattern", "^EDIT-OK$", "--timeout", "15")
     assert doc(inst, other, md) is not None
     assert doc(inst, win["pane"], md) is None, "opened in the caller's tab, not the focused one"
@@ -220,7 +220,7 @@ def test_a_file_opened_from_a_pane_goes_beside_that_pane(inst, win, tmp_path):
     left = win["pane"]
     right = inst.cli("split", "right", "--pane", left).stdout.strip()
     wait_until(lambda: inst.cli("read", "--pane", left, check=False).stdout.strip() != "", 20, message="prompt")
-    inst.cli("send", "--pane", left, "-e", f"{inst.target.cli_name} edit '{md}' && echo EDIT-OK")
+    inst.cli("send", "--pane", left, "-e", f"'{inst.target.cli_path}' edit '{md}' && echo EDIT-OK")
     inst.cli("wait", "--pane", left, "--pattern", "^EDIT-OK$", "--timeout", "15")
     order = [p["id"] for p in panes_of(inst, win["tab"])]
     file_pane = next(p["id"] for p in panes_of(inst, win["tab"]) if p.get("file"))

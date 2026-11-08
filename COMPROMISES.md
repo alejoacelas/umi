@@ -217,4 +217,14 @@ The inbox, the toasts and Warp's badges were removed in design step 1 (2026-11-0
 |---|---|---|
 | **A crash loses the focus stretch going on** (up to the moment of the crash); a quit writes it. | Stretches are written when they end; writing the open one every few seconds would rewrite the day file. | D-8 stays cheap on every key press. |
 | **A window brought back with ⇧⌘T comes back without its window attributes** (its tabs and panes keep theirs). | A reopened window is a new window object; its tabs and panes are the same objects. | D-1 for panes and tabs, where scripts put most of them. |
-| **A key or click is the cause only while AppKit is handling it, or for a second after**; what it starts later (an animation's end, a focus change on the next turn of the run loop) is caused by `umi`. | AppKit says which event it handles now, not which one started a delayed change. | D-6 never names a wrong key. |
+| **A key or click is the cause only while AppKit dispatches it** (inside the window's `sendEvent`, or until the run loop's turn that handles it ends, for keys a menu takes first); what it starts later (an animation's end, a focus change on the next turn of the run loop) is caused by `umi`. Fixed in design step 3: until then a lingering `NSApp.currentEvent` made the last key the cause of anything Umi did within a second. | AppKit says which event it handles now, not which one started a delayed change. | D-6 never names a wrong key. |
+
+===================================================================================================
+
+# Compromises (design step 3: queries, lists and slots, 2026-11-08)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **The Dock badge follows changes to panes, tabs and windows, not a config edit alone**: after changing `slot.badge` the badge updates at the next such change (any event about a pane, tab or window). | Watching the config file for the badge alone would add a timer; the badge is recounted whenever what it can count changes. | Q-4 without a polling loop. |
+| **Problems in the config's Umi lines show in `list ls` and `slot ls` (`problems`, `error`), not in Ghostty's configuration-errors window.** | Ghostty skips these keys before it parses them; Umi reads them itself. | Q-2: Ghostty never calls Umi's own lines unknown. |
+| **A key binding's command runs as a `umi` process** (≈30 ms before it acts); Umi's own ⌃⌘J and ⌃⌘K stay in the app. | The CLI parses its arguments itself; running it is the one way a binding behaves exactly as the command typed. | Q-5: a binding does what the same command line does. |

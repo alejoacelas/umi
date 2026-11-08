@@ -287,3 +287,179 @@ screen was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI test
     isn't built; `pane.moved`'s `from` in the log is there for it.
 19. Commands keep `UMI_PANE_ID` for the calling pane; design/cli.md names it `UMI_PANE` for palette
     and key commands, which step 3 brings.
+
+
+## Step 3: queries, lists and slots
+
+**Status:** built on `design/step3-queries-slots`, ready for review and the release. The UI half of
+the suite didn't run: mac-air-2's screen was locked for every run (see "Not verified").
+
+**What changed**
+
+- Queries (`UmiQuery`): `KEY OP VALUE`, bare keys, `@LIST`, `and`/`or`/`not`, parentheses, `| sort`,
+  `| limit`, and `then` (parts listed one after another, each pane once). Numbers, durations and
+  times compare as such. Errors name the character position. Every selector takes a query
+  (`UmiTopology.resolvePane/Tab/Window`); `pane set`, `pane unset` and `pane close` act on every match
+  (`tab|window set|unset` on every tab or window holding one); `ls --where QUERY`.
+- The config (`UmiConfig`): `list.NAME`, `slot.NAME`, `key.KEYS` and `command."Title"` lines in
+  `~/.config/umi/config` (and its `config-file` includes), read again when a file changes; executables
+  in `~/.config/umi/commands/`. Ghostty skips these keys (Zig, `Config.umiOwnsKey`, called from
+  `cli/args.zig`), so they never show as unknown settings.
+- Umi's lists: `needs-you`, `unseen`, `jump` (`@needs-you then @unseen`), `manager`. Slots: `jump`,
+  `badge`, `landing`, `landing.after`, `tab.summary`, `sidebar.line2`, `strip.make-room`,
+  `indicator.working|needs_you|finished`, `done-check`. The Dock badge, the sidebar row's agent and
+  line 2, `agent.done`, and coming back to the app (`landing`) read them; their defaults are the old
+  behaviour written as queries. `strip.make-room` and `indicator.*` are stored for steps 4 and 5.
+- `go LIST|QUERY`, `go --next`, `go --back` (`UmiGo`, one walk per window). ⌃⌘J and ⌃⌘K run
+  `go --next jump` and `go --back` in the app; `UmiAttention.jumpOrder` and `UmiNavigation`'s jump
+  code are gone.
+- `key.…` bindings win over Umi's items on the same keys and run their command as `umi` with
+  `UMI_CAUSE=key:<keys>`; `shortcuts ls` lists them (`kind`/`source` `config`). Palette commands show
+  in ⌘P (their stdout in the palette, stderr on failure); `command ls`, `command run`.
+- New attribute `unseen` (read-only). New commands: `list ls|show`, `go`, `slot ls`, `command ls|run`,
+  `wait --attr`, `ls --where`. `jump` is removed (fails, naming `go`).
+- Panes and commands get `UMI_PANE` (`UMI_PANE_ID` retired); palette and key commands also get
+  `UMI_TAB`, `UMI_WINDOW`, `UMI_CAUSE`, `UMI_CLI`, `UMI_STATE_DIR`. The hook plugins are 1.2.0 (their
+  script reads `UMI_PANE`); Umi updates installed ones at launch.
+- After step 3's review: `pane move QUERY` moves every match and tab/window queries act on every
+  tab or window holding a match (choice 11); a list naming a missing list or itself is an error
+  (choice 13); CLI.md and Q-1 name ` then ` among what makes a selector a query (the code already
+  did); a Swift test reproduces the lingering-key case of fix (a) without a real key.
+- Step 2's review, (a): `UmiCause` takes a key or click as the cause only while AppKit dispatches it
+  (the window's `sendEvent`, or a local monitor's event until the run loop's turn ends), not whatever
+  `NSApp.currentEvent` still holds up to a second later. COMPROMISES.md's step 2 row says so now.
+- Step 2's review, (b): `pane|tab|window get/unset` take a first word as the target only when it is
+  a full id, a name, `.`, `#N` (tabs, windows) or a query; a unique id prefix is a key.
+- Found while trying it: focusing a pane in another tab selected the tab with its old focused pane
+  first, which counted that pane as looked at and cleared its unseen state; ⌃⌘J then skipped it.
+  Fixed in `UmiLayout.focusPane` (the test for ⌃⌘J now puts both panes in one tab).
+- SPEC: new section Q (Q-1 to Q-8, core tier); L-4, L-12, S-7, D-2, D-4, D-5, D-6 reworded. CLI.md
+  took design/cli.md's Selectors, Queries, Lists and `go`, Configuration and `wait --attr`.
+  TEST_CHANGES.md lists every added, changed and removed test.
+
+**Verified, and how**
+
+All runs are on mac-air-2, under `lockf -k ~/umi-screen.lock`, in `~/umi-test-design-step3`; the screen
+was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI tests were skipped.
+
+- Dev copy (the Debug build, started the way `app/dist/dev.sh` starts it, with its own
+  `XDG_CONFIG_HOME`), driven by `~/umi-test-design-step3-trial.py`: 40 of 40 checks read back
+  (`~/umi-test-design-step3-trial.log`, screenshots in `~/umi-test-design-step3-shots`). Tried: Ghostty
+  loading a config holding `list.`, `key.` lines with no errors (`debug.config_errors`); `ls --where`
+  with `=`, `>`, `sort -`, `and`/`or` precedence, no match (empty, exit 0) and a bad query (exit 1,
+  "character 7"); `pane set --pane QUERY` on two panes; `pane get QUERY`; `pane get <id prefix>` from
+  inside a pane reading it as a key; `tab set --tab QUERY`; typed in a pane, `echo $UMI_PANE` (the
+  pane, no `UMI_PANE_ID`) and `$UMI_CLI ls --where …` (`1-where.png`); `list ls`, `list show` in the
+  list's order; `go mine`, `go --next` twice, `go --back`, `go` on an empty list (exit 1, focus kept);
+  ⌃⌘J twice (needs input, then the unseen pane in the same tab) and ⌃⌘K back, caused by the key
+  (`2-jump.png`); the Dock badge from the default `badge`; the sidebar row's agent from the default
+  `tab.summary` (the focused pane's agent, else the one that needs you); `slot ls`; then, writing the
+  config while running: `slot.badge = @mine` (badge 2), `slot.sidebar.line2 = {owner} / {team or
+  command}` on the rows (`3-line2.png`), `landing` (1 min away: stays; 3 min: goes, caused by
+  `config`), `slot.done-check = ^FINISHED` setting `agent.done` from a Stop hook; `key.ctrl+cmd+y =
+  pane set bound=yes` pressed (the focused pane gets it, cause `key` with the keys), `shortcuts ls`
+  listing config bindings; `command ls` with a config line and a `commands/` script, `command run`
+  showing `UMI_TAB`, `UMI_WINDOW`, `UMI_CAUSE=palette`, `UMI_CLI`; "Say Hello" run from ⌘P showing its
+  output (`4-palette-output.png`); `wait --attr` returning when the attribute is set and 124 on
+  timeout; `jump` failing with "go --next jump"; `help` listing the new commands.
+- Acceptance suite, ReleaseLocal at `138a15b11` (the head adds only this log), full run with `UMI_SIGN_IDENTITY=-`
+  (`~/umi-test-design-step3-suite.log`): 368 passed, 10 failed, 85 skipped. All of Q-1 to Q-8 pass
+  (`~/umi-test-design-step3-traceability.md`). The failures:
+  - Seven fail on origin/main too, run there on the step 2 worktree (the same app code as main;
+    `~/umi-test-design-step3-base.log`): `test_builds_from_a_path_with_spaces`,
+    `test_shift_cmd_f_leaves_a_terminal_search_open`, `test_markdown_opens_in_one_docs_tab_most_recent_first`,
+    `test_a_paste_into_a_synced_pane_is_confirmed_once_and_reaches_every_pane`,
+    `test_file_and_web_panes_in_a_synced_tab_get_no_keys`,
+    `test_the_pane_menu_with_a_selection_or_a_full_screen_program_has_no_paste_or_clear`,
+    `test_the_zoom_and_font_size_are_kept_across_restarts` (step 1 and 2 found the same).
+  - Two are flaky on both: `test_option_command_i_types_into_every_pane_of_the_tab` (main: failed in
+    its full run and 1 of 4 single runs; step 3: 6 of 8 runs failed, at different steps; steps 1 and
+    2 list it as failing on main) and
+    `test_option_command_i_in_a_one_tab_window_leaves_tabs_opened_later_out` (main: 2 of 4 failed;
+    `~/umi-test-design-step3-sync.log`).
+  - `test_pane_data.py::test_umi_keeps_read_only_attributes` failed in both full runs at its
+    `idle_for >= 2` after a 3 s sleep (the pane printed something about 2 s after `cd` into a new git
+    repository); it passes alone (3 of 3) and with `test_layout.py`, `test_pane_data.py` and
+    `test_queries.py` together (64 passed). It depends on the tests before it, on origin/main
+    too: running `test_agent_panes.py` to `test_pane_data.py` in order fails it on both the step 2
+    worktree (main's app code) and this branch (`~/umi-test-design-step3-prefix.log`). A full run of
+    origin/main's suite passed it once (`~/umi-test-design-step3-mainfull.log`: the 8 failures above
+    and below, nothing else).
+  An earlier full run (at `9d6c6f837`) also failed `test_queries`' badge check (a closed pane didn't
+  recount the badge; fixed in `f1000ea55`) and three tests that typed a bare `umi` in a pane, which on
+  mac-air-2 is the installed 0.6.3 (it reads `UMI_PANE_ID`); those now run the build's CLI by path
+  (TEST_CHANGES.md).
+- Swift unit tests (`~/umi-test-design-step3-swift.log`): 423 passed, 1 failed:
+  `TerminalSplitDropZoneTests/centerSelectsLeft`, which fails on origin/main too (step 1). The new
+  `UmiQueryTests` (12) passed.
+
+**Not verified**
+
+- The `ui` tests (85 skipped: real keys, menus and the accessibility tree): mac-air-2's screen was
+  locked for every run (`CGSSessionScreenIsLocked=Yes`). They need someone to unlock it. Keys were
+  tried through `debug.key` (Umi's own key handling, then the window), the palette through
+  `debug.palette.perform`.
+- Fix (a) with real key presses: no key could be typed on the locked Mac. The Swift test
+  `UmiQueryTests/aKeyLingeringInCurrentEventIsNotTheCause` reproduces the lingering case inside the
+  app: it posts a key and takes it off AppKit's queue without sending it, checks that
+  `NSApp.currentEvent` now holds that key under a second old (what the old rule named the cause),
+  and checks that the cause is `umi`. A real key press on an unlocked mac-air-2, followed within a
+  second by a change Umi makes on its own, is still untried.
+- `landing` with a real return to the app: tried through `debug.landing` (the same code the
+  activation notification calls), not by switching apps.
+
+**Choices for Alejo to check**
+
+1. `then` joins queries (`@needs-you then @unseen`): design/cli.md's grammar has no way to say "these,
+   then those", which `jump` needs. A part that is only `@LIST` keeps that list's order. Where:
+   `UmiQuery`, CLI.md "Queries".
+2. `unseen` is a new read-only attribute (`changed_at > seen_at`), since a query can't compare two
+   attributes. Where: `UmiAttributes.computedValue`, D-2, D-4.
+3. `KEY != VALUE` holds for a pane without the key (so `agent.status!=working` includes shells).
+4. Slots are `slot.NAME = VALUE`. `jump` is the list `jump`: `slot.jump` and `list.jump` set the same
+   thing, so ⌃⌘J (`go --next jump`) always follows it. `badge`, `landing` and `tab.summary` take
+   queries; `done-check` a regular expression; `sidebar.line2` a template (`{a or b}`: the first set
+   key). `landing.after` (default 10m) is a slot of its own, since the design says only "after N
+   minutes".
+5. The defaults as queries: `tab.summary` approximates "the latest stop" with `status_since` (a working
+   agent's start, not its last stop). The `sidebar.line2` default keeps the built-in line (the agent's
+   status when it has no title, the running mark on commands); a template is used only once the user
+   sets one, rendered from the `tab.summary` pane, else the focused one.
+6. `strip.make-room` (`not pinned and not focused | sort seen_at`) and `indicator.*` (`muted`, `amber`,
+   `muted`) are listed and stored; steps 4 and 5 use them.
+7. `go`: a new walk's first `--next` skips the pane focused now (as ⌃⌘J did); the walk wraps round;
+   `go LIST` (without `--next`) also starts a walk, so `go --back` returns from it. `go --back` uses
+   the walk whose last step is focused now, else the current window's. A bare word that isn't a list
+   is read as a query (`go pinned`).
+8. A key binding's ACTION is a palette command's title, `@LIST` (`go --next`), or a `umi` command line,
+   run as a `umi` process (COMPROMISES.md); a failure beeps. Like Umi's items, a binding needs ⌘ or ⌃
+   (or a function key). ⌃⌘J on an empty list beeps, as before; `go` says "nothing in jump".
+9. Palette commands from the commands folder are titled from the file name (`where-am-i.sh` → "Where
+   am i"); `command."Title"` lines run with `/bin/sh -c`. `command run` from a terminal records its
+   `umi` calls as `palette` unless `UMI_CAUSE` says otherwise.
+10. For `pane set`, a positional first word that reads as `KEY=VALUE` is a pair even if it could be a
+    query (`pane set owner=me x=1` sets two keys); a query target goes in `--pane`, or reads as one
+    when it isn't a single pair (`@list`, `not hidden`, `(a=1)`). Where: `UmiAttributesRPC`, CLI.md.
+11. `pane set`, `unset`, `close` and `move` act on every match, in the query's order. `pane move`'s
+    first match goes where the options say and each next one beside the one moved before it (so
+    `--new-tab` makes one new tab holding them all); with `--to P`, P itself stays put. A tab or
+    window query acts on every tab or window holding a match for `close`, `equalize`, `color`,
+    `pin`, `unpin`, `set` and `unset`; `tab focus|rename|move` and `window focus` take the one holding
+    the first match (one focus, one name). `hide`/`show` come in step 4. Where: `UmiRPC`
+    (`pane.move`, `tab.*`, `window.close`), `UmiTopology.everyTab/everyWindow`, CLI.md, Q-1.
+12. `tab back` stays until step 6 (design/cli.md removes it, but ⇧⌘[ keeps meaning "back through the
+    tabs visited" until step 6 makes it Warp's previous tab). design/plan.md's step 6 now says to
+    remove it.
+13. Problems in Umi's config lines show in `list ls` and `slot ls` (`problems`, and the CLI prints them
+    on stderr), not in Ghostty's configuration-errors window. A list whose query names, directly or
+    through other lists, a list that doesn't exist, doesn't parse or names it back is such a
+    problem: `list ls` gives it an `error`, a query naming it fails with exit 1, and a query slot
+    naming it shows the `error` in `slot ls`. Where: `UmiConfig.listError/referenceError`.
+14. `ls` lost its `list` alias (`umi list` is now the lists).
+15. The hook plugins went to 1.2.0 because their script now checks `UMI_PANE`; Umi updates installed
+    ones at launch.
+16. Fix (a) watches key and mouse events with a local monitor (each counts until the run loop's turn
+    that dispatches it ends) and wraps the window's `sendEvent` (for keys Umi itself posts). Where:
+    `UmiCause`, `TerminalWindow.sendEvent` (marked Umi).
+17. `focusPane` now sets the tab's focused pane before selecting the tab (found by the trial; it
+    cleared a neighbour's unseen state). Where: `UmiLayout.focusPane`.

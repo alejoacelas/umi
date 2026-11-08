@@ -129,7 +129,7 @@ def test_a_pane_waiting_for_the_user_stops_counting_once_it_closes(inst, win):
     inst.cli("pane", "close", pane)
     wait_until(lambda: inst.rpc("debug.ui.attention")["needing_you"] == before, 10, message="the closed pane stops counting")
     if before == 0:
-        assert inst.cli("jump", check=False).returncode == 1
+        assert inst.cli("go", "--next", "jump", check=False).returncode == 1
 
 
 @pytest.mark.req("L-14", "L-2")

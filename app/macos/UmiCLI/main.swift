@@ -124,7 +124,7 @@ struct Caller {
         guard let instance = env["UMI_INSTANCE"], !instance.isEmpty else { return Caller() }
         let hash = instance.split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
         guard hash == stateHash(stateDirectory()) else { return Caller() }
-        guard let pane = env["UMI_PANE_ID"], !pane.isEmpty else { return Caller() }
+        guard let pane = env["UMI_PANE"], !pane.isEmpty else { return Caller() }
         return Caller(pane: pane, instance: instance)
     }
 
@@ -610,7 +610,7 @@ func printTree(_ result: Any) {
 
 /// Attributes Umi keeps (design/cli.md, "Attributes"): left out of `ls`'s text.
 let readOnlyAttributes: Set<String> = ["kind", "cwd", "branch", "command", "focused", "hidden", "in_drawer",
-                                       "seen_at", "changed_at", "status_since", "idle_for", "visible_count"]
+                                       "seen_at", "changed_at", "status_since", "idle_for", "visible_count", "unseen"]
 
 /// The help, printed from the command table (`commands.swift`), as `help --json` is.
 var help: String { renderHelp() }
@@ -622,9 +622,59 @@ func layoutCommand(_ argv: [String]) {
     }
     let rest = Array(argv.dropFirst())
     switch command {
-    case "ls", "tree", "list":
-        _ = parse(rest, ArgSpec())
-        printTree(call("tree"))
+    case "ls", "tree":
+        let args = parse(rest, ArgSpec(valued: ["--where"]))
+        guard args.positional.isEmpty else { fail("ls: unexpected argument \(args.positional[0]) (filter with --where QUERY)") }
+        if let query = args.value("--where") {
+            printPanes(callDict("ls", ["where": query]))
+        } else {
+            printTree(call("tree"))
+        }
+
+    case "list", "lists":
+        listCommand(rest)
+
+    case "go":
+        let args = parse(rest, ArgSpec(boolean: ["--next", "--back"]))
+        var params: [String: Any] = [:]
+        if args.has("--back") {
+            guard !args.has("--next"), args.positional.isEmpty else { fail("go --back takes nothing else") }
+            params["back"] = true
+        } else {
+            let target = (args.positional + (args.rest ?? [])).joined(separator: " ")
+            guard !target.isEmpty else { fail("go: give a LIST or a QUERY (go jump, go --next jump, go --back)") }
+            params["target"] = target
+            params["next"] = args.has("--next")
+        }
+        let result = callDict("go", params)
+        if jsonOutput {
+            printJSON(["pane": result["pane"] ?? "", "tab": result["tab"] ?? "", "window": result["window"] ?? ""])
+        } else {
+            print(result["pane"] as? String ?? "")
+        }
+
+    case "slot", "slots":
+        let args = parse(rest, ArgSpec())
+        guard args.positional.first ?? "ls" == "ls" || args.positional.first == "list" else {
+            fail("slot: only `slot ls` (slots are set in \(abbreviateHome(configFilePath())) as slot.NAME = VALUE)")
+        }
+        let result = callDict("slot.ls")
+        if jsonOutput {
+            printJSON(result)
+        } else {
+            for slot in result["slots"] as? [[String: Any]] ?? [] {
+                let name = (slot["name"] as? String ?? "").padding(toLength: 20, withPad: " ", startingAt: 0)
+                var line = "\(name) \(slot["value"] as? String ?? "")"
+                if !(slot["default"] as? Bool ?? true) { line += dim("  (yours)") }
+                if let later = slot["used_from"] as? String { line += dim("  (used from \(later))") }
+                if let error = slot["error"] as? String { line += "  " + error }
+                print(line)
+            }
+            printProblems(result)
+        }
+
+    case "command", "commands":
+        commandCommand(rest)
 
     case "window", "windows":
         windowCommand(rest)
@@ -750,17 +800,7 @@ func layoutCommand(_ argv: [String]) {
         if jsonOutput { printJSON(result) } else { print(result["path"] as? String ?? absolutePath(out)) }
 
     case "jump":
-        let args = parse(rest, ArgSpec())
-        let back = args.positional.first == "back"
-        guard args.positional.count <= 1, back || args.positional.first ?? "next" == "next" else {
-            fail("jump: use `jump` (the next pane whose agent needs you) or `jump back`")
-        }
-        let result = callDict(back ? "jump.back" : "jump.next")
-        if jsonOutput {
-            printJSON(result)
-        } else {
-            print(result["pane"] as? String ?? "")
-        }
+        fail("`jump` was removed: use `\(cliName) go --next jump` (⌃⌘J) and `\(cliName) go --back` (⌃⌘K)")
 
     case "shortcuts", "shortcut":
         shortcutsCommand(rest)
@@ -784,6 +824,102 @@ func layoutCommand(_ argv: [String]) {
 
     default:
         fail("unknown command `\(command)` (see `\(cliName) help`)")
+    }
+}
+
+/// The user's config file, as the app finds it.
+func configFilePath() -> String {
+    let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? (NSHomeDirectory() + "/.config")
+    return xdg + "/umi/config"
+}
+
+func printProblems(_ result: [String: Any]) {
+    for problem in result["problems"] as? [String] ?? [] { eprint("\(cliName): in the config: \(problem)") }
+}
+
+/// Panes with their tab and window (`ls --where`, `list show`).
+func printPanes(_ result: [String: Any]) {
+    if jsonOutput {
+        printJSON(result)
+        return
+    }
+    for pane in result["panes"] as? [[String: Any]] ?? [] {
+        var row = "pane \(dim(shortID(pane["id"])))"
+        if let name = pane["name"] as? String { row += "  \(bold(name))" }
+        row += "  \(pane["title"] as? String ?? "")"
+        row += dim("  tab #\(pane["tab_index"] ?? "?") window #\(pane["window_index"] ?? "?")")
+        if let attributes = pane["attributes"] as? [String: String], let status = attributes["agent.status"] {
+            row += "  [\(attributes["agent.kind"] ?? "agent") \(status)]"
+        }
+        print(row)
+    }
+}
+
+/// `list ls`, `list show NAME`: the named lists (`list.NAME = QUERY` in the config).
+func listCommand(_ argv: [String]) {
+    let args = parse(argv, ArgSpec())
+    switch args.positional.first ?? "ls" {
+    case "ls", "list":
+        let result = callDict("list.ls")
+        if jsonOutput {
+            printJSON(result)
+            return
+        }
+        for list in result["lists"] as? [[String: Any]] ?? [] {
+            let name = (list["name"] as? String ?? "").padding(toLength: 14, withPad: " ", startingAt: 0)
+            let count = String(describing: list["count"] ?? 0).padding(toLength: 4, withPad: " ", startingAt: 0)
+            var line = "\(bold(name)) \(count) \(list["query"] as? String ?? "")"
+            if !(list["default"] as? Bool ?? true) { line += dim("  (yours)") }
+            if let error = list["error"] as? String { line += "  " + error }
+            print(line)
+        }
+        printProblems(result)
+    case "show":
+        guard args.positional.count == 2 else { fail("list show NAME") }
+        printPanes(callDict("list.show", ["name": args.positional[1]]))
+    default:
+        fail("list: use `list ls` or `list show NAME`")
+    }
+}
+
+/// `command ls`, `command run TITLE [--pane P]`: palette commands from the config.
+func commandCommand(_ argv: [String]) {
+    let args = parse(argv, ArgSpec(valued: ["--pane"], aliases: ["-p": "--pane"]))
+    switch args.positional.first ?? "ls" {
+    case "ls", "list":
+        let result = callDict("command.ls")
+        if jsonOutput {
+            printJSON(result)
+            return
+        }
+        let commands = result["commands"] as? [[String: Any]] ?? []
+        if commands.isEmpty {
+            print(dim("no commands: add command.\"Title\" = … to \(abbreviateHome(configFilePath())), or executables to its commands/ folder"))
+        }
+        for command in commands {
+            var line = bold(command["title"] as? String ?? "?")
+            if let keys = command["keys"] as? [String] { line += "  " + keys.joined(separator: ", ") }
+            line += "  " + dim(abbreviateHome(command["path"] as? String ?? command["line"] as? String ?? ""))
+            print(line)
+        }
+    case "run":
+        let title = (Array(args.positional.dropFirst()) + (args.rest ?? [])).joined(separator: " ")
+        guard !title.isEmpty else { fail("command run TITLE [--pane P]") }
+        var params: [String: Any] = ["title": title]
+        if let pane = args.value("--pane") { params["pane"] = pane }
+        let result = callDict("command.run", params)
+        let status = result["status"] as? Int ?? 1
+        if jsonOutput {
+            printJSON(result)
+        } else {
+            let out = result["stdout"] as? String ?? ""
+            if !out.isEmpty { print(out, terminator: out.hasSuffix("\n") ? "" : "\n") }
+            let err = result["stderr"] as? String ?? ""
+            if !err.isEmpty { FileHandle.standardError.write(err.data(using: .utf8) ?? Data()) }
+        }
+        if status != 0 { exit(1) }
+    default:
+        fail("command: use `command ls` or `command run TITLE`")
     }
 }
 
@@ -852,7 +988,7 @@ func shortcutsCommand(_ argv: [String]) {
             let entryKind = entry["kind"] as? String ?? ""
             if entryKind != kind {
                 kind = entryKind
-                print(bold(kind == "umi" ? productName : "Terminal (Ghostty keybindings)"))
+                print(bold(kind == "umi" ? productName : kind == "config" ? "Your config (key.… lines)" : "Terminal (Ghostty keybindings)"))
             }
             let display = (entry["display"] as? [String] ?? []).joined(separator: " ")
             let keys = (entry["keys"] as? [String] ?? []).joined(separator: ", ")
@@ -1088,14 +1224,19 @@ func sendCommand(_ argv: [String]) {
 }
 
 func waitCommand(_ argv: [String]) {
-    let args = parse(argv, ArgSpec(valued: ["--pane", "--pattern", "--idle", "--timeout"],
+    let args = parse(argv, ArgSpec(valued: ["--pane", "--pattern", "--idle", "--timeout", "--attr"],
                                    aliases: ["-p": "--pane", "-t": "--timeout"]))
+    if let query = args.value("--attr") {
+        guard args.value("--pattern") == nil, args.value("--idle") == nil else { fail("wait: give one of --pattern, --idle or --attr") }
+        waitForAttributes(query, pane: args.value("--pane"), timeout: args.value("--timeout"))
+        return
+    }
     let pattern = args.value("--pattern")
     let idle = args.value("--idle").map { value -> Double in
         guard let seconds = Double(value), seconds > 0 else { fail("--idle must be a positive number of seconds") }
         return seconds
     }
-    guard (pattern == nil) != (idle == nil) else { fail("wait: give --pattern RE or --idle SECS") }
+    guard (pattern == nil) != (idle == nil) else { fail("wait: give --pattern RE, --idle SECS or --attr QUERY") }
     let timeout = args.value("--timeout").map { value -> Double in
         guard let seconds = Double(value), seconds >= 0 else { fail("--timeout must be a number of seconds") }
         return seconds
@@ -1171,6 +1312,43 @@ func waitCommand(_ argv: [String]) {
             fail("timed out waiting for \(pattern.map { "/\($0)/" } ?? "the pane to go idle")", code: 124)
         }
         usleep(100_000)
+    }
+}
+
+/// `wait --attr QUERY`: until the pane matches the query; prints its attributes.
+func waitForAttributes(_ query: String, pane: String?, timeout: String?) {
+    let seconds = timeout.map { value -> Double in
+        guard let seconds = Double(value), seconds >= 0 else { fail("--timeout must be a number of seconds") }
+        return seconds
+    }
+    let client = connect()
+    func ask(_ method: String, _ params: [String: Any]) -> [String: Any] {
+        do {
+            return try client.call(method, params) as? [String: Any] ?? [:]
+        } catch let error as RPCError {
+            fail(error.code == "not_found" && params["query"] != nil ? "the pane closed while waiting" : error.message)
+        } catch {
+            fail("\(error)")
+        }
+    }
+    // Resolve the pane once, so a pane that closes later isn't confused with another one.
+    var first: [String: Any] = [:]
+    if let pane { first["pane"] = pane }
+    guard let paneID = ask("pane.info", first)["id"] as? String else { fail("wait: no such pane") }
+    let deadline = seconds.map { Date().addingTimeInterval($0) }
+    while true {
+        let result = ask("pane.match", ["pane": paneID, "query": query])
+        if result["matches"] as? Bool ?? false {
+            let attributes = result["attributes"] as? [String: String] ?? [:]
+            if jsonOutput {
+                printJSON(["pane": paneID, "attributes": attributes])
+            } else {
+                for key in attributes.keys.sorted() { print("\(key)=\(attributes[key] ?? "")") }
+            }
+            return
+        }
+        if let deadline, Date() >= deadline { fail("timed out waiting for the pane to match \(query)", code: 124) }
+        usleep(200_000)
     }
 }
 

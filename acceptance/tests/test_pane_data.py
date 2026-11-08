@@ -30,8 +30,8 @@ def parse_iso(text):
 
 
 def in_pane(inst, pane):
-    """The environment of a `umi` run inside `pane` (its UMI_PANE_ID and UMI_INSTANCE)."""
-    return {"UMI_PANE_ID": pane, "UMI_INSTANCE": inst.instance_id()}
+    """The environment of a `umi` run inside `pane` (its UMI_PANE and UMI_INSTANCE)."""
+    return {"UMI_PANE": pane, "UMI_INSTANCE": inst.instance_id()}
 
 
 def tab_json(inst, tab_id):
