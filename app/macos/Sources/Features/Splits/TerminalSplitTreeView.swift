@@ -91,30 +91,18 @@ private struct TerminalSplitSubtreeView: View {
 
 private struct TerminalSplitLeaf: View {
     @EnvironmentObject var ghostty: Ghostty.App
-    /// Umi: re-render when stacks change (members added or closed).
-    @ObservedObject private var umiState = UmiState.shared
     let surfaceView: Ghostty.SurfaceView
     let isSplit: Bool
     let action: (TerminalSplitOperation) -> Void
 
     @State private var dropState: DropState = .idle
     @State private var isSelfDragging: Bool = false
+    /// Umi: the pane dragged by its chip in the pane strip.
+    @ObservedObject private var stripDrag = UmiStripDrag.shared
 
     var body: some View {
-        // Umi: panes sharing this place (a stack, M-7) show a strip of their names on top.
-        VStack(spacing: 0) {
-            if let stack = umiStack, stack.members.count > 1 {
-                UmiStackStrip(surfaceView: surfaceView, stack: stack)
-            }
-            leaf
-        }
-    }
-
-    private var umiStack: UmiPaneStack? {
-        UmiTopology.locate(surfaceView)?.tab.stack(of: surfaceView)
-    }
-
-    private var leaf: some View {
+        // Umi: dragged by its chip counts as dragging itself.
+        let selfDragging = isSelfDragging || stripDrag.pane == surfaceView.id
         GeometryReader { geometry in
             Ghostty.InspectableSurface(
                 surfaceView: surfaceView,
@@ -124,17 +112,14 @@ private struct TerminalSplitLeaf: View {
             .overlay { UmiFilePaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
             // Umi: and a page, in a web pane (E-12).
             .overlay { UmiWebPaneOverlay(surfaceView: surfaceView, background: ghostty.config.backgroundColor) }
-            // Umi: a 2px accent line along the top edge marks the focused pane of a split.
-            .overlay(alignment: .top) {
-                if isSplit && UmiTopology.locate(surfaceView)?.tab.focusedSurface === surfaceView {
-                    Rectangle().fill(UmiTheme.accent).frame(height: 2).allowsHitTesting(false)
-                }
-            }
+            // Umi: the pane indicator at the bottom right, and the focused pane of a split a
+            // little brighter (attention-ui.md, "The pane indicator").
+            .overlay { UmiPaneIndicatorOverlay(pane: surfaceView) }
             .background {
                 // If we're dragging ourself, we hide the entire drop zone. This makes
                 // it so that a released drop animates back to its source properly
                 // so it is a proper invalid drop zone.
-                if !isSelfDragging {
+                if !selfDragging {
                     Color.clear
                         .onDrop(of: [.ghosttySurfaceId], delegate: SplitDropDelegate(
                             dropState: $dropState,
@@ -145,7 +130,7 @@ private struct TerminalSplitLeaf: View {
                 }
             }
             .overlay {
-                if !isSelfDragging, case .dropping(let zone) = dropState {
+                if !selfDragging, case .dropping(let zone) = dropState {
                     zone.overlay(in: geometry)
                         .allowsHitTesting(false)
                 }
@@ -155,6 +140,9 @@ private struct TerminalSplitLeaf: View {
                 if isSelfDragging {
                     dropState = .idle
                 }
+            }
+            .onChange(of: stripDrag.pane) { pane in
+                if pane == surfaceView.id { dropState = .idle }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Terminal pane")
@@ -223,8 +211,6 @@ private struct TerminalSplitLeaf: View {
 }
 
 enum TerminalSplitDropZone: String, Equatable {
-    /// Umi: the middle of the pane: the dropped pane shares this one's place (a stack, M-7).
-    case center
     case top
     case bottom
     case left
@@ -238,9 +224,6 @@ enum TerminalSplitDropZone: String, Equatable {
     static func calculate(at point: CGPoint, in size: CGSize) -> TerminalSplitDropZone {
         let relX = point.x / size.width
         let relY = point.y / size.height
-
-        // Umi: the middle third (each way) stacks instead of splitting.
-        if (1.0 / 3.0...2.0 / 3.0).contains(relX), (1.0 / 3.0...2.0 / 3.0).contains(relY) { return .center }
 
         let distToLeft = relX
         let distToRight = 1 - relX
@@ -260,15 +243,6 @@ enum TerminalSplitDropZone: String, Equatable {
         let overlayColor = Color.accentColor.opacity(0.3)
 
         switch self {
-        case .center:
-            ZStack {
-                Rectangle().fill(overlayColor)
-                Label("Stack here", systemImage: "square.stack")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Capsule().fill(Color.accentColor))
-            }
         case .top:
             VStack(spacing: 0) {
                 Rectangle()

@@ -173,14 +173,11 @@ class TerminalController: BaseTerminalController {
         tabs.filter(\.pinned) + tabs.filter { !$0.pinned }
     }
 
-    /// Every pane of every tab in this window, stack members not on show included.
+    /// Every pane of every tab in this window, hidden ones included.
     var allSurfaces: [Ghostty.SurfaceView] { tabs.flatMap { tree(of: $0).root?.leaves() ?? [] } + tabs.flatMap { hiddenPanes(of: $0) } }
 
-    override func umiTreeRemoving(_ node: SplitTree<Ghostty.SurfaceView>.Node)
-        -> (tree: SplitTree<Ghostty.SurfaceView>, replacement: Ghostty.SurfaceView?) {
-        guard let tab = selectedTabStorage else { return super.umiTreeRemoving(node) }
-        return umiRemoving(node, from: surfaceTree, in: tab)
-    }
+    /// A tab's hidden panes, in strip order (UmiHidden).
+    func hiddenPanes(of tab: UmiTab) -> [Ghostty.SurfaceView] { tab.hidden }
 
     override func ownsSurface(_ surface: Ghostty.SurfaceView) -> Bool {
         tabs.contains { $0.contains(surface) } || surfaceTree.contains(surface)
@@ -311,8 +308,11 @@ class TerminalController: BaseTerminalController {
         if tab === selectedTabStorage {
             surfaceTree = tree
         } else {
+            let old = tab.tree
             tab.tree = tree
             setOccluded(tab.panes, occluded: true)
+            // Umi: the three-pane limit, for every way a pane arrives (UmiHidden).
+            UmiHidden.treeDidChange(tab, in: self, from: old, to: tree)
             UmiState.shared.layoutDidChange()
         }
     }
@@ -374,6 +374,8 @@ class TerminalController: BaseTerminalController {
         tab.tree = to
         if let focusedSurface, to.contains(focusedSurface) { tab.focusedSurface = focusedSurface }
         UmiState.shared.layoutDidChange()
+        // Umi: the three-pane limit, for every way a pane arrives (UmiHidden).
+        UmiHidden.treeDidChange(tab, in: self, from: from, to: to)
 
         // The selected tab lost its last pane: close the tab (or the window).
         if to.isEmpty {
@@ -390,15 +392,17 @@ class TerminalController: BaseTerminalController {
         moveFocusFrom oldView: Ghostty.SurfaceView? = nil,
         undoAction: String? = nil
     ) {
+        // Umi: a tab with hidden panes keeps one on show: the one used most recently comes in.
+        let refilled = UmiHidden.refill(newTree, tab: selectedTab, window: self)
         // The last pane of the tab is going away: close the tab so undo brings it back.
-        if newTree.isEmpty {
+        if refilled.isEmpty {
             closeTabImmediately(selectedTab)
             return
         }
 
         super.replaceSurfaceTree(
-            newTree,
-            moveFocusTo: newView,
+            refilled,
+            moveFocusTo: newTree.isEmpty ? refilled.root?.leftmostLeaf() : newView,
             moveFocusFrom: oldView,
             undoAction: undoAction)
     }
@@ -803,10 +807,8 @@ class TerminalController: BaseTerminalController {
         withConfirmation: Bool = true
     ) {
         // If this isn't the root then we're dealing with a split closure. Umi: neither is the
-        // root when it's the shown member of a stack: the next member takes its place (M-7).
-        var stacked = false
-        if case .leaf(let view) = node { stacked = selectedTab.stack(of: view) != nil }
-        if surfaceTree.root != node || stacked {
+        // last pane on show of a tab with hidden panes: one of them comes in (UmiHidden.refill).
+        if surfaceTree.root != node || !selectedTab.hidden.isEmpty {
             super.closeSurface(node, withConfirmation: withConfirmation)
             return
         }
@@ -824,13 +826,13 @@ class TerminalController: BaseTerminalController {
         guard let target = notification.object as? Ghostty.SurfaceView else { return }
         guard !surfaceTree.contains(target) else { return }   // the base class handles visible panes
         guard let tab = tabs.first(where: { $0.contains(target) }) else { return }
-        // A stack member that isn't on show (in any tab) leaves its stack (M-7).
-        if !tree(of: tab).contains(target) {
-            removeHiddenMember(target, from: tab)
+        // A hidden pane (in any tab) leaves its tab.
+        if tab.isHidden(target) {
+            UmiHidden.remove(target, from: tab, in: self)
             return
         }
         guard let node = tab.tree.root?.node(view: target) else { return }
-        let newTree = umiRemoving(node, from: tab.tree, in: tab).tree
+        let newTree = UmiHidden.refill(tab.tree.removing(node), tab: tab, window: self)
         UmiEvents.shared.emit("pane.closed", ["pane": target.umiID, "tab": tab.idString, "window": umiIDString])
         if newTree.isEmpty {
             closeTabImmediately(tab)
@@ -863,7 +865,7 @@ class TerminalController: BaseTerminalController {
     /// and reopened (⇧⌘T).
     func closeHiddenNode(_ node: SplitTree<Ghostty.SurfaceView>.Node, in tab: UmiTab) {
         let oldTree = tree(of: tab)
-        let newTree = umiRemoving(node, from: oldTree, in: tab).tree
+        let newTree = UmiHidden.refill(oldTree.removing(node), tab: tab, window: self)
         if newTree.isEmpty {
             closeTabImmediately(tab)
         } else {
@@ -936,7 +938,7 @@ class TerminalController: BaseTerminalController {
     /// its panes alive).
     func closeTabImmediately(_ tab: UmiTab, registerUndo: Bool = true) {
         guard let index = index(of: tab) else { return }
-        let paneIDs = tree(of: tab).root?.leaves().map(\.umiID) ?? []
+        let paneIDs = (tree(of: tab).root?.leaves().map(\.umiID) ?? []) + tab.hidden.map(\.umiID)
         let tabsBefore = tabs
         let selectedBefore = selectedTab
         let focusedBefore = focusedSurface
@@ -981,9 +983,15 @@ class TerminalController: BaseTerminalController {
         UmiEvents.shared.emit("tab.closed", ["tab": tab.idString, "window": umiIDString])
     }
 
+    /// Whether closing the tab would end a running program, in a pane on show or a hidden one
+    /// (a hidden pane keeps running, H-2).
+    func runsProgram(_ tab: UmiTab) -> Bool {
+        tree(of: tab).contains(where: { $0.needsConfirmQuit }) || hiddenPanes(of: tab).contains(where: { $0.needsConfirmQuit })
+    }
+
     /// Close a tab, asking first if a program is running in it.
     func closeTab(_ tab: UmiTab, sender: Any?) {
-        guard tree(of: tab).contains(where: { $0.needsConfirmQuit }) else {
+        guard runsProgram(tab) else {
             closeTabImmediately(tab)
             return
         }
@@ -1016,7 +1024,7 @@ class TerminalController: BaseTerminalController {
             for tab in toClose where self.tabs.contains(where: { $0 === tab }) { self.closeTabImmediately(tab) }
             self.undoManager?.setActionName(actionName)
         }
-        guard toClose.contains(where: { tree(of: $0).contains(where: { $0.needsConfirmQuit }) }) else {
+        guard toClose.contains(where: { runsProgram($0) }) else {
             close()
             return
         }
@@ -1305,7 +1313,7 @@ class TerminalController: BaseTerminalController {
 
     @IBAction func closeOtherTabs(_ sender: Any?) {
         guard tabs.count > 1 else { return }
-        let needsConfirm = tabs.contains { $0 !== selectedTab && tree(of: $0).contains(where: { $0.needsConfirmQuit }) }
+        let needsConfirm = tabs.contains { $0 !== selectedTab && runsProgram($0) }
         guard needsConfirm else {
             closeOtherTabsImmediately()
             return
@@ -1322,7 +1330,7 @@ class TerminalController: BaseTerminalController {
         guard let current = index(of: selectedTab) else { return }
         let toClose = tabs.enumerated().filter { $0.offset > current }.map(\.element)
         guard !toClose.isEmpty else { return }
-        let needsConfirm = toClose.contains { tree(of: $0).contains(where: { $0.needsConfirmQuit }) }
+        let needsConfirm = toClose.contains { runsProgram($0) }
         guard needsConfirm else {
             closeTabsOnTheRightImmediately()
             return

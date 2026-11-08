@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Files open in panes of their own (E-1, E-9): a file pane is an ordinary pane (it splits,
-/// moves, stacks, closes and is restored like any other) whose terminal is covered by the
+/// moves, hides, closes and is restored like any other) whose terminal is covered by the
 /// file's editor. The terminal underneath is a shell in the file's folder that is never shown.
 @MainActor
 final class UmiFilePanes: ObservableObject {
@@ -77,17 +77,17 @@ final class UmiFilePanes: ObservableObject {
 
     // MARK: Opening
 
-    /// Open a file in a pane of its own (E-1, E-9). A file already open shows where it is.
-    /// Otherwise its pane goes to the right of `anchor`, unless `anchor`'s tab already shows
-    /// three panes: then it gets a new tab right after that tab.
+    /// Open a file in a pane of its own (E-1, E-9). A file already open shows where it is (brought
+    /// in if hidden). Otherwise its pane goes to the right of `anchor`; a tab at its limit makes
+    /// room (`strip.make-room`).
     @discardableResult
     static func open(_ url: URL, mode: UmiDocument.Mode?, near anchor: Ghostty.SurfaceView,
                      focus: Bool) throws -> (pane: Ghostty.SurfaceView, doc: UmiDocument) {
         let url = url.standardizedFileURL.resolvingSymlinksInPath()
         if let existing = shared.pane(showing: url), let doc = shared.document(of: existing) {
             if let mode, doc.hasPreview { doc.mode = mode }
-            if let location = UmiTopology.locate(existing), !location.window.tree(of: location.tab).contains(existing) {
-                try UmiStacks.show(existing, focus: focus)
+            if let location = UmiTopology.locate(existing), location.tab.isHidden(existing) {
+                try UmiHidden.show(existing, focus: focus)
             } else if focus {
                 UmiLayout.focusPane(existing, activate: true)
             }
@@ -103,38 +103,27 @@ final class UmiFilePanes: ObservableObject {
         return (placed.pane, doc)
     }
 
-    /// A new pane for something opened from `anchor` (E-9): to the right of `anchor`, unless
-    /// `anchor`'s tab already shows three panes: then in a new tab right after that tab. File
-    /// panes and web panes are placed this way.
+    /// A new pane for something opened from `anchor` (E-9): to the right of `anchor` (at the right
+    /// end of its tab when `anchor` is hidden). A tab at its limit makes room. File panes and web
+    /// panes are placed this way.
     static func newPane(near anchor: Ghostty.SurfaceView, cwd: String?,
                         for what: String) throws -> (pane: Ghostty.SurfaceView, tab: String, window: String) {
         guard let location = UmiTopology.locate(anchor) else { throw UmiError.notFound("the pane isn't in a window") }
-        let window = location.window
-        let tab = location.tab
-        let tree = window.tree(of: tab)
-        // A stack member that isn't on show: the new pane goes beside the member that is.
-        let shownAnchor = tree.contains(anchor) ? anchor
-            : (tab.stack(of: anchor).flatMap { window.shownMember(of: $0, in: tab) } ?? anchor)
-
         var options = UmiLayout.PaneOptions()
         options.cwd = cwd
         let created: [String: Any]
-        if (tree.root?.leaves().count ?? 0) < maxPanesPerTab {
-            created = try UmiLayout.split(shownAnchor, direction: .right, options: options, ratio: nil, focus: false)
+        if location.tab.isHidden(anchor) {
+            created = try UmiLayout.addPaneAtEnd(of: location.tab, in: location.window, options: options,
+                                                  inheritFrom: anchor, focus: false)
         } else {
-            let index = (window.index(of: tab) ?? window.tabs.count - 1) + 2   // 1-based, right after `tab`
-            created = try UmiLayout.newTab(in: window, options: options, tabName: nil, color: .none, index: index,
-                                            focus: false, inheritFrom: shownAnchor)
+            created = try UmiLayout.split(anchor, direction: .right, options: options, ratio: nil, focus: false)
         }
         guard let id = created["pane"] as? String,
               let pane = UmiTopology.allSurfaces.first(where: { $0.umiID == id }) else {
             throw UmiError.failed("couldn't make a pane for \(what)")
         }
-        return (pane, (created["tab"] as? String) ?? "", window.umiIDString)
+        return (pane, (created["tab"] as? String) ?? "", location.window.umiIDString)
     }
-
-    /// New files get a pane in the caller's tab while it shows fewer than this many panes.
-    static let maxPanesPerTab = 3
 
     // MARK: Closing
 
@@ -199,7 +188,7 @@ final class UmiEditorGroup {
     }
 }
 
-/// The files open in one tab's panes, shown or waiting in a stack (what `editor ls` lists).
+/// The files open in one tab's panes, on show or hidden (what `editor ls` lists).
 @MainActor
 final class UmiTabFiles {
     unowned let tab: UmiTab
@@ -366,26 +355,16 @@ enum UmiFilePaneMenu {
 }
 
 /// The file pane's header, as Warp's: the name centred (a dot 8 points before it while there are
-/// unsaved changes), the drag grip on the left, and on the right the preview/source control, ⋯
-/// (the pane menu, also on right-click) and close.
+/// unsaved changes), and on the right the preview/source control, ⋯ (the pane menu, also on
+/// right-click) and close. It has no grip: the pane's chip in the pane strip is its drag handle.
 private struct UmiFilePaneHeader: View {
     let surfaceView: Ghostty.SurfaceView
     @ObservedObject var doc: UmiDocument
-    @State private var dragging = false
-    @State private var hovering = false
 
     var body: some View {
         let edge: CGFloat = doc.hasPreview ? 190 : 64
         HStack(spacing: 0) {
-            ZStack {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(hovering ? UmiTheme.textSecondary : UmiTheme.textTertiary)
-                Ghostty.SurfaceDragSource(surfaceView: surfaceView, isDragging: $dragging, isHovering: $hovering)
-            }
-            .frame(width: 22, height: 18)
-            .help("Drag to move this pane")
-            .frame(width: edge, alignment: .leading)
+            Color.clear.frame(width: edge, height: 1)
             Spacer(minLength: 0)
             HStack(spacing: 4) {
                 if doc.isDirty {

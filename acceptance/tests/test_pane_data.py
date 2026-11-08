@@ -221,10 +221,11 @@ def test_role_moves_between_panes(inst, win):
 def test_the_docs_tab_is_the_tab_with_role_docs(inst, win, tmp_path):
     _, second = new_tab(inst, win)
     inst.cli("tab", "set", win["tab"], "role=docs")
-    assert tab_json(inst, win["tab"])["docs"] is True
+    assert tab_json(inst, win["tab"])["attributes"]["role"] == "docs"
     inst.cli("tab", "set", second, "role=docs")
-    assert tab_json(inst, second)["docs"] is True and tab_json(inst, second)["attributes"]["role"] == "docs"
-    assert tab_json(inst, win["tab"])["docs"] is False and "role" not in tab_json(inst, win["tab"])["attributes"]
+    assert tab_json(inst, second)["attributes"]["role"] == "docs"
+    assert "role" not in tab_json(inst, win["tab"])["attributes"], "one tab holds role=docs"
+    assert "docs" not in tab_json(inst, second), "the tab's docs field is gone (design/cli.md, Removed)"
     # Markdown opened from outside Umi goes to that tab.
     doc = tmp_path / "notes.md"
     doc.write_text("# Notes\n")

@@ -272,7 +272,8 @@ enum UmiTopology {
             "title": tab.title,
             "selected": tab === window.selectedTab,
             "pinned": tab.pinned,
-            "docs": tab.isDocs,
+            "visible_limit": tab.visibleLimit,
+            "strip": UmiHidden.strip(of: tab, in: window).map(\.umiID),
             "focused_pane": focused?.umiID ?? "",
             "window": window.umiIDString,
             "attributes": UmiAttributes.shared.all(tab, in: window),
@@ -281,7 +282,7 @@ enum UmiTopology {
         var zoomedPane: Ghostty.SurfaceView?
         if let zoomed = tree.zoomed, case .leaf(let view) = zoomed { zoomedPane = view }
         let frames = paneFrames(tree, in: window)
-        // The panes on show, then stack members that aren't (M-7), marked `"shown": false`.
+        // The panes on show in layout order, then the hidden ones in strip order.
         json["panes"] = panes.map { pane in
             var paneJSON = paneJSON(pane, focused: pane === focused, zoomed: pane === zoomedPane)
             if let frame = frames[ObjectIdentifier(pane)] { paneJSON["frame"] = frameJSON(frame) }
@@ -308,14 +309,8 @@ enum UmiTopology {
             json["url"] = page.url.absoluteString
             json["title"] = page.title
         }
-        var shown = true
-        if let location = locate(pane) {
-            shown = location.window.tree(of: location.tab).contains(pane)
-            json["shown"] = shown
-            if let stack = location.tab.stack(of: pane) { json["stack"] = stack.members.map(\.umiID) }
-        }
         json["kind"] = UmiAttributes.kind(of: pane)
-        json["hidden"] = !shown
+        json["hidden"] = locate(pane)?.tab.isHidden(pane) ?? false
         json["in_drawer"] = false
         json["indicator"] = indicator(pane)
         // Every attribute: the user's and scripts', `agent.*`, and Umi's read-only ones.
@@ -325,13 +320,7 @@ enum UmiTopology {
 
     /// The pane indicator's state (attention-ui.md): from its agent's status and whether it was seen.
     static func indicator(_ pane: Ghostty.SurfaceView) -> String {
-        guard let agent = UmiAttention.shared.agent(forPane: pane.id) else { return "none" }
-        if agent.status == .working { return "working" }
-        switch agent.mark {
-        case .needsYou: return "needs_you"
-        case .finished: return "finished"
-        case .none: return "none"
-        }
+        UmiIndicator.state(of: pane).rawValue
     }
 
     /// Where each pane of a tab sits in the window's terminal area (points, top-left origin),

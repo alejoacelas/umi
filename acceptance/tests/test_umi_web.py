@@ -144,8 +144,8 @@ def test_navigation_stays_on_the_origin_and_other_origins_go_to_the_browser(web)
     assert pane(inst, away)["url"] == site + "/away" and pane(inst, away)["title"] == "Away"
 
 
-@pytest.mark.req("E-12", "E-1", "M-7")
-def test_a_web_pane_moves_and_stacks_without_reloading(web):
+@pytest.mark.req("E-12", "E-1", "H-2")
+def test_a_web_pane_moves_hides_and_comes_back_without_reloading(web):
     inst, site, a = web["inst"], web["site"], web["pane"]
     page = inst.json("edit", site + "/load", "--pane", a)["pages"][0]["pane"]
     title = titled(inst, page, "Load ")
@@ -153,8 +153,12 @@ def test_a_web_pane_moves_and_stacks_without_reloading(web):
     moved = pane(inst, page)
     assert moved["tab"] != web["tab"]
     b = split(inst, "right", a)
-    rpc(inst, "debug.ui.split.drop", pane=page, target=b, zone="center")
-    assert pane(inst, page)["stack"] == [b, page]
+    rpc(inst, "debug.ui.split.drop", pane=page, target=b, zone="right")
+    assert pane(inst, page)["tab"] == web["tab"]
+    inst.cli("pane", "hide", page)
+    assert pane(inst, page)["hidden"]
+    inst.cli("pane", "show", page)
+    assert not pane(inst, page)["hidden"]
     time.sleep(1)
     assert pane(inst, page)["title"] == title, "the page didn't load again"
     inst.cli("pane", "close", page)

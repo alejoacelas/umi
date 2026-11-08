@@ -235,6 +235,7 @@ class AppDelegate: NSObject,
         UmiUndoTrace.install(undoManager)
         UmiShortcuts.install()
         UmiLooking.start()
+        UmiIndicator.shared.start()
         UmiCause.startWatchingEvents()
         UmiSlots.start()
         UmiPersistence.shared.restoreUI()

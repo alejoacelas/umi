@@ -100,6 +100,38 @@ enum UmiUIDebug {
         case "debug.ui.attention":
             return attention()
 
+        case "debug.ui.indicator":
+            // The pane indicator as drawn (UmiIndicator): each pane of the window's selected tab (on
+            // show, then hidden), the strip's chips and the sidebar rows, and the slots' style.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            UmiIndicator.shared.reload()
+            let indicator = UmiIndicator.shared
+            let tab = window.selectedTab
+            let panes = UmiHidden.strip(of: tab, in: window)
+            func lookJSON(_ look: UmiIndicator.Look?) -> Any {
+                guard let look else { return NSNull() }
+                return ["color": UmiIndicator.hexString(look.color), "size": Double(look.size), "opacity": look.opacity]
+            }
+            let style = indicator.style
+            return ["panes": panes.map { indicator.json($0) },
+                    "chips": panes.map { pane -> [String: Any] in
+                        let place = UmiIndicator.placement(of: pane)
+                        let state = UmiIndicator.state(of: pane)
+                        return ["pane": pane.umiID, "state": state.rawValue,
+                                "mark": lookJSON(indicator.look(state, focused: place.focused, split: false))]
+                    },
+                    "rows": window.tabs.map { tab -> [String: Any] in
+                        let row = UmiSidebarRowModel(tab: tab, in: window)
+                        return ["tab": tab.idString, "state": row.indicator.rawValue,
+                                "mark": lookJSON(indicator.look(row.indicator, focused: false, split: false))]
+                    },
+                    "style": ["working": style.working.map(UmiIndicator.hexString) ?? "none",
+                              "needs_you": style.needsYou.map(UmiIndicator.hexString) ?? "none",
+                              "finished": style.finished.map(UmiIndicator.hexString) ?? "none",
+                              "focus": style.focus],
+                    "inset": ["right": Double(UmiPaneIndicatorOverlay.inset.width),
+                              "bottom": Double(UmiPaneIndicatorOverlay.inset.height)]]
+
         case "debug.ui.assume_active":
             // Without the screen the app can't become active: count it as active (and the
             // current window as key) for checks of what looking does.
@@ -167,7 +199,7 @@ enum UmiUIDebug {
             guard let targetSelector = params.string("target") else { throw UmiError.badRequest("give a target pane") }
             let target = try UmiTopology.resolvePane(targetSelector, caller: caller)
             guard let zone = params.string("zone").flatMap(TerminalSplitDropZone.init(rawValue:)) else {
-                throw UmiError.badRequest("zone is top, bottom, left, right or center")
+                throw UmiError.badRequest("zone is top, bottom, left or right")
             }
             guard let location = UmiTopology.locate(target), location.tab === location.window.selectedTab else {
                 throw UmiError.badRequest("the target pane must be in its window's shown tab")
@@ -327,7 +359,9 @@ enum UmiUIDebug {
         for (id, agent) in UmiAttention.shared.openPanes {
             panes[id.uuidString.lowercased()] = ["kind": agent.kind.rawValue, "title": agent.title, "status": agent.status.rawValue,
                                                  "mark": agent.mark == .none ? "none" : (agent.mark == .finished ? "finished" : "needs_you"),
-                                                 "unseen": agent.unseen, "attributes": agent.attributes]
+                                                 "unseen": agent.unseen, "attributes": agent.attributes,
+                                                 "indicator": UmiTopology.allSurfaces.first { $0.id == id }
+                                                    .map { UmiIndicator.state(of: $0).rawValue } ?? "none"]
         }
         return ["panes": panes, "needing_you": UmiSlots.badgeCount,
                 "badge": NSApp.dockTile.badgeLabel ?? "", "looked_at": UmiLooking.lookedAt?.umiID ?? "",

@@ -99,6 +99,12 @@ def new_tab(inst, win, *extra):
     return pane, inst.json("pane", "info", pane)["tab"]
 
 
+def room_for(inst, tab, n):
+    """Let a tab show n panes (its `visible_limit`; three by default, H-1), for checks of how panes
+    share a row of more than three."""
+    inst.cli("tab", "set", "--tab", tab, f"visible_limit={n}")
+
+
 def ready(inst, *panes):
     """Wait for the panes' shells to show a prompt (until then, closing one asks first)."""
     for pane in panes:
@@ -110,6 +116,7 @@ def ready(inst, *panes):
 
 @pytest.mark.req("L-19", "L-1")
 def test_splits_along_a_row_share_it_equally(inst, win):
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
@@ -155,6 +162,7 @@ def test_ratio_sets_the_new_panes_share_of_its_row(inst, win):
 
 @pytest.mark.req("L-19", "M-1")
 def test_moves_and_drops_share_rows_equally(inst, win):
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "down", b)
@@ -188,6 +196,7 @@ def test_splits_in_a_background_tab_share_equally_too(inst, win):
 def test_the_split_menu_items_share_equally(inst, win, ui):
     """⌘D / ⇧⌘D are the menu's Split Right / Split Down, on the focused pane (needs the app in
     front, so it's a UI test)."""
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     inst.cli("pane", "focus", b)
@@ -204,6 +213,7 @@ def test_the_split_menu_items_share_equally(inst, win, ui):
 
 @pytest.mark.req("L-19")
 def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row(inst, win):
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
@@ -228,6 +238,7 @@ def test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_i
 def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
     """Alejo: "only the panes that have not been manually resized shrink/grow in response to
     other pane resizing." """
+    room_for(inst, win["tab"], 6)
     # The numbers keep every pane above Warp's 190-point minimum (L-19) in the suite's window.
     a = win["pane"]
     b = split(inst, "right", a)
@@ -265,6 +276,7 @@ def test_panes_sized_by_hand_keep_their_size_and_the_others_share(inst, win):
 
 @pytest.mark.req("L-19")
 def test_a_dragged_middle_divider_shares_both_sides(inst, win):
+    room_for(inst, win["tab"], 6)
     a = win["pane"]
     b = split(inst, "right", a)
     c = split(inst, "right", b)
@@ -540,9 +552,10 @@ def assume_active(inst):
 
 
 @pytest.mark.req("S-3")
-def test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock(inst, win):
-    """The marks come from the panes' agent hooks (UmiAttention); the row shows them on the agent's
-    icon and the Dock badge counts the panes whose agent needs the user (not the finishes not seen yet)."""
+def test_an_unseen_finish_or_a_question_marks_the_row_and_counts_on_the_dock(inst, win):
+    """The marks come from the panes' agent hooks (UmiAttention); the row shows the pane indicator of
+    its `tab.summary` pane (PI-2) and the Dock badge counts the panes whose agent needs the user (not
+    the finishes not seen yet)."""
     pane, tab = new_tab(inst, win)
     other, other_tab = new_tab(inst, win)
     try:
@@ -556,7 +569,7 @@ def test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock(i
         set_agent(inst, pane, "claude", title="Long task", status="needs_input", mark="needs_you")
         assert rpc(inst, "debug.ui.attention")["badge"] == "2"
         set_agent(inst, pane, "claude", title="Long task", status="working", mark="none")
-        assert row(inst, win["window"], tab)["mark"] == "none"
+        assert row(inst, win["window"], tab)["mark"] == "working", "the row shows the pane indicator (PI-2)"
         assert rpc(inst, "debug.ui.attention")["badge"] == "1"
     finally:
         clear_agent(inst, pane)
@@ -766,20 +779,27 @@ def test_a_pane_dropped_on_the_previous_or_next_tab_target_moves_there(inst, win
 
 @pytest.mark.req("M-4")
 def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(inst, win, ui):
-    """The real mouse: the pane's grab handle (top centre of the pane) dragged onto the targets."""
+    """The real mouse: the pane's chip in the pane strip (its drag handle, H-8) dragged onto the
+    targets."""
     t1 = win["tab"]
     p2, t2 = new_tab(inst, win)
     ready(inst, p2)
     _select(inst, win, t2)
-    inst.cli("window", "focus", win["window"])
-    ui.activate()
+    window = _test_window(ui, inst, win)
 
     def pane_area():
-        element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane"), 5, message="the pane")
+        element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Terminal pane", root=window), 5, message="the pane")
         return _frame(ui, element)
 
+    def chip(pane):
+        inst.cli("pane", "rename", pane, "drag-" + pane[:6])
+        strip = wait_until(lambda: ui.find(lambda e: ui.label(e) == "Pane strip", root=window), 5, message="the pane strip")
+        element = wait_until(lambda: ui.find(lambda e: ui.label(e) == "drag-" + pane[:6], root=strip), 5, message="the chip")
+        cx, cy, cw, chh = _frame(ui, element)
+        return cx + cw / 2, cy + chh / 2
+
     x, y, w, h = pane_area()
-    _mouse_drag((x + w / 2, y + 6), (x + w / 2, y + 36))
+    _mouse_drag(chip(p2), (x + w / 2, y + 36))
     wait_until(lambda: [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"], p2], 5,
                message="moved to the end of the previous tab")
     assert tab_of(inst, t2) is None, "its tab, left empty, closed"
@@ -793,7 +813,7 @@ def test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui(in
     left = frames(inst, t1)[win["pane"]]
     px, py, pw, ph = area_x + f["x"], area_y + f["y"], f["width"], f["height"]
     area_centre = area_x + (left["x"] + f["x"] + pw) / 2
-    _mouse_drag((px + pw / 2, py + 6), (area_centre, py + ph - 36))
+    _mouse_drag(chip(p2), (area_centre, py + ph - 36))
     wait_until(lambda: len(tab_ids(inst, win["window"])) == 2 and [p["id"] for p in tab_of(inst, t1)["panes"]] == [win["pane"]],
                5, message="moved to a new tab after the last")
 
@@ -936,8 +956,8 @@ def test_ties_go_to_the_current_tab_and_any_pane_of_a_tab_counts(inst, win, tmp_
     assert rpc(inst, "debug.ui.open_file", path=str(root / "sub" / "b.txt"))["tab"] == t1
 
 
-@pytest.mark.req("E-10")
-def test_markdown_opens_in_one_docs_tab_most_recent_first(inst, win, tmp_path):
+@pytest.mark.req("E-10", "H-1")
+def test_markdown_opens_in_the_docs_tab_at_its_right_end_three_on_show(inst, win, tmp_path):
     names = [f"doc{i}.md" for i in range(1, 6)]
     for i, name in enumerate(names):
         folder = tmp_path / ("a" if i % 2 else "b")   # two folders: the folder doesn't matter
@@ -952,18 +972,24 @@ def test_markdown_opens_in_one_docs_tab_most_recent_first(inst, win, tmp_path):
         assert rpc(inst, "debug.ui.open_file", path=str(paths[name]))["tab"] == docs_tab
     assert len(tab_ids(inst, win["window"])) == len(before) + 1, "one tab for all of them"
     tab = tab_of(inst, docs_tab)
-    assert tab["docs"] is True and tab["selected"]
-    files = [os.path.basename(p["file"]) for p in tab["panes"]]
-    assert files == list(reversed(names)), "one stack, the most recently opened first and on show"
-    assert [p["shown"] for p in tab["panes"]] == [True, False, False, False, False]
-    # Opening one again makes it the most recent and shows it.
-    rpc(inst, "debug.ui.open_file", path=str(paths["doc2.md"]))
+    assert tab["attributes"]["role"] == "docs" and tab.get("name") == "Docs" and tab["selected"]
+    on_show = [os.path.basename(p["file"]) for p in tab["panes"] if not p["hidden"]]
+    # Each new one at the right end of the tab, focused; three on show, the others hidden.
+    assert len(on_show) == 3 and on_show[-1] == "doc5.md", on_show
+    assert {os.path.basename(p["file"]) for p in tab["panes"]} == set(names), "every one stays in the tab"
+    assert inst.tree()["current_pane"] == next(p["id"] for p in tab["panes"] if p["file"].endswith("doc5.md"))
+    # Opening a hidden one again shows it where it is: brought in, no second pane.
+    hidden_one = next(os.path.basename(p["file"]) for p in tab["panes"] if p["hidden"])
+    rpc(inst, "debug.ui.open_file", path=str(paths[hidden_one]))
     tab = tab_of(inst, docs_tab)
-    assert [os.path.basename(p["file"]) for p in tab["panes"]] == ["doc2.md", "doc5.md", "doc4.md", "doc3.md", "doc1.md"]
-    assert tab["panes"][0]["shown"]
-    # Text files still go by folder.
-    (tmp_path / "a" / "notes.txt").write_text("notes\n")
-    assert rpc(inst, "debug.ui.open_file", path=str(tmp_path / "a" / "notes.txt"))["tab"] != docs_tab
+    assert len(tab["panes"]) == 5
+    assert hidden_one in [os.path.basename(p["file"]) for p in tab["panes"] if not p["hidden"]]
+    # Text files still go by folder: a tab with a pane in their folder (the docs tab's panes start
+    # in their files' folders, so a folder of its own here).
+    other = tmp_path / "c"
+    other.mkdir()
+    (other / "notes.txt").write_text("notes\n")
+    assert rpc(inst, "debug.ui.open_file", path=str(other / "notes.txt"))["tab"] != docs_tab
 
 
 # ---- UI (real mouse; the lead runs these) ---------------------------------------------------------
@@ -1011,20 +1037,83 @@ def _row_element(ui, title):
     return ui.find(lambda e: ui.role(e) in ("AXButton", "AXGroup", "AXStaticText") and ui.label(e) == title)
 
 
+def _test_window(ui, inst, win):
+    """The test's window in the accessibility tree, brought to the front. The instance's first
+    window shows a pane, a strip and maybe a sidebar too, so a search of every window can land
+    there. This window is the one whose sidebar lists the test's tab or, with the sidebar hidden
+    (new windows take the last window's choice), the main window once `window focus` has brought it
+    forward, checked by its strip having a chip for each pane of the shown tab."""
+    title = tab_of(inst, win["tab"])["title"]
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+
+    def chips(w):
+        strip = ui.find(lambda e: ui.label(e) == "Pane strip", root=w)
+        return [e for e in ui.find_all(lambda e: ui.role(e) == "AXButton" and ui.label(e), root=strip)] if strip else []
+
+    def find():
+        for w in ui.windows():
+            if ui.find(lambda e: ui.role(e) == "AXButton" and ui.label(e) == title, root=w):
+                return w
+        panes = tab_of(inst, window_of(inst, win["window"])["selected_tab"])["panes"]
+        main = ui.attr(ui.app, "AXMainWindow")
+        if main is not None and not ui.find(lambda e: ui.label(e) == "Sidebar", root=main) and len(chips(main)) == len(panes):
+            return main
+    return wait_until(find, 5, message="the test's window")
+
+
+def _park_pointer(ui, window):
+    """Move the pointer to the middle of the window. Left over the window's green button by an
+    earlier click, it opens macOS's Move & Resize menu, which then takes the keys a test types."""
+    import Quartz
+    x, y, w, h = _frame(ui, window)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventMouseMoved, (x + w / 2, y + h / 2), Quartz.kCGMouseButtonLeft))
+    time.sleep(0.5)
+
+
+def _terminal_frames(ui, window):
+    """The frames of the terminals on show in a window, left to right."""
+    return sorted((_frame(ui, e) for e in ui.find_all(lambda e: ui.role(e) == "AXTextArea", root=window)),
+                  key=lambda f: (f[0], f[1]))
+
+
 def _window_of(ui, element):
     while element is not None and ui.role(element) != "AXWindow":
         element = ui.attr(element, "AXParent")
     return element
 
 
-def _screen_point_outside(rect):
-    """A point on the main display (top-left coordinates, as AX and CGEvent use) outside rect."""
+def _make_room_outside(ui, window):
+    """Make the window smaller and put it near the main display's top left, leaving room on its right
+    and below to drop something outside it (a new window covers most of a laptop's screen)."""
+    import ApplicationServices as AX  # noqa: N812
     import Quartz
     b = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID())
-    x, y, w, h = rect
-    for px, py in ((x + w + 150, y + 120), (x - 150, y + 120), (x + 120, y + h + 80), (x + 120, y - 80)):
-        if b.origin.x + 30 < px < b.origin.x + b.size.width - 30 and b.origin.y + 60 < py < b.origin.y + b.size.height - 30:
-            return px, py
+    width, height = min(900, b.size.width - 400), min(560, b.size.height - 260)
+    AX.AXUIElementSetAttributeValue(window, "AXPosition", AX.AXValueCreate(AX.kAXValueCGPointType, (b.origin.x + 60, b.origin.y + 80)))
+    AX.AXUIElementSetAttributeValue(window, "AXSize", AX.AXValueCreate(AX.kAXValueCGSizeType, (width, height)))
+    wait_until(lambda: _frame(ui, window)[2] <= width + 1, 5, message="the window resized")
+    time.sleep(0.5)
+
+
+def _point_outside_windows(ui):
+    """A point on the main display's visible area (top-left coordinates, as AX and CGEvent use)
+    that is in none of the app's windows: the test's own and the instance's first one too, since a
+    drop there lands in that window."""
+    import AppKit
+    screen = AppKit.NSScreen.screens()[0]
+    full, vis = screen.frame(), screen.visibleFrame()
+    left, top = vis.origin.x, full.size.height - (vis.origin.y + vis.size.height)
+    right, bottom = left + vis.size.width, top + vis.size.height
+    frames = [_frame(ui, w) for w in ui.windows()]
+
+    def inside(px, py):
+        return any(x - 20 <= px <= x + w + 20 and y - 20 <= py <= y + h + 20 for x, y, w, h in frames)
+    for py in range(int(top) + 60, int(bottom) - 30, 20):
+        for px in range(int(right) - 40, int(left) + 30, -20):
+            if not inside(px, py):
+                return px, py
     return None
 
 
@@ -1034,10 +1123,10 @@ def test_dragging_a_tab_row_out_of_the_window_makes_a_window_ui(inst, win, ui):
     inst.cli("window", "focus", win["window"])
     ui.activate()
     element = wait_until(lambda: _row_element(ui, "drag-me-out"), 5, message="the row in the accessibility tree")
+    _make_room_outside(ui, _window_of(ui, element))
     x, y, w, h = _frame(ui, element)
-    end = _screen_point_outside(_frame(ui, _window_of(ui, element)))
-    if end is None:
-        pytest.skip("the window covers the screen; no room to drop outside it")
+    end = _point_outside_windows(ui)
+    assert end is not None, "no room outside the app's windows to drop, even with this one made smaller"
     before = {w["id"] for w in inst.tree()["windows"]}
     _mouse_drag((x + w / 2, y + h / 2), end)
     wait_until(lambda: any(w["id"] not in before and [t["id"] for t in w["tabs"]] == [t2] for w in inst.tree()["windows"]),

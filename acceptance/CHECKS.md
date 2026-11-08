@@ -88,7 +88,8 @@ press each shortcut and confirm what it does:
   sidebar order; ⌘1–9 a tab by number; ⌃⇧←/→ move the tab;
 - ⌃⌘T and ⌃⌘N move the pane to a new tab or window; ⌃⌘← and ⌃⌘→ move it into the previous or
   next tab; ⌃⇧⌘N moves the tab to a new window; ⇧⌘T reopens what was closed;
-- ⌃⌘P pins; ⌃⌘R and ⌃⇧⌘R rename; ⌃⌘J goes to the pane whose agent needs you and ⌃⌘K back.
+- ⌃⌘P pins; ⌃⌘R and ⌃⇧⌘R rename; ⌃⌘J goes to the pane whose agent needs you and ⌃⌘K back;
+- ⌘[ and ⌘] walk the tab's panes, those on show then the hidden ones (H-6).
 
 Also: the command palette lists these actions, and Settings shows and changes them.
 
@@ -106,9 +107,33 @@ row, use Move Tab Up/Down and pin and unpin a tab: those tabs move where you put
 the end of the pinned ones, an unpinned one to the top of the others) and stay there as you select
 others. ⌘T opens a tab right below the current one.
 
-**M-4: dragging (by hand).** Add: drag a pane's grab handle onto another tab's row (it moves into
-that tab) and between two rows (a new tab there, with an insertion line); drag a tab row out of
-the window and let go over the desktop (a new window there).
+**M-4, H-8: dragging (by hand).** Drag a pane's chip in the pane strip onto another tab's row (it
+moves into that tab) and between two rows (a new tab there, with an insertion line); onto the left
+edge of another pane (it lands there); out of the window onto the desktop (a window of its own).
+Do the same with a hidden pane's chip. Drag a tab row out of the window and let go over the desktop
+(a new window there). A terminal shows no grab handle at its top, and file and web headers no grip.
+
+**H-5, H-6: the pane strip and ⌘[ ⌘] (by hand, and a screenshot).** A tab with five panes (three on
+show, two hidden), one a file with unsaved changes. Screenshot the window:
+- the strip sits in the title bar above the panes, in line with the window's buttons, adding no
+  height; chips for the panes on show in layout order, then the hidden ones dim and in italics; the
+  focused pane's chip filled; the file's chip shows its type icon and unsaved dot;
+- hold ⌘ and press ] repeatedly: focus walks the panes on show, then each hidden one appears at the
+  right end in place of another; let go on a hidden one (it stays) and, another time, back on a pane
+  that was on show (the layout is as before). ⌘[ brings hidden ones in at the left end;
+- click a hidden chip: it comes in, focused; the outgoing chip takes its place among the hidden.
+
+**PI-2, PI-3: the pane indicator (by hand, and a screenshot).** A tab with three panes on show and a
+hidden one: one agent working, one asking a question (needs you), one finished while another pane
+had focus, the hidden one asking too; a second tab whose agent works. Compare with
+`design/prototypes/pane-indicator.html` (bottom right, focus as size and brightness, quiet palette):
+- each pane with a state has a small round mark at its bottom right, under the prompt, clear of the
+  text; only "needs you" is in colour (amber), working is a dim grey-green, finished light grey;
+- the focused pane is a little brighter than the others, subtle enough that the others don't look
+  dull; its mark is a little larger (a grey dot when it has no state); no cyan line anywhere;
+- the strip's chips carry the same marks before their icons, the hidden chip too; each tab row's
+  icon circle carries the mark of its summary pane (amber for the tab whose hidden pane asks);
+- click another pane: the brightness and the larger mark move with focus; nothing animates.
 
 ## Warp's look for terminals
 

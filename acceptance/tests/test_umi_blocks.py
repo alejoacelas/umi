@@ -92,6 +92,8 @@ class Shot:
         frame = inst.json("pane", "info", win["pane"])["frame"]
         self.scale = self.w / (sidebar + frame["width"])
         self.left = int(round(sidebar * self.scale))
+        # The terminal area starts below the title bar band, where the pane strip's chips are (H-5).
+        self.top = max(0, self.h - int(round((frame["y"] + frame["height"]) * self.scale)))
         self.bg = self.px(self.w - 3, self.h // 2)
 
     def px(self, x, y):
@@ -105,7 +107,7 @@ class Shot:
         """Rows of the terminal area with text on them (pixels far from the background)."""
         x0 = self.left + int(10 * self.scale) if x0 is None else x0
         x1 = self.w - int(10 * self.scale) if x1 is None else x1
-        return [y for y in range(self.h)
+        return [y for y in range(self.top, self.h)
                 if any(self.differs(self.px(x, y), by) for x in range(x0, x1, step))]
 
     def row_color(self, y, x0, x1):

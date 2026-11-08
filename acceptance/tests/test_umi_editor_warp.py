@@ -453,16 +453,16 @@ def test_header_shows_the_unsaved_dot_and_chips_show_type_icons(inst, win, tmp_p
     second.write_text("b = 2\n")
     one = open_file(inst, win, first)
     two = open_file(inst, win, second)
-    inst.rpc("debug.ui.split.drop", pane=two, target=one, zone="center")
+    # The chips are in the pane strip (H-5), one for each pane of the tab.
     def chip(name):
-        strip = ui.find(lambda e: ui.label(e) == "Stacked panes")
+        strip = ui.find(lambda e: ui.label(e) == "Pane strip")
         return strip and ui.find(lambda e: ui.label(e) == name and ui.role(e) != "AXStaticText", strip)
 
     first_chip = wait_until(lambda: chip(long_name), 5, message="the long file's chip")
     wait_until(lambda: chip("second.py"), 5, message="the second file's chip")
-    assert ui.attr(first_chip, "AXValue") in (None, ""), "a saved file's chip has no dot"
+    assert "unsaved" not in (ui.attr(first_chip, "AXValue") or ""), "a saved file's chip has no dot"
     set_text(inst, two, "b = 3\n")
-    wait_until(lambda: ui.attr(chip("second.py"), "AXValue") == "Unsaved changes", 5,
+    wait_until(lambda: (ui.attr(chip("second.py"), "AXValue") or "").endswith("unsaved changes"), 5,
                message="the unsaved dot in the chip itself")
     x, y, width, height = frame(ui, first_chip)
     assert 200 < width <= 300.5, f"a long name widens the chip past Warp's old 200, up to 300: {width}"

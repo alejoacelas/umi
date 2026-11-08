@@ -9,7 +9,7 @@ enum UmiNavigationRPC {
         "tab.back", "tab.next", "tab.prev",
         "shortcuts.list", "shortcuts.set", "shortcuts.reset",
         "debug.attention.set", "debug.navigation",
-        "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.shortcuts_page", "debug.key",
+        "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.shortcuts_page", "debug.key", "debug.release",
     ]
 
     static func handle(_ method: String, _ params: UmiParams, caller: UmiCaller) async throws -> [String: Any] {
@@ -148,6 +148,8 @@ enum UmiNavigationRPC {
                                                isARepeat: false, keyCode: code) else {
                 throw UmiError.failed("couldn't make the key event")
             }
+            // `hold`: ⌘ stays held after the key (a ⌘[ ⌘] walk goes on) until `debug.release`.
+            if params.bool("hold") == true { UmiPaneWalk.debugHold = true }
             let handled = UmiShortcuts.dispatch(event)
             if !handled {
                 // With focus kept, straight to the window: its first responder gets the key even
@@ -156,6 +158,11 @@ enum UmiNavigationRPC {
             }
             try? await Task.sleep(nanoseconds: 300_000_000)
             return ["focus": responder, "handled": handled]
+
+        case "debug.release":
+            // Letting go of ⌘ after `debug.key` with `hold`: the ⌘[ ⌘] walk lands.
+            UmiPaneWalk.release()
+            return ["ok": true]
 
         default:
             throw UmiError.badRequest("unknown method \(method)")

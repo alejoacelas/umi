@@ -16,6 +16,15 @@ class UmiTerminalWindow: TransparentTitlebarTerminalWindow {
         minSize = NSSize(width: 480, height: 300)
     }
 
+    override func syncAppearance(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
+        super.syncAppearance(surfaceConfig)
+        // The content runs under the titlebar and draws there: the sidebar's top and the pane strip
+        // (attention-ui.md, "The pane strip": it sits in the title bar). Ghostty paints the titlebar
+        // in the terminal's background, which would cover them, so it stays clear here.
+        titlebarContainer?.firstDescendant(withClassName: "NSTitlebarView")?.layer?.backgroundColor = NSColor.clear.cgColor
+        titlebarContainer?.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
     override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
         super.addTitlebarAccessoryViewController(childViewController)
         // Nothing sits in the titlebar: no tab bar, no icons on the right.

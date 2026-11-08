@@ -96,8 +96,7 @@ final class UmiAttributes {
             let isFocused = focused ?? (place().map { $0.tab.effectiveFocusedSurface === pane } ?? false)
             return isFocused ? "true" : "false"
         case "hidden":
-            let shown = place().map { $0.window.tree(of: $0.tab).contains(pane) } ?? true
-            return shown ? "false" : "true"
+            return (place()?.tab.isHidden(pane) ?? false) ? "true" : "false"
         case "branch":
             let cwd = UmiTopology.cwd(of: pane)
             guard !cwd.isEmpty else { return nil }
@@ -109,14 +108,20 @@ final class UmiAttributes {
             // Seen while it is being looked at, so now.
             if UmiLooking.lookedAt === pane { return UmiTime.iso(Date()) }
             return attention.seenAt(pane.id).map(UmiTime.iso)
-        case "changed_at": return attention.agent(forPane: pane.id).map { UmiTime.iso($0.changedAt) }
+        case "changed_at":
+            // Its agent's status changes, and its being hidden or shown (primitives.md).
+            let dates = [attention.agent(forPane: pane.id)?.changedAt, attention.placeChangedAt(pane.id)].compactMap { $0 }
+            return dates.max().map(UmiTime.iso)
         case "status_since": return attention.agent(forPane: pane.id).map { UmiTime.iso($0.statusSince) }
         case "idle_for": return UmiPaneOutput.shared.idleFor(pane).map { "\(Int($0))s" }
         case "unseen":
-            // `changed_at > seen_at` (primitives.md): only a pane with an agent has `changed_at`.
-            guard let agent = attention.agent(forPane: pane.id) else { return "false" }
+            // `changed_at > seen_at` (primitives.md), from its agent's status changes, or its
+            // coming back on show (not its being hidden: a hidden pane isn't news).
             if UmiLooking.lookedAt === pane { return "false" }
-            return agent.unseen ? "true" : "false"
+            if let agent = attention.agent(forPane: pane.id), agent.unseen { return "true" }
+            if let shown = attention.shownAt(pane.id), !(place()?.tab.isHidden(pane) ?? false),
+               shown > (attention.seenAt(pane.id) ?? .distantPast) { return "true" }
+            return "false"
         default: return nil
         }
     }
@@ -270,6 +275,8 @@ final class UmiAttributes {
         if let value { tab.attributes[key] = value } else { tab.attributes.removeValue(forKey: key) }
         emit("tab.changed", ["tab": tab.idString, "window": window.umiIDString, "key": key,
                              "old": old ?? NSNull(), "new": value ?? NSNull()])
+        // A lower limit hides what `strip.make-room` picks at once.
+        if key == "visible_limit" { UmiHidden.makeRoom(in: tab, window: window, keeping: []) }
         UmiState.shared.layoutDidChange()
     }
 

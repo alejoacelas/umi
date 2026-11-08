@@ -473,6 +473,403 @@ was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI tests were 
 17. `focusPane` now sets the tab's focused pane before selecting the tab (found by the trial; it
     cleared a neighbour's unseen state). Where: `UmiLayout.focusPane`.
 
+
+## Step 4: hidden panes and the pane strip
+
+**Status:** built on `design/step4-hidden-panes-strip`, ready for review. The UI tests didn't run:
+mac-air-2's screen was locked for every run (see "Not verified"). They are written and need one run
+on an unlocked screen before merging.
+
+**What changed**
+
+- Hidden panes replace stacks (`UmiHiddenPanes.swift`; `UmiPaneStacks.swift` is gone). A hidden pane
+  leaves its tab's split tree, stays in the tab (`UmiTab.hidden`, in strip order) and keeps running.
+  `pane hide [PANE] [--until CONDITION]…`, `pane show [PANE] [--focus]`, `pane until [PANE]`; Window ▸
+  Hide Pane; palette entries Hide Pane, Hide Pane Until…, Show Hidden Pane….
+- The three-pane limit: every tree change of a tab reaches `UmiHidden.treeDidChange` (from
+  `TerminalController.setTree` and `surfaceTreeDidChange`), so whatever adds a pane to a tab at its
+  `visible_limit` (Ghostty's own splits and drops included) hides the pane `strip.make-room` picks,
+  never one that arrived. `split`, `pane focus`, `pane move` and `edit` report `hid`. Lowering
+  `visible_limit` hides at once. `pane focus`, `go` and the palette bring a hidden pane in at the
+  right end.
+- `--until`: a query about the pane or a duration, checked on every `pane.changed` of the pane, at
+  the duration's moment and once a minute; shown without focus, `by_condition`, cause `config`,
+  `unseen` until looked at; saved with the layout.
+- The pane strip in the title bar band above the panes (`UmiPaneStrip`): a chip per pane, on show in
+  layout order then hidden ones dim and italic, the focused one filled, file chips with their type
+  icon and unsaved dot. A chip is a `SurfaceDragSource` (Ghostty's drag source gained a click that
+  isn't a drag): click shows or focuses, drag moves the pane (a hidden one too: drops on pane edges,
+  sidebar rows, the previous/next-tab targets, outside the window).
+- ⌘[ ⌘] (`UmiPaneWalk`): walk the strip; a hidden pane is brought in at the right end (⌘]) or left
+  end (⌘[); stepping on restores the layout first; releasing ⌘ (or any other key or click) lands it,
+  and only the landing is reported. A menu click lands at once. `debug.key` takes `hold`, and
+  `debug.release` lets go, so the suite can walk on a locked screen.
+- Removed: stacks and the "Stack here" drop zone, `pane.stacked`, the `stack`/`shown` pane fields,
+  the tab's `docs` field (layout.json no longer writes it; it still reads it), E-9's new-tab rule
+  (files open right of the calling pane in its own tab), the file and web headers' grips, Ghostty's
+  hover grab handle. The Docs tab is an ordinary tab (`role=docs`): Markdown from outside opens at its
+  right end under the same limit.
+- Closing the last pane on show of a tab with hidden panes brings in the hidden one used most
+  recently, so the tab stays.
+- Pane JSON: `hidden` is real; tab JSON gained `visible_limit` and `strip`; `editor ls` documents
+  gained `hidden`; `changed_at` covers hiding and showing.
+- Launch configurations save hidden terminal panes as `is_hidden: true` and open panes marked so,
+  and those past three, hidden. Hidden panes and their conditions come back after a restart; undo of
+  a move restores hidden lists (`UmiSnapshot`).
+- SPEC: new section H (H-1 to H-8, fixed tier); M-7 removed; L-9, L-18, M-4, E-1, E-9, E-10, E-12,
+  E-24 reworded. CLI.md took design/cli.md's "Hidden panes" and the `hid`, `visible_limit` and
+  `strip` fields. CHECKS.md: M-4/H-8 and H-5/H-6 checks. TEST_CHANGES.md lists every test change.
+
+**Verified, and how**
+
+All runs are on mac-air-2, in `~/umi-test-design-step4`, under `lockf -k ~/umi-screen.lock`. The
+screen was locked for every run (`CGSSessionScreenIsLocked` true), so every UI test was skipped. The
+Mac has no signing identity: builds and the update tests use a local, uncommitted edit of
+`app/dist/signing.sh` that accepts ad hoc signing (`~/umi-test-design-step4-build.sh`, as step 3 did).
+
+- Dev copy (the Debug build, started as `app/dist/dev.sh` starts it), driven by
+  `~/umi-test-design-step4-trial.py`, at `083681af3`: 30 of 30 checks read back
+  (`~/umi-test-design-step4-trial.log`, screenshots in `~/umi-test-design-step4-shots`). Tried: three
+  splits then a fourth (`hid`, never the new or focused pane; `strip` and `ls` order; no frame on the
+  hidden pane; its shell still answering `send`/`read`); `pane hide` (event caused by `cli`,
+  `changed_at`); hiding the last pane on show (exit 1, "last pane on show"); `pane show` (right end,
+  focus kept) and `--focus`; `--until owner=me` (shown on `pane set owner=me`, no focus,
+  `by_condition`, cause `config`, `unseen=true`), `pane until`, `--until 2s`; ⌘] held through every
+  pane (`debug.key` with `hold`): the panes on show, then each hidden one at the right end, back on
+  the first with the layout as it was, `debug.release` keeping it; ⌘[ bringing the last hidden pane in
+  at the left end (`2-walk-left-end.png`); Window ▸ Next Pane and Hide Pane from the menu; `edit` into
+  a full tab (right of the caller, same tab, `hid`); Markdown from outside opening the ordinary Docs
+  tab; a hidden pane dropped on a pane's edge and on a sidebar row; `help` listing the commands; undo
+  of a move that made room; `layout save` writing `is_hidden`; quitting and restarting: hidden panes
+  and their conditions back. The screenshots show the strip in the title band
+  (`1-strip-one-hidden.png`: alpha filled, gamma, delta, beta dim and italic) and a file pane's header
+  without a grip (`3-file-pane-no-grip.png`).
+- Acceptance suite, ReleaseLocal at `f28466520` (later commits change tests, the build log and make
+  `umiAppending` generic for the Swift test), full run (`~/umi-test-design-step4-suite.log`): 365
+  passed, 12 failed, 11 errors, 86 skipped (85 UI tests: the locked screen; 1 a window too narrow for
+  three panes). Then:
+  - the 11 errors and 2 failures in the update and install tests were the signing edit missing during
+    that run (`release.sh: can't sign the app`); with it, `test_umi_extra.py` and `test_install.py`
+    passed, 37 of 37 (`~/umi-test-design-step4-suite-updates.log`);
+  - `test_the_prompt_sits_at_the_bottom_from_the_start` counted the strip's chips as terminal text;
+    the test now measures below the title band (TEST_CHANGES.md); `test_umi_blocks.py` and
+    `test_hidden_panes.py` then passed, 32 passed and 4 UI skipped
+    (`~/umi-test-design-step4-suite-blocks.log`);
+  - the other 9 fail on main too: run on the step 3 worktree (main's app code, `71e39f857`),
+    `test_builds_from_a_path_with_spaces`, `test_shift_cmd_f_leaves_a_terminal_search_open` and five
+    synchronized-input, pane-menu and zoom tests failed there as well
+    (`~/umi-test-design-step4-base.log`); `test_option_command_i_in_a_one_tab_window_leaves_tabs_opened_later_out`
+    passed there this time and is the one steps 1 to 3 found flaky on both.
+  - `test_markdown_opens_in_one_docs_tab_most_recent_first`, failing on main since step 1, is
+    replaced by the Docs tab's new test, which passes.
+- Swift unit tests at the head (`~/umi-test-design-step4-swift.log`): 428 passed, none failed.
+  `TerminalSplitDropZoneTests/centerSelectsLeft`, failing on main since stacks added the centre zone,
+  passes again; the new `UmiHiddenPanesTests` (3) pass.
+
+**Not verified**
+
+- Every UI test (86 skipped), among them the five this step adds or changes and the orchestrator
+  should run on an unlocked screen before merging:
+  `test_hidden_panes.py::test_the_strip_names_every_pane_and_a_click_brings_a_hidden_one_in_ui`,
+  `::test_real_cmd_brackets_walk_and_land_on_release_ui`,
+  `::test_a_chip_dragged_onto_a_pane_edge_moves_its_pane_there_ui`,
+  `test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`
+  (now drags the chip) and
+  `test_umi_editor_warp.py::test_header_shows_the_unsaved_dot_and_chips_show_type_icons` (the strip's
+  chips). So none of these was seen working: a real click on a chip, a real drag of a chip, real ⌘
+  held and released (the walk only ran through `debug.key` with `hold` and `debug.release`), whether
+  the empty part of the title band still drags the window, the strip's place beside the window's
+  buttons with the sidebar hidden (78 points in), and the chips' accessibility labels and values.
+- The CHECKS.md items H-5, H-6, H-8 and M-4 (by hand).
+
+**Choices for Alejo to check**
+
+1. Strip order: the panes on show in layout order, then the hidden ones. A pane brought in takes the
+   right (or left) end of the layout, and the pane hidden for it takes the incoming one's place among
+   the hidden chips (the "swap"); a pane hidden with `pane hide` goes first among the hidden. Where:
+   `UmiHidden.strip`, `show`, `hideNow`.
+2. Closing the last pane on show of a tab with hidden panes brings in the hidden one used most
+   recently instead of closing the tab and its hidden panes (the design says hidden panes don't come
+   in by themselves after a close, but a tab can't show none). Where: `UmiHidden.refill`, H-4.
+3. `unseen` after hiding: being hidden sets `changed_at` but doesn't make a pane unseen (else hiding
+   a pane would make it a ⌃⌘J target); coming back on show without being looked at does, whatever
+   brought it back (a condition, or `pane show` without `--focus`). So `unseen` is no longer exactly
+   `changed_at > seen_at` for a hidden pane. Where: `UmiAttributes.computedValue("unseen")`, CLI.md.
+4. ⌘[ ⌘] land on ⌘ released, and also on any other key press or click; a menu click lands each step
+   at once. The walk isn't undoable (it lands where you let go). Each step focuses its pane, so the
+   panes walked through count as looked at. The pane the walk began on is never hidden for it.
+   Where: `UmiPaneWalk`.
+5. A hidden pane that moves (`pane move`, a drop) leaves from the right end of its tab; moved within
+   its own tab, the tab then makes room. Where: `UmiLayout.move`.
+6. `pane hide QUERY` that would hide every pane on show of some tab is refused whole (exit 1, nothing
+   hidden). Where: `UmiRPC` `pane.hide`.
+7. `--until` conditions are saved with the layout and come back after a restart (the design doesn't
+   say); a duration is also checked at its exact moment, not only once a minute.
+8. Launch configurations mark hidden panes `is_hidden: true`, a key of Umi's own; Warp's reading of a
+   file with it is untried. Hidden panes are written after the panes on show, in the top row.
+9. Chips are at most 300 points wide (E-24's limit for file chips), not the prototype's 150. A
+   narrow window clips the strip at its right; the prototype's "+N" collapse isn't built.
+10. Window ▸ Hide Pane is new (no default key). ⌘[ ⌘] are Window ▸ Previous Pane / Next Pane; their
+    ids stay `pane.stack_previous` / `pane.stack_next` for users' `shortcuts.json`.
+11. With every other pane pinned, a tab shows more than its limit rather than hide a pinned pane.
+12. A file opened from a hidden pane opens at the right end of its tab. The Docs tab's new
+    documents open at its right end, focused (E-10: "to the right of its panes").
+13. Transition code, to remove once no layout is older than 0.10: a layout saved with stacks brings
+    their members not on show back as hidden panes (`UmiPersistence.restoreLayout`).
+14. `edit` run outside Umi's panes still opens beside the current window's focused pane; design/cli.md's
+    "Markdown goes to the Docs tab, other text to the closest tab" for that case isn't built (it
+    wasn't before this step either).
+15. The tests that check rows of four panes (L-19) raise the tab's `visible_limit`; step 6 removes the
+    hand-placed divider rules they mostly cover.
+
+**Incident.** The first push of this branch went to `main` (the new worktree tracked `origin/main`
+and the repository's `push.default` is `upstream`): `main` briefly pointed at `c9034c9d0`, this step's
+first commit. Minutes later it was put back to `69480b751` with `git push --force-with-lease`
+(lease on `c9034c9d0`, so nothing else could be lost) and the branch now tracks its own remote
+branch. If any other session fetched `main` in those minutes, it saw that commit.
+
+### After review (2026-11-08)
+
+**Fixed**
+
+- Dragging a hidden pane's chip out of the window now gives the pane a window of its own, opened
+  where the chip was dropped. The code had landed in the zoom handler (where it also made a zoom
+  aimed at a hidden pane open a window); it is now in the handler for a drag that ends outside every
+  window (`BaseTerminalController.ghosttySurfaceDragEndedNoTarget`). `UmiLayout.PaneDestination.newWindow`
+  takes the drop point.
+- Closing a tab, other tabs, tabs below or tabs on the right asks first when a hidden pane runs a
+  program, as it does for panes on show (`TerminalController.runsProgram`). SPEC H-2 says so.
+- The ⌘[ ⌘] walk goes on for the keys Previous Pane / Next Pane are bound to now
+  (`UmiPaneWalk.isWalkKey`, via `UmiShortcut(event:)`), not fixed key codes. SPEC H-6 says so.
+- The strip has the prototype's 1-point separator between the chips on show and the hidden ones, and
+  hidden chips are 34% white, as in the prototype.
+
+**New tests**: `test_hidden_panes.py::test_closing_a_tab_asks_first_when_a_hidden_pane_runs_a_program`
+(not UI; passes), `::test_a_hidden_chip_dragged_out_of_the_window_gets_a_window_of_its_own_ui` and
+`::test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui` (UI; unrun).
+
+**Verified, and how** (mac-air-2, `~/umi-test-design-step4` at `dfd2288cf`, under the screen lock;
+the screen was locked again, `CGSSessionScreenIsLocked` true, so UI tests were skipped)
+
+- Dev copy, `~/umi-test-design-step4-trial2.py`: 5 of 5 read back (`~/umi-test-design-step4-trial2.log`).
+  Close tab with a running hidden pane shows "Close Tab?"; Cancel keeps the tab and the hidden pane;
+  with the program stopped the tab closes at once; the strip shows alpha, gamma, a separator, then
+  beta dim and italic (`~/umi-test-design-step4-shots/4-strip-separator.png`).
+- Acceptance suite, ReleaseLocal, full run with the signing edit in place
+  (`~/umi-test-design-step4-suite2.log`): 379 passed, 9 failed, 89 skipped (UI tests: the locked
+  screen). 8 of the failures are the base failures listed above (they fail on main too).
+  The ninth, `test_pane_data.py::test_umi_keeps_read_only_attributes` (`idle_for` read 1s after a
+  3s sleep), passed in the earlier run and in 4 reruns since (`~/umi-test-design-step4-suite2-rerun.log`:
+  `test_pane_data.py` and `test_hidden_panes.py`, 37 passed, 5 UI skipped): a timing flake, left alone.
+- Swift unit tests (`~/umi-test-design-step4-swift.log`): 427 passed, 1 skipped (a benchmark), none failed.
+
+**Not verified**: every UI test, now 7 in `test_hidden_panes.py` (the 5 there plus the 2 above),
+`test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`,
+`test_umi_editor_warp.py::test_header_shows_the_unsaved_dot_and_chips_show_type_icons` and the
+rest of the UI tests. The drag out of the window was never seen working.
+
+**Choices for Alejo to check**
+
+16. With no title bar (full screen, or a hidden title bar style), the strip takes a 22-point band of
+    its own above the panes instead of disappearing, because the chips are now the only drag handles
+    and the only mouse way to a hidden pane. So "adds no height" holds only where there is a title
+    bar. Untried in full screen. Where: `TerminalView` (`max(topInset, 22)`), SPEC H-5.
+17. The walk follows a rebound key, but it is held only while ⌘ is down: a rebinding without ⌘
+    lands each step at once, like a menu click. Where: `UmiPaneWalk.held`.
+
+### After the UI tests ran (2026-11-08)
+
+The first full run with an unlocked screen, at `b9992f8cd` (step 5's head, so step 4's code too):
+8 failed, 475 passed, 3 skipped (`~/umi-final-step5.log` on mac-air-2). Step 4's share:
+
+- **The strip was invisible on screen** (found watching the window, not by a test): Ghostty paints
+  the titlebar in the terminal's background, over the content that runs under it, so the chips were
+  in the accessibility tree but covered. The dev-copy screenshots showed them only because
+  `screenshot` draws the content view. Fixed in `UmiTerminalWindow.syncAppearance`: the titlebar
+  stays clear. This also lets the sidebar's own colour run to the window's top, as S-1 says.
+- **A chip drag moved the window** (`test_a_chip_dragged_onto_a_pane_edge…`, and the drag-out and
+  between-tabs tests): the title bar's window drag starts in the window server at the mouse down.
+  While the pointer is over a chip (entered or moved over it) the window is now not movable
+  (`SurfaceDragSourceView`); the empty part of the band still drags the window (seen: dragged 80
+  points left and 20 down). Setting `mouseDownCanMoveWindow` alone didn't stop it.
+- **Dragging a lone pane's chip onto the previous-tab target did nothing**
+  (`test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre…`): the pane's own place
+  still took the drop, because a chip drag didn't count as the pane dragging itself (Ghostty's grab
+  handle did). `UmiStripDrag` tells the pane's place, which then takes no drop.
+- **A renamed pane's chip kept its old name** (same test, "the chip" not found): chips didn't
+  observe `UmiState`, where names live. They do now.
+- **Tests looked in the wrong window**: a split's panes are "Left pane"/"Right pane", so a search for
+  "Terminal pane" across every window found the instance's first window. `test_the_strip_names…`
+  and `test_a_chip_dragged…` now look in the test's window. `test_a_rebound_next_pane_key…` expected
+  the last pane on show to be hidden for the walk; `strip.make-room` hides the one looked at
+  longest ago, which the walk makes the second; the test now checks H-6's wording instead (details in
+  TEST_CHANGES.md).
+- **In a full run the sidebar is hidden** in new windows (they take the last window's choice, and
+  earlier tests hide it), so the window lookup also accepts the main window with a chip per pane, the
+  row test turns the sidebar on, and the ⌘ walk tests park the pointer first: left over the green
+  window button by the strip test's clicks, it opened macOS's Move & Resize menu, which took the
+  keys. Found by a second full run at `52cb55a6f` (6 failed, 479 passed, 1 skipped,
+  `~/umi-final-step5-run2.log`): five of those were this, one the base failure.
+- **The chip dragged out of the window** never ran: it skipped because a new window leaves no room on
+  a 1440 by 900 screen. It now makes the window smaller and drops outside every window of the app (a
+  point beside the test's window fell inside the instance's first one). The same for
+  `test_dragging_a_tab_row_out_of_the_window_makes_a_window_ui`. Both pass.
+- **The Docs tab sometimes left focus on the second-to-last file**
+  (`test_markdown_opens_in_the_docs_tab_at_its_right_end_three_on_show`, step 4's test, failed in the
+  third full run at `8d571d3e3`, 2 failed, 483 passed, 1 skipped, `~/umi-final-step5-run3.log`): a
+  file pane hands its keyboard focus to its editor just after taking it, and when the next file was
+  focused in between, that late hand-off focused the earlier file again and took the tab's focus
+  back. The hand-off now happens only if no other pane was asked for since (`UmiLayout.focusRequests`,
+  `SurfaceView.becomeFirstResponder`). Opening five files in a row, 25 times: wrong focus 6 times
+  before, 0 of 40 after.
+- `test_umi_editor_warp.py::test_header_menu_has_warps_items` was not the app: a macOS notification
+  ("App Background Activity: dim-idle can run in the background") sat over the file header, so the
+  right-click hit the notification. Dismissed, the test passes at `b9992f8cd`. Such banners on
+  mac-air-2 can fail any UI test that clicks near the screen's top right.
+
+**Final counts** (mac-air-2, unlocked screen, under the screen lock, ReleaseLocal at `757b8f8b0`;
+later commits only change this log): acceptance suite 484 passed, 1 failed, 1 skipped
+(`~/umi-final-step5.log`, copy `~/umi-final-step5-run4.log`). The failure is
+`test_builds_from_a_path_with_spaces`, which fails on main too; the skip is
+`test_umi_warp_panes.py`'s four-panes-in-a-row check on a window too narrow for it, as before. Swift
+unit tests: 431 passed, 1 skipped (a benchmark), none failed (`~/umi-final-step5-swift.log`).
+
+**Choice for Alejo to check**
+
+18. The titlebar is clear rather than painted in the terminal background, so the sidebar's colour
+    reaches the top of the window and the strip shows; in native full screen the titlebar that slides
+    down over the content is clear too (untried).
+
+
+## Step 5: the pane indicator
+
+**Status:** built on `design/step5-pane-indicator` (from `design/step4-hidden-panes-strip`, not yet in
+main), ready for review. The UI tests didn't run: mac-air-2's screen was locked for every run (see
+"Not verified"). They are written and need one run on an unlocked screen before merging.
+
+**What changed**
+
+- The pane indicator (`UmiIndicator.swift`): one mark per pane at its bottom right, in the
+  terminal's right and bottom padding (centre 8 points from the right edge, 10 from the bottom), over
+  terminals, file and web panes. States from `agent.status`: working; `needs_input`/`error` need you;
+  `idle`/`stopped` finished while `unseen`, then nothing. Quiet palette from the prototype (working
+  `#6f7f76`, needs you `#e0a93e`, finished `#bdbdbd`); nothing animates.
+- Focus: the focused pane's mark is 9 points instead of 7 and at full strength (others' working and
+  finished marks at 70%; needs you always full); in a tab showing more than one pane the focused
+  pane is lifted by white at `indicator.focus` (default 3%: `#050505` becomes about `#0c0c0c`, the
+  prototype's value), and an idle focused pane shows a grey (`#6a6a6a`) mark.
+- The cyan focus line is gone (`TerminalSplitTreeView`). S-3's brighter agent logo is gone: the logo
+  stays at 60% and the row's icon circle carries the summary pane's mark at its bottom-right edge.
+- Strip chips show the mark before their icon; their accessibility value ends with the state.
+- `tab.summary` now looks at all of a tab's panes, hidden ones after those on show.
+- Slots: `indicator.working|needs_you|finished` take `muted`, `amber`, `green`, `violet`, `grey`,
+  `#RRGGBB` or `none`; new slot `indicator.focus` (`3%`, up to 20%). Bad values show in `slot ls`
+  and keep the default. The config is re-read every second for the indicator.
+- `<cli> screenshot` draws the marks and the lift over the terminal images (they come from the
+  terminals' layers and covered the SwiftUI overlay).
+- `debug.ui.indicator` reports what is drawn (each pane's state, mark colour/size/opacity, lift;
+  chips; rows; the style); a row's `mark` in `debug.ui.rows` is the indicator state (now with
+  `working`); `debug.ui.attention` panes gained `indicator`.
+- Removed Ghostty's unreferenced `SurfaceGrabHandle.swift` (left by step 4).
+- SPEC: new section PI (PI-1 to PI-4, fixed tier); S-3, D-4, Q-4, H-5 reworded. CLI.md: `indicator`
+  wording, `tab.summary`, the indicator slots and `indicator.focus`. CHECKS.md: PI-2/PI-3.
+  TEST_CHANGES.md lists the added and the two changed tests.
+
+**Verified, and how**
+
+All runs are on mac-air-2, in `~/umi-test-design-step5`, under `lockf -k ~/umi-screen.lock`. The
+screen was locked for every run (`CGSSessionScreenIsLocked` true), so every UI test was skipped.
+Builds pass `CODE_SIGN_IDENTITY=-` to xcodebuild; the suite and Swift runs use the same local,
+uncommitted `app/dist/signing.sh` edit as step 4 (`~/umi-test-design-step5-{build,suite,swift}.sh`).
+
+- Dev copy (the Debug build, started as `app/dist/dev.sh` starts it, with its own config folder),
+  driven by `~/umi-test-design-step5-trial.py` at `1d2acf8d4`: 34 of 34 checks read back
+  (`~/umi-test-design-step5-trial.log`, screenshots in `~/umi-test-design-step5-shots`). Tried: the
+  default style; a lone shell pane (no mark, no lift); three panes (the focused one's grey 9-point
+  mark and 3% lift, the others nothing); hooks `UserPromptSubmit` (working, muted, 70%),
+  `PermissionRequest` (needs you, amber, full), `Stop` out of sight (finished, light grey); the
+  chips' states; in the screenshot, amber pixels at the needs-you pane's bottom right, grey at the
+  focused one's, the focused pane's background a few levels brighter, no cyan on its top edge;
+  focusing the finished pane clears it; focused needs-you is 9 points; the row of a tab follows
+  `tab.summary` (needs you, then a working tab's row, then a tab whose hidden pane needs you);
+  writing the config while running (`needs_you = #ff0000` drawn red, `focus = 10%` lifting about
+  25 levels, `working = none`), bad values (`blinking`, `50%`) shown by `slot ls` with the defaults
+  kept, `focus = 0`; a file pane focused (the mark and lift over its editor); a hidden pane's chip.
+  The first run found that `screenshot` drew the terminal images over the marks; fixed in
+  `1d2acf8d4`, after which the pixel checks passed (`1-three-panes-states.png`, `2-sidebar-rows.png`).
+- Acceptance suite, ReleaseLocal at `5fae46d31` (later commits only add this log), full run
+  (`~/umi-test-design-step5-suite.log`): 387 passed, 8 failed, 91 skipped (UI tests: the locked
+  screen). `test_pane_indicator.py`: 7 passed, 2 UI skipped. The 8 failures are the ones steps 1 to 4
+  list as failing on main; run alone on main's app code (`~/umi-test-design-step3`, `71e39f857`;
+  origin/main `69480b751` differs only in the build log), 7 of them failed there too and
+  `test_option_command_i_in_a_one_tab_window_leaves_tabs_opened_later_out`, the one steps 1 to 4
+  found flaky on both, passed (`~/umi-test-design-step5-base.log`).
+- Swift unit tests (`~/umi-test-design-step5-swift.log`): 430 passed, 1 skipped (a benchmark), none
+  failed; the new `UmiIndicatorTests` (3) pass.
+
+**Not verified**
+
+- Every UI test (91 skipped). This step's two, for the orchestrator to run on an unlocked screen:
+  `test_pane_indicator.py::test_the_marks_and_the_lift_on_screen_ui` (the marks, the lift and no
+  cyan line in a `screencapture` of the real window, and a real click moving focus) and
+  `::test_chips_and_rows_say_the_state_to_accessibility_ui`. So the SwiftUI overlay itself was never
+  seen on screen: the screenshots above draw the marks with the same looks and positions
+  (`UmiIndicator.draw`), but the on-screen overlay is a separate code path (`UmiPaneIndicatorOverlay`).
+  Step 4's unrun UI tests still stand.
+- The CHECKS.md item PI-2/PI-3 (by hand), and how 3% looks to a person ("subtle enough that other
+  panes don't look dull").
+- A light theme: the lift is white over the pane, which does almost nothing on a light background.
+
+**Choices for Alejo to check**
+
+1. Place: the mark's centre is 8 points from the pane's right edge and 10 from its bottom, inside
+   Ghostty's padding (16 right, 20 below the prompt), so it never covers text; it sits just under the
+   prompt line rather than on it, because the prompt's distance from the bottom varies with
+   `window-padding-balance`. Full-screen programs have no bottom padding, so there it sits over the
+   last row's right edge. Where: `UmiPaneIndicatorOverlay.inset`.
+2. Focus: the prototype's "larger, brighter mark" (9 vs 7 points; other panes' working/finished marks
+   at 70%, needs you always full) plus a white lift of the focused pane in a split (3%, the
+   prototype's `#0c0c0c` on `#050505`). An idle focused pane in a split gets a grey dot (the
+   prototype's size option did); a lone pane gets no lift and no grey dot, as the cyan line was only
+   for splits. Chips show no grey dot (the focused chip is already filled).
+3. "The amount is a setting": the slot `indicator.focus` (`3%`, `0` off, at most 20%) rather than a
+   new config key, so Ghostty's parser needed no change. Where: `UmiConfig.slots`, `UmiIndicator`.
+4. Slot values: `muted` means each state's quiet colour (working `#6f7f76`, finished `#bdbdbd`, and
+   for needs you a dull amber `#8c7a52` I made up, since the prototype never mutes it); also `amber`,
+   `green`, `violet`, `grey`, `#RRGGBB`, `none`. A bad value keeps the default, shown in `slot ls`.
+5. The row's mark sits on the bottom-right edge of the row's icon circle, keeping Warp's icon and the
+   agent logo (the prototype replaced the icon with the dot). The logo no longer brightens. A row's
+   `mark` in `debug.ui.rows` now has `working` too.
+6. `tab.summary` now considers hidden panes (after those on show), as the prototype's sidebar does,
+   so a hidden pane that needs you shows on its row; this also changes which agent gives the row its
+   logo and line 2. Where: `UmiSlots.summaryPane`, CLI.md, Q-4.
+7. Accessibility: the pane mark itself is hidden from the accessibility tree; chips' values end with
+   the state (", working", ", needs you", ", finished, not seen yet"), and rows say it as before.
+8. On a light theme the lift does nearly nothing (white over white); untried.
+9. "Nothing for a pane with no agent" (attention-ui.md open point 1) is kept: a long-running command
+   or an unsaved file shows no mark.
+
+### After the UI tests ran (2026-11-08)
+
+Step 5's share of the first run with an unlocked screen (`b9992f8cd`, `~/umi-final-step5.log`):
+
+- `test_pane_indicator.py::test_the_marks_and_the_lift_on_screen_ui` (read the background, 5,5,5,
+  where the amber mark should be) and `::test_chips_and_rows_say_the_state_to_accessibility_ui` (no
+  row said "needs you"): both looked for "Terminal pane" across every window and so captured or
+  searched the instance's first window. With the test's own window they pass, unchanged otherwise.
+  The app was right.
+- Watched on the live screen (`~/umi-step5-look/` on mac-air-2: `window.png`, `strip.png`,
+  `strip-no-sidebar.png`): four panes, three on show. The strip in the title band beside the
+  window's buttons: the focused chip filled, an amber mark on the chip that needs you, a muted grey
+  one on the working chip, the separator, then the hidden chip dim and italic with its own amber
+  mark; with the sidebar hidden it starts after the window's buttons. On the panes: the focused idle
+  pane's grey mark, amber at the bottom right of the pane that needs you, the working pane's muted
+  mark, the focused pane a little brighter, no cyan line; the row shows the summary pane's amber mark
+  on its icon. This matches pane-strip.html (option C) and pane-indicator.html, with the differences
+  already logged (step 5 choices 2 and 5: the 9-point focused mark and grey idle dot, the row
+  keeping its icon).
+- Final counts: as in step 4's "After the UI tests ran" (the same run covers both steps).
+
 ## Releases
 
 ### 0.10.0: steps 1–3
@@ -493,3 +890,13 @@ failures were all there before these steps:
   fixed in step 7.
 - `test_umi_keeps_read_only_attributes`: an `idle_for` timing check that flakes (step 4's
   reruns).
+
+### 0.11.0: steps 4–5
+
+Released from main after merging `design/step5-pane-indicator` (`f70c39c96`, which holds step 4).
+Verified before release: the whole acceptance suite with the UI tests at `757b8f8b0` (the later
+commit changes only this log) on mac-air-2 under the screen lock (`~/umi-final-step5-run4.log`):
+484 passed, 1 failed (`test_builds_from_a_path_with_spaces`, failing on main too), 1 skipped (a
+window too narrow for three panes). Swift unit tests: 431 passed, 0 failed
+(`~/umi-final-step5-swift.log`). The first run with the UI tests failed 7 tests; the causes and
+fixes are in the steps' "After the UI tests ran" parts.

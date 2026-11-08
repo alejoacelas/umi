@@ -122,11 +122,18 @@ enum UmiShortcuts {
             // Moving between tabs and panes (L-11, L-15).
             Item(id: "pane.go_to", title: "Go to Pane…", key: "p", modifiers: [.command, .shift], symbol: "rectangle.on.rectangle",
                  menu: "Window", action: { UmiPaletteModel.present(.panes) }),
-            // A stack's members (M-7); outside a stack, the previous or next pane.
-            Item(id: "pane.stack_previous", title: "Previous in Stack", key: "[", modifiers: [.command],
-                 symbol: "chevron.left.square", menu: "Window", action: { UmiStacks.cycle(-1) }),
-            Item(id: "pane.stack_next", title: "Next in Stack", key: "]", modifiers: [.command],
-                 symbol: "chevron.right.square", menu: "Window", action: { UmiStacks.cycle(1) }),
+            // Every pane of the tab: those on show, then the hidden ones (UmiPaneWalk). The ids are
+            // kept from stacks, for users' shortcuts.json.
+            Item(id: "pane.stack_previous", title: "Previous Pane", key: "[", modifiers: [.command],
+                 symbol: "chevron.left.square", menu: "Window", action: { UmiPaneWalk.step(-1) }),
+            Item(id: "pane.stack_next", title: "Next Pane", key: "]", modifiers: [.command],
+                 symbol: "chevron.right.square", menu: "Window", action: { UmiPaneWalk.step(1) }),
+            Item(id: "pane.hide", title: "Hide Pane", key: "", modifiers: [], symbol: "eye.slash", menu: "Window",
+                 action: {
+                     guard let pane = UmiTopology.currentPane else { return }
+                     do { try UmiHidden.hide(pane) } catch { NSSound.beep() }
+                 },
+                 enabled: { (UmiTopology.currentWindow?.surfaceTree.root?.leaves().count ?? 0) > 1 }),
             Item(id: "tab.back", title: "Back to Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.uturn.backward",
                  menu: "Window", action: {
                      // While the sidebar has a search query: the previous matching tab, as Warp.
@@ -469,7 +476,7 @@ enum UmiShortcuts {
             case .newTab:
                 try UmiLayout.move(pane, to: .newTab(window, index: nil), focus: true)
             case .newWindow:
-                try UmiLayout.move(pane, to: .newWindow, focus: true)
+                try UmiLayout.move(pane, to: .newWindow(), focus: true)
             case .adjacentTab(let delta):
                 guard let index = window.index(of: window.selectedTab) else { return }
                 let targetIndex = index + delta

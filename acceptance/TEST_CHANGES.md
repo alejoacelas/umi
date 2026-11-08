@@ -1323,3 +1323,145 @@ targets) are in `UmiQueryTests` against the default `jump` list.
   pane's PATH: on mac-air-2 the installed 0.6.3, which reads the retired `UMI_PANE_ID`, so the build
   under test was never the one checked. They now type the build's own CLI by its path; the P-4 test
   first checks that `<cli>` is on PATH in the pane, which it did implicitly before.
+
+## Design step 4: hidden panes and the pane strip (2026-11-08)
+
+Stacks (M-7), E-9's "three panes, then a new tab" rule, the Docs tab as a stack (E-10), the header
+grips and Ghostty's hover handle left with this step (design/spec-cleanup.md); hidden panes, the
+three-pane limit, the pane strip and ⌘[ ⌘] over every pane came in (SPEC H-1 to H-8).
+
+**Added.** `test_hidden_panes.py`: a fourth pane hides one (`hid`; never the arriving or focused
+pane; the hidden pane keeps running; `strip` and `ls` order); pinned panes are never hidden to make
+room (and an all-pinned tab shows more); every way a pane arrives makes room (a file, a move, a
+reopen, focusing a hidden pane, a lower `visible_limit`); `pane hide`/`show` (events, `changed_at`,
+the last pane on show refused, `--focus`, queries); `--until` with a query and a duration
+(`by_condition`, cause `config`, `unseen`, `pane until`); closing the last pane on show brings a
+hidden one in; ⌘[ ⌘] walking with ⌘ held (`debug.key` with `hold`, then `debug.release`) and through
+the menu; undo of a move that made room; hidden panes and conditions after a restart; launch
+configurations saving `is_hidden` and opening the rest hidden. UI (unlocked screen): the strip's
+chips (order, values, place above the panes, click to bring in, no grab handle), real ⌘] held and
+released, a hidden pane's chip dragged onto a pane's edge.
+
+**Removed** with stacks: `test_umi_stacks.py` (all four tests: dropping on a pane's middle, undoing a
+stack, files stacking, ⌘[ ⌘] cycling a stack and its strip). The "Stack here" zone is gone; the Swift
+test `TerminalSplitDropZoneTests/centerSelectsLeft`, which failed on main since stacks added the
+centre zone, passes again unchanged.
+
+**Changed.**
+- `test_editor.py::test_files_open_in_panes_beside_the_caller_three_to_a_tab` became
+  `…_and_a_full_tab_makes_room`: the third file now stays in the caller's tab and one earlier file is
+  hidden (`hid`), instead of a new tab (E-9 as rewritten). The rest is kept: order to the right of the
+  caller, a file already open shown where it is (now brought in when hidden), focus kept, modes;
+  `editor ls` documents now carry `hidden`.
+- `test_umi_panes_ui.py::test_markdown_opens_in_one_docs_tab_most_recent_first` became
+  `…_in_the_docs_tab_at_its_right_end_three_on_show`: the Docs tab is ordinary (E-10 as rewritten):
+  each new document at its right end, three on show, the rest hidden; one opened again is brought in.
+  Its last check (a text file goes by folder, not to the Docs tab) put the text file in a folder the
+  Docs tab's own panes started in, so the Docs tab was the closest tab and the check failed on main
+  too (steps 1 to 3 list it as failing there); the text file now gets a folder of its own, which is
+  what that check means.
+- `test_hidden_panes.py::test_real_cmd_brackets_walk_and_land_on_release_ui` and
+  `::test_a_rebound_next_pane_key_walks…` move the pointer to the middle of the test's window before
+  typing (`_park_pointer`): left over the window's green button by the strip test's clicks (the
+  sidebar hidden puts the first chip beside it), it opened macOS's Move & Resize menu, which took the
+  keys. The rebound test also lets go of ⌃ and ⌘ when it ends, so a failure can't leave them held
+  for the next test.
+- `test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`:
+  drags the pane's strip chip instead of Ghostty's hover handle, which is gone (H-8); same targets.
+- `test_umi_editor_warp.py::test_header_shows_the_unsaved_dot_and_chips_show_type_icons`: the chips
+  are in the pane strip (no stacking needed); a chip's accessibility value now says where its pane is,
+  so the dirty check reads ", unsaved changes" at its end instead of the whole value.
+- `test_umi_web.py::test_a_web_pane_moves_and_stacks_without_reloading` became
+  `…_moves_hides_and_comes_back_without_reloading`: dropped on a pane's edge, hidden and shown instead
+  of stacked; still checks the page doesn't load again.
+- `test_pane_data.py::test_the_docs_tab_is_the_tab_with_role_docs`: the tab's `docs` field is gone
+  (design/cli.md, "Removed"); it checks `role=docs` and its single holder instead.
+- `test_umi_panes_ui.py`: `test_splits_along_a_row_share_it_equally`,
+  `test_moves_and_drops_share_rows_equally`, `test_the_split_menu_items_share_equally`,
+  `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row`,
+  `test_panes_sized_by_hand_keep_their_size_and_the_others_share` and
+  `test_a_dragged_middle_divider_shares_both_sides` check how four or more panes share a row (L-19);
+  with the three-pane limit (H-1) a fourth pane would hide one, so each first raises its tab's
+  `visible_limit` (`room_for`). The shares they check are unchanged.
+- `test_umi_layouts.py::test_save_captures_every_window_merges_rows_and_leaves_out_file_panes`: its
+  first tab has four places on show; it raises that tab's `visible_limit` to 4 first, for the same
+  reason. What it saves and checks is unchanged.
+- `test_umi_blocks.py` (`Shot.ink_rows`, used by `test_the_prompt_sits_at_the_bottom_from_the_start`
+  and one more): "rows of the terminal area" now start below the title bar band, which holds the
+  pane strip's chips (H-5); before, the band was empty, so counting from the window's top measured
+  the same thing. The thresholds are unchanged.
+
+## Design step 5: the pane indicator (2026-11-08)
+
+The cyan line that marked the focused pane of a split and S-3's brighter agent logo left; the pane
+indicator came in (SPEC PI-1 to PI-4).
+
+**Added.** `test_pane_indicator.py`: the states from the hooks and `pane set` (working, needs you for
+`needs_input` and `error`, finished while unseen, none), a look clearing finished and not a question,
+a pane brought back by its condition showing finished; the mark at the pane's bottom right (read from
+a window screenshot's pixels) and on its chip (hidden panes too); the tab row's mark from
+`tab.summary`, a hidden pane that needs you included; focus (the larger mark, the grey mark of an
+idle focused pane in a split, the focused pane a little brighter in the screenshot, no cyan line on
+its top edge, nothing for a lone pane); the `indicator.*` slots read again from the config (colours,
+`none`, the focus amount, bad values shown by `slot ls`). UI (unlocked screen): the marks, the
+brightness and no cyan line in a capture of the real window, a real click moving them; the chips'
+and the row's accessibility values. Swift: `UmiIndicatorTests` (the slots' values and the looks).
+
+**Changed.** A row's `mark` (`debug.ui.rows`) is now the pane indicator of its `tab.summary` pane,
+which has a fourth state, `working` (before, `none` while the agent worked):
+- `test_umi_attention.py::test_a_new_turn_clears_the_mark_and_a_question_keeps_it`: after the new
+  turn and after the question is answered, the row says `working` instead of `none`; the pane's own
+  attention mark (`debug.ui.attention`) is checked to be `none` there, which is what the old `none`
+  meant (the finish is cleared).
+- `test_umi_panes_ui.py::test_an_unseen_finish_or_a_question_colors_the_icon_and_counts_on_the_dock`
+  became `…_marks_the_row_and_counts_on_the_dock`: a working agent's row says `working` instead of
+  `none`; the badge checks are unchanged.
+
+## Steps 4 and 5: after the UI tests ran (2026-11-08)
+
+The first run with an unlocked screen showed that UI tests written while the screen was locked
+looked for the test's panes in the wrong window. The `inst` fixture's first window stays open while
+each test's `win` window is shown, and both have a sidebar, a pane strip and terminals; a lone
+pane's element is "Terminal pane", but a split's panes are "Left pane"/"Right pane". So
+`ui.find(label == "Terminal pane")` found the first window's pane whenever the test's tab had a
+split. Nothing below changes what a test checks.
+
+- New helpers in `test_umi_panes_ui.py`: `_test_window` (after `window focus`, the window whose
+  sidebar lists the test's tab or, when the sidebar is hidden, the main window with a chip for each
+  pane of its shown tab; a new window takes the last window's sidebar choice, which earlier tests
+  leave hidden), `_terminal_frames` (that window's terminals, left to right) and
+  `_make_room_outside` (makes the window 900 by 560 points near the screen's top left, through
+  accessibility), `_point_outside_windows`. `strip_chips` takes the window to search.
+- `test_hidden_panes.py::test_the_strip_names_every_pane_and_a_click_brings_a_hidden_one_in_ui`:
+  the chips, the panes they must sit above and the "no grab handle" check are looked for in the
+  test's window. The chip's bottom is compared with the top of the window's own terminals (it was
+  compared with the other window's pane, 13 points higher on screen).
+- `::test_a_chip_dragged_onto_a_pane_edge_moves_its_pane_there_ui`: the drop point is the left edge
+  of the test window's left terminal (it was the other window's pane, so the drop missed).
+- `::test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui`: it asserted that
+  after stepping on, the first two panes on show are the first two at the start. That assumed the
+  pane hidden to make room is the last one; H-1 hides the pane `strip.make-room` picks (looked at
+  longest ago), and the walk has just looked at the others in turn, so it hides the second. The test
+  now checks what H-6 says, more closely than before: three on show, the next pane at the right end,
+  the pane the walk began on still there, the others in their starting order (closed up), and the
+  one taken out is among the hidden. "Stepping on put the layout back" (the first hidden pane hidden
+  again) is checked as before.
+- `::test_a_hidden_chip_dragged_out_of_the_window_gets_a_window_of_its_own_ui` and
+  `test_umi_panes_ui.py::test_dragging_a_tab_row_out_of_the_window_makes_a_window_ui`: they skipped
+  when a new window left no room on screen to drop outside it (always, on a 1440 by 900 display).
+  They now make the window smaller first and drop at a point outside every one of the app's
+  windows (`_point_outside_windows`): a point beside the test's window alone fell inside the
+  instance's first window, where the drop counts as a drop on that window. They fail, instead of
+  skipping, if there is still no room.
+- `test_hidden_panes.py::test_real_cmd_brackets_walk_and_land_on_release_ui` and
+  `::test_a_rebound_next_pane_key_walks…` move the pointer to the middle of the test's window before
+  typing (`_park_pointer`): left over the window's green button by the strip test's clicks (the
+  sidebar hidden puts the first chip beside it), it opened macOS's Move & Resize menu, which took the
+  keys. The rebound test also lets go of ⌃ and ⌘ when it ends, so a failure can't leave them held
+  for the next test.
+- `test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`:
+  the pane area and the strip are looked for in the test's window.
+- `test_pane_indicator.py::window_element` (used by both `_ui` tests there) is `_test_window`; it
+  captured the other window, whose pane has no mark, so every pixel read the background.
+  `::test_chips_and_rows_say_the_state_to_accessibility_ui` turns the test window's sidebar on before
+  reading its row (in a full run it was hidden, so there was no row) and looks for the row there.
