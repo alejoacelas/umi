@@ -437,7 +437,8 @@ From design/attention-ui.md ("Panes per tab", "Hidden panes", "The pane strip") 
   last pane on show fails with exit 1 and changes nothing. `pane show` brings it back at the right end
   of the tab; keyboard focus stays where it is unless `--focus`. Hiding and showing set the pane's
   `changed_at` and are `pane.hidden` / `pane.shown` events. `send`, `read`, `keys`, `wait` and
-  `pane set` work on hidden panes.
+  `pane set` work on hidden panes. Closing a tab (or several) asks first when a program runs in any
+  of its panes, hidden ones included.
 - **H-3 [A]** `pane hide P --until CONDITION` brings the pane back by itself when the condition
   holds: a query about the pane (`agent.done=false or agent.status=needs_input`), a duration
   (`2h`), or both as two options, the first to hold winning. It is checked whenever the pane's
@@ -448,7 +449,8 @@ From design/attention-ui.md ("Panes per tab", "Hidden panes", "The pane strip") 
   don't come in by themselves. Closing the last pane on show of a tab with hidden panes brings in the
   hidden one used most recently, so the tab stays. A hidden pane whose program ends leaves its tab.
 - **H-5 [A+W]** The pane strip (prototypes/pane-strip.html; where-panes-live.html, option C) sits in
-  the window's title bar, above the panes, adding no height. It has a chip for every pane of the tab:
+  the window's title bar, above the panes, adding no height (a window with no title bar, as in full
+  screen, gives it a 22-point band of its own). It has a chip for every pane of the tab:
   those on show in layout order, then the hidden ones, dim and in italics; the focused pane's chip is
   filled. A chip shows its pane's icon (a file's type icon and unsaved dot, E-24) and title. Clicking
   a hidden pane's chip brings it in (at the right end) with focus; clicking another focuses its pane.
@@ -461,7 +463,8 @@ From design/attention-ui.md ("Panes per tab", "Hidden panes", "The pane strip") 
   began on; stepping on puts the layout back and brings in the next one. Releasing ⌘ lands the walk:
   on a hidden pane it stays in; back on a pane that was on show, the layout is as it was. Only where
   the walk lands is reported (`pane.shown`, `pane.hidden`). Without ⌘ held (Window ▸ Previous Pane /
-  Next Pane), each step lands at once.
+  Next Pane), each step lands at once. The walk follows the keys Previous Pane and Next Pane are
+  bound to (`umi shortcuts`); ⌘ held is what keeps it going.
 - **H-7 [A]** Hidden panes, in strip order, and their pending conditions come back after a restart.
   Undo of a step that hid panes to make room brings them back on show. Launch configurations (L-21)
   save hidden terminal panes, marked `is_hidden: true`; opening one, panes marked so, and those past

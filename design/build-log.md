@@ -627,3 +627,52 @@ and the repository's `push.default` is `upstream`): `main` briefly pointed at `c
 first commit. Minutes later it was put back to `69480b751` with `git push --force-with-lease`
 (lease on `c9034c9d0`, so nothing else could be lost) and the branch now tracks its own remote
 branch. If any other session fetched `main` in those minutes, it saw that commit.
+
+### After review (2026-11-08)
+
+**Fixed**
+
+- Dragging a hidden pane's chip out of the window now gives the pane a window of its own, opened
+  where the chip was dropped. The code had landed in the zoom handler (where it also made a zoom
+  aimed at a hidden pane open a window); it is now in the handler for a drag that ends outside every
+  window (`BaseTerminalController.ghosttySurfaceDragEndedNoTarget`). `UmiLayout.PaneDestination.newWindow`
+  takes the drop point.
+- Closing a tab, other tabs, tabs below or tabs on the right asks first when a hidden pane runs a
+  program, as it does for panes on show (`TerminalController.runsProgram`). SPEC H-2 says so.
+- The ⌘[ ⌘] walk goes on for the keys Previous Pane / Next Pane are bound to now
+  (`UmiPaneWalk.isWalkKey`, via `UmiShortcut(event:)`), not fixed key codes. SPEC H-6 says so.
+- The strip has the prototype's 1-point separator between the chips on show and the hidden ones, and
+  hidden chips are 34% white, as in the prototype.
+
+**New tests**: `test_hidden_panes.py::test_closing_a_tab_asks_first_when_a_hidden_pane_runs_a_program`
+(not UI; passes), `::test_a_hidden_chip_dragged_out_of_the_window_gets_a_window_of_its_own_ui` and
+`::test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui` (UI; unrun).
+
+**Verified, and how** (mac-air-2, `~/umi-test-design-step4` at `dfd2288cf`, under the screen lock;
+the screen was locked again, `CGSSessionScreenIsLocked` true, so UI tests were skipped)
+
+- Dev copy, `~/umi-test-design-step4-trial2.py`: 5 of 5 read back (`~/umi-test-design-step4-trial2.log`).
+  Close tab with a running hidden pane shows "Close Tab?"; Cancel keeps the tab and the hidden pane;
+  with the program stopped the tab closes at once; the strip shows alpha, gamma, a separator, then
+  beta dim and italic (`~/umi-test-design-step4-shots/4-strip-separator.png`).
+- Acceptance suite, ReleaseLocal, full run with the signing edit in place
+  (`~/umi-test-design-step4-suite2.log`): 379 passed, 9 failed, 89 skipped (UI tests: the locked
+  screen). 8 of the failures are the base failures listed above (they fail on main too).
+  The ninth, `test_pane_data.py::test_umi_keeps_read_only_attributes` (`idle_for` read 1s after a
+  3s sleep), passed in the earlier run and in 4 reruns since (`~/umi-test-design-step4-suite2-rerun.log`:
+  `test_pane_data.py` and `test_hidden_panes.py`, 37 passed, 5 UI skipped): a timing flake, left alone.
+- Swift unit tests (`~/umi-test-design-step4-swift.log`): 427 passed, 1 skipped (a benchmark), none failed.
+
+**Not verified**: every UI test, now 7 in `test_hidden_panes.py` (the 5 there plus the 2 above),
+`test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`,
+`test_umi_editor_warp.py::test_header_shows_the_unsaved_dot_and_chips_show_type_icons` and the
+rest of the UI tests. The drag out of the window was never seen working.
+
+**Choices for Alejo to check**
+
+16. With no title bar (full screen, or a hidden title bar style), the strip takes a 22-point band of
+    its own above the panes instead of disappearing, because the chips are now the only drag handles
+    and the only mouse way to a hidden pane. So "adds no height" holds only where there is a title
+    bar. Untried in full screen. Where: `TerminalView` (`max(topInset, 22)`), SPEC H-5.
+17. The walk follows a rebound key, but it is held only while ⌘ is down: a rebinding without ⌘
+    lands each step at once, like a menu click. Where: `UmiPaneWalk.held`.
