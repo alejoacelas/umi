@@ -519,3 +519,111 @@ on an unlocked screen before merging.
 - SPEC: new section H (H-1 to H-8, fixed tier); M-7 removed; L-9, L-18, M-4, E-1, E-9, E-10, E-12,
   E-24 reworded. CLI.md took design/cli.md's "Hidden panes" and the `hid`, `visible_limit` and
   `strip` fields. CHECKS.md: M-4/H-8 and H-5/H-6 checks. TEST_CHANGES.md lists every test change.
+
+**Verified, and how**
+
+All runs are on mac-air-2, in `~/umi-test-design-step4`, under `lockf -k ~/umi-screen.lock`. The
+screen was locked for every run (`CGSSessionScreenIsLocked` true), so every UI test was skipped. The
+Mac has no signing identity: builds and the update tests use a local, uncommitted edit of
+`app/dist/signing.sh` that accepts ad hoc signing (`~/umi-test-design-step4-build.sh`, as step 3 did).
+
+- Dev copy (the Debug build, started as `app/dist/dev.sh` starts it), driven by
+  `~/umi-test-design-step4-trial.py`, at `083681af3`: 30 of 30 checks read back
+  (`~/umi-test-design-step4-trial.log`, screenshots in `~/umi-test-design-step4-shots`). Tried: three
+  splits then a fourth (`hid`, never the new or focused pane; `strip` and `ls` order; no frame on the
+  hidden pane; its shell still answering `send`/`read`); `pane hide` (event caused by `cli`,
+  `changed_at`); hiding the last pane on show (exit 1, "last pane on show"); `pane show` (right end,
+  focus kept) and `--focus`; `--until owner=me` (shown on `pane set owner=me`, no focus,
+  `by_condition`, cause `config`, `unseen=true`), `pane until`, `--until 2s`; ⌘] held through every
+  pane (`debug.key` with `hold`): the panes on show, then each hidden one at the right end, back on
+  the first with the layout as it was, `debug.release` keeping it; ⌘[ bringing the last hidden pane in
+  at the left end (`2-walk-left-end.png`); Window ▸ Next Pane and Hide Pane from the menu; `edit` into
+  a full tab (right of the caller, same tab, `hid`); Markdown from outside opening the ordinary Docs
+  tab; a hidden pane dropped on a pane's edge and on a sidebar row; `help` listing the commands; undo
+  of a move that made room; `layout save` writing `is_hidden`; quitting and restarting: hidden panes
+  and their conditions back. The screenshots show the strip in the title band
+  (`1-strip-one-hidden.png`: alpha filled, gamma, delta, beta dim and italic) and a file pane's header
+  without a grip (`3-file-pane-no-grip.png`).
+- Acceptance suite, ReleaseLocal at `f28466520` (later commits change tests, the build log and make
+  `umiAppending` generic for the Swift test), full run (`~/umi-test-design-step4-suite.log`): 365
+  passed, 12 failed, 11 errors, 86 skipped (85 UI tests: the locked screen; 1 a window too narrow for
+  three panes). Then:
+  - the 11 errors and 2 failures in the update and install tests were the signing edit missing during
+    that run (`release.sh: can't sign the app`); with it, `test_umi_extra.py` and `test_install.py`
+    passed, 37 of 37 (`~/umi-test-design-step4-suite-updates.log`);
+  - `test_the_prompt_sits_at_the_bottom_from_the_start` counted the strip's chips as terminal text;
+    the test now measures below the title band (TEST_CHANGES.md); `test_umi_blocks.py` and
+    `test_hidden_panes.py` then passed, 32 passed and 4 UI skipped
+    (`~/umi-test-design-step4-suite-blocks.log`);
+  - the other 9 fail on main too: run on the step 3 worktree (main's app code, `71e39f857`),
+    `test_builds_from_a_path_with_spaces`, `test_shift_cmd_f_leaves_a_terminal_search_open` and five
+    synchronized-input, pane-menu and zoom tests failed there as well
+    (`~/umi-test-design-step4-base.log`); `test_option_command_i_in_a_one_tab_window_leaves_tabs_opened_later_out`
+    passed there this time and is the one steps 1 to 3 found flaky on both.
+  - `test_markdown_opens_in_one_docs_tab_most_recent_first`, failing on main since step 1, is
+    replaced by the Docs tab's new test, which passes.
+- Swift unit tests at the head (`~/umi-test-design-step4-swift.log`): 428 passed, none failed.
+  `TerminalSplitDropZoneTests/centerSelectsLeft`, failing on main since stacks added the centre zone,
+  passes again; the new `UmiHiddenPanesTests` (3) pass.
+
+**Not verified**
+
+- Every UI test (86 skipped), among them the five this step adds or changes and the orchestrator
+  should run on an unlocked screen before merging:
+  `test_hidden_panes.py::test_the_strip_names_every_pane_and_a_click_brings_a_hidden_one_in_ui`,
+  `::test_real_cmd_brackets_walk_and_land_on_release_ui`,
+  `::test_a_chip_dragged_onto_a_pane_edge_moves_its_pane_there_ui`,
+  `test_umi_panes_ui.py::test_dragging_a_pane_to_the_top_or_bottom_centre_moves_it_between_tabs_ui`
+  (now drags the chip) and
+  `test_umi_editor_warp.py::test_header_shows_the_unsaved_dot_and_chips_show_type_icons` (the strip's
+  chips). So none of these was seen working: a real click on a chip, a real drag of a chip, real ⌘
+  held and released (the walk only ran through `debug.key` with `hold` and `debug.release`), whether
+  the empty part of the title band still drags the window, the strip's place beside the window's
+  buttons with the sidebar hidden (78 points in), and the chips' accessibility labels and values.
+- The CHECKS.md items H-5, H-6, H-8 and M-4 (by hand).
+
+**Choices for Alejo to check**
+
+1. Strip order: the panes on show in layout order, then the hidden ones. A pane brought in takes the
+   right (or left) end of the layout, and the pane hidden for it takes the incoming one's place among
+   the hidden chips (the "swap"); a pane hidden with `pane hide` goes first among the hidden. Where:
+   `UmiHidden.strip`, `show`, `hideNow`.
+2. Closing the last pane on show of a tab with hidden panes brings in the hidden one used most
+   recently instead of closing the tab and its hidden panes (the design says hidden panes don't come
+   in by themselves after a close, but a tab can't show none). Where: `UmiHidden.refill`, H-4.
+3. `unseen` after hiding: being hidden sets `changed_at` but doesn't make a pane unseen (else hiding
+   a pane would make it a ⌃⌘J target); coming back on show without being looked at does, whatever
+   brought it back (a condition, or `pane show` without `--focus`). So `unseen` is no longer exactly
+   `changed_at > seen_at` for a hidden pane. Where: `UmiAttributes.computedValue("unseen")`, CLI.md.
+4. ⌘[ ⌘] land on ⌘ released, and also on any other key press or click; a menu click lands each step
+   at once. The walk isn't undoable (it lands where you let go). Each step focuses its pane, so the
+   panes walked through count as looked at. The pane the walk began on is never hidden for it.
+   Where: `UmiPaneWalk`.
+5. A hidden pane that moves (`pane move`, a drop) leaves from the right end of its tab; moved within
+   its own tab, the tab then makes room. Where: `UmiLayout.move`.
+6. `pane hide QUERY` that would hide every pane on show of some tab is refused whole (exit 1, nothing
+   hidden). Where: `UmiRPC` `pane.hide`.
+7. `--until` conditions are saved with the layout and come back after a restart (the design doesn't
+   say); a duration is also checked at its exact moment, not only once a minute.
+8. Launch configurations mark hidden panes `is_hidden: true`, a key of Umi's own; Warp's reading of a
+   file with it is untried. Hidden panes are written after the panes on show, in the top row.
+9. Chips are at most 300 points wide (E-24's limit for file chips), not the prototype's 150. A
+   narrow window clips the strip at its right; the prototype's "+N" collapse isn't built.
+10. Window ▸ Hide Pane is new (no default key). ⌘[ ⌘] are Window ▸ Previous Pane / Next Pane; their
+    ids stay `pane.stack_previous` / `pane.stack_next` for users' `shortcuts.json`.
+11. With every other pane pinned, a tab shows more than its limit rather than hide a pinned pane.
+12. A file opened from a hidden pane opens at the right end of its tab. The Docs tab's new
+    documents open at its right end, focused (E-10: "to the right of its panes").
+13. Transition code, to remove once no layout is older than 0.10: a layout saved with stacks brings
+    their members not on show back as hidden panes (`UmiPersistence.restoreLayout`).
+14. `edit` run outside Umi's panes still opens beside the current window's focused pane; design/cli.md's
+    "Markdown goes to the Docs tab, other text to the closest tab" for that case isn't built (it
+    wasn't before this step either).
+15. The tests that check rows of four panes (L-19) raise the tab's `visible_limit`; step 6 removes the
+    hand-placed divider rules they mostly cover.
+
+**Incident.** The first push of this branch went to `main` (the new worktree tracked `origin/main`
+and the repository's `push.default` is `upstream`): `main` briefly pointed at `c9034c9d0`, this step's
+first commit. Minutes later it was put back to `69480b751` with `git push --force-with-lease`
+(lease on `c9034c9d0`, so nothing else could be lost) and the branch now tracks its own remote
+branch. If any other session fetched `main` in those minutes, it saw that commit.
