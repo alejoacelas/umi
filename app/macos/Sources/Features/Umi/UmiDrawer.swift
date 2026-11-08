@@ -50,7 +50,8 @@ final class UmiDrawerModel: ObservableObject {
 
     /// Slide towards up (1) or down (0), from where it is now: a slide reversed half way takes half
     /// the time. With Reduce Motion on, it moves at once.
-    func slide(to target: CGFloat, reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
+    func slide(to target: CGFloat, reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+               now: Date = Date()) {
         slideTimer?.invalidate()
         slideTimer = nil
         guard !reduceMotion, abs(rise - target) > 0.001 else {
@@ -60,7 +61,7 @@ final class UmiDrawerModel: ObservableObject {
         }
         slideFrom = rise
         slideTo = target
-        slideStart = Date()
+        slideStart = now
         slideDuration = UmiDrawer.slideDuration * Double(abs(target - rise))
         let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.step() }
@@ -69,7 +70,8 @@ final class UmiDrawerModel: ObservableObject {
         slideTimer = timer
     }
 
-    private func step(now: Date = Date()) {
+    /// One frame of the slide (the timer calls it; tests call it with their own times).
+    func step(now: Date = Date()) {
         let t = slideDuration > 0 ? min(1, now.timeIntervalSince(slideStart) / slideDuration) : 1
         rise = slideFrom + (slideTo - slideFrom) * CGFloat(UmiDrawer.ease(t))
         guard t >= 1 else { return }
@@ -94,7 +96,8 @@ enum UmiDrawer {
     /// CSS's `ease` (cubic-bezier(0.25, 0.1, 0.25, 1)), the prototype's timing: progress at time t
     /// (both 0 to 1).
     nonisolated static func ease(_ t: Double) -> Double {
-        let t = min(max(t, 0), 1)
+        guard t > 0 else { return 0 }
+        guard t < 1 else { return 1 }
         let (x1, y1, x2, y2) = (0.25, 0.1, 0.25, 1.0)
         func bezier(_ s: Double, _ a: Double, _ b: Double) -> Double {
             3 * (1 - s) * (1 - s) * s * a + 3 * (1 - s) * s * s * b + s * s * s

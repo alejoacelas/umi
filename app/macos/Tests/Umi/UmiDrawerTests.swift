@@ -20,35 +20,47 @@ struct UmiDrawerTests {
         #expect(UmiDrawer.slideDuration == 0.26)
     }
 
-    @Test func slidesUpAndDownOverItsDuration() async throws {
+    @Test func slidesUpAndDownOverItsDuration() {
+        // Frames at chosen times (the timer would call step every 1/120 s).
         let drawer = UmiDrawerModel()
         #expect(drawer.rise == 0 && !drawer.isSliding)
+        let t0 = Date()
+        drawer.slide(to: 1, reduceMotion: false, now: t0)
+        #expect(drawer.isSliding)
+        var last: CGFloat = 0
+        for ms in stride(from: 20, through: 240, by: 20) {
+            drawer.step(now: t0.addingTimeInterval(Double(ms) / 1000))
+            #expect(drawer.rise > last && drawer.rise < 1, "at \(ms) ms: \(drawer.rise)")
+            last = drawer.rise
+        }
+        drawer.step(now: t0.addingTimeInterval(0.13))
+        #expect(abs(drawer.rise - CGFloat(UmiDrawer.ease(0.5))) < 1e-6)
+        drawer.step(now: t0.addingTimeInterval(0.26))
+        #expect(drawer.rise == 1 && !drawer.isSliding)
+
+        // Down, reversed part way: back up from there, in that share of the time.
+        let t1 = Date()
+        drawer.slide(to: 0, reduceMotion: false, now: t1)
+        drawer.step(now: t1.addingTimeInterval(0.1))
+        let partway = drawer.rise
+        #expect(partway > 0 && partway < 1 && drawer.isSliding)
+        let t2 = t1.addingTimeInterval(0.1)
+        drawer.slide(to: 1, reduceMotion: false, now: t2)
+        drawer.step(now: t2.addingTimeInterval(0.01))
+        #expect(drawer.rise > partway)
+        drawer.step(now: t2.addingTimeInterval(0.26 * Double(1 - partway)))
+        #expect(drawer.rise == 1 && !drawer.isSliding)
+    }
+
+    @Test func theTimerRunsTheSlide() async throws {
+        let drawer = UmiDrawerModel()
         let start = Date()
         drawer.slide(to: 1, reduceMotion: false)
-        #expect(drawer.isSliding)
-        var seen: [CGFloat] = []
-        while drawer.isSliding, Date().timeIntervalSince(start) < 2 {
-            try await Task.sleep(nanoseconds: 10_000_000)
-            seen.append(drawer.rise)
-        }
-        let took = Date().timeIntervalSince(start)
-        #expect(drawer.rise == 1)
-        #expect(took >= 0.24 && took < 0.6, "rose in \(took) s")
-        #expect(seen.contains { $0 > 0.05 && $0 < 0.95 }, "passed through the middle: \(seen)")
-        #expect(zip(seen, seen.dropFirst()).allSatisfy { $0 <= $1 })
-
-        // And back down; reversed half way, it takes the rest of the way back.
-        drawer.slide(to: 0, reduceMotion: false)
-        try await Task.sleep(nanoseconds: 60_000_000)
-        #expect(drawer.isSliding && drawer.rise < 1 && drawer.rise > 0)
-        let partway = drawer.rise
-        drawer.slide(to: 1, reduceMotion: false)
-        let back = Date()
-        while drawer.isSliding, Date().timeIntervalSince(back) < 2 {
+        while drawer.isSliding, Date().timeIntervalSince(start) < 3 {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        #expect(drawer.rise == 1)
-        #expect(Date().timeIntervalSince(back) < 0.26 * Double(1 - partway) + 0.2)
+        #expect(drawer.rise == 1 && !drawer.isSliding)
+        #expect(Date().timeIntervalSince(start) >= 0.25)
     }
 
     @Test func reduceMotionMovesAtOnce() {
