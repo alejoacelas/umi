@@ -326,10 +326,10 @@ enum UmiHidden {
     }
 }
 
-extension SplitTree where ViewType == Ghostty.SurfaceView {
+extension SplitTree {
     /// The tree with `view` added at the right end of the tab (the left end with `atStart`), as a
     /// member of the top row with an equal share (Umi: hidden panes coming in).
-    func umiAppending(_ view: Ghostty.SurfaceView, atStart: Bool) -> Self {
+    func umiAppending(_ view: ViewType, atStart: Bool) -> Self {
         guard let root else { return SplitTree(view: view) }
         let leaf = Node.leaf(view: view)
         let split = Node.split(.init(direction: .horizontal, ratio: 0.5,
