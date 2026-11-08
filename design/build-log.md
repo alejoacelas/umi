@@ -929,3 +929,157 @@ on main's code overwrote `~/umi-test-design-step3-suite.log` on mac-air-2.)
     A user's `shortcuts.json` entries for the old ids no longer apply.
 13. A dragged divider changes only its two neighbours (Warp); double-click equalizes its row and
     ⌃⌘= the whole tab, as before. Layouts saved with the old `placed` flags still load.
+
+## Step 7: the drawer
+
+**Status:** built on `design/step7-drawer` (from `design/step6-moving`, on steps 4 and 5; none of them
+is in main yet), ready for review. The UI tests didn't run: mac-air-2's screen was locked for every run
+(see "Not verified").
+
+**What changed**
+
+- The drawer (`UmiDrawer.swift`; prototypes/drawer.html, option B): each window has one, over the
+  lower 52% of its panes at their full width, without changing the tab's layout. Its header has a chip
+  per drawer pane (indicator and name; a click shows it) and Dock, Hide and Put away. A pane sent there
+  leaves its tab (no strip chip, not counted toward `visible_limit`), keeps running, and is listed under
+  the window's `drawer` in `ls --json` with `in_drawer: true` (the attribute too); queries, `go`, the
+  Dock badge and `pane focus` see it (focusing it opens the drawer on it). Opening focuses the drawer's
+  pane; closing gives focus back to the pane focused before. It is saved with the layout and comes back
+  closed.
+- CLI (design/cli.md, "Drawer"): `drawer show [PANE]`, `hide`, `toggle [PANE]`, `next|prev`,
+  `dock [PANE]`, `ls`, all with `--window`. `pane hide` of a drawer pane puts it back hidden in the tab
+  it came from (the current tab when that one is gone); `pane move` takes it out; `pane close`, or its
+  program ending, ends it; split, zoom, swap and resize refuse it (exit 1). Events `drawer.opened`,
+  `drawer.closed`, and `pane.moved` with `to`/`from` `{"window", "drawer": true}`.
+- ⌃⌘M runs `drawer toggle @manager` (choice 15): Window ▸ Drawer ▸ Show or Hide Manager, id
+  `drawer.manager`; a `key.ctrl+cmd+m` config line replaces it. Window ▸ Drawer also has Show or Hide
+  Drawer, Move Pane to Drawer, Dock Drawer Pane, Next / Previous Drawer Pane (no keys). ⌘[ ⌘] with a
+  drawer pane focused go through the drawer's panes.
+- The waiting line: while the drawer is closed, a drawer pane whose indicator is "needs you" shows a
+  3-point amber line along the bottom edge of the panes with "NAME · needs you" (+N) at its right end;
+  clicking the label opens the drawer on it.
+- Screenshots (`<cli> screenshot`) draw the drawer, its waiting line and the keyboard move's marker over
+  the terminals' images, as they draw the pane indicator.
+- Step 6's review:
+  - (a) The moving pane is outlined in the prototype's cyan with a "moving here" tag at its bottom left
+    (move-literal.html option A), and its strip chip is cyan (`UmiPaneMoveMarker`, `UmiStripChip`).
+  - (b) Previews no longer record tabs and panes passed over: `UmiTabHistory` and `UmiFocusHistory`
+    pause for the move; only the landing is recorded (after it), and Esc leaves both as they were.
+  - (c) The move lands when Umi resigns active or its window stops being key, and a pane closing
+    mid-move ends the move with every tab put back as it was, without that pane (restore first, then
+    finish).
+  - (d) With the sidebar hidden, a closed pane's shell ran on past its 60 s. SwiftUI kept the closed
+    pane's view until the window's views next changed (any later change in that window, a split or the
+    sidebar coming back, freed it; nothing in Umi's own code held it). Now when a reopen entry expires,
+    a pane still alive a second later, in no window and no tab, ends its terminal
+    (`SurfaceView.umiEndTerminal`, which frees the surface as deinit would).
+- SPEC: new section DR (DR-1 to DR-5, fixed tier), ⌃⌘M in L-9, KM-3 (the marker) and KM-4 (landing on
+  resign, the pane closing, the histories). CLI.md: the Drawer section, the window's `drawer`,
+  `pane.moved` to or from a drawer; it now covers all of design/cli.md. TEST_CHANGES.md lists every
+  added and changed test.
+
+**Verified, and how**
+
+All runs are on mac-air-2, in `~/umi-test-design-step7`, under `lockf -k ~/umi-screen.lock`. The
+screen was locked for every run (`CGSSessionScreenIsLocked` true), so every UI test was skipped. Builds
+pass `CODE_SIGN_IDENTITY=-`; the suite and Swift runs use the same local, uncommitted
+`app/dist/signing.sh` edit as steps 4 to 6 (`~/umi-test-design-step7-{build,suite,swift}.sh`).
+
+- Dev copy (the Debug build of `334f57a84`, started as `app/dist/dev.sh` starts it, with its own state
+  and config), driven by `~/umi-test-design-step7-trial.py`: 41 of 41 checks read back
+  (`~/umi-test-design-step7-trial2.log`; screenshots in `~/umi-test-design-step7-shots`). Keys went
+  through `debug.key`, menu items through `debug.menu.perform`, read back with `ls --json`, `drawer ls`,
+  `debug.drawer`, `debug.move`, `debug.navigation`, `log` and `read`. Tried: ⌃⌘M with a `role=manager`
+  pane (it left its tab, the drawer opened over the lower half at the panes' width, focused it,
+  `pane.moved` caused by the key, `drawer.opened`; `1-drawer-open.png`), `ls` text, ⌃⌘M again (closed,
+  focus back on beta, the manager still running); `drawer show` with and without a pane, `hide`,
+  `toggle` (closing, opening, switching), `next`, `prev`, `ls` (JSON and text), ⌘] in the drawer;
+  the waiting line ("epsilon · needs you", `4-waiting-line.png`) and its going away when the drawer
+  opens; `drawer dock` (right of the tab's focused pane, focused, the drawer closed, `pane.moved` from
+  the drawer); Window ▸ Drawer ▸ Move Pane to Drawer, Previous / Next Drawer Pane, Show or Hide
+  Drawer (both ways), Dock Drawer Pane; Window ▸ Hide Pane on a drawer pane (back hidden in its tab);
+  `split` on a drawer pane refused; `pane focus` opening the drawer; `pane move --tab` taking it out;
+  `help` and `shortcuts`; a keyboard move's cyan chip and outline (`5-moving-marker.png`), Esc leaving
+  both histories as they were, landing on a simulated resign-active and resign-key (the landing
+  recorded, tab B then A), the moving pane closed mid-move; a restart bringing both drawer panes back
+  in the closed drawer; and, with the sidebar hidden, a closed pane's shell ending after its 60 s.
+  The first trial run (`~/umi-test-design-step7-trial.log`, 39 of 41) found dock using the pane focused
+  before the drawer opened rather than one focused since (fixed in `e85bb201f`) and a
+  wrong expectation in the script.
+- Acceptance suite, ReleaseLocal, full runs:
+  - at `5534e9991` (`~/umi-test-design-step7-suite-full1.log`): 414 passed, 8 failed, 94 skipped. Seven
+    are the base failures below; the eighth was this step's histories test, which compared the whole
+    tab history while other tests' tabs drop out of it as they close (fixed in the test, see
+    TEST_CHANGES.md; the claim checked is unchanged).
+  - at `334f57a84` (`~/umi-test-design-step7-suite-full2.log`): 402 passed, 10 failed, 11 errors, 93
+    skipped. The 11 errors and 3 of the failures are the update and install tests, broken by my own
+    Debug build started on the same worktree during the run (its script restored `signing.sh`, so
+    `release.sh` refused to sign ad hoc); rerun alone, `test_install.py` and `test_umi_extra.py` give
+    37 passed, 1 skipped (`~/umi-test-design-step7-suite-rerun-updates.log`). The other 7 are the base
+    failures. This step's tests: `test_drawer.py` 11 passed, 1 UI skipped; `test_moving_panes.py` 18
+    passed, 2 UI skipped; the sidebar-hidden expiry test passed.
+- The base failures: `test_builds_from_a_path_with_spaces`, `test_shift_cmd_f_leaves_a_terminal_search_open`
+  and five synchronized-input, pane-menu and zoom tests in `test_umi_warp_panes.py`, the same as steps
+  1 to 6 list. Run on main's app code (`71e39f857`, `~/umi-test-design-step3`), `test_umi_warp_panes.py`
+  and the ⇧⌘F test fail the same way (`~/umi-test-design-step7-base-main.log`: 6 failed, 13 passed).
+  Which of the two ⌥⌘I tests fails flips between runs (`…types_into_every_pane_of_the_tab` or
+  `…in_a_one_tab_window_leaves_tabs_opened_later_out`), on main as here
+  (`~/umi-test-design-step7-warp-panes.log`). None touches what this step changed.
+- Swift unit tests at `334f57a84`'s code (`~/umi-test-design-step7-swift.log`): 428 passed, 1 skipped
+  (a benchmark), none failed.
+- Step 6's leak (d): `leaks --traceTree` on the closed pane's view found no owner in Umi's code; with
+  the sidebar hidden it stayed alive (retain count 7) until any later change of the window's views (a
+  split, the sidebar shown), which freed it. After the fix the shell ends at 61 s with the view still
+  alive (`~/umi-test-design-step7-leak.py`, temporary instrumentation not committed).
+
+**Not verified**
+
+- Every UI test (93, skipped: the locked screen). This step's, for the orchestrator to run on an
+  unlocked screen: `test_drawer.py::test_real_ctrl_cmd_m_and_the_drawers_buttons_ui` (real ⌃⌘M, typing
+  into the drawer, the Put away and Dock buttons) and the changed `test_layout.py::test_shortcuts_are_menu_items`
+  (⌃⌘M added). Steps 4 to 6's unrun UI tests still stand (step 6:
+  `test_moving_panes.py::test_real_ctrl_cmd_arrows_move_and_land_on_release_ui`,
+  `::test_the_rows_list_their_panes_to_accessibility_during_a_move_ui`,
+  `test_umi_nav.py::test_jump_and_move_tab_keys`, `test_umi_sidebar_warp.py::test_move_tab_keys_keep_groups_whole_ui`).
+- Never seen on a live screen: the drawer rising and its clicks (chips, Dock, Hide, Put away, the
+  waiting line's label), real ⌃⌘M, and a real resign-active or key-window change during a move (both
+  simulated by posting AppKit's notifications through `debug.move`). Screenshots come from `<cli>
+  screenshot`, which draws the real views.
+- Whether the closed-pane leak (d) happens on an unlocked screen at all, where the window's views update
+  every frame; the fix holds either way.
+
+**Choices for Alejo to check**
+
+1. A drawer pane is listed under its window, not in a tab; where a query result or `pane info` needs a
+   tab (`ls --where`, `UMI_TAB` for a command run from it), it gets the tab the drawer is over (the
+   window's selected tab). Where: `UmiTopology.locate`, `placedPanes`.
+2. ⌃⌘M with no pane holding `role=manager`: an open drawer is put away, otherwise it beeps and nothing
+   moves (the design's "when nothing matches, Umi says so"; there is no on-screen note). Where:
+   `UmiDrawer.toggleManager`.
+3. `drawer show QUERY` and `drawer toggle QUERY` move every match into the drawer and show the first
+   (design/cli.md choice 3: commands that change panes act on every match).
+4. Dock, Hide and a drawer pane's program ending put the drawer away, as in the prototype; `drawer
+   next|prev`, `pane focus` and `go` open it. Focus goes back to the tab's own focused pane (the one
+   focused before the drawer took focus, or one focused since while it stayed open), and dock puts the
+   pane to the right of that pane.
+5. Only ⌃⌘M has a default key. The other drawer actions are Window ▸ Drawer items without keys
+   (attention-ui.md leaves "keys for sending other panes to the drawer and cycling" open); ⌘[ ⌘] go
+   through the drawer's panes while one is focused, standing in for the prototype's [ and ].
+6. The window's only pane can't go into the drawer (exit 1: the drawer belongs to the window); a pane
+   that was its tab's last closes that tab.
+7. The drawer's height is the prototype's 52% of the panes, fixed (no setting); its header's "D · H"
+   hint became three clickable words: Dock, Hide, Put away.
+8. Drawer panes come back after a relaunch with the drawer closed. A window closed with panes in its
+   drawer ends them (⇧⌘T brings the window back without them), and a closed drawer pane can't be
+   reopened, as for hidden panes. Launch configurations (`layout save`) leave drawer panes out.
+9. Moves into and out of the drawer aren't undoable (⌘Z doesn't put a pane back in or out); a later
+   undo that brings a drawer pane back into a tab takes it out of the drawer. `pane move` of a drawer
+   pane goes through the right end of the current tab, so its `pane.moved` names that tab as `from`.
+10. The waiting line spans the window's panes (not the sidebar), shows while any drawer pane needs you
+    and the drawer is closed, and its label opens the drawer on the first waiting pane.
+11. Step 6 review (c): Umi resigning active or the window stopping being key lands the move (as any
+    other key or a click does) rather than cancelling it; the pane closing mid-move cancels without it.
+12. Step 6 review (d): the fix ends a closed pane's terminal explicitly one second after its reopen
+    period ends, when its view is still alive but in no window and no tab. The SwiftUI reference that
+    kept it alive wasn't pinned down (leaks shows no strong owner in Umi's code; any later update of
+    the window's views releases it).
