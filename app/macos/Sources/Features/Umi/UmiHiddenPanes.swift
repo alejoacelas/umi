@@ -202,7 +202,10 @@ enum UmiHidden {
         tab.focusedSurface = pane
         conditions[pane.id] = nil
         window.setOccluded([pane], occluded: tab !== window.selectedTab)
-        DispatchQueue.main.async { placeChanged(pane, shown: true, tab: tab, window: window, byCondition: false) }
+        // Reported only when it isn't a quiet step (a keyboard move's preview).
+        if quiet == 0 {
+            DispatchQueue.main.async { placeChanged(pane, shown: true, tab: tab, window: window, byCondition: false) }
+        }
         return SplitTree(view: pane)
     }
 

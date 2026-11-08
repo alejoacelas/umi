@@ -6,20 +6,14 @@ import AppKit
 @MainActor
 enum UmiNavigationRPC {
     static let methods: Set<String> = [
-        "tab.back", "tab.next", "tab.prev",
+        "tab.next", "tab.prev",
         "shortcuts.list", "shortcuts.set", "shortcuts.reset",
         "debug.attention.set", "debug.navigation",
-        "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.shortcuts_page", "debug.key", "debug.release",
+        "debug.palette", "debug.palette.perform", "debug.palette.close", "debug.palette.state", "debug.shortcuts_page", "debug.key", "debug.release", "debug.move",
     ]
 
     static func handle(_ method: String, _ params: UmiParams, caller: UmiCaller) async throws -> [String: Any] {
         switch method {
-        case "tab.back":
-            guard let (window, tab) = UmiNavigation.tabBack() else {
-                throw UmiError.notFound("there's no earlier tab to go back to")
-            }
-            return tabResult(tab, in: window)
-
         case "tab.next", "tab.prev":
             let window = try UmiTopology.window(params.string("window"), caller: caller)
             guard window.tabs.count > 1 else { throw UmiError.notFound("the window has only one tab") }
@@ -76,7 +70,6 @@ enum UmiNavigationRPC {
             return [
                 "history": UmiTabHistory.recentFirst.map(\.idString),
                 "focus_history": UmiFocusHistory.recentFirst.map(\.umiID),
-                "can_go_back": UmiTabHistory.canGoBack,
                 "can_walk_back": UmiGo.canGoBack, "walks": UmiGo.state,
                 "key_monitor": UmiShortcuts.monitorInstalled,
                 "app_active": NSApp.isActive,
@@ -149,7 +142,11 @@ enum UmiNavigationRPC {
                 throw UmiError.failed("couldn't make the key event")
             }
             // `hold`: ⌘ stays held after the key (a ⌘[ ⌘] walk goes on) until `debug.release`.
-            if params.bool("hold") == true { UmiPaneWalk.debugHold = true }
+            // (and ⌃⌘ for a keyboard move).
+            if params.bool("hold") == true {
+                UmiPaneWalk.debugHold = true
+                UmiPaneMove.debugHold = true
+            }
             let handled = UmiShortcuts.dispatch(event)
             if !handled {
                 // With focus kept, straight to the window: its first responder gets the key even
@@ -162,7 +159,14 @@ enum UmiNavigationRPC {
         case "debug.release":
             // Letting go of ⌘ after `debug.key` with `hold`: the ⌘[ ⌘] walk lands.
             UmiPaneWalk.release()
+            UmiPaneMove.release()
             return ["ok": true]
+
+        case "debug.move":
+            // The keyboard move going on (UmiPaneMove): its pane, source, target, spot, the panes
+            // its landing would hide, and what each sidebar row lists.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            return UmiPaneMove.debugState(in: window)
 
         default:
             throw UmiError.badRequest("unknown method \(method)")

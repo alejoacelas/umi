@@ -1059,7 +1059,7 @@ func tabCommand(_ argv: [String]) {
         if let tab = args.positional.first { params["tab"] = tab }
         let method = sub == "select" ? "focus" : sub
         printOK(call("tab.\(method)", params))
-    case "back", "next", "prev", "previous":
+    case "next", "prev", "previous":
         let args = parse(rest, ArgSpec(valued: ["--window"], aliases: ["-w": "--window"]))
         guard args.positional.isEmpty else { fail("tab \(sub) takes no tab: it goes from the selected one") }
         var params: [String: Any] = [:]

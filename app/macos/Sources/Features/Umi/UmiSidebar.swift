@@ -17,6 +17,7 @@ struct UmiSidebar: View {
     @ObservedObject private var attention = UmiAttention.shared
     @ObservedObject private var updater = UmiUpdater.shared
     @ObservedObject private var hints = UmiTabHints.shared
+    @ObservedObject private var move = UmiPaneMoveDisplay.shared
     /// Periodic refresh for things nothing publishes (running command, branch).
     @State private var tick = 0
     @State private var listDropTargeted = false
@@ -30,8 +31,9 @@ struct UmiSidebar: View {
             UmiSidebarHeader(controller: controller, model: controller.sidebarModel)
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: state.sidebarMode == .tabs ? 4 : 1) {
-                    switch state.sidebarMode {
+                VStack(alignment: .leading, spacing: state.sidebarMode == .tabs || moving ? 4 : 1) {
+                    // A keyboard move shows the tabs whatever the sidebar showed (UmiPaneMove).
+                    switch moving ? .tabs : state.sidebarMode {
                     case .tabs: tabsList
                     case .files: UmiFileTreeView(model: UmiFileTreeModel.model(for: controller))
                     case .search: UmiGlobalSearchView(model: UmiGlobalSearchModel.model(for: controller))
@@ -69,6 +71,8 @@ struct UmiSidebar: View {
 
     // MARK: Tabs
 
+    private var moving: Bool { move.info(for: controller) != nil }
+
     @ViewBuilder
     private var tabsList: some View {
         let _ = state.revision
@@ -91,6 +95,10 @@ struct UmiSidebar: View {
                 UmiTabGroupBox(controller: controller, group: group, model: controller.sidebarModel,
                                members: members, tick: tick)
             }
+        }
+        // A keyboard move's last target, while the pane isn't over it.
+        if let info = move.info(for: controller), info.offersNewTab, !info.newTab {
+            UmiMoveNewTabRow()
         }
         // Where a drop below the rows lands.
         UmiInsertionLine().opacity(listDropTargeted ? 1 : 0)
@@ -394,6 +402,7 @@ struct UmiSidebarTabRow: View {
     @ObservedObject private var state = UmiState.shared
     @ObservedObject private var attention = UmiAttention.shared
     @ObservedObject private var indicator = UmiIndicator.shared
+    @ObservedObject private var move = UmiPaneMoveDisplay.shared
     @State private var hovering = false
     @State private var dropZone: UmiSidebarDrop.Zone?
     @State private var draftName = ""
@@ -501,17 +510,25 @@ struct UmiSidebarTabRow: View {
 
                 // Line 2: the agent's title, or what the focused pane is doing.
                 detail(row)
+
+                // During a keyboard move: the tab's panes with their indicators (UmiPaneMove).
+                if let info = move.info(for: controller) {
+                    UmiMoveRowPanes(entries: UmiPaneMoveDisplay.entries(of: tab, in: controller, info: info))
+                }
             }
         }
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(background(row))
+                .fill(moveTarget ? UmiMoveRowPanes.moving.opacity(0.09) : background(row))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .strokeBorder(row.selected ? UmiTheme.overlay3 : .clear, lineWidth: 1)
+                .strokeBorder(moveTarget ? UmiMoveRowPanes.moving.opacity(0.4)
+                              : (row.selected && !moving ? UmiTheme.overlay3 : .clear), lineWidth: 1)
         )
+        // The tab the pane is leaving, dimmed while it is over another.
+        .opacity(moveSource ? 0.5 : 1)
         // Warp's pin: a 16 pt diagonal pin 6 pt inside the top-right corner, hidden on hover
         // (and while ⌘ shows the tab keys there).
         .overlay(alignment: .topTrailing) {
@@ -549,14 +566,28 @@ struct UmiSidebarTabRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.title)
         // Umi: the link mark, which the combined row element would otherwise hide (L-32).
-        .accessibilityValue(UmiInputSync.shared.isSynced(tab, in: controller)
-                            ? "Synchronized input · " + row.accessibilityValue : row.accessibilityValue)
+        .accessibilityValue((UmiInputSync.shared.isSynced(tab, in: controller)
+                             ? "Synchronized input · " + row.accessibilityValue : row.accessibilityValue) + moveAccessibility)
         .accessibilityAddTraits(row.selected ? [.isSelected, .isButton] : .isButton)
         .onAppear { if renaming != nil { startEditing() } }
         .onChange(of: renaming) { target in if target != nil { startEditing() } }
     }
 
     // MARK: Pieces
+
+    private var moving: Bool { move.info(for: controller) != nil }
+    /// During a keyboard move: whether the pane is over this row, and the panes it lists.
+    private var moveAccessibility: String {
+        guard let info = move.info(for: controller) else { return "" }
+        let entries = UmiPaneMoveDisplay.entries(of: tab, in: controller, info: info)
+        let panes = entries.map { $0.label + $0.suffix + ($0.place == .moving ? " · moving here" : "") }.joined(separator: ", ")
+        return (moveTarget ? " · moving here" : (moveSource ? " · moving from" : "")) + " · panes: " + panes
+    }
+    private var moveTarget: Bool { move.info(for: controller)?.target === tab }
+    private var moveSource: Bool {
+        guard let info = move.info(for: controller) else { return false }
+        return info.source === tab && info.target !== tab
+    }
 
     /// Warp's backgrounds: a tab color at 15% (50% selected or hovered); otherwise 10% selected
     /// and 5% hovered, over the panel's 5% (and a group's box, which carries the group's color).
@@ -565,7 +596,7 @@ struct UmiSidebarTabRow: View {
         if let color = tab.color.displayColor {
             return Color(color).opacity(lit ? 0.5 : 0.15)
         }
-        if row.selected { return UmiTheme.overlay2 }
+        if row.selected && !moving { return UmiTheme.overlay2 }
         return hovering || dropZone == .into ? UmiTheme.overlay1 : .clear
     }
 
