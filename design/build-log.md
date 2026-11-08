@@ -472,3 +472,50 @@ was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI tests were 
     `UmiCause`, `TerminalWindow.sendEvent` (marked Umi).
 17. `focusPane` now sets the tab's focused pane before selecting the tab (found by the trial; it
     cleared a neighbour's unseen state). Where: `UmiLayout.focusPane`.
+
+
+## Step 4: hidden panes and the pane strip
+
+**Status:** built on `design/step4-hidden-panes-strip`, ready for review. The UI tests didn't run:
+mac-air-2's screen was locked for every run (see "Not verified"). They are written and need one run
+on an unlocked screen before merging.
+
+**What changed**
+
+- Hidden panes replace stacks (`UmiHiddenPanes.swift`; `UmiPaneStacks.swift` is gone). A hidden pane
+  leaves its tab's split tree, stays in the tab (`UmiTab.hidden`, in strip order) and keeps running.
+  `pane hide [PANE] [--until CONDITION]…`, `pane show [PANE] [--focus]`, `pane until [PANE]`; Window ▸
+  Hide Pane; palette entries Hide Pane, Hide Pane Until…, Show Hidden Pane….
+- The three-pane limit: every tree change of a tab reaches `UmiHidden.treeDidChange` (from
+  `TerminalController.setTree` and `surfaceTreeDidChange`), so whatever adds a pane to a tab at its
+  `visible_limit` (Ghostty's own splits and drops included) hides the pane `strip.make-room` picks,
+  never one that arrived. `split`, `pane focus`, `pane move` and `edit` report `hid`. Lowering
+  `visible_limit` hides at once. `pane focus`, `go` and the palette bring a hidden pane in at the
+  right end.
+- `--until`: a query about the pane or a duration, checked on every `pane.changed` of the pane, at
+  the duration's moment and once a minute; shown without focus, `by_condition`, cause `config`,
+  `unseen` until looked at; saved with the layout.
+- The pane strip in the title bar band above the panes (`UmiPaneStrip`): a chip per pane, on show in
+  layout order then hidden ones dim and italic, the focused one filled, file chips with their type
+  icon and unsaved dot. A chip is a `SurfaceDragSource` (Ghostty's drag source gained a click that
+  isn't a drag): click shows or focuses, drag moves the pane (a hidden one too: drops on pane edges,
+  sidebar rows, the previous/next-tab targets, outside the window).
+- ⌘[ ⌘] (`UmiPaneWalk`): walk the strip; a hidden pane is brought in at the right end (⌘]) or left
+  end (⌘[); stepping on restores the layout first; releasing ⌘ (or any other key or click) lands it,
+  and only the landing is reported. A menu click lands at once. `debug.key` takes `hold`, and
+  `debug.release` lets go, so the suite can walk on a locked screen.
+- Removed: stacks and the "Stack here" drop zone, `pane.stacked`, the `stack`/`shown` pane fields,
+  the tab's `docs` field (layout.json no longer writes it; it still reads it), E-9's new-tab rule
+  (files open right of the calling pane in its own tab), the file and web headers' grips, Ghostty's
+  hover grab handle. The Docs tab is an ordinary tab (`role=docs`): Markdown from outside opens at its
+  right end under the same limit.
+- Closing the last pane on show of a tab with hidden panes brings in the hidden one used most
+  recently, so the tab stays.
+- Pane JSON: `hidden` is real; tab JSON gained `visible_limit` and `strip`; `editor ls` documents
+  gained `hidden`; `changed_at` covers hiding and showing.
+- Launch configurations save hidden terminal panes as `is_hidden: true` and open panes marked so,
+  and those past three, hidden. Hidden panes and their conditions come back after a restart; undo of
+  a move restores hidden lists (`UmiSnapshot`).
+- SPEC: new section H (H-1 to H-8, fixed tier); M-7 removed; L-9, L-18, M-4, E-1, E-9, E-10, E-12,
+  E-24 reworded. CLI.md took design/cli.md's "Hidden panes" and the `hid`, `visible_limit` and
+  `strip` fields. CHECKS.md: M-4/H-8 and H-5/H-6 checks. TEST_CHANGES.md lists every test change.

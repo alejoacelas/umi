@@ -1370,3 +1370,17 @@ centre zone, passes again unchanged.
   of stacked; still checks the page doesn't load again.
 - `test_pane_data.py::test_the_docs_tab_is_the_tab_with_role_docs`: the tab's `docs` field is gone
   (design/cli.md, "Removed"); it checks `role=docs` and its single holder instead.
+- `test_umi_panes_ui.py`: `test_splits_along_a_row_share_it_equally`,
+  `test_moves_and_drops_share_rows_equally`, `test_the_split_menu_items_share_equally`,
+  `test_a_dragged_divider_shares_each_side_equally_and_double_click_equalizes_its_row`,
+  `test_panes_sized_by_hand_keep_their_size_and_the_others_share` and
+  `test_a_dragged_middle_divider_shares_both_sides` check how four or more panes share a row (L-19);
+  with the three-pane limit (H-1) a fourth pane would hide one, so each first raises its tab's
+  `visible_limit` (`room_for`). The shares they check are unchanged.
+- `test_umi_layouts.py::test_save_captures_every_window_merges_rows_and_leaves_out_file_panes`: its
+  first tab has four places on show; it raises that tab's `visible_limit` to 4 first, for the same
+  reason. What it saves and checks is unchanged.
+- `test_umi_blocks.py` (`Shot.ink_rows`, used by `test_the_prompt_sits_at_the_bottom_from_the_start`
+  and one more): "rows of the terminal area" now start below the title bar band, which holds the
+  pane strip's chips (H-5); before, the band was empty, so counting from the window's top measured
+  the same thing. The thresholds are unchanged.
