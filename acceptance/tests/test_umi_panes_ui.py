@@ -244,10 +244,10 @@ def test_a_dragged_middle_divider_leaves_the_other_panes_alone(inst, win):
     b = split(inst, "right", a)
     c = split(inst, "right", b)
     d = split(inst, "right", c)
-    # The divider between b and c (its split holds b, c and d, the last 3/4 of the row) to 45%:
-    # only b and c change.
-    rpc(inst, "debug.ui.split.divider", pane=b, action="move", ratio=(0.45 - 0.25) / 0.75)
-    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([25, 20, 30, 25], abs=0.3)
+    # The divider between b and c (its split holds b, c and d, the last 3/4 of the row) to 47%:
+    # only b and c change (b stays above Warp's 190-point minimum in the suite's window).
+    rpc(inst, "debug.ui.split.divider", pane=b, action="move", ratio=(0.47 - 0.25) / 0.75)
+    assert shares(inst, win["tab"], [a, b, c, d]) == pytest.approx([25, 22, 28, 25], abs=0.3)
 
 
 @pytest.mark.req("L-19")

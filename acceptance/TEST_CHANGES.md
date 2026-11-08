@@ -1449,7 +1449,8 @@ clears "shown, not seen" redraws the marks).
   also checks that a split afterwards shares in proportion. The column's 70/30 and the double-click
   checks are unchanged.
 - `test_umi_panes_ui.py::test_a_dragged_middle_divider_shares_both_sides` became
-  `…_leaves_the_other_panes_alone` (25/20/30/25: only the two neighbours change).
+  `…_leaves_the_other_panes_alone` (25/22/28/25: only the two neighbours change; the drag is short
+  because the suite's window is about 930 points wide and a pane stops at 190).
 - `test_umi_panes_ui.py::test_a_file_pane_shares_its_row_like_any_pane`: the drag goes to 40% and
   expects 40/26.7/33.3 (the neighbours only); at 50% the middle pane would go below 190 points in the
   suite's window and the drag would stop.
