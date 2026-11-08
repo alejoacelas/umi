@@ -206,6 +206,7 @@ enum UmiLayout {
     /// Show a pane's tab and give the pane keyboard focus, bringing its window forward. A hidden
     /// pane is brought in first, at the right end of its tab (its tab makes room).
     static func focusPane(_ pane: Ghostty.SurfaceView, activate: Bool) {
+        focusRequests &+= 1
         guard var location = UmiTopology.locate(pane) else { return }
         if location.tab.isHidden(pane) {
             _ = try? UmiHidden.show(pane, focus: false)
@@ -232,6 +233,10 @@ enum UmiLayout {
         UmiEvents.shared.emit("pane.focused", ["pane": pane.umiID, "tab": location.tab.idString, "window": window.umiIDString])
         UmiState.shared.layoutDidChange()
     }
+
+    /// Counts `focusPane` calls, so a pane that took the keyboard can tell whether another was
+    /// asked for since (a file pane hands its focus to its editor just after).
+    static private(set) var focusRequests = 0
 
     static func focusTab(_ tab: UmiTab, in window: TerminalController) {
         window.selectTab(tab, focus: true)
