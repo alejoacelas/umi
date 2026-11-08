@@ -785,3 +785,147 @@ uncommitted `app/dist/signing.sh` edit as step 4 (`~/umi-test-design-step5-{buil
 8. On a light theme the lift does nearly nothing (white over white); untried.
 9. "Nothing for a pane with no agent" (attention-ui.md open point 1) is kept: a long-running command
    or an unsaved file shows no mark.
+
+
+## Step 6: moving panes and tabs
+
+**Status:** built on `design/step6-moving` (from `design/step5-pane-indicator`, which is on step 4;
+neither is in main yet), ready for review. The UI tests didn't run: mac-air-2's screen was locked
+for every run (see "Not verified"). They are written and need one run on an unlocked screen.
+
+**What changed**
+
+- Keyboard moves (`UmiPaneMove.swift`): hold ⌃⌘ and press an arrow. ←/→ move the focused pane one
+  place among the panes on show of the tab it is over; ↑/↓ carry it to the tab above or below in
+  sidebar order, wrapping, its own tab included and a new tab last. Letting go of ⌃⌘ (or any other
+  key, or a click) lands it; Esc cancels; ⌘Z undoes the landed move. Window ▸ Move Pane has the four
+  items (Move Pane Left / Right / to Tab Above / to Tab Below, ids `pane.move_left|right|up|down`);
+  from the menu, or without ⌃⌘ held, a step lands at once.
+- The preview is the real layout: each step puts the window back as it was and makes the move with
+  `UmiLayout.move`, with events muted (`UmiEvents.muted`, new), hiding and showing quiet and undo
+  registration off; landing puts the window back and makes the same move for real, so it lands
+  exactly as shown, reported once (`pane.moved`, and `pane.hidden` for a pane hidden to make room)
+  and undoable. A refill during a quiet step no longer reports a `pane.shown` later.
+- The sidebar during a move (`UmiSidebar`, `UmiMoveRowPanes`): it comes out even when hidden, shows
+  the tabs whatever view it was in, and every row lists its tab's panes with their indicators (on
+  show in layout order, the moving pane in the prototype's cyan, a pane the landing would hide struck
+  through "→ hidden", hidden ones in italics "· hidden"). The target row is outlined in cyan, the
+  source row dimmed; a "New tab" row stands at the end until the pane is over it. Rows' accessibility
+  values list their panes and say "moving here" / "moving from". A collapsed tab group opens while
+  the pane is over one of its tabs.
+- ⌃⇧↑ / ⌃⇧↓ move tabs (were ⌃⇧← / ⌃⇧→); Ghostty's `jump_to_prompt` on those keys is unbound (⇧⌘↑/↓
+  still jump).
+- ⇧⌘[ is Warp's previous tab in sidebar order (Window ▸ Show Previous Tab, id `tab.previous`).
+  `tab back`, the RPC `tab.back` and the walk back through the tabs visited are gone
+  (design/cli.md choice 11); `UmiTabHistory` stays only for the palette's recent tabs.
+- Keyboard resizing of splits is gone: ⌃⌘↑/↓ unbound like ⌃⌘←/→, Ghostty's Move Divider menu items
+  hidden. ⌃⌘←/→ no longer move the pane to the previous or next tab. `pane resize` stays (CLI only).
+- L-19's hand-placed divider rules are gone (`SplitTree`): a dragged divider changes only the two
+  panes beside it, as in Warp; splits and closes still share space equally / in proportion. The
+  `placed` flag, `splitRowDrag` and the unused trailing-panel code went; layouts saved with `placed`
+  still load.
+- Step 5's review finding: `UmiAttention.looked(atPane:)` now bumps `revision` whenever what makes the
+  pane unseen changes (its agent's change or its coming back on show), not only when the agent's mark
+  changes, so a look from app activation or a window becoming key redraws the overlay, chips and rows.
+- `debug.move` reports the move going on (pane, source, target, spot, `hid`, each row's pane list);
+  `debug.key` with `hold` also holds ⌃⌘ and `debug.release` lands; `debug.menu` names ↑/↓.
+- SPEC: new section KM (KM-1 to KM-5, fixed tier); L-9, L-11, L-13, L-19 and M-4 reworded. CLI.md:
+  `tab back` removed, keys named on `tab next|prev`, `tab move --up|--down` and `pane resize`.
+  CHECKS.md: L-9 and a KM-3 check. TEST_CHANGES.md lists every added, changed and removed test.
+
+**Verified, and how**
+
+All runs are on mac-air-2, in `~/umi-test-design-step6`, under `lockf -k ~/umi-screen.lock`. The
+screen was locked for every run (`CGSSessionScreenIsLocked` true), so every UI test was skipped.
+Builds pass `CODE_SIGN_IDENTITY=-` to xcodebuild; the suite and Swift runs use the same local,
+uncommitted `app/dist/signing.sh` edit as steps 4 and 5 (`~/umi-test-design-step6-{build,suite,swift}.sh`).
+
+- Dev copy (the Debug build, started as `app/dist/dev.sh` starts it, with its own state and config),
+  driven by `~/umi-test-design-step6-trial.py`: 31 of 31 checks read back at `4691af90b`
+  (`~/umi-test-design-step6-trial.log`), and again with the Debug build of `419963633` (the app code of the final head; `~/umi-test-design-step6-trial2.log`);
+  screenshots in `~/umi-test-design-step6-shots`. Keys went through `debug.key` (⌃⌘ held with `hold`,
+  let go with `debug.release`), read back with `debug.move`, `ls --json` and `log`. Tried: ⌃⌘→ from
+  the middle pane (target its own tab, spot 2, sidebar out, the layout alpha gamma beta, rows listing
+  panes with the moving one marked, no `pane.moved` yet); → at the end staying; ← ← to the first
+  place; ⌃⌘↓ over a two-pane tab (shown, the pane at its right end, source row marked); ⌃⌘↓ over a
+  full tab (one pane hidden in the preview and listed as hiding,
+  `3-move-over-C-full.png`); ← then letting go (landed as shown, one `pane.moved` caused by the key
+  `ctrl+cmd+right`, one `pane.hidden`, the sidebar hidden again); Edit ▸ Undo (both back); Esc after
+  two steps (everything as it was, focus on the pane, no move); ⌃⌘↑ from the first tab wrapping to the
+  new tab and landing there (a tab of its own, last); ⌃⌘← without `hold` and Window ▸ Move Pane ▸ Move
+  Pane Right (each lands at once); a lone pane (no new-tab target); a collapsed group opening while
+  the pane is over its tab and closing after; ⌃⇧↑ / ⌃⇧↓ moving the tab; ⇧⌘[ / ⇧⌘] in sidebar order;
+  `tab back` failing ("unknown subcommand back") and gone from `help`; `shortcuts` listing the four
+  move items and no Ghostty `resize_split` key; `pane resize` still working.
+- Acceptance suite, ReleaseLocal, full run at `49d25dfbe` (`~/umi-test-design-step6-suite-full.log`):
+  398 passed, 7 failed, 93 skipped (UI tests: the locked screen). The 7 failures are the base
+  failures below. `test_moving_panes.py`: 13 passed, 2 UI skipped. The first full run, at `20d1aca24` (its log was overwritten by the rerun below), gave
+  398 passed, 7 failed, 93 skipped: six of the base failures below and
+  `test_a_dragged_middle_divider_leaves_the_other_panes_alone`, whose drag to 45% stopped at the
+  190-point minimum in the suite's ~930-point window (the product right, the numbers wrong); with the
+  drag at 47% it passes (`~/umi-test-design-step6-suite-rerun.log`: `test_umi_panes_ui.py` and
+  `test_moving_panes.py`, 49 passed, 7 UI skipped).
+- The base failures (`test_builds_from_a_path_with_spaces`,
+  `test_shift_cmd_f_leaves_a_terminal_search_open`, and five synchronized-input, pane-menu and zoom
+  tests in `test_umi_warp_panes.py`; `test_option_command_i_types_into_every_pane_of_the_tab` failed
+  in the second full run and passed in the first) are the ones steps 1 to 5 list; step 5 ran all
+  seven on main's app code and they failed there too (`~/umi-test-design-step5-base.log`). None
+  touches what this step changed.
+- Swift unit tests at `20d1aca24` (`~/umi-test-design-step6-swift.log`): 428 passed, 1 skipped (a
+  benchmark), none failed; among them the new `UmiIndicatorTests/aLookAtAPaneShownSinceBumpsTheRevision`
+  and the rewritten `SplitTreeTests`.
+
+**Found on the way (not fixed, pre-existing):** with the sidebar hidden, a closed pane's shell keeps
+running after its 60 s reopen period ends. It showed when this step's tests hid the sidebar of the
+shared instance (new windows then start without one) and
+`test_closed_items_expire_after_60_seconds_and_their_programs_end` ran later. A minimal test (a window
+with the sidebar off, a pane split, closed, waited out) fails the same way on step 5's build and on
+main's app code (`71e39f857`, in `~/umi-test-design-step3`); with the sidebar on it passes. Something
+in the sidebar-hidden layout holds closed panes; not looked into further. The step's tests now show
+the sidebar again afterwards. The check is kept at `~/umi-test-design-step6-leak-check.py`. (That run
+on main's code overwrote `~/umi-test-design-step3-suite.log` on mac-air-2.)
+
+**Not verified**
+
+- Every UI test (skipped: the locked screen). This step's two, for the orchestrator to run on an
+  unlocked screen: `test_moving_panes.py::test_real_ctrl_cmd_arrows_move_and_land_on_release_ui` (real
+  ⌃ and ⌘ held, ↓ and ←, landing on letting go, Esc while held) and
+  `::test_the_rows_list_their_panes_to_accessibility_during_a_move_ui`; the changed
+  `test_umi_nav.py::test_jump_and_move_tab_keys`, `test_umi_sidebar_warp.py::test_move_tab_keys_keep_groups_whole_ui`
+  and `test_layout.py::test_shortcuts_are_menu_items`. So real ⌃⌘ released (the `flagsChanged` path),
+  a real click landing a move, and how the sidebar's lists look to a person were never seen; the
+  screenshots come from `<cli> screenshot`, which draws the real views.
+- Steps 4 and 5's unrun UI tests still stand.
+- The step 5 fix is checked by the Swift test (the revision bumps on a look that clears "shown, not
+  seen"); a real app activation redrawing the overlay needs an unlocked screen.
+- CHECKS.md items KM-3 and the new L-9 lines (by hand).
+
+**Choices for Alejo to check**
+
+1. Landing follows the pane: it keeps keyboard focus in its new tab, which stays shown. The
+   prototype offered Enter (stay) and ⇧Enter (follow); the design lands on letting go of ⌃⌘, with
+   no second key. Where: `UmiPaneMove.land`.
+2. Over another tab the pane starts at the right end (the prototype started at the first place),
+   matching where Umi brings panes in elsewhere; back over its own tab it starts where it was.
+3. Places count among the panes on show without the one the landing would hide, so every ← / →
+   visibly moves the pane; a place is "left of the first" or "right of pane k" in layout order, so in
+   a tab with a column the pane is split in beside that pane rather than added as a new column.
+4. ↑/↓ wrap around (as the prototype), and the targets are only the window's tabs, not other windows.
+5. The new tab isn't offered to a pane alone in its tab (it would only move the tab to the end); a
+   new tab made by a move goes last in the window.
+6. The preview is the landed layout itself: the pane the landing would hide is hidden (the strip
+   shows it hidden, its row strikes it through), where the prototype kept it as a narrow ghost.
+7. Any other key or a click lands the move, as with the ⌘[ ⌘] walk; only Esc cancels.
+8. Colours: the moving pane's name and the target row's outline use the prototype's cyan
+   (`#3ad1e0`), though step 5 took the cyan focus line out; the source row is at 50%.
+9. The sidebar shows the tabs view during the move even when Files or Search was showing, and goes
+   back after. A sidebar search query still filters the rows (a hidden row is still a target).
+10. A collapsed group opens while the pane is over one of its tabs, closes when it moves on or the
+    move is cancelled, and stays open when the pane lands in it.
+11. Ghostty's Move Divider menu items are hidden; `pane resize` stays. ⌃⇧↑/↓ took the keys of
+    Ghostty's jump to prompt (⇧⌘↑/↓ still jump).
+12. Menu ids changed: `tab.back` is now `tab.previous` (Show Previous Tab), and
+    `pane.move_previous_tab` / `pane.move_next_tab` are replaced by `pane.move_left|right|up|down`.
+    A user's `shortcuts.json` entries for the old ids no longer apply.
+13. A dragged divider changes only its two neighbours (Warp); double-click equalizes its row and
+    ⌃⌘= the whole tab, as before. Layouts saved with the old `placed` flags still load.
