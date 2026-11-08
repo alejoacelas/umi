@@ -231,6 +231,26 @@ def test_closing_the_last_pane_on_show_brings_a_hidden_one_in(inst, win):
     wait_until(lambda: left not in [p["id"] for p in tab_of(inst, win["tab"])["panes"]], 10, message="it left")
 
 
+@pytest.mark.req("H-2")
+def test_closing_a_tab_asks_first_when_a_hidden_pane_runs_a_program(inst, win):
+    p, t = new_tab(inst, win)
+    q = split(inst, "right", p, "--no-focus")
+    ready(inst, p, q)
+    inst.cli("send", "--pane", q, "-e", "sleep 100")
+    time.sleep(1.5)
+    inst.cli("pane", "hide", q)
+    assert hidden(inst, t) == [q]
+    rpc(inst, "debug.ui.menu.perform", tab=t, title="Close tab")
+    sheet = wait_until(lambda: (lambda s: s if s["sheet"] else None)(rpc(inst, "debug.ui.sheet", window=win["window"])), 5,
+                       message="a confirmation")
+    assert any("Close" in text for text in sheet["texts"]), sheet
+    assert tab_of(inst, t) is not None, "the tab closed without asking"
+    rpc(inst, "debug.ui.sheet", window=win["window"], action="cancel")
+    wait_until(lambda: not rpc(inst, "debug.ui.sheet", window=win["window"])["sheet"], 5, message="the dialog dismissed")
+    time.sleep(0.5)
+    assert hidden(inst, t) == [q], "Cancel closed the tab"
+
+
 # ---- H-6: ⌘[ and ⌘] -------------------------------------------------------------------------------------
 
 def key(inst, win, keys, hold=False):
@@ -431,6 +451,48 @@ def test_real_cmd_brackets_walk_and_land_on_release_ui(inst, win, ui):
     assert shown(inst, win["tab"]) == landed
 
 
+@pytest.mark.req("H-6")
+def test_a_rebound_next_pane_key_walks_and_stepping_on_puts_the_layout_back_ui(inst, win, ui):
+    import Quartz
+    a, b, c = three(inst, win)
+    d = split(inst, "right", c, "--no-focus")
+    e = split(inst, "right", d, "--no-focus")
+    inst.cli("pane", "focus", a)
+    start_shown = shown(inst, win["tab"])
+    order = start_shown + hidden(inst, win["tab"])
+    assert len(order) == 5
+    cmd, ctrl = Quartz.kCGEventFlagMaskCommand, Quartz.kCGEventFlagMaskControl
+
+    def post(code, down, flags):
+        event = Quartz.CGEventCreateKeyboardEvent(None, code, down)
+        Quartz.CGEventSetFlags(event, flags)
+        Quartz.CGEventPostToPid(ui.pid, event)
+        time.sleep(0.15)
+
+    try:
+        inst.cli("shortcuts", "set", "pane.stack_next", "ctrl+cmd+]")
+        inst.cli("window", "focus", win["window"])
+        ui.activate()
+        post(55, True, cmd)              # ⌘ down
+        post(59, True, cmd | ctrl)       # ⌃ down
+        for _ in range(3):
+            post(30, True, cmd | ctrl)   # ]
+            post(30, False, cmd | ctrl)
+        wait_until(lambda: inst.tree()["current_pane"] == order[3], 5, message="walked onto the first hidden pane")
+        # One more step, still held: the first hidden pane goes back and the next one comes in.
+        post(30, True, cmd | ctrl)
+        post(30, False, cmd | ctrl)
+        wait_until(lambda: inst.tree()["current_pane"] == order[4], 5, message="walked onto the second hidden pane")
+        assert order[3] in hidden(inst, win["tab"]), "stepping on didn't put the layout back"
+        assert shown(inst, win["tab"])[:2] == start_shown[:2]
+        post(59, False, cmd)
+        post(55, False, 0)               # ⌘ up: lands
+        time.sleep(0.5)
+        assert shown(inst, win["tab"])[-1] == order[4]
+    finally:
+        inst.cli("shortcuts", "reset", "pane.stack_next")
+
+
 @pytest.mark.req("H-8", "M-4")
 def test_a_chip_dragged_onto_a_pane_edge_moves_its_pane_there_ui(inst, win, ui):
     a, b, c = three(inst, win)
@@ -446,6 +508,30 @@ def test_a_chip_dragged_onto_a_pane_edge_moves_its_pane_there_ui(inst, win, ui):
     _mouse_drag((x + w / 2, y + h / 2), (px + 12, py + ph / 2))
     wait_until(lambda: shown(inst, win["tab"])[0] == c, 5, message="dropped on a's left edge")
     assert c not in hidden(inst, win["tab"])
+
+
+@pytest.mark.req("H-8", "M-4")
+def test_a_hidden_chip_dragged_out_of_the_window_gets_a_window_of_its_own_ui(inst, win, ui):
+    from test_umi_panes_ui import _screen_point_outside, _window_of
+    a, b, c = three(inst, win)
+    inst.cli("pane", "rename", c, "chip-out")
+    inst.cli("pane", "hide", c)
+    inst.cli("window", "focus", win["window"])
+    ui.activate()
+    chip = next(e for e in strip_chips(ui) if ui.label(e) == "chip-out")
+    x, y, w, h = _frame(ui, chip)
+    end = _screen_point_outside(_frame(ui, _window_of(ui, chip)))
+    if end is None:
+        pytest.skip("the window covers the screen; no room to drop outside it")
+    before = {w["id"] for w in inst.tree()["windows"]}
+    _mouse_drag((x + w / 2, y + h / 2), end)
+
+    def new_window_with_c():
+        for w in inst.tree()["windows"]:
+            if w["id"] not in before and [p["id"] for t in w["tabs"] for p in t["panes"]] == [c]:
+                return w
+    wait_until(new_window_with_c, 5, message="a new window holding the hidden pane")
+    assert shown(inst, win["tab"]) == [a, b] and c not in hidden(inst, win["tab"])
 
 
 def _click(point):
