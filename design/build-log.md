@@ -1013,6 +1013,39 @@ on main's code overwrote `~/umi-test-design-step3-suite.log` on mac-air-2.)
 13. A dragged divider changes only its two neighbours (Warp); double-click equalizes its row and
     ⌃⌘= the whole tab, as before. Layouts saved with the old `placed` flags still load.
 
+### After the UI tests ran (2026-11-08)
+
+`design/step7-drawer` (which holds this step) was merged with main once steps 4 and 5 had their UI
+tests fixed (`7f90eb4ae`). The merge kept main's fixes as they are: the clear title bar, chip drags
+that don't move the window, `UmiStripDrag`, chips observing `UmiState`, the Docs-tab focus hand-off
+and the tests' `_test_window`. One conflict in code: `UmiStripChip` now observes both
+`UmiPaneMoveDisplay` (step 7's cyan chip) and `UmiState` (main's names).
+
+The first full run with an unlocked screen (mac-air-2, ReleaseLocal at `7f90eb4ae`,
+`~/umi-final-step7.log`) passed every test of this step, the real-key ones included:
+`test_moving_panes.py` 20 passed (`test_real_ctrl_cmd_arrows_move_and_land_on_release_ui` and
+`test_the_rows_list_their_panes_to_accessibility_during_a_move_ui` among them),
+`test_umi_nav.py::test_jump_and_move_tab_keys`, `test_umi_sidebar_warp.py::test_move_tab_keys_keep_groups_whole_ui`
+and `test_layout.py::test_shortcuts_are_menu_items`. Nothing needed fixing, so no test changed.
+
+Watched on the live screen with real keys posted to a ReleaseLocal copy (its own state; script
+`~/umi-step7-look.py`, screenshots in `~/umi-step7-look/` on mac-air-2), three tabs (website: server,
+redesign, tests; impact-ops: docs, notes; billing), the sidebar hidden, tests focused:
+
+- ⌃⌘ held and ↓ (`1-move-down.png`): the sidebar came out, every row listing its tab's panes with
+  their marks (notes amber, docs's muted working dot), the target row impact-ops outlined in cyan
+  with tests in cyan at its end, the source row dimmed, a "New tab" row last. The window showed
+  impact-ops with tests at its right end, outlined in cyan with "moving here" at its bottom left,
+  and its strip chip cyan. This is move-literal.html option A, with the differences already logged
+  (choices 2 and 6).
+- ← put it between docs and notes; ↓ over billing, then over the new tab (a row of its own,
+  outlined; `4-move-new-tab.png`); ↑ ↑ back over impact-ops. Letting go of ⌃⌘ landed it there,
+  the marker and the sidebar went away (`5-landed.png`); ⌘Z put it back in website.
+- ⌃⇧↓ moved website below impact-ops, ⌃⇧↑ back. ⇧⌘] went website → impact-ops → billing, ⇧⌘[
+  back to impact-ops.
+
+**Final counts:** in step 7's "After the UI tests ran" (the same runs cover both steps).
+
 ## Step 7: the drawer
 
 **Status:** built on `design/step7-drawer` (from `design/step6-moving`, on steps 4 and 5; none of them
@@ -1238,6 +1271,42 @@ Choices for Alejo to check:
 14. With Reduce Motion on, the drawer appears and disappears without sliding (the prototype's
     `prefers-reduced-motion` rule). A slide reversed part way takes only that share of the 0.26 s.
 15. The suite's final run is at `36ea65334`. The build log commit after it changes no code.
+
+
+### After the UI tests ran (2026-11-08)
+
+The first full run with an unlocked screen, after merging main (`7f90eb4ae`, `~/umi-final-step7.log`):
+519 passed, 1 failed, 1 skipped. The failure is `test_builds_from_a_path_with_spaces` (fails on main
+too); the skip is `test_umi_warp_panes.py`'s three-panes-in-a-narrow-window check, as on main. Every
+step 7 test passed, the real-key and real-click ones too:
+`test_drawer.py::test_real_ctrl_cmd_m_and_the_drawers_buttons_ui` and
+`::test_real_clicks_on_a_chip_hide_and_the_waiting_line_ui` (16 passed in `test_drawer.py`). The five
+base failures in `test_umi_warp_panes.py` and the ⇧⌘F one that steps 6 and 7 listed, run with the
+locked screen, don't fail with it unlocked (main's last runs agree). Nothing needed fixing; no test
+changed.
+
+Watched on the live screen (same script and folder as step 6's part):
+
+- ⌃⌘M with a `role=manager` pane in another tab (`8-drawer-open.png`): the drawer rose over the lower
+  half of the panes at their full width, its header with the manager's chip and Dock, Hide and Put
+  away at the right, focus in it (the manager's prompt). ⌃⌘M again put it away and focus went back
+  to server, the pane focused before.
+- The slide, recorded as video (`slide-up.mov`, `slide-down.mov`, frames in `f-up/`, `f-down/`,
+  contact sheets `sheet-up.png`, `sheet-down.png`): it rises from the bottom edge in about 8 frames
+  at 30 fps (the 0.26 s) and goes down the same way, as a picture of itself. Rising, the header
+  arrives a frame or two before the terminal's text.
+- The waiting line (`11-waiting-line.png`): with the drawer put away and the manager set to needs
+  you, a thin amber line runs along the bottom of the panes with "manager · needs you" at its right
+  end. This is drawer.html option B, apart from the logged choices (7: the words instead of "D · H").
+
+**Final counts** (mac-air-2, unlocked screen, under the screen lock): see below.
+
+**Choice for Alejo to check**
+
+16. While the drawer has focus, the tab's own focused pane keeps its focus lift (it is a little
+    brighter), and the drawer's pane has none: seen on screen, it reads as though both are
+    focused, though only the drawer's prompt has a cursor. Left as built; the lift follows the tab's
+    focused pane (`UmiIndicator`).
 
 ## Releases
 
