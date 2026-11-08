@@ -286,6 +286,12 @@ enum UmiDrawer {
         let anchor = window.drawer.returnFocus.flatMap { tree.contains($0) ? $0 : nil }
             ?? (window.focusedSurface.flatMap { tree.contains($0) ? $0 : nil }) ?? tab.effectiveFocusedSurface
         release(pane, from: window)
+        // The tab's focused pane stays focused while the pane arrives (so `strip.make-room` spares it);
+        // the docked pane takes focus after.
+        if let anchor {
+            tab.focusedSurface = anchor
+            if tab === window.selectedTab { window.focusedSurface = anchor }
+        }
         var newTree: SplitTree<Ghostty.SurfaceView>
         if let anchor, let inserted = try? tree.inserting(view: pane, at: anchor, direction: .right) {
             newTree = SplitTree(root: inserted.root, zoomed: nil)
@@ -465,6 +471,17 @@ enum UmiDrawer {
                 out["first_responder"] = window.window?.firstResponder === pane
             }
             out["return_focus"] = drawer.returnFocus?.umiID ?? NSNull()
+            // Where the window's panes are (points, in the window's content view, origin bottom left),
+            // for checks of screenshots.
+            if let content = window.window?.contentView {
+                out["content"] = ["width": Double(content.bounds.width), "height": Double(content.bounds.height),
+                                  "flipped": content.isFlipped]
+                let frames = (window.surfaceTree.root?.leaves() ?? []).filter { $0.window === window.window }
+                    .map { $0.convert($0.bounds, to: content) }
+                if let first = frames.first {
+                    out["panes_area"] = UmiTopology.frameJSON(frames.dropFirst().reduce(first) { $0.union($1) })
+                }
+            }
             return out
         default:
             throw UmiError.badRequest("unknown method \(method)")

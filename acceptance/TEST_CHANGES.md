@@ -1472,3 +1472,28 @@ clears "shown, not seen" redraws the marks).
 - `test_umi_sidebar_warp.py::test_move_tab_keys_keep_groups_whole_ui`: ⌃⇧↓/↑ instead of ⌃⇧→/←.
 - `test_layout.py::SHORTCUTS` (L-9): ⌃⌘←/→/↑/↓ are the Move Pane items; ⇧⌘[ is the previous tab in
   sidebar order.
+
+## Design step 7: the drawer (2026-11-08)
+
+**Added.**
+- `test_drawer.py` (DR-1 to DR-5): `drawer show` moving a pane in and opening the drawer over the
+  lower half of the panes (read back from `ls`, `debug.drawer` and a screenshot of the drawer pane's red
+  rows); `drawer hide` and focus going back; a tab left empty closing and the window's only pane
+  refused; ⌃⌘M toggling the `role=manager` pane, its menu item and the other Window ▸ Drawer items;
+  ⌘] and `drawer next|prev` in the drawer; the waiting line (amber pixels along the bottom edge, its
+  label); `drawer dock` making room; `pane hide` putting a drawer pane back hidden; split, zoom, swap and
+  resize refused, `pane focus`, `go`, `pane move` and `pane close` on a drawer pane; a drawer pane whose
+  program ends; drawer panes coming back after a relaunch; and the UI test
+  `test_real_ctrl_cmd_m_and_the_drawers_buttons_ui` (real ⌃⌘M, typing, Put away and Dock).
+- `test_moving_panes.py` (KM-3, KM-4; design step 6's review):
+  `test_the_moving_pane_is_outlined_and_tagged_in_the_window` (cyan outline and "moving here" tag in a
+  screenshot, the chip's `moving`), `test_previews_leave_the_tab_and_focus_histories_alone`,
+  `test_the_move_lands_when_umi_or_the_window_loses_the_keyboard` (two cases, through
+  `debug.move`'s `simulate`), `test_the_pane_closing_mid_move_puts_the_rest_back`.
+- `test_umi_panes_ui.py::test_a_closed_panes_program_ends_after_60_seconds_with_the_sidebar_hidden`
+  (L-20): the bug design step 6 found; with the sidebar on, the existing test already passed.
+
+**Changed.**
+- `test_umi_nav.py::NAV_SHORTCUTS` and `test_layout.py::SHORTCUTS` (L-9): ⌃⌘M is Show or Hide
+  Manager. Nothing else in them changed.
+

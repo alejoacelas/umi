@@ -93,6 +93,7 @@ NAV_SHORTCUTS = {
     "Settings…": (",", ["cmd"]),
     "Jump to Next Pane Needing You": ("j", ["ctrl", "cmd"]),
     "Jump Back": ("k", ["ctrl", "cmd"]),
+    "Show or Hide Manager": ("m", ["ctrl", "cmd"]),
 }
 
 

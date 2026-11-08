@@ -448,6 +448,36 @@ def test_closed_items_expire_after_60_seconds_and_their_programs_end(inst, win):
     wait_until(ended, 20, message="the closed pane's shell ended once it couldn't come back")
 
 
+
+@pytest.mark.req("L-20")
+@pytest.mark.slow
+def test_a_closed_panes_program_ends_after_60_seconds_with_the_sidebar_hidden(inst, win):
+    """With the sidebar hidden nothing else updates the window's views; the closed pane's shell still
+    ends once it can't come back (found by design step 6)."""
+    inst.cli("sidebar", "off", "--window", win["window"])
+    try:
+        b = split(inst, "right", win["pane"])
+        inst.cli("send", "--pane", b, "-e", "echo SHELL-PID-$$")
+        out = inst.cli("wait", "--pane", b, "--pattern", r"^SHELL-PID-\d+", "--timeout", "10").stdout.strip()
+        pid = int(out.split("-")[-1])
+        inst.cli("pane", "close", b)
+        time.sleep(2)
+        os.kill(pid, 0)   # still running while it can be reopened
+        deadline = time.time() + 75
+        while time.time() < deadline and any(b in i["panes"] for i in inst.json("reopen", "--list")["items"]):
+            time.sleep(1)
+
+        def ended():
+            try:
+                os.kill(pid, 0)
+                return False
+            except ProcessLookupError:
+                return True
+        wait_until(ended, 20, message="the closed pane's shell ended once it couldn't come back")
+    finally:
+        # Hiding it also makes the shared instance's new windows start without one.
+        inst.cli("sidebar", "on", "--window", win["window"], check=False)
+
 # ---- S-3: rows (folder, then the agent's title; quiet marks) ------------------------------------
 
 def set_agent(inst, pane, kind="claude", title="", status="idle", mark="none"):

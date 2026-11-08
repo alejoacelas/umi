@@ -44,7 +44,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, PI-1 to PI-4, KM-1 to KM-5, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, PI-1 to PI-4, KM-1 to KM-5, DR-1 to DR-5, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
 
 ### Core: agents in panes
 These outcomes must hold every time, with both agents: the plugin's hooks report each agent's state
@@ -72,7 +72,8 @@ toasts), and the delivery phases that built them. Their IDs are not reused. Desi
 (2026-11-08) replaced the cyan focus line and S-3's brighter agent logo with the pane indicator
 (PI-1 to PI-4). Design step 6 (2026-11-08) replaced ⌃⌘←/→ "move the pane to the previous or next
 tab", keyboard resizing of splits and L-19's hand-placed divider rules with keyboard moves (KM-1 to
-KM-5), and ⇧⌘[ "back through the tabs visited" with Warp's previous tab (L-11).
+KM-5), and ⇧⌘[ "back through the tabs visited" with Warp's previous tab (L-11). Design step 7
+(2026-11-08) added the drawer (DR-1 to DR-5).
 
 ---------------------------------------------------------------------------------------------------
 
@@ -184,6 +185,7 @@ the menu.
   - ⌃⌘P pins or unpins the tab;
   - ⌃⌘R / ⌃⇧⌘R rename the tab or pane;
   - ⌃⌘J goes to the next pane whose agent needs the user, and ⌃⌘K goes back (L-12);
+  - ⌃⌘M shows and hides the manager pane in the drawer (DR-2);
   - ⌘[ and ⌘] walk the tab's panes, those on show then the hidden ones (H-6);
   - ⇧⌘T reopens the last closed pane, tab or window (L-20);
   - (Warp parity, 2026-11-05) ⌥⌘I and ⌥⇧⌘I synchronize input and stop it (L-32); ⌘= ⌘- ⌘0 zoom
@@ -527,13 +529,54 @@ lists every tab's panes during the move).
   row the pane comes from is dimmed; while the target is a new tab, it is a row of its own at the
   end, and otherwise a "New tab" row stands there. A collapsed tab group opens while the pane is
   over one of its tabs and closes again when it moves on. Rows say their panes to accessibility.
+  In the window, the moving pane is outlined in the accent colour with a "moving here" tag at its
+  bottom left, and its strip chip is drawn in the accent colour.
 - **KM-4 [A]** Letting go of ⌃⌘ (or any other key, or a click) lands the pane where it was shown:
   one `pane.moved` event (and `pane.hidden` for a pane hidden to make room), caused by the key; the
   previews before it report nothing. The pane keeps keyboard focus, in its new tab. Esc cancels:
   every tab as it was, the pane focused where it was, nothing reported. ⌘Z undoes a landed move
-  (M-3).
+  (M-3). The app going to the background or the window no longer being key lands the move too (⌃⌘
+  could be let go where the app doesn't see it). The pane closing mid-move ends the move with every
+  tab as it was, without the pane. The tabs and panes a preview passes over aren't recorded in the
+  recently-visited lists (L-15's order, L-18's focus order): only the landing is, and a cancelled move
+  leaves them as they were.
 - **KM-5 [A]** Landing on a new tab makes a tab of its own for the pane, last in the window. A
   pane landed back in its place moves nothing.
+
+## DR. The drawer
+
+From design/attention-ui.md ("The drawer") and prototypes/drawer.html (option B: a bottom drawer).
+
+- **DR-1 [A+W]** Each window has a drawer: it rises over the lower half of the window's panes, at
+  their full width, without changing the tab's layout, and belongs to the window (it stays open
+  across tab switches). Its header has a chip per drawer pane (its indicator and name; the one on
+  show highlighted, a click shows another) and Dock, Hide and Put away. `<cli> drawer show PANE`
+  moves the pane into the drawer and opens it there, focused: the pane leaves its tab (no strip chip,
+  no place among the tab's `visible_limit`), keeps running, and the tab's focus moves to its pane
+  used most recently; a tab left without panes closes; the window's only pane can't go (exit 1).
+  `drawer show` without a pane opens the drawer as it was; `drawer hide` closes it, its panes keep
+  running, and focus returns to the pane focused before it opened; `drawer toggle [PANE]` shows when
+  closed or showing another pane, else hides.
+- **DR-2 [A]** ⌃⌘M runs `drawer toggle @manager` (the list `manager` is `role=manager`): a menu item
+  (Window ▸ Drawer ▸ Show or Hide Manager) and a shortcut `<cli> shortcuts` changes; a `key.ctrl+cmd+m`
+  line in the config replaces it. With no pane holding `role=manager`, it puts an open drawer away and
+  otherwise moves nothing. Window ▸ Drawer also has Show or Hide Drawer, Move Pane to Drawer, Dock
+  Drawer Pane and Next / Previous Drawer Pane (no default keys); with a drawer pane focused, ⌘[ and
+  ⌘] go through the drawer's panes (`drawer next|prev`).
+- **DR-3 [A]** While the drawer is closed, a drawer pane whose indicator is "needs you" (PI-1) shows
+  as a thin amber line along the bottom edge of the window's panes, with a short label at its right
+  end ("NAME · needs you", "+N" when more wait); clicking the label shows that pane in the drawer.
+- **DR-4 [A]** `drawer dock [PANE]` moves a drawer pane into the current tab's layout, to the right
+  of its focused pane, focused; `strip.make-room` applies (H-1). Hiding a drawer pane (`pane hide`,
+  the Hide button) puts it back, hidden, in the tab it came from, or the current tab when that tab is
+  gone. `pane move` takes a drawer pane wherever it says; `pane close`, or its program ending, takes
+  it out for good; `pane focus` and `go` open the drawer on it. Split, zoom, swap and resize refuse a
+  drawer pane (exit 1).
+- **DR-5 [A]** `<cli> ls --json` lists each window's `drawer` (`open`, `panes`); a drawer pane is in
+  no tab, has `in_drawer: true` (the attribute too) and queries match it; `drawer ls` lists one
+  window's. Events: `drawer.opened` and `drawer.closed` (`window`, `pane`), and `pane.moved` with
+  `to.drawer` or `from.drawer` true. Drawer panes are saved with the layout and come back in the
+  drawer, closed, after a relaunch.
 
 ## T. Terminal input and output, and events
 

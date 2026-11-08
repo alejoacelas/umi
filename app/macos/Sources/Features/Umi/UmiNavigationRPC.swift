@@ -166,6 +166,18 @@ enum UmiNavigationRPC {
             // The keyboard move going on (UmiPaneMove): its pane, source, target, spot, the panes
             // its landing would hide, and what each sidebar row lists.
             let window = try UmiTopology.window(params.string("window"), caller: caller)
+            // `simulate`: what AppKit says when Umi goes to the background (`resign_active`) or the
+            // window stops being key (`resign_key`), which a locked screen can't produce.
+            switch params.string("simulate") {
+            case "resign_active":
+                NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
+            case "resign_key":
+                if let nsWindow = window.window {
+                    NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: nsWindow)
+                }
+            case nil: break
+            default: throw UmiError.badRequest("simulate is resign_active or resign_key")
+            }
             return UmiPaneMove.debugState(in: window)
 
         default:

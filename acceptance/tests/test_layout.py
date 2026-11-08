@@ -505,6 +505,7 @@ SHORTCUTS = {
     "cmd+1": "the first tab", "cmd+8": "the eighth tab", "cmd+9": "the last tab",
     "cmd+p": "the command palette", "cmd+shift+p": "the pane palette", "cmd+,": "Settings (the config file)",
     "cmd+ctrl+j": "the next pane whose agent needs the user", "cmd+ctrl+k": "back from that jump",
+    "cmd+ctrl+m": "show or hide the manager pane in the drawer (DR-2)",
     # L-20; I-4's update note.
     "cmd+shift+t": "reopen the last closed pane, tab or window",
     "cmd+ctrl+u": "dismiss the note after an update",

@@ -187,6 +187,101 @@ def test_esc_cancels_a_move(inst, win, moving):
     assert events_since(inst, start, "pane.moved") == [] and events_since(inst, start, "pane.hidden") == []
 
 
+
+# ---- KM-3: the moving pane in the window (design step 6's review) ------------------------------------
+
+MOVE_CYAN = (0x3A, 0xD1, 0xE0)
+
+
+@pytest.mark.req("KM-3")
+def test_the_moving_pane_is_outlined_and_tagged_in_the_window(inst, win, moving, tmp_path):
+    from test_pane_indicator import Picture, drawn, near
+    p = setup(inst, win)
+    key(inst, win, "ctrl+cmd+right", hold=True)
+    assert shown(inst, p["A"]) == [p["a"], p["c"], p["b"]]
+    pic = Picture(inst, win, tmp_path / "moving.png")
+    f = pic.frames[p["b"]]
+    mid = f["height"] / 2
+    # The cyan inset outline: on its left and right edges, top and bottom; not on its neighbours'.
+    for x, y in ((0.5, mid), (-0.5, mid), (f["width"] / 2, 0.5), (f["width"] / 2, -0.5)):
+        assert near(pic.at(p["b"], x, y), MOVE_CYAN, 50), f"cyan outline at {x},{y}: {pic.at(p['b'], x, y)}"
+    for other in (p["a"], p["c"]):
+        assert not near(pic.at(other, 0.5, pic.frames[other]["height"] / 2), MOVE_CYAN, 50)
+    # The "moving here" tag at its bottom left: cyan text and border there.
+    tag = [pic.at(p["b"], x, -y) for x in range(10, 90, 2) for y in range(10, 30, 2)]
+    assert sum(near(c, MOVE_CYAN, 60) for c in tag) >= 8, "the tag's cyan at the bottom left"
+    # Its chip in the strip is drawn in cyan, the others not.
+    chips = {ch["pane"]: ch for ch in drawn(inst, win["window"])["chips"]}
+    assert chips[p["b"]]["moving"] and not chips[p["a"]]["moving"] and not chips[p["c"]]["moving"], chips
+    # Landed, the marks go.
+    rpc(inst, "debug.release")
+    wait_until(lambda: not move(inst, win)["active"], 5, message="landed")
+    pic = Picture(inst, win, tmp_path / "landed.png")
+    assert not near(pic.at(p["b"], 0.5, mid), MOVE_CYAN, 50), "no outline once landed"
+    assert not {ch["pane"]: ch for ch in drawn(inst, win["window"])["chips"]}[p["b"]]["moving"]
+
+
+# ---- KM-4: what a preview leaves (design step 6's review) --------------------------------------------
+
+def histories(inst):
+    nav = rpc(inst, "debug.navigation")
+    return nav["history"], nav["focus_history"]
+
+
+@pytest.mark.req("KM-4", "L-15", "L-18")
+def test_previews_leave_the_tab_and_focus_histories_alone(inst, win, moving):
+    p = setup(inst, win)
+    time.sleep(0.5)
+    before = histories(inst)
+    assert before[0][0] == p["A"] and before[1][0] == p["b"], before
+    key(inst, win, "ctrl+cmd+down", hold=True)
+    key(inst, win, "ctrl+cmd+down", hold=True)
+    assert selected(inst, win["window"]) == p["C"]
+    key(inst, win, "esc")
+    wait_until(lambda: not move(inst, win)["active"], 5, message="cancelled")
+    time.sleep(0.5)
+    assert histories(inst) == before, "tabs passed over aren't recorded, even after Esc"
+    # A landing records where it landed, and nothing it passed over on the way.
+    key(inst, win, "ctrl+cmd+down", hold=True)
+    key(inst, win, "ctrl+cmd+down", hold=True)
+    key(inst, win, "ctrl+cmd+up", hold=True)
+    rpc(inst, "debug.release")
+    wait_until(lambda: not move(inst, win)["active"], 5, message="landed")
+    wait_until(lambda: histories(inst)[0][0] == p["B"], 5, message="the landing's tab recorded")
+    tabs, focus = histories(inst)
+    assert tabs[:2] == [p["B"], p["A"]], tabs
+    assert focus[0] == p["b"] and focus[1:] == before[1][1:], focus
+
+
+@pytest.mark.req("KM-4")
+@pytest.mark.parametrize("what", ["resign_active", "resign_key"])
+def test_the_move_lands_when_umi_or_the_window_loses_the_keyboard(inst, win, moving, what):
+    p = setup(inst, win)
+    start = iso_now()
+    key(inst, win, "ctrl+cmd+down", hold=True)
+    assert move(inst, win)["active"]
+    rpc(inst, "debug.move", window=win["window"], simulate=what)
+    wait_until(lambda: not move(inst, win)["active"], 5, message="landed")
+    assert shown(inst, p["B"]) == [p["d"], p["e"], p["b"]], "it lands where it was shown"
+    assert len(events_since(inst, start, "pane.moved")) == 1
+    assert not sidebar_visible(inst, win)
+
+
+@pytest.mark.req("KM-4")
+def test_the_pane_closing_mid_move_puts_the_rest_back(inst, win, moving):
+    p = setup(inst, win)
+    start = iso_now()
+    key(inst, win, "ctrl+cmd+down", hold=True)
+    key(inst, win, "ctrl+cmd+down", hold=True)
+    assert p["b"] in shown(inst, p["C"])
+    inst.cli("pane", "close", p["b"])
+    wait_until(lambda: not move(inst, win)["active"], 5, message="the move ended")
+    assert shown(inst, p["A"]) == [p["a"], p["c"]] and shown(inst, p["B"]) == [p["d"], p["e"]]
+    assert shown(inst, p["C"]) == [p["f"], p["g"], p["h"]] and hidden(inst, p["C"]) == [], "C as it was"
+    assert selected(inst, win["window"]) == p["A"] and not sidebar_visible(inst, win)
+    assert events_since(inst, start, "pane.moved") == [] and events_since(inst, start, "pane.hidden") == []
+    assert p["b"] not in [x["id"] for w in inst.tree()["windows"] for t in w["tabs"] for x in t["panes"]]
+
 # ---- KM-5: the targets -----------------------------------------------------------------------------
 
 @pytest.mark.req("KM-5")
