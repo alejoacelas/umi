@@ -217,12 +217,16 @@ final class Client {
         }
     }
 
-    func call(_ method: String, _ params: [String: Any]) throws -> Any {
+    /// `other` gets the lines that aren't the answer (events a subscription replays before it).
+    func call(_ method: String, _ params: [String: Any], other: (([String: Any]) -> Void)? = nil) throws -> Any {
         let id = nextID
         nextID += 1
         try send(["id": id, "method": method, "params": params, "caller": Caller.current().json])
         while let message = readLine() {
-            guard (message["id"] as? Int) == id else { continue }
+            guard (message["id"] as? Int) == id else {
+                other?(message)
+                continue
+            }
             if let error = message["error"] as? [String: Any] {
                 throw RPCError(code: error["code"] as? String ?? "error",
                                message: error["message"] as? String ?? "request failed")
@@ -1176,14 +1180,18 @@ func eventsCommand(_ argv: [String]) {
     if let pane = args.value("--pane") { params["pane"] = pane }
     if let since = args.value("--since") { params["since"] = parseTime(since, option: "--since").timeIntervalSince1970 }
     let client = connect()
+    setvbuf(stdout, nil, _IOLBF, 0)
+    // Events replayed from the log (`--since`) arrive before the answer.
+    var replayed: [[String: Any]] = []
     do {
-        _ = try client.call("events.subscribe", params)
+        _ = try client.call("events.subscribe", params) { replayed.append($0) }
     } catch let error as RPCError {
         fail(error.message)
     } catch {
         fail("\(error)")
     }
-    setvbuf(stdout, nil, _IOLBF, 0)
+    for message in replayed where message["event"] is String { printJSON(message) }
+    fflush(stdout)
     while let message = client.readLine() {
         guard message["event"] is String else { continue }
         printJSON(message)
