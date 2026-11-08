@@ -135,7 +135,13 @@ enum UmiShortcuts {
                      guard let pane = UmiTopology.currentPane else { return }
                      do { try UmiHidden.hide(pane) } catch { NSSound.beep() }
                  },
-                 enabled: { (UmiTopology.currentWindow?.surfaceTree.root?.leaves().count ?? 0) > 1 || UmiDrawer.currentIsShowing }),
+                 // A drawer pane can always be hidden (it goes back to its tab); a tab's pane only
+                 // when it isn't the last on show.
+                 enabled: {
+                     guard let pane = UmiTopology.currentPane else { return false }
+                     if UmiDrawer.window(holding: pane) != nil { return true }
+                     return (UmiTopology.currentWindow?.surfaceTree.root?.leaves().count ?? 0) > 1
+                 }),
             // Warp's previous and next tab in sidebar order (only the matching tabs while the
             // sidebar has a search query).
             Item(id: "tab.previous", title: "Show Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.up.square",

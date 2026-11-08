@@ -291,6 +291,33 @@ def test_cmd_brackets_in_the_drawer_go_through_its_panes(inst, win, closing):
     assert inst.json("drawer", "prev", "--window", win["window"])["current"] == c
 
 
+@pytest.mark.req("DR-4", "H-2")
+def test_window_hide_pane_is_disabled_on_a_tabs_only_pane_while_the_drawer_is_open(inst, win, closing):
+    """Window ▸ Hide Pane acts on the focused pane: a drawer pane can always be hidden, a tab's only
+    pane on show never (it beeped)."""
+    a = win["pane"]
+    lone, tab2 = new_tab(inst, win)
+    inst.cli("tab", "focus", win["tab"])
+    inst.cli("drawer", "show", lone)
+    assert shown(inst, win["tab"]) == [a]
+
+    def hide_item():
+        return next(i for i in rpc(inst, "debug.menu")["items"] if i["title"] == "Hide Pane")
+    wait_until(lambda: inst.tree()["current_pane"] == lone, 5, message="the drawer pane has focus")
+    assert hide_item()["enabled"], "a drawer pane can be hidden"
+    # Focus on the tab's only pane, the drawer still open.
+    inst.cli("pane", "focus", a)
+    wait_until(lambda: inst.tree()["current_pane"] == a, 5, message="the tab's pane has focus")
+    assert drawer(inst, win)["open"]
+    assert not hide_item()["enabled"], "Hide Pane is off for the tab's only pane"
+    inst.cli("drawer", "hide", "--window", win["window"])
+    assert not hide_item()["enabled"]
+    # With a second pane on show, it is on again.
+    split(inst, "right", a, "--no-focus")
+    inst.cli("pane", "focus", a)
+    assert hide_item()["enabled"]
+
+
 # ---- DR-3: the waiting line ------------------------------------------------------------------------------
 
 @pytest.mark.req("DR-3", "PI-1")

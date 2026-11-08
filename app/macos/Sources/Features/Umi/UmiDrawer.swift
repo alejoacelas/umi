@@ -661,7 +661,6 @@ enum UmiDrawer {
     }
 
     static var currentHasPanes: Bool { !(UmiTopology.currentWindow?.drawer.panes.isEmpty ?? true) }
-    static var currentIsShowing: Bool { UmiTopology.currentWindow?.drawer.showing != nil }
 
     // MARK: Screenshots
 
