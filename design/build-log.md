@@ -358,8 +358,7 @@ was locked for every run (`CGSSessionScreenIsLocked=Yes`), so the UI tests were 
   showing `UMI_TAB`, `UMI_WINDOW`, `UMI_CAUSE=palette`, `UMI_CLI`; "Say Hello" run from ⌘P showing its
   output (`4-palette-output.png`); `wait --attr` returning when the attribute is set and 124 on
   timeout; `jump` failing with "go --next jump"; `help` listing the new commands.
-- Acceptance suite, ReleaseLocal at `138a15b11` (the app's code is the same at the head except the
-  Dock badge recount and this log), full run with `UMI_SIGN_IDENTITY=-`
+- Acceptance suite, ReleaseLocal at `138a15b11` (the head adds only this log), full run with `UMI_SIGN_IDENTITY=-`
   (`~/umi-test-design-step3-suite.log`): 368 passed, 10 failed, 85 skipped. All of Q-1 to Q-8 pass
   (`~/umi-test-design-step3-traceability.md`). The failures:
   - Seven fail on origin/main too, run there on the step 2 worktree (the same app code as main;
