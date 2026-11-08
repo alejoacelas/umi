@@ -231,16 +231,26 @@ final class UmiAttention: ObservableObject {
 
     /// The user looked at a pane (it has focus in the key window of the active app).
     func looked(atPane id: UUID) {
+        let before = unseenFacts(id)
         seen[id] = Date()
         if seen.count > 512 {
             let open = Set(UmiTopology.allSurfaces.map(\.id))
             seen = seen.filter { open.contains($0.key) || UmiReopen.shared.holds($0.key) }
         }
-        guard var agent = panes[id] else { return }
-        agent.seenAt = Date()
-        let before = panes[id]?.mark
-        panes[id] = agent
-        if before != agent.mark { changed() }
+        if var agent = panes[id] {
+            agent.seenAt = Date()
+            panes[id] = agent
+        }
+        // The indicator (and `unseen`) read both the agent's change and the pane's coming back on
+        // show, so a look that clears either is a change for the views.
+        if unseenFacts(id) != before { changed() }
+    }
+
+    /// What makes a pane unseen, as `unseen` reads it: its agent's change, and its coming back on
+    /// show, each later than the last look.
+    private func unseenFacts(_ id: UUID) -> [Bool] {
+        let shownLater = shown[id].map { $0 > (seenAt(id) ?? .distantPast) } ?? false
+        return [panes[id]?.unseen ?? false, shownLater]
     }
 
     /// Scripted checks (`debug.attention.set`, `debug.ui.attention.set`): a pane's agent as given,
