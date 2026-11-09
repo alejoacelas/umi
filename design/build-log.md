@@ -1338,7 +1338,7 @@ skipped (the benchmark), none failed (`~/umi-final-step7-swift.log`).
 - Queries read a pane's tab's attributes as `tab.KEY` (`tab.archived=true`). The tab's attributes
   always have `archived` (`true` or `false`).
 - ⇧⌘[ ⇧⌘], ⌃Tab, ⌘1–⌘9, the ⌘ hints and search cycling skip archived tabs. The default `jump` list
-  is now `@needs-you and tab.archived=false | sort status_since then @unseen and tab.archived=false |
+  is now `@needs-you and tab.archived!=true | sort status_since then @unseen and tab.archived!=true |
   sort changed_at`.
 - ⌃⇧↑ on the first tab (and `tab move --up`) archives it; ⌃⇧↓ on an archived tab brings it back.
 - Closing the selected tab now selects the next tab of its own list (out of the archive, or in it),
@@ -1397,7 +1397,7 @@ VERIFIED-PLACEHOLDER
     one; that shows the tab without bringing it back, as the design says for ⌃⌘J.
 16. The Dock badge (the `badge` slot, `@needs-you`) still counts panes in archived tabs; the design
     doesn't say. Leaving them out is a one-line config change (`slot.badge = @needs-you and
-    tab.archived=false`) or a change of the default.
+    tab.archived!=true`) or a change of the default.
 
 ## Releases
 

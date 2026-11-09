@@ -86,8 +86,8 @@ VALUE  := a word, or text in double quotes
 - `tab.KEY` reads the attribute KEY of the pane's tab (`tab.archived=true`: the panes of archived
   tabs). A pane can't hold a key that starts with `tab.` (setting one fails with exit 1).
 - `then` lists the panes of the next part after those of the parts before it, each pane once (the
-  list `jump` is `@needs-you and tab.archived=false | sort status_since then @unseen and
-  tab.archived=false | sort changed_at`).
+  list `jump` is `@needs-you and tab.archived!=true | sort status_since then @unseen and
+  tab.archived!=true | sort changed_at`).
 - Without `sort`, matches come in `ls` order: windows by index, tabs in sidebar order, panes on show
   in layout order, then the others.
 - A query that doesn't parse fails with exit 1 and names the character position of the error.
@@ -269,7 +269,7 @@ Umi's lists (the config can redefine each):
 |---|---|
 | `needs-you` | `agent.status=needs_input \| sort status_since` |
 | `unseen` | `unseen and agent.status!=working and agent.status!=needs_input \| sort changed_at` |
-| `jump` | `@needs-you and tab.archived=false \| sort status_since then @unseen and tab.archived=false \| sort changed_at` (panes in archived tabs left out) |
+| `jump` | `@needs-you and tab.archived!=true \| sort status_since then @unseen and tab.archived!=true \| sort changed_at` (panes in archived tabs left out) |
 | `manager` | `role=manager` |
 
 ## Configuration

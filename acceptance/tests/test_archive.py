@@ -351,7 +351,7 @@ def test_the_default_jump_list_leaves_out_panes_in_archived_tabs(inst, win, four
         assert pane_c in ids and pane_b not in ids, ids
         assert pane_b in [p["id"] for p in inst.json("ls", "--where", "@needs-you")["panes"]], "still needs you"
         lists = {l["name"]: l for l in inst.json("list", "ls")["lists"]}
-        assert "tab.archived=false" in lists["jump"]["query"] and lists["jump"]["default"] is True
+        assert "tab.archived!=true" in lists["jump"]["query"] and lists["jump"]["default"] is True
     finally:
         for pane in (pane_b, pane_c):
             rpc(inst, "debug.attention.set", pane=pane, clear=True)

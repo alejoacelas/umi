@@ -1600,6 +1600,6 @@ archive across a relaunch. `test_real_ctrl_cmd_a_and_clicks_on_the_archived_row_
   `::test_the_row_menu_opens_with_warps_items_and_color_dots_ui` (S-4): the row menu now has Archive Tab after
   Pin tab, so the expected lists include it. The rest of each list and its order are unchanged.
 - `test_queries.py::test_umis_lists` (Q-2): the default `jump` list leaves out panes in archived tabs
-  (AR-3), so its query is now `@needs-you and tab.archived=false | sort status_since then @unseen and
-  tab.archived=false | sort changed_at`. The check that it is a default is unchanged.
+  (AR-3), so its query is now `@needs-you and tab.archived!=true | sort status_since then @unseen and
+  tab.archived!=true | sort changed_at`. The check that it is a default is unchanged.
 - `test_layout.py::test_shortcuts_are_menu_items` (L-9): ⌃⌘A added to the shortcuts it checks.

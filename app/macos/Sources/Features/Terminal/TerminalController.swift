@@ -281,7 +281,8 @@ class TerminalController: BaseTerminalController {
                 }
                 return
             }
-            guard let neighbor = neighbor ?? tabs.first else { return }
+            // With no other tab in its list, the first of the others (a tab out of the archive first).
+            guard let neighbor = neighbor ?? activeTabs.first ?? tabs.first else { return }
             selectTab(neighbor, focus: focusNeighbor && (window?.isKeyWindow ?? false))
         }
         UmiState.shared.layoutDidChange()

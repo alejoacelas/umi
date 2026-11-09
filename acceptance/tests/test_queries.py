@@ -199,8 +199,8 @@ def test_umis_lists(inst, win):
     assert {"needs-you", "unseen", "jump", "manager"} <= set(lists), lists
     assert lists["needs-you"]["query"] == "agent.status=needs_input | sort status_since"
     # The default jump list leaves out panes in archived tabs (AR-3).
-    assert lists["jump"]["query"] == ("@needs-you and tab.archived=false | sort status_since"
-                                      " then @unseen and tab.archived=false | sort changed_at")
+    assert lists["jump"]["query"] == ("@needs-you and tab.archived!=true | sort status_since"
+                                      " then @unseen and tab.archived!=true | sort changed_at")
     assert lists["jump"]["default"] is True
     pane = win["pane"]
     agent(inst, pane, "needs_input")

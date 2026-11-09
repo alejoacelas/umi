@@ -61,15 +61,13 @@ enum UmiArchive {
     }
 
     /// The tab a window shows after `tab` leaves its list, as closing it would: the next tab of the
-    /// same list (out of the archive, or in it) at its place, else the one before; else any other.
+    /// same list (out of the archive, or in it) at its place, else the one before; nil when the list
+    /// has no other tab.
     static func neighbor(afterRemoving tab: UmiTab, in window: TerminalController) -> UmiTab? {
-        let list = tab.archived ? window.archivedTabs : window.activeTabs
-        if let index = list.firstIndex(where: { $0 === tab }) {
-            let rest = list.filter { $0 !== tab }
-            if !rest.isEmpty { return rest[min(index, rest.count - 1)] }
-        }
-        let others = (tab.archived ? window.archivedTabs : window.activeTabs).isEmpty ? window.tabs : window.activeTabs
-        return others.first { $0 !== tab } ?? window.tabs.first { $0 !== tab }
+        let list = window.umiList(of: tab)
+        guard let index = list.firstIndex(where: { $0 === tab }) else { return nil }
+        let rest = list.filter { $0 !== tab }
+        return rest.isEmpty ? nil : rest[min(index, rest.count - 1)]
     }
 
     // MARK: From the keyboard and the menus

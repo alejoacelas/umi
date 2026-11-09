@@ -30,7 +30,7 @@ final class UmiConfig {
 
     /// The default `jump` list: the panes that need you, then the unseen ones, each in its own
     /// list's order, leaving out panes in archived tabs.
-    static let jumpDefault = "@needs-you and tab.archived=false | sort status_since then @unseen and tab.archived=false | sort changed_at"
+    static let jumpDefault = "@needs-you and tab.archived!=true | sort status_since then @unseen and tab.archived!=true | sort changed_at"
 
     struct Slot {
         let name: String
