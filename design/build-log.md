@@ -1613,3 +1613,12 @@ is in `~/best/ops/clerk/umi-links/`; the `queue` skill makes these links.
 7. A resumed session runs on whichever Mac clicks the link. Claude Code keeps sessions per machine,
    so a session queued on one Mac and opened on the other won't be found there; the page shows the
    machine it came from.
+
+**Verified on mac-air-2 before rebasing for release** (ReleaseLocal build at `ea2c5ad11`, under the
+screen lock): `test_session_links.py` 9 passed; the whole acceptance suite 527 passed, 2 failed,
+1 skipped (`~/umi-test-session-links-full1.log`). The failures: `test_builds_from_a_path_with_spaces`,
+failing on main too, and `test_find_keys` (Markdown ⌘G), which passed when `test_markdown_warp.py`
+was rerun alone (14 passed). Swift unit tests: passed, the 13 new ones included
+(`~/umi-test-session-links-swift.log`). A link delivered by LaunchServices (`open -a Umi.app
+umi://…`) with a real task from the agent server opened a tab named after it in
+`~/best/projects/2026-10-26-umi`, and a link to another origin was refused.
