@@ -1152,6 +1152,14 @@ agent's own hooks, through Umi's plugin.
   work still pending isn't "finished" (`working` until it ends), an interrupted turn (Esc or Ctrl-C)
   doesn't stay `working`, a failed turn is `error`, an agent waiting on a permission prompt or a
   question is `needs_input`, and an agent whose process ended (quit, crash, kill) is `stopped`.
+  Claude Code and Codex map each state the same way wherever their hooks report it
+  (design/ideas.md, item 14): a failed command inside a turn is still `working`; a failed turn's
+  `agent.summary` is the reason and its `agent.done` false. Umi doesn't guess a state an agent
+  doesn't report: a Codex shows nothing before its first prompt (Codex runs no hook until then),
+  a Claude Code permission prompt answered "No" from its list stays `needs_input` until the next
+  hook (Claude Code sends none), and a Codex MCP elicitation isn't `needs_input` (no hook). The one
+  inference is Claude Code's interrupt, which sends no hook: a turn with no hook for two seconds after
+  Esc or Ctrl-C is `idle`.
 
 ## R. Robustness
 

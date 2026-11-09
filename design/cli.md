@@ -274,7 +274,9 @@ recorded with that cause.
 | `hook EVENT --agent claude\|codex [--pid PID]` | run by Umi's plugins: reads the agent's hook input on stdin, writes `agent.*` on the pane the agent runs in; prints nothing; exit 0 even when no pane matches |
 | `plugins [status\|install [--force]\|remove]` | Umi's plugins in Claude Code and Codex. JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}` |
 
-`agent.done` is set at each Stop hook from the `done-check` slot. `agent.session` is what Umi uses
+Claude Code and Codex report the same states through their own events (`acceptance/CLI.md`, "Agent
+hooks", has the table; design/ideas.md, item 14, what each agent sends). `agent.done` is set at each
+Stop hook from the `done-check` slot. `agent.session` is what Umi uses
 to resume the conversation when it relaunches the pane's agent after a quit, crash or update.
 
 ## Configuration

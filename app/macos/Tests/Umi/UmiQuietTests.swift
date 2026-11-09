@@ -151,6 +151,19 @@ struct UmiQuietTests {
         #expect(!UmiAgentHooks.doneCheck(""))
     }
 
+    /// Codex's PostModelRequest `error` (codex-cli 0.164.0): the API's error JSON, or plain text.
+    @MainActor @Test func codexsModelRequestErrorGivesItsCodeAndMessage() {
+        let api = #"{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'x' model is not supported.","code":"model_not_found"}}"#
+        let parsed = UmiAgentHooks.apiError(api)
+        #expect(parsed.code == "model_not_found" && parsed.message == "The 'x' model is not supported.")
+        let typeOnly = UmiAgentHooks.apiError(#"{"error":{"type":"server_error","message":"Overloaded"}}"#)
+        #expect(typeOnly.code == "server_error" && typeOnly.message == "Overloaded")
+        let plain = UmiAgentHooks.apiError("stream disconnected before completion\n")
+        #expect(plain.code == nil && plain.message == "stream disconnected before completion")
+        #expect(UmiAgentHooks.apiError("").message == nil)
+        #expect(UmiAgentHooks.questionTools == ["AskUserQuestion", "request_user_input"])
+    }
+
     @Test func theAgentsProgramIsFoundInItsArguments() {
         #expect(UmiTypedCommand.isProgram("claude", .claude))
         #expect(UmiTypedCommand.isProgram("/Users/me/.local/bin/claude", .claude))

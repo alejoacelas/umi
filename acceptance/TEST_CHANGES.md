@@ -1654,3 +1654,36 @@ script for the stall: an isolated instance with the explorer on a ~6,500-file re
 worktree add` and a Zig-cache-like churn in the ignored worktree; it reports the app's CPU, how busy
 its main thread is (`sample`), `umi ls` round trips and, with the explorer shown, how soon a new
 file shows.
+
+
+## Agent hooks: the same states from Claude Code and Codex (2026-11-09)
+
+**Added.**
+- `test_agent_hooks.py` (AG-18, AG-19), with the fakes for both agents: a turn ending `Status: done`
+  (`agent.summary`, `agent.done`, `agent.title`, `agent.session`); a question (`needs_input` until
+  answered); a failed turn (`error`, its reason as the summary, `done` false, cleared by the next
+  turn); a failed command (still `working`, then `idle`); Codex's `Interrupt` (`idle` within 1.5 s of
+  Esc, before Umi's two-second inference); a Codex approval answered "no" (`idle`). Through
+  `Instance.hook`: Codex's model requests (a failed one is `error`, a retry `working` again, a
+  completed or cancelled one changes nothing, a subagent's failure is ignored, plain-text and JSON
+  errors), and Claude Code's `PermissionRequest` for `AskUserQuestion`, `PostToolUseFailure`,
+  `StopFailure` and `idle_prompt`.
+- Two real-agent tests behind `ACCEPTANCE_REAL=1` (`test_real_claude_code_reports_each_state`,
+  `test_real_codex_reports_each_state`): the user's own `claude` (Haiku, Umi's plugin by
+  `--plugin-dir`) and `codex` (gpt-6-luna, Umi's hooks by `-c hooks.…`, so the user's installed plugins
+  are untouched) go through a turn ending `Status: done`, a question or a permission prompt, an
+  interrupt (Codex), an unknown model and exit.
+
+**Changed.**
+- The fakes send what the real agents sent on 2026-11-09 (fakes/README.md, "Hooks"). Claude: a
+  `PermissionRequest` for `ASK_QUESTIONS` too, `PostToolUseFailure` for a failing `RUN`, `StopFailure`
+  `model_not_found` for an unknown model, `SessionEnd` `prompt_input_exit` for `/exit` and Ctrl-D,
+  the `permission_prompt` message `Claude needs your permission`. Codex: `PreModelRequest` and
+  `PostModelRequest` around each model request, `PreToolUse` and `PostToolUse` for
+  `request_user_input`, `Interrupt` for an interrupted turn, `PostModelRequest` `failed` (the API error
+  now has its `code`) for `FAIL`, `SessionEnd` `other` for `/exit`. `test_fakes.py` checks each.
+- `test_agent_panes.py::test_a_plugin_installed_from_another_copy_of_umi_is_not_current` and
+  `::test_a_disabled_claude_plugin_is_not_current` read the bundled plugin version instead of writing
+  `1.2.0`. With the plugins now at 1.3.0, a hard-coded `1.2.0` would make the installed copy "not
+  current" for its version alone, and the tests would pass without checking their case (another
+  copy's plugin, a disabled plugin).

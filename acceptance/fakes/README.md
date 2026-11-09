@@ -499,31 +499,42 @@ all have `hook_event_name`.
 | UserPromptSubmit | each message that starts a turn or is injected into one (TUI lines too); not for a self-started WAKE turn | `prompt` | C14 |
 | PreToolUse | after the tool_use frame, before the tool runs (SLEEP, RUN, HUGE, WAKE, ASK_PERMISSION, ASK_QUESTIONS) | `tool_name` (`Bash` / `AskUserQuestion`), `tool_input`, `tool_use_id` | C14 |
 | PostToolUse | when the tool finished, before its tool_result frame; a WAKE command right away, with `backgroundTaskId` | `tool_name`, `tool_input`, `tool_response` (the frame's `tool_use_result`), `tool_use_id`, `duration_ms` | C14; none after a denial or an interrupt (inferred) |
-| PermissionRequest | an `ASK_PERMISSION` that will prompt, right before the `can_use_tool` request (both modes) | `tool_name`, `tool_input`, `permission_suggestions` | inferred |
-| Notification | TUI only: `permission_prompt` with that prompt (`Claude needs your permission to use Bash`); `idle_prompt` after `FAKE_CLAUDE_IDLE_SECS` idle after a turn (`Claude is waiting for your input`) | `notification_type`, `message` | inferred (real thresholds: 60 s) |
+| PostToolUseFailure | instead of PostToolUse, for a `RUN` command that exits non-zero | `tool_name`, `tool_input`, `tool_use_id`, `error` (`Exit code N` and the output), `is_interrupt: false`, `duration_ms` | 2026-11-09 |
+| PermissionRequest | an `ASK_PERMISSION` that will prompt, and `ASK_QUESTIONS`, right before the `can_use_tool` request (both modes) | `tool_name`, `tool_input`, `permission_suggestions` (not for `AskUserQuestion`) | 2026-11-09 |
+| Notification | TUI only: `permission_prompt` with each prompt above (`Claude needs your permission`); `idle_prompt` after `FAKE_CLAUDE_IDLE_SECS` idle after a turn (`Claude is waiting for your input`) | `notification_type`, `message` | 2026-11-09 (real: about 6 s after the prompt, and 60 s idle) |
 | Stop | a turn that ends normally, after its last reply and before its `result` | `stop_hook_active: false`, `last_assistant_message`, `background_tasks` (WAKE tasks still running, as `{"task_id","run_id","task_type":"local_bash","description"}`), `session_crons: []` | C14; the `background_tasks` entry shape is inferred |
-| StopFailure | instead of Stop, for a `FAIL` turn | `error: "invalid_request"`, `last_assistant_message` (the API error text) | inferred |
-| SessionEnd | when the process ends normally: stdin EOF in `-p` and `EXIT_CLEAN` (`other`), SIGTERM/SIGHUP (`other`), TUI `/exit` and Ctrl-D (`exit`) | `reason`, the last `prompt_id`; no `permission_mode` | C14 (`other` at stdin EOF); the rest inferred |
+| StopFailure | instead of Stop, for a `FAIL` turn | `error` (`model_not_found` for a `no-such-model` model, as the real CLI for an unknown model; otherwise `invalid_request`), `last_assistant_message` (the API error text) | 2026-11-09 for the shape; the text is inferred (the real TUI says `There's an issue with the selected model …`) |
+| SessionEnd | when the process ends normally: stdin EOF in `-p` and `EXIT_CLEAN` (`other`), SIGTERM/SIGHUP (`other`), TUI `/exit` and Ctrl-D (`prompt_input_exit`) | `reason`, the last `prompt_id`; no `permission_mode` | C14 (`other` at stdin EOF); 2026-11-09 (`/exit`, double Ctrl-C) |
 
-An interrupted turn fires no hook at all (no Stop), as with the real CLI; neither do CRASH, HANG or a SIGKILL.
+An interrupted turn fires no hook at all (no Stop), as with the real CLI; neither does a permission prompt answered
+"no", nor CRASH, HANG or a SIGKILL.
 For WAKE, the turn that starts the background command ends with a Stop listing it in `background_tasks`; the
 self-started turn fires no UserPromptSubmit and ends with a Stop whose `background_tasks` is `[]` (or the
 tasks still running).
 
-**Codex** (not probed: the event set follows Warp's codex-warp plugins, which hook SessionStart,
-UserPromptSubmit, PostToolUse, PermissionRequest, Stop and SessionEnd). Every input has `session_id` (the
-thread id), `transcript_path` (the thread's `path`, its state file), `cwd` (the thread's), `hook_event_name`
-and `model`; turn events add `turn_id`.
+**Codex** (probed on 2026-11-09 with codex-cli 0.164.0 in its TUI, `reference/agent-logs/2026-11-09-hooks/`;
+the app server is inferred to run the same hooks). Every input has `session_id` (the thread id),
+`transcript_path` (the thread's `path`, its state file), `cwd` (the thread's), `hook_event_name` and `model`;
+turn events add `turn_id`.
 
 | event | when | other fields |
 |---|---|---|
 | SessionStart | after `thread/start` (`startup`, after `thread/started`) or a `thread/resume` that loads the thread (`resume`) | `source` |
 | UserPromptSubmit | before each `userMessage` item, steered inputs included | `prompt` |
-| PreToolUse | before each `commandExecution` starts (and before an approval is asked) | `tool_name: "Bash"`, `tool_input: {"command"}`, `tool_use_id` (the item id) |
-| PostToolUse | after a command's `item/completed`; a `BACKGROUND` command right after it starts | the same, plus `tool_response` (the command output, a string) |
+| PreModelRequest | after UserPromptSubmit and after each tool's PostToolUse: the model is asked again | none |
+| PostModelRequest | before each PreToolUse (the request that asked for the tool), before Stop, and for a failed or interrupted turn | `status` (`completed`, `failed`, `cancelled`), `error` (for `failed`: the API's error JSON as a string, `{"type":"error","status":400,"error":{…,"code":"model_not_found"}}`), `token_usage` (null unless completed) |
+| PreToolUse | before each `commandExecution` starts (and before an approval is asked); before `ASK_QUESTIONS` asks | `tool_name` (`Bash`, or `request_user_input`), `tool_input` (`{"command"}` for Bash), `tool_use_id` (the item id) |
+| PostToolUse | after a command's `item/completed` (also for a non-zero exit); a `BACKGROUND` command right after it starts; after the answers to `ASK_QUESTIONS` | the same, plus `tool_response` (the command output, a string) |
 | PermissionRequest | right before `item/commandExecution/requestApproval` | `tool_name`, `tool_input` |
 | Stop | a completed turn, once no input can join it any more, before `thread/status/changed idle` and `turn/completed`; not for failed or interrupted turns | `stop_hook_active: false`, `last_assistant_message` |
-| SessionEnd | local TUI only, as it ends | `reason`: `exit` or `other` |
+| Interrupt | an interrupted turn (Esc, Ctrl-C, `turn/interrupt`, an approval answered `cancel`), after PostModelRequest `cancelled` if a request was open | none |
+| SessionEnd | local TUI only, as it ends | `reason`: `other` (codex-cli 0.164.0 says `other` for `/exit` and Ctrl-C alike) |
+
+A failed turn (`FAIL`) fires PostModelRequest `failed` and no Stop. The real Codex fires PreModelRequest and
+PostModelRequest around every request to the model; the fake has one request per step between tools. The real
+Codex runs SessionStart only with the first prompt (of a new or a resumed thread); the fake still runs it at
+startup and at `thread/resume`, which the suite relies on to see an agent before its first prompt (see
+[Known limits](#known-limits)).
 
 The app server fires no SessionEnd (when a real server's sessions end was not probed).
 
@@ -639,6 +650,10 @@ inside that gap therefore never records the input. A product must not assume tha
 
 ## Known limits
 
+* Codex SessionStart runs at the TUI's startup and at `thread/resume`; the real codex-cli 0.164.0 runs it only
+  with the thread's first prompt (2026-11-09). Tests that expect a Codex pane to report itself before a prompt
+  (`type_agent`, the relaunch tests) pass against the fake only. Umi shows no state for a real Codex until its
+  first prompt (`design/ideas.md`, item 14).
 * Claude `task_started` fires exactly 3.0 s into a Bash command, and `task_notification` only if it fired.
   Real timing is about 3 s (C2, C9).
 * Claude models one content block per API response, plus the optional chaos thinking block, and one tool per
