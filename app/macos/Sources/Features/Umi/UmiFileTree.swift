@@ -119,9 +119,25 @@ final class UmiFSWatcher {
             guard let info else { return }
             let watcher = Unmanaged<UmiFSWatcher>.fromOpaque(info).takeUnretainedValue()
             let list = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
-            var events: [Event] = []
-            events.reserveCapacity(min(count, list.count))
-            for i in 0..<min(count, list.count) { events.append(Event(path: list[i], flags: flags[i])) }
+            // Here, off the main thread: paths made native and without a trailing "/", git's
+            // own bookkeeping dropped (it changes on every git command and isn't shown), and
+            // each folder once per batch with its events' flags combined.
+            var flagsByPath: [String: FSEventStreamEventFlags] = [:]
+            var order: [String] = []
+            for i in 0..<min(count, list.count) {
+                var path = list[i]
+                path.makeContiguousUTF8()
+                if path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+                if path.hasSuffix("/.git") || path.range(of: "/.git/") != nil { continue }
+                if let seen = flagsByPath[path] {
+                    flagsByPath[path] = seen | flags[i]
+                } else {
+                    flagsByPath[path] = flags[i]
+                    order.append(path)
+                }
+            }
+            guard !order.isEmpty else { return }
+            let events = order.map { Event(path: $0, flags: flagsByPath[$0] ?? 0) }
             let handler = watcher.handler
             DispatchQueue.main.async { handler(events) }
         }
@@ -355,11 +371,10 @@ final class UmiFileTreeModel: ObservableObject {
         var byPath: [String: (node: UmiFileNode, shown: Bool)] = [:]
         var askGit = false
         var touched = false
+        let rootPrefix = rootPath + "/"
         for event in events {
-            let path = event.path.count > 1 && event.path.hasSuffix("/") ? String(event.path.dropLast()) : event.path
-            // Git's own bookkeeping changes on every git command; it isn't shown.
-            if path.hasSuffix("/.git") || path.contains("/.git/") { continue }
-            let inside = path.hasPrefix(rootPath + "/")
+            let path = event.path
+            let inside = path.hasPrefix(rootPrefix)
             if event.rootChanged || !(inside || path == rootPath) {
                 // The root itself (or a folder above it) changed, or a path outside it: everything.
                 markAllStale()
