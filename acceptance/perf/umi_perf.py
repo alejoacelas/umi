@@ -217,7 +217,7 @@ def export_table(trace, schema, out):
 def summarize_trace(trace, app_pid, out_dir, name, binary):
     """Export the trace's tables and boil them down: hangs, hitches, signpost intervals, and the
     main thread's heaviest functions overall and inside each hang."""
-    res = {"trace": os.path.relpath(trace, out_dir)}
+    res = {"trace": trace}
     base = os.path.join(out_dir, "traces", name)
     pid_tag = f"pid: {app_pid}"
 
@@ -279,12 +279,14 @@ def profile_summary(path, pid_tag, binary, hang_windows, top=15):
             continue
         w = (num(r.get("weight")) or 1e6) / 1e6
         total_ms += w
-        stack = r.get("stack") or []
-        if stack:
+        stack = r.get("stack")
+        if not isinstance(stack, list):   # <sentinel/>: no backtrace for this sample
+            stack = []
+        if stack and stack[0]:
             leaf[stack[0][0]] = leaf.get(stack[0][0], 0) + w
         mine = []
-        for fname, b in stack:
-            if b == binary and fname not in mine:
+        for fname, b in (f for f in stack if f):
+            if b == binary and fname not in mine and fname not in ("main", "<deduplicated_symbol>"):
                 mine.append(fname)
         for fname in mine:
             own[fname] = own.get(fname, 0) + w
@@ -605,7 +607,7 @@ class Perf:
             modes.setdefault(mode, []).append(round(now() - t, 2))
             time.sleep(5)
         typed = []
-        for i in range(20):
+        for i in range(10):
             t = now()
             self.inst.rpc("debug.editor.type", tab=tab, path=path, text=f"typed line {i}\n")
             typed.append((now() - t) * 1000)
@@ -694,7 +696,7 @@ class Perf:
     def main(self):
         a = self.args
         self.log(f"app {self.target.app}, state {self.inst.dir}, results {self.out}")
-        meta = {"app": self.target.app, "started": iso(now()), "screen_locked": screen_locked(),
+        meta = {"app": self.target.app, "app_pid": None, "started": iso(now()), "screen_locked": screen_locked(),
                 "host": os.uname().nodename, "load_at_start": os.getloadavg(),
                 "git": subprocess.run(["git", "-C", REPO, "rev-parse", "--short", "HEAD"], capture_output=True,
                                       text=True).stdout.strip(), "args": vars(a)}
@@ -704,6 +706,7 @@ class Perf:
         meta["busiest_at_start"] = [l.strip() for l in top]
         self.meta = meta
         self.inst.start_app()
+        self.meta["app_pid"] = self.inst.app_pid
         created = self.json("window", "new", "--cwd", self.inst.work)
         self.window, self.anchor = created["window"], created["pane"]
         self.wait_prompt(self.anchor)
