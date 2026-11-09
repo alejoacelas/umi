@@ -1,13 +1,15 @@
 # Working on Umi
 
-Umi is a macOS terminal for working with coding agents: a fork of Ghostty with a Warp-like sidebar,
-tabs and panes, an editor, agent sessions (Claude Code, Codex) and the `umi` CLI. It was called Tern
-until 0.5.0 (see "Names" below). This repository holds the source and publishes the releases.
+Umi is a macOS terminal for keeping track of many coding agents: a fork of Ghostty with Warp's
+sidebar, tabs and panes, an editor, and the `umi` CLI. Agents run in ordinary panes; their hook
+plugins report each pane's agent state to Umi, and scripts and skills steer them through the CLI.
+It was called Tern until 0.5.0 (see "Names" below). This repository holds the source and publishes the releases.
 
 | Path | What it is |
 |---|---|
-| `app/` | The app: Ghostty with Ghostty's full history, plus Umi. Umi's Swift is in `app/macos/Sources/Features/Umi`, its CLI in `app/macos/UmiCLI`, its agent plugins in `app/macos/UmiPlugins`; Zig changes are marked `Umi:` in comments. `app/AGENTS.md` and `app/macos/AGENTS.md` are Ghostty's own guides. |
+| `app/` | The app: Ghostty with Ghostty's full history, plus Umi. Umi's Swift is in `app/macos/Sources/Features/Umi`, its CLI in `app/macos/UmiCLI`, the Claude Code and Codex hook plugins in `app/macos/UmiPlugins`; Zig changes are marked `Umi:` in comments. `app/AGENTS.md` and `app/macos/AGENTS.md` are Ghostty's own guides. |
 | `app/dist/` | `release.sh`, `install.sh`, `sign-update.swift`, `local-icon.sh`, `icon/` (the icon's drawing code). |
+| `design/` | The current design: start at `design/README.md`. `build-log.md` records how it was built and the choices made along the way. |
 | `acceptance/` | The black-box acceptance suite: `SPEC.md` (requirements), `CLI.md` (the CLI contract), `REQUESTS.md` (the user's words), `tests/`, fake agents in `fakes/`, `targets/umi.json`. |
 | `*.md` at the root | Briefs (`BRIEF*.md`), `COMPROMISES.md`, reports (`REPORT.md`, `REPORT-umi.md`). Records from before 0.6.0 say Tern and stay that way. |
 | `logs/`, `.worktrees/`, `.ref/` | Local only (ignored): run logs, agent worktrees, reference copies. |
@@ -28,7 +30,7 @@ To try a change, run `app/dist/dev.sh`: it builds the Debug app incrementally (a
 only when something outside `app/macos` changed), then restarts a dev copy next to the installed
 Umi. The dev copy (`dev.umi.app.debug`) is an isolated instance with its own state in
 `~/Library/Application Support/Umi-dev`, so it keeps its windows between restarts and never touches
-the user's Umi or its sessions. `app/dist/dev.sh umi ls` drives it; `--help` lists the options.
+the user's Umi or its panes. `app/dist/dev.sh umi ls` drives it; `--help` lists the options.
 
 Rebuild the library whenever something outside `app/macos` changes. `app/dist/release.sh --version
 X.Y.Z --build --no-publish` does both steps and stamps a release copy without publishing. The built
@@ -45,9 +47,7 @@ Umi, or Tern.
 cd acceptance
 uv run pytest --target targets/umi.json                  # the whole suite with fake agents (~25 min)
 uv run pytest --target targets/umi.json -m "not slow"    # the quick loop
-ACCEPTANCE_REAL=1 uv run pytest --target targets/umi.json  # also the real Claude Code / Codex tests (cheap models)
 uv run python ../app/macos/UmiTests/verify_ui_paths.py      # UI paths without the accessibility tree
-uv run python ../app/macos/UmiTests/verify_agent_panes.py   # agent panes, the same way
 
 cd app && zig build test -Dtest-filter=<name>            # Zig unit tests (the full set is slow)
 cd app/macos && env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
@@ -77,8 +77,6 @@ made the user's `~/Library/Application Support/Umi`.
   `app/zig-out` from a worktree whose files outside `app/macos` are the same.
 - UI tests need the terminal running pytest to have the Accessibility permission and an unlocked
   screen; otherwise they are skipped, and they type into windows, so don't use the Mac meanwhile.
-- `ACCEPTANCE_REAL=1` runs the user's own `claude` and `codex` logins; a fixture removes afterwards
-  what the run added to `~/.claude` and `~/.codex` (log in `acceptance/results/`).
 - Record test changes in `acceptance/TEST_CHANGES.md` and never weaken a test to make it pass.
 
 ## Release
