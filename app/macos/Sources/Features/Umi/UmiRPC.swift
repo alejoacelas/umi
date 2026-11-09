@@ -137,6 +137,9 @@ enum UmiRPC {
         case "tab.pin", "tab.unpin":
             let tabs = try UmiTopology.everyTab(params.string("tab"), caller: caller)
             let pin = method == "tab.pin"
+            if pin, let archived = tabs.first(where: { $0.1.archived }) {
+                throw UmiError.failed("tab \(archived.1.idString.prefix(8)) is archived: unarchive it to pin it")
+            }
             var windows: [TerminalController] = []
             for (window, _) in tabs where !windows.contains(where: { $0 === window }) { windows.append(window) }
             UmiLayout.undoable(pin ? "Pin Tab" : "Unpin Tab", windows: windows) {
@@ -146,6 +149,21 @@ enum UmiRPC {
                 UmiEvents.shared.emit(pin ? "tab.pinned" : "tab.unpinned", ["tab": tab.idString, "window": window.umiIDString])
             }
             return ["tab": tabs[0].1.idString, "tabs": tabs.map(\.1.idString), "pinned": pin]
+
+        case "tab.archive":
+            // Every tab a query names (design/cli.md choice 3); `--until` brings each back by itself.
+            let tabs = try UmiTopology.everyTab(params.string("tab"), caller: caller)
+            let conditions = try UmiArchive.parseConditions(params.strings("until") ?? [])
+            for (window, tab) in tabs {
+                UmiArchive.archive(tab, in: window)
+                if !conditions.isEmpty { UmiArchive.setConditions(conditions, for: tab) }
+            }
+            return ["tab": tabs[0].1.idString, "tabs": tabs.map(\.1.idString)]
+
+        case "tab.unarchive":
+            let tabs = try UmiTopology.everyTab(params.string("tab"), caller: caller)
+            for (window, tab) in tabs { UmiArchive.unarchive(tab, in: window) }
+            return ["tab": tabs[0].1.idString, "tabs": tabs.map(\.1.idString)]
 
         case "tab.move":
             let (source, tab) = try UmiTopology.tab(params.string("tab"), caller: caller)

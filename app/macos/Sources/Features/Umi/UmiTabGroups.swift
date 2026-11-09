@@ -110,7 +110,8 @@ enum UmiTabGroups {
         let admitted = Set(model.matchingTabs(in: controller).map(\.id))
         var entries: [Entry] = []
         var listed: Set<UUID> = []
-        for tab in controller.tabs {
+        // Archived tabs are listed under the Archived row instead (UmiArchiveBox).
+        for tab in controller.tabs where !tab.archived {
             guard let group = group(of: tab, in: controller) else {
                 if admitted.contains(tab.id) { entries.append(.tab(tab, indent: 0)) }
                 continue
@@ -207,7 +208,7 @@ enum UmiTabGroups {
     /// "Close all tabs in group" and "Close other tabs" (the tabs outside the group).
     static func close(_ group: UmiTabGroup, others: Bool, in controller: TerminalController) {
         let inside = members(of: group, in: controller)
-        let toClose = others ? controller.tabs.filter { $0.groupID != group.id } : inside
+        let toClose = others ? controller.activeTabs.filter { $0.groupID != group.id } : inside
         controller.closeTabs(toClose, actionName: others ? "Close Other Tabs" : "Close Tabs in Group",
                              question: others ? "Close Other Tabs?" : "Close Tabs in Group?")
     }
@@ -219,7 +220,7 @@ enum UmiTabGroups {
         let ids = Set(model.groups.map(\.id))
         for tab in controller.tabs {
             guard let id = tab.groupID else { continue }
-            if tab.pinned || !ids.contains(id) { tab.groupID = nil }
+            if tab.pinned || tab.archived || !ids.contains(id) { tab.groupID = nil }
         }
         for group in model.groups {
             let members = members(of: group, in: controller)
@@ -328,6 +329,8 @@ enum UmiTabGroups {
     static func moveTargets() -> (TerminalController, UmiTab, [UmiTabGroup])? {
         guard let window = UmiTopology.currentWindow else { return nil }
         let tab = window.selectedTab
+        // An archived tab joins no group (design/archive.md).
+        guard !tab.archived else { return (window, tab, []) }
         return (window, tab, window.sidebarModel.groups.filter { $0.id != tab.groupID })
     }
 

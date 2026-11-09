@@ -184,7 +184,8 @@ final class UmiPaneMove {
     /// The ↑/↓ order: the window's tabs in sidebar order, then a new tab (not for a pane that is
     /// alone in its tab: it would only move the tab).
     private var order: [Target] {
-        let tabs = start.map { Target.tab($0.tab) }
+        // Archived tabs aren't targets, except the pane's own (design/archive.md).
+        let tabs = start.filter { !$0.tab.archived || $0.tab === source }.map { Target.tab($0.tab) }
         let alone = (start.first { $0.tab === source }.map { ($0.tree.root?.leaves().count ?? 0) <= 1 && $0.hidden.isEmpty }) ?? true
         return alone ? tabs : tabs + [.newTab]
     }

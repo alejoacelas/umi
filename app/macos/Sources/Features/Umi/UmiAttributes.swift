@@ -133,6 +133,11 @@ final class UmiAttributes {
     /// One attribute of a pane, whoever keeps it: Umi's read-only keys, else the pane's agent,
     /// else the pane's own.
     func value(_ key: String, of pane: Ghostty.SurfaceView) -> String? {
+        // `tab.KEY`: an attribute of the pane's tab (`tab.archived=true`, design/archive.md).
+        if key.hasPrefix("tab."), key.count > 4 {
+            guard let location = UmiTopology.locate(pane) else { return nil }
+            return all(location.tab, in: location.window)[String(key.dropFirst(4))]
+        }
         if Self.readOnly.contains(key) { return computedValue(key, of: pane) }
         if Self.agentKeys.contains(key) { return UmiAttention.shared.agent(forPane: pane.id)?.attributes[key] }
         return panes[pane.id]?[key]
@@ -144,10 +149,11 @@ final class UmiAttributes {
         return "terminal"
     }
 
-    /// Every attribute of a tab: its own and `visible_count`.
+    /// Every attribute of a tab: its own, `visible_count` and `archived` (`true` or `false`).
     func all(_ tab: UmiTab, in window: TerminalController) -> [String: String] {
         var out = tab.attributes
         out["visible_count"] = String(window.tree(of: tab).root?.leaves().count ?? 0)
+        out["archived"] = tab.archived ? "true" : "false"
         return out
     }
 
@@ -155,7 +161,12 @@ final class UmiAttributes {
 
     /// Set attributes on a pane, all or none: every key and value is checked before anything changes.
     func set(_ pairs: [(String, String)], on pane: Ghostty.SurfaceView) throws {
-        for (key, _) in pairs { try Self.checkWritable(key) }
+        for (key, _) in pairs {
+            try Self.checkWritable(key)
+            if key.hasPrefix("tab.") {
+                throw UmiError.badRequest("\(key) reads the pane's tab's attribute; set it with `\(UmiPaths.cliName) tab set`")
+            }
+        }
         let own = pairs.filter { !Self.agentKeys.contains($0.0) }
         let agent = Dictionary(pairs.filter { Self.agentKeys.contains($0.0) }, uniquingKeysWith: { _, last in last })
         let change = try agentChange(agent, pane: pane.id)
@@ -258,13 +269,31 @@ final class UmiAttributes {
     // MARK: Tabs and windows
 
     func set(_ pairs: [(String, String)], on tab: UmiTab, in window: TerminalController) throws {
-        for (key, _) in pairs { try Self.checkWritable(key) }
-        for (key, value) in pairs { store(key, value, tab: tab, in: window) }
+        for (key, value) in pairs {
+            try Self.checkWritable(key)
+            if key == "archived", value != "true", value != "false" {
+                throw UmiError.badRequest("archived is true or false")
+            }
+        }
+        for (key, value) in pairs {
+            // `archived` archives or brings back the tab, as `tab archive|unarchive` (design/archive.md).
+            if key == "archived" {
+                if value == "true" { UmiArchive.archive(tab, in: window) } else { UmiArchive.unarchive(tab, in: window) }
+                continue
+            }
+            store(key, value, tab: tab, in: window)
+        }
     }
 
     func unset(_ keys: [String], on tab: UmiTab, in window: TerminalController) throws {
         for key in keys { try Self.checkWritable(key) }
-        for key in keys { store(key, nil, tab: tab, in: window) }
+        for key in keys {
+            if key == "archived" {
+                UmiArchive.unarchive(tab, in: window)
+                continue
+            }
+            store(key, nil, tab: tab, in: window)
+        }
     }
 
     private func store(_ key: String, _ value: String?, tab: UmiTab, in window: TerminalController) {
