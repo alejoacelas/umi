@@ -824,6 +824,12 @@ class AppDelegate: NSObject,
     }
 
     private func setDockBadge() {
+        let label = dockBadgeLabel()
+        NSApp.dockTile.badgeLabel = label
+        NSApp.dockTile.display()
+    }
+
+    private func dockBadgeLabel() -> String? {
         let bellCount = NSApp.windows
             .compactMap { $0.windowController as? BaseTerminalController }
             .reduce(0) { $0 + ($1.bell ? 1 : 0) }
@@ -832,13 +838,14 @@ class AppDelegate: NSObject,
         // Umi: the panes the `badge` slot counts (default: whose agent needs the user) come first.
         let needingInput = MainActor.assumeIsolated { UmiSlots.badgeCount }
         if needingInput > 0 { label = needingInput > 99 ? "99+" : String(needingInput) }
-        NSApp.dockTile.badgeLabel = label
-        NSApp.dockTile.display()
+        return label
     }
 
     /// Umi: a pane's agent started or stopped needing the user. Isolated (test)
-    /// instances set the badge without asking for the badge permission.
+    /// instances set the badge without asking for the badge permission. Agents' hooks call this
+    /// many times a second, so the Dock is only touched when the label changes.
     func refreshDockBadge() {
+        guard (dockBadgeLabel() ?? "") != (NSApp.dockTile.badgeLabel ?? "") else { return }
         if UmiPaths.isIsolated { setDockBadge() } else { syncDockBadge() }
     }
 

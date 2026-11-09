@@ -123,8 +123,16 @@ final class UmiAttention: ObservableObject {
         }
     }
 
-    /// Bumped on every change, for views and orderings that depend on this.
+    /// Bumped after changes, for the views that show them (the sidebar rows, the pane indicators,
+    /// the drawer and the hidden panes' strip). A burst of changes (agents' hooks can send hundreds a
+    /// second) is shown at most every `viewInterval`: the first change after a quiet spell shows at
+    /// the next turn of the run loop, later ones at most `viewInterval` after the last showing.
+    /// What the views read is current whenever they draw; only when they draw is spaced out.
     @Published private(set) var revision = 0
+
+    static let viewInterval: TimeInterval = 0.2
+    private var revisionPending = false
+    private var lastRevision = Date.distantPast
 
     private(set) var panes: [UUID: Agent] = [:]
 
@@ -292,8 +300,18 @@ final class UmiAttention: ObservableObject {
     }
 
     private func changed() {
-        revision &+= 1
         (NSApp?.delegate as? AppDelegate)?.refreshDockBadge()
+        guard !revisionPending else { return }
+        revisionPending = true
+        let wait = max(0, Self.viewInterval - Date().timeIntervalSince(lastRevision))
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.revisionPending = false
+                self.lastRevision = Date()
+                self.revision &+= 1
+            }
+        }
     }
 }
 
