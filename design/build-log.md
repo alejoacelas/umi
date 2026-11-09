@@ -1353,7 +1353,26 @@ skipped (the benchmark), none failed (`~/umi-final-step7-swift.log`).
 
 **Verified, and how**
 
-VERIFIED-PLACEHOLDER
+- The dev build (`app/dist/dev.sh`, Debug, a copy with its own state in `~/umi-dev-archive`) on
+  mac-air-2, driven by `~/umi-test-archive-trial.py`: ⌃⌘A both ways, Window ▸ Archive Tab, Unarchive
+  Tab and Show Archived, the row menu's Archive Tab and Unarchive Tab, clicks on the Archived row,
+  the palette's four entries, ⇧⌘] and ⌘1 skipping the archive, ⌃⇧↑ on the first tab and ⌃⇧↓ back,
+  `tab archive`, `tab unarchive`, `tab set archived=…`, `--until` with a query and with a moment,
+  `tab.archived` in queries, `ls` and `ls --json`, the events, and a relaunch keeping the archive
+  and its open state. Each result was read back through the CLI and `debug.ui.*`: 48 of 48
+  (`~/umi-test-archive-trial2.log`, screenshots in `~/umi-test-archive-shots`).
+- The whole acceptance suite with the UI tests at `d0adef3cf` (main merged in) on mac-air-2 under the
+  screen lock (`~/umi-test-archive-final.log`): 536 passed, 2 failed, 1 skipped (a window too narrow
+  for three panes). The failures: `test_builds_from_a_path_with_spaces` (fails on main too) and
+  `test_find_keys` (the Markdown editor's ⌘G; it fails the same way in the full run of
+  `session-links`, which has none of this work, and passes 14 of 14 alone,
+  `~/umi-test-archive-findkeys.log`).
+- An earlier full run left a "Close Other Tabs?" sheet open after
+  `test_close_other_tabs_leaves_the_archive_alone`, which broke four later tests. The test now
+  waits until the window needs no confirmation before closing; the rerun of the affected files
+  passed 85 of 85 (`~/umi-test-archive-targeted.log`).
+- Swift unit tests at `d0adef3cf`: 441 passed, 0 failed (`~/umi-test-archive-swift.log`), with the
+  new `UmiArchiveTests` and `UmiQueryTests.jumpLeavesOutPanesInArchivedTabs`.
 
 **Choices for Alejo to check**
 
@@ -1438,6 +1457,12 @@ main's step 4–5 fixes). Verified before release: the whole acceptance suite wi
 (`~/umi-final-step7-final.log`): 519 passed, 1 failed (`test_builds_from_a_path_with_spaces`,
 failing on main too), 1 skipped (a window too narrow for three panes). Swift unit tests at
 `7f90eb4ae` (the same code): 432 passed, 0 failed (`~/umi-final-step7-swift.log`).
+
+### 0.13.0: the archive
+
+Released from main after merging `design/archive`. Verified before release as listed in
+"Archive" ▸ "Verified, and how": the whole suite with the UI tests at `d0adef3cf` (later commits
+change only this log) and the Swift unit tests at the same commit.
 
 ### Installing on mac-air-2
 
