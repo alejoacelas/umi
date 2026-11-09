@@ -109,6 +109,8 @@ final class UmiWebPanes: ObservableObject {
     /// Links that leave a web pane's origin open in the default browser. `UMI_TEST_BROWSER_LOG`
     /// (tests only) appends each URL to that file instead, so no browser opens during a test run.
     static func openInBrowser(_ url: URL, from pane: Ghostty.SurfaceView?) {
+        // A session link on a page opens here (AG-20), never in another copy of Umi.
+        if UmiSessionLinks.isLink(url) { return UmiSessionLinks.handle(url) }
         UmiEvents.shared.emit("web.browser", ["url": url.absoluteString, "pane": pane?.umiID ?? ""])
         if let log = ProcessInfo.processInfo.environment["UMI_TEST_BROWSER_LOG"], !log.isEmpty {
             if let handle = FileHandle(forWritingAtPath: log) ?? {

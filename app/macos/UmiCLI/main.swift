@@ -1948,6 +1948,15 @@ func main() {
         print("\(cliName) \(version ?? "dev")")
     case "edit", "open":
         editCommand(rest)
+    case "link":
+        guard rest.count == 1 else { fail("usage: \(cliName) link umi://open?task=URL") }
+        let result = callDict("link.open", ["url": rest[0]])
+        if jsonOutput {
+            printJSON(result)
+        } else {
+            print("\(result["where"] ?? "?"): \(result["title"] ?? "") (pane \(result["pane"] ?? "?"))")
+            for note in result["notes"] as? [String] ?? [] { print(note) }
+        }
     case "editor":
         editorCommand(rest)
     case "comments", "comment":

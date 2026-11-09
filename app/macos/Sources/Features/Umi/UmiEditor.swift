@@ -1428,6 +1428,9 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                 } else {
                     NSWorkspace.shared.open(target)
                 }
+            } else if UmiSessionLinks.isLink(url) {
+                // A session link in a document opens here (AG-20), never in another copy of Umi.
+                MainActor.assumeIsolated { UmiSessionLinks.handle(url) }
             } else if ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
                 NSWorkspace.shared.open(url)
             }

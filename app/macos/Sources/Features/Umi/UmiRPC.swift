@@ -462,6 +462,18 @@ enum UmiRPC {
             try await UmiScreenshot.capture(window, to: path)
             return ["path": path, "window": window.umiIDString]
 
+        // MARK: Session links (AG-20)
+        case "link.open":
+            guard let raw = params.string("url"), let url = URL(string: raw) else {
+                throw UmiError.badRequest("link needs a umi://open?task=URL link")
+            }
+            do {
+                return try await UmiSessionLinks.open(url)
+            } catch let error as UmiError {
+                UmiEvents.shared.emit("link.refused", ["url": raw, "reason": error.message])
+                throw error
+            }
+
         // MARK: Editor
         case "editor.open":
             return try UmiEditor.handleOpen(params, caller: caller)

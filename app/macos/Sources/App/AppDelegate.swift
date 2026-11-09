@@ -211,6 +211,19 @@ class AppDelegate: NSObject,
         UmiControlServer.shared.start()
         // Umi's plugins for Claude Code and Codex, installed and kept current (AG-18).
         UmiAgentPlugins.ensureInstalledAtLaunch()
+        // Umi: session links (umi://open?task=URL) from browsers and other apps (AG-20). An Apple
+        // event handler, because `application(_:open:)` would replace the file-opening callbacks.
+        NSAppleEventManager.shared().setEventHandler(
+            self, andSelector: #selector(handleGetURL(_:withReply:)),
+            forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
+
+    /// Umi: a `umi://` URL opened through LaunchServices.
+    @objc func handleGetURL(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        guard let raw = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: raw) else { return }
+        // Wait for the restored windows, so the task's tab opens in one of them.
+        DispatchQueue.main.async { MainActor.assumeIsolated { UmiSessionLinks.handle(url) } }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

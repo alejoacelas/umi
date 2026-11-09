@@ -267,6 +267,10 @@ let commandTable: [CommandHelp] = [
                 actions: [PaletteAction(title: "Screenshot Window…", argv: ["screenshot"],
                                         ask: [Ask(name: "OUT", prompt: "Save as (.png)", kind: "file")])]),
 
+    // Session links
+    CommandHelp(section: "Session links", usage: "link umi://open?task=URL",
+                summary: "fetch the task from a umi-web-origin and start its agent in a new tab"),
+
     // Editor
     CommandHelp(section: "Editor", usage: "edit FILE|URL… [--source|--preview] [--tab T | --pane P]",
                 summary: "a URL from an umi-web-origin opens in a web pane",

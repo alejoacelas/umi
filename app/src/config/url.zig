@@ -24,8 +24,9 @@ const oni = @import("oniguruma");
 ///
 /// There are many complicated cases where these heuristics break down, but
 /// handling them well requires a non-regex approach.
+// Umi: `umi://` session links (AG-20) are links too.
 const url_schemes =
-    \\https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:
+    \\umi://|https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:
 ;
 
 const ipv6_url_pattern =
@@ -133,6 +134,11 @@ test "url regex" {
         expect: []const u8,
         num_matches: usize = 1,
     }{
+        // Umi: session links (AG-20).
+        .{
+            .input = "open umi://open?task=https%3A%2F%2Fagent-server.example.ts.net%2Fumi%2Fab_C-1.json now",
+            .expect = "umi://open?task=https%3A%2F%2Fagent-server.example.ts.net%2Fumi%2Fab_C-1.json",
+        },
         .{
             .input = "hello https://example.com world",
             .expect = "https://example.com",

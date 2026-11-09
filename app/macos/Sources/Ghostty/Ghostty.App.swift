@@ -845,6 +845,13 @@ extension Ghostty {
         ) -> Bool {
             let action = Ghostty.Action.OpenURL(c: v)
 
+            // Umi: a session link (umi://open?task=URL) ⌘-clicked in a pane opens its task in a
+            // new tab (AG-20); the task's origin is checked there.
+            if let url = URL(string: action.url), MainActor.assumeIsolated({ UmiSessionLinks.isLink(url) }) {
+                DispatchQueue.main.async { MainActor.assumeIsolated { UmiSessionLinks.handle(url) } }
+                return true
+            }
+
             // Umi: a link from an origin in `umi-web-origin`, ⌘-clicked in a pane, opens in a
             // web pane beside it instead of the browser (E-12).
             if let target, target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface,

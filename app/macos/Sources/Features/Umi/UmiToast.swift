@@ -11,15 +11,16 @@ enum UmiToast {
     private(set) static var last: (text: String, at: Date)?
     static let duration: TimeInterval = 4
 
-    static func show(_ text: String, near pane: Ghostty.SurfaceView?) {
+    /// `warning`: a link refused or a task that couldn't open (red, an exclamation mark, 10 seconds).
+    static func show(_ text: String, near pane: Ghostty.SurfaceView?, warning: Bool = false) {
         last = (text, Date())
         guard let pane, let window = pane.window, let content = window.contentView,
               let controller = UmiTopology.locate(pane)?.window else { return }
         dismiss()
-        let green = UmiCodeLook.palette()[2]
+        let green = UmiCodeLook.palette()[warning ? 1 : 2]
         let ink = UmiCodeLook.background
         let toast = HStack(spacing: 8) {
-            Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold))
+            Image(systemName: warning ? "exclamationmark.triangle" : "checkmark").font(.system(size: 12, weight: .semibold))
             Text(text).font(.system(size: 13))
         }
         .foregroundColor(Color(ink))
@@ -40,7 +41,7 @@ enum UmiToast {
             hosting.topAnchor.constraint(equalTo: content.safeAreaLayoutGuide.topAnchor, constant: 16),
             hosting.centerXAnchor.constraint(equalTo: content.centerXAnchor, constant: sidebar / 2),
         ])
-        let timer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: warning ? 10 : duration, repeats: false) { _ in
             MainActor.assumeIsolated { dismiss() }
         }
         shown = (hosting, timer)
