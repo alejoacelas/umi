@@ -332,4 +332,13 @@ enum UmiSessionLinks {
     }
 
     static func isLink(_ url: URL) -> Bool { url.scheme?.lowercased() == "umi" }
+
+    /// A link ⌘-clicked in a terminal pane: a session link is handled on the next turn of the main
+    /// loop (the click arrives while the terminal is still handling its mouse event). False for
+    /// every other link.
+    static func openFromTerminal(_ raw: String) -> Bool {
+        guard let url = URL(string: raw), isLink(url) else { return false }
+        DispatchQueue.main.async { MainActor.assumeIsolated { handle(url) } }
+        return true
+    }
 }

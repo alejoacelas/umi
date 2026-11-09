@@ -76,6 +76,7 @@ enum UmiUIDebug {
             // A link ⌘-clicked in a pane: what the terminal's open-URL action runs (E-12).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
             guard let url = params.string("url") else { throw UmiError.badRequest("url is required") }
+            if UmiSessionLinks.openFromTerminal(url) { return ["session_link": true, "web_pane": false] }
             return ["web_pane": UmiWebPanes.openFromTerminal(url, pane: pane)]
 
         case "debug.ui.attention.set":
