@@ -44,6 +44,11 @@ def now():
     return time.time()
 
 
+def iso_utc(t):
+    """The recorder's timestamp format (UTC, milliseconds, Z), comparable as text."""
+    return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
 def iso(t):
     return datetime.datetime.fromtimestamp(t).astimezone().isoformat(timespec="milliseconds")
 
@@ -684,14 +689,15 @@ class Perf:
             extra = {}
             self.log(f"failed: {error}")
         end = now()
+        # xctrace suspends the app while it saves: probes from then on aren't the scenario's.
+        self.scenario = "between"
         if trace:
             trace.stop()
-        recorder = self.recorder_new()
+        recorder = [r for r in self.recorder_new() if not r.get("time") or r["time"] <= iso_utc(end)]
         self.results.append({"scenario": label, "start": start, "end": end, "extra": extra, "error": error,
                              "trace": trace.path if trace and os.path.exists(trace.path) else None,
                              "recorder": recorder})
         self.log(f"done in {end - start:.0f}s")
-        self.scenario = "between"
 
     def main(self):
         a = self.args
