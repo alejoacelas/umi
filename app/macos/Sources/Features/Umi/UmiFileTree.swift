@@ -322,7 +322,7 @@ final class UmiFileTreeModel: ObservableObject {
         }
     }
 
-    private func setRoot(_ url: URL) {
+    func setRoot(_ url: URL) {
         let node = UmiFileNode(url: url, isDirectory: true)
         node.expanded = true
         node.loadChildren()
@@ -364,7 +364,7 @@ final class UmiFileTreeModel: ObservableObject {
     /// anything under it). Only folders the explorer has read matter: shown ones are read again in
     /// the background, others are marked to be read again when they are next opened. Git is asked
     /// again what it ignores unless every change is inside a folder a rule ignores.
-    private func filesChanged(_ events: [UmiFSWatcher.Event]) {
+    func filesChanged(_ events: [UmiFSWatcher.Event]) {
         guard visible, let root else { return }
         let rootPath = root.url.path
         var folders: [(node: UmiFileNode, shown: Bool)]?

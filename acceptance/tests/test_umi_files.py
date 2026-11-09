@@ -258,6 +258,30 @@ def test_explorer_follows_changes_in_open_and_closed_folders(inst, win, tmp_path
 
 
 @pytest.mark.req("S-2")
+def test_explorer_reopening_a_folder_shows_current_entries_in_its_open_subfolders(inst, win, tmp_path):
+    """A subfolder left open inside a folder the user closed: files made and deleted in it
+    meanwhile show (and go) as soon as the outer folder is opened again."""
+    repo = make_repo(tmp_path)
+    open_repo(inst, win, repo)
+    show_by_key(inst, win, repo)
+    src, lib = os.path.join(repo, "src"), os.path.join(repo, "src", "lib")
+    set_open_by_key(inst, win, src, True)
+    set_open_by_key(inst, win, lib, True)
+    assert row(files(inst, win, update=False), os.path.join(lib, "util.py")) is not None
+    set_open_by_key(inst, win, src, False)
+    made = os.path.join(lib, "made_while_closed.py")
+    write(made)
+    os.remove(os.path.join(lib, "util.py"))
+    time.sleep(1)   # the change events arrive while src is closed
+    set_open_by_key(inst, win, src, True)
+    state = files(inst, win, update=False)
+    assert row(state, lib)["expanded"], "src/lib stays open"
+    assert row(state, made) is not None, "a file made in the open subfolder shows on reopening its parent"
+    assert row(state, os.path.join(lib, "util.py")) is None, "a file deleted there doesn't"
+    inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2")
 def test_explorer_handles_changes_in_unopened_and_ignored_folders(inst, win, tmp_path):
     """Many changes in folders the explorer hasn't opened, ignored or not, leave it current: new
     files at the top still show, an ignored folder opened afterwards lists what was made there
