@@ -11,67 +11,107 @@ final class UmiFileNode {
     let isDirectory: Bool
     var expanded = false
     private(set) var children: [UmiFileNode]?
+    /// The entries may have changed since they were read (a change came while they weren't
+    /// shown, or while the explorer was hidden): the next `loadChildren()` reads them again.
+    var stale = false
+    /// Bumped on every read, so a background read that a newer one overtook is dropped.
+    private(set) var generation = 0
 
     var name: String { url.lastPathComponent }
     var path: String { url.path }
 
     /// Names never shown in the explorer.
-    static let hidden: Set<String> = [".git", ".DS_Store", ".hg", ".svn"]
-    static let maxEntries = 3000
+    nonisolated static let hidden: Set<String> = [".git", ".DS_Store", ".hg", ".svn"]
+    nonisolated static let maxEntries = 3000
+
+    /// One entry of a folder, as read from disk (safe to make off the main thread).
+    struct Entry: Sendable {
+        let name: String
+        let isDirectory: Bool
+    }
 
     init(url: URL, isDirectory: Bool) {
         self.url = url
         self.isDirectory = isDirectory
     }
 
-    /// Read the folder's entries (again, with `force`). Nodes already known keep their state.
+    /// Read the folder's entries if they were never read, or may have changed (again, with
+    /// `force`). Nodes already known keep their state.
     func loadChildren(force: Bool = false) {
-        guard isDirectory, force || children == nil else { return }
-        let keys: [URLResourceKey] = [.isDirectoryKey, .isHiddenKey]
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            at: url, includingPropertiesForKeys: keys, options: [])) ?? []
+        guard isDirectory, force || stale || children == nil else { return }
+        apply(Self.read(url))
+    }
+
+    /// Take entries read by `read(_:)` (on any thread), in their order.
+    func apply(_ entries: [Entry]) {
         let old = Dictionary((children ?? []).map { ($0.url.lastPathComponent, $0) }, uniquingKeysWith: { a, _ in a })
-        var nodes: [UmiFileNode] = []
-        for entry in entries.prefix(Self.maxEntries) {
+        children = entries.map { entry in
+            if let known = old[entry.name], known.isDirectory == entry.isDirectory { return known }
+            return UmiFileNode(url: url.appendingPathComponent(entry.name, isDirectory: entry.isDirectory),
+                               isDirectory: entry.isDirectory)
+        }
+        stale = false
+        generation &+= 1
+    }
+
+    /// The entries of a folder as the explorer shows them, sorted. Touches no node, so it can run
+    /// off the main thread.
+    nonisolated static func read(_ url: URL) -> [Entry] {
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isHiddenKey]
+        let found = (try? FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: keys, options: [])) ?? []
+        var entries: [Entry] = []
+        for entry in found.prefix(maxEntries) {
             let name = entry.lastPathComponent
-            if Self.hidden.contains(name) { continue }
+            if hidden.contains(name) { continue }
             let values = try? entry.resourceValues(forKeys: Set(keys))
             // Dotfiles are shown (`.github`, `.env.example`); other Finder-hidden items aren't.
             if values?.isHidden == true && !name.hasPrefix(".") { continue }
-            let isDirectory = values?.isDirectory ?? false
-            if let known = old[name], known.isDirectory == isDirectory {
-                nodes.append(known)
-            } else {
-                nodes.append(UmiFileNode(url: url.appendingPathComponent(name, isDirectory: isDirectory),
-                                         isDirectory: isDirectory))
-            }
+            entries.append(Entry(name: name, isDirectory: values?.isDirectory ?? false))
         }
-        nodes.sort(by: Self.order)
-        children = nodes
+        entries.sort(by: order)
+        return entries
     }
 
     /// Warp's order: folders first, then files; dotfiles first within each; natural order.
-    static func order(_ a: UmiFileNode, _ b: UmiFileNode) -> Bool {
+    nonisolated static func order(_ a: Entry, _ b: Entry) -> Bool {
         if a.isDirectory != b.isDirectory { return a.isDirectory }
         let aDot = a.name.hasPrefix("."), bDot = b.name.hasPrefix(".")
         if aDot != bDot { return aDot }
         return a.name.localizedStandardCompare(b.name) == .orderedAscending
     }
 
-    /// Every loaded folder under (and including) this one.
-    func loadedFolders() -> [UmiFileNode] {
-        guard isDirectory, let children else { return isDirectory ? [self] : [] }
-        return [self] + children.flatMap { $0.loadedFolders() }
+    /// Every loaded folder under (and including) this one, with whether its entries are shown
+    /// (it and every folder above it are open).
+    func loadedFolders(shown: Bool = true, into out: inout [(node: UmiFileNode, shown: Bool)]) {
+        guard isDirectory, let children else { return }
+        let open = shown && expanded
+        out.append((self, open))
+        for child in children where child.isDirectory { child.loadedFolders(shown: open, into: &out) }
     }
 }
 
-/// Watches a folder tree with FSEvents and reports the folders whose contents changed.
+/// Watches a folder tree with FSEvents and reports what changed: the folders whose contents
+/// changed, with their event flags. Events are taken off FSEvents' queue on a queue of the
+/// watcher's own (so the stream never waits for a busy main thread and drops events), then handed
+/// to the main queue.
 final class UmiFSWatcher {
-    private var stream: FSEventStreamRef?
-    private let handler: ([String], Bool) -> Void
+    struct Event: Sendable {
+        let path: String
+        let flags: FSEventStreamEventFlags
 
-    /// `handler` gets the changed folders and whether everything must be rescanned, on the main queue.
-    init?(path: String, handler: @escaping ([String], Bool) -> Void) {
+        /// Everything under `path` may have changed (events were coalesced or dropped).
+        var mustScanSubDirs: Bool { Int(flags) & kFSEventStreamEventFlagMustScanSubDirs != 0 }
+        /// The watched folder itself, or a folder above it, was moved, made or deleted.
+        var rootChanged: Bool { Int(flags) & kFSEventStreamEventFlagRootChanged != 0 }
+    }
+
+    private var stream: FSEventStreamRef?
+    private let handler: ([Event]) -> Void
+    private static let queue = DispatchQueue(label: "dev.umi.explorer.fsevents", qos: .utility)
+
+    /// `handler` gets each batch of events on the main queue.
+    init?(path: String, handler: @escaping ([Event]) -> Void) {
         self.handler = handler
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
                                            retain: nil, release: nil, copyDescription: nil)
@@ -79,12 +119,11 @@ final class UmiFSWatcher {
             guard let info else { return }
             let watcher = Unmanaged<UmiFSWatcher>.fromOpaque(info).takeUnretainedValue()
             let list = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
-            var rescan = false
-            for i in 0..<count {
-                let flag = Int(flags[i])
-                if flag & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged) != 0 { rescan = true }
-            }
-            watcher.handler(list, rescan)
+            var events: [Event] = []
+            events.reserveCapacity(min(count, list.count))
+            for i in 0..<min(count, list.count) { events.append(Event(path: list[i], flags: flags[i])) }
+            let handler = watcher.handler
+            DispatchQueue.main.async { handler(events) }
         }
         let flags = UInt32(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagWatchRoot)
         guard let stream = FSEventStreamCreate(nil, callback, &context, [path] as CFArray,
@@ -92,14 +131,17 @@ final class UmiFSWatcher {
             return nil
         }
         self.stream = stream
-        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamSetDispatchQueue(stream, Self.queue)
         FSEventStreamStart(stream)
     }
 
+    /// Stop the stream. Once this returns no callback runs any more (one in progress on the
+    /// watcher's queue is waited for); a batch already handed to the main queue may still arrive.
     func stop() {
         guard let stream else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
+        Self.queue.sync {}
         FSEventStreamRelease(stream)
         self.stream = nil
     }
@@ -143,8 +185,21 @@ final class UmiFileTreeModel: ObservableObject {
 
     private weak var controller: TerminalController?
     private var timer: Timer?
+    /// Whether the explorer is on screen (between the view's appear and disappear). Only then are
+    /// the files watched; on showing again, what may have changed meanwhile is read again.
+    private(set) var visible = false
     private var watcher: UmiFSWatcher?
+    /// Identifies the current watcher, so a batch from a stopped one is dropped.
+    private var watchToken = 0
+    /// Shown folders to read again in the background (`readPending`), and the batch being read.
+    private var readQueue: [UmiFileNode] = []
+    private var reading: [UmiFileNode]?
+    /// Relative paths (`dir/`, `file`) git ignores, as `git ls-files --ignored --directory` lists them.
     private var ignored: Set<String> = []
+    /// The listed folders that a .gitignore rule ignores by themselves (not only because all their
+    /// contents are ignored): nothing that happens inside one can change what git ignores, so
+    /// changes there don't ask git again.
+    private var ignoredByRule: Set<String> = []
     private var ignoredWork: Process?
     private var ignoredPending = false
     private var lastActiveFile: URL?
@@ -177,18 +232,54 @@ final class UmiFileTreeModel: ObservableObject {
 
     // MARK: Following the focused pane
 
-    /// Follow the focused pane while the explorer is visible.
+    /// Follow the focused pane and watch its files while the explorer is visible.
     func start() {
         stop()
-        update()
+        visible = true
+        // Changes made while it was hidden weren't watched: what was read may be out of date
+        // (before `update()`, so revealing the active file reads its folders again).
+        let before = root
+        markAllStale()
+        update()   // a new root is watched from the start
+        if let root, root === before {
+            startWatching()
+            refreshIgnored()
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.update() }
         }
     }
 
+    /// The explorer went off screen: stop following and watching (no work for a hidden view).
     func stop() {
+        visible = false
         timer?.invalidate()
         timer = nil
+        stopWatching()
+        // Unwatched from now on: whatever is opened or revealed meanwhile is read again first.
+        var all: [(node: UmiFileNode, shown: Bool)] = []
+        root?.loadedFolders(into: &all)
+        for (folder, _) in all { folder.stale = true }
+    }
+
+    private func startWatching() {
+        stopWatching()
+        guard visible, let root else { return }
+        watchToken &+= 1
+        let token = watchToken
+        watcher = UmiFSWatcher(path: root.url.path) { [weak self] events in
+            MainActor.assumeIsolated {
+                guard let self, self.watchToken == token else { return }
+                self.filesChanged(events)
+            }
+        }
+    }
+
+    private func stopWatching() {
+        watcher?.stop()
+        watcher = nil
+        watchToken &+= 1
+        readQueue = []
     }
 
     /// The pane the explorer follows: the window's focused pane.
@@ -223,11 +314,9 @@ final class UmiFileTreeModel: ObservableObject {
         selected = nil
         edit = nil
         ignored = []
+        ignoredByRule = []
         collapsedByUser = []
-        watcher?.stop()
-        watcher = UmiFSWatcher(path: url.path) { [weak self] paths, rescan in
-            MainActor.assumeIsolated { self?.filesChanged(paths, rescan: rescan) }
-        }
+        startWatching()
         rebuild()
         refreshIgnored()
     }
@@ -255,28 +344,111 @@ final class UmiFileTreeModel: ObservableObject {
 
     // MARK: File system changes
 
-    private func filesChanged(_ paths: [String], rescan: Bool) {
-        guard let root else { return }
-        let folders = root.loadedFolders()
+    /// A batch of FSEvents. Each event names a folder whose entries changed (with MustScanSubDirs,
+    /// anything under it). Only folders the explorer has read matter: shown ones are read again in
+    /// the background, others are marked to be read again when they are next opened. Git is asked
+    /// again what it ignores unless every change is inside a folder a rule ignores.
+    private func filesChanged(_ events: [UmiFSWatcher.Event]) {
+        guard visible, let root else { return }
+        let rootPath = root.url.path
+        var folders: [(node: UmiFileNode, shown: Bool)]?
+        var byPath: [String: (node: UmiFileNode, shown: Bool)] = [:]
+        var askGit = false
         var touched = false
-        for path in paths {
-            let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        for event in events {
+            let path = event.path.count > 1 && event.path.hasSuffix("/") ? String(event.path.dropLast()) : event.path
             // Git's own bookkeeping changes on every git command; it isn't shown.
-            if trimmed.hasSuffix("/.git") || trimmed.contains("/.git/") { continue }
-            touched = true
-            if rescan { break }
-            for folder in folders where folder.url.path == trimmed {
-                folder.loadChildren(force: true)
+            if path.hasSuffix("/.git") || path.contains("/.git/") { continue }
+            let inside = path.hasPrefix(rootPath + "/")
+            if event.rootChanged || !(inside || path == rootPath) {
+                // The root itself (or a folder above it) changed, or a path outside it: everything.
+                markAllStale()
+                askGit = true
+                touched = true
+                continue
+            }
+            let relative = inside ? String(path.dropFirst(rootPath.count + 1)) : ""
+            if !isInsideIgnoredByRule(relative) { askGit = true }
+            if folders == nil {
+                var all: [(node: UmiFileNode, shown: Bool)] = []
+                root.loadedFolders(into: &all)
+                folders = all
+                for entry in all { byPath[entry.node.path] = entry }
+            }
+            var hits: [(node: UmiFileNode, shown: Bool)] = []
+            if event.mustScanSubDirs {
+                hits = (folders ?? []).filter { $0.node.path == path || $0.node.path.hasPrefix(path + "/") }
+            } else if let hit = byPath[path] {
+                hits = [hit]
+            }
+            for (folder, shown) in hits {
+                touched = true
+                if shown { queueRead(folder) } else { folder.stale = true }
             }
         }
-        if rescan {
-            for folder in folders { folder.loadChildren(force: true) }
-            touched = true
+        if touched, let selected, !FileManager.default.fileExists(atPath: selected.path) {
+            self.selected = nil
+            rebuild()
         }
-        guard touched else { return }
-        if let selected, !FileManager.default.fileExists(atPath: selected.path) { self.selected = nil }
-        rebuild()
-        refreshIgnored()
+        if askGit { refreshIgnored() }
+        readPending()
+    }
+
+    /// Mark every folder read so far as possibly changed: shown ones are read again now (in the
+    /// background), the others when they're next opened.
+    private func markAllStale() {
+        guard let root else { return }
+        var all: [(node: UmiFileNode, shown: Bool)] = []
+        root.loadedFolders(into: &all)
+        for (folder, shown) in all {
+            if shown { queueRead(folder) } else { folder.stale = true }
+        }
+        readPending()
+    }
+
+    private func queueRead(_ folder: UmiFileNode) {
+        folder.stale = true
+        if !readQueue.contains(where: { $0 === folder }) { readQueue.append(folder) }
+    }
+
+    /// Read the queued folders off the main thread, then show what changed. One batch at a time;
+    /// folders queued meanwhile are read once it ends. A folder read again on the main thread in
+    /// between (opened, a file made or renamed there) keeps that newer read.
+    private func readPending() {
+        guard reading == nil, !readQueue.isEmpty, let root else { return }
+        let batch = readQueue
+        readQueue = []
+        reading = batch
+        let urls = batch.map(\.url)
+        let generations = batch.map(\.generation)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let entries = urls.map { UmiFileNode.read($0) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, let batch = self.reading else { return }
+                    self.reading = nil
+                    // Hidden meanwhile: the folders stay marked, to be read again when needed.
+                    if self.visible, self.root === root {
+                        for (index, folder) in batch.enumerated() where folder.generation == generations[index] {
+                            folder.apply(entries[index])
+                        }
+                        self.rebuild()
+                    }
+                    self.readPending()
+                }
+            }
+        }
+    }
+
+    /// Whether a path (relative to the root) is in, or is, a folder that a rule ignores.
+    private func isInsideIgnoredByRule(_ relative: String) -> Bool {
+        guard !ignoredByRule.isEmpty, !relative.isEmpty else { return false }
+        var prefix = ""
+        for part in relative.split(separator: "/") {
+            prefix += part + "/"
+            if ignoredByRule.contains(prefix) { return true }
+        }
+        return false
     }
 
     /// Which entries git ignores (shown in italic and lighter, as Warp does).
@@ -286,6 +458,7 @@ final class UmiFileTreeModel: ObservableObject {
         let rootPath = root.url.path
         guard FileManager.default.fileExists(atPath: rootPath + "/.git") else {
             ignored = []
+            ignoredByRule = []
             return
         }
         let process = Process()
@@ -297,21 +470,26 @@ final class UmiFileTreeModel: ObservableObject {
         ignoredWork = process
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var found: Set<String> = []
+            var byRule: Set<String> = []
             do {
                 try process.run()
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
                 if process.terminationStatus == 0 {
                     found = Set(String(decoding: data, as: UTF8.self).split(separator: "\0").map(String.init))
+                    byRule = Self.ignoredByRule(Set(found.filter { $0.hasSuffix("/") }), in: rootPath)
                 }
             } catch {}
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.ignoredWork = nil
-                    if self.root?.url.path == rootPath, found != self.ignored {
-                        self.ignored = found
-                        self.rebuild()
+                    if self.root?.url.path == rootPath {
+                        self.ignoredByRule = byRule
+                        if found != self.ignored {
+                            self.ignored = found
+                            self.rebuild()
+                        }
                     }
                     if self.ignoredPending {
                         self.ignoredPending = false
@@ -320,6 +498,32 @@ final class UmiFileTreeModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Of the folders `git ls-files --ignored --directory` listed (`dir/`), those a rule ignores
+    /// by themselves (`git check-ignore`). A folder listed only because everything in it is
+    /// ignored (`logs/` holding only `*.log` files) isn't one: a new file there can unignore it.
+    nonisolated private static func ignoredByRule(_ folders: Set<String>, in rootPath: String) -> Set<String> {
+        guard !folders.isEmpty else { return [] }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", rootPath, "check-ignore", "-z", "--stdin"]
+        let input = Pipe(), output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return [] }
+        // Write from another thread so a full output pipe can't block the write.
+        let names = folders.map { String($0.dropLast()) }
+        DispatchQueue.global(qos: .utility).async {
+            try? input.fileHandleForWriting.write(contentsOf: Data((names.joined(separator: "\0") + "\0").utf8))
+            try? input.fileHandleForWriting.close()
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        // 0: some are ignored; 1: none are; anything else is an error (then none count).
+        guard process.terminationStatus == 0 else { return [] }
+        return Set(String(decoding: data, as: UTF8.self).split(separator: "\0").map { $0 + "/" })
     }
 
     func isIgnored(_ url: URL, isDirectory: Bool) -> Bool {
