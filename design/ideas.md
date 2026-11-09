@@ -2,7 +2,7 @@
 
 Behaviour Alejo said he might want, written as skills, palette commands, key bindings, config and
 scripts on top of the design. None of it is built into Umi; each piece uses commands from
-[cli.md](cli.md). Skills go in `~/best/stash/dotfiles/skills/`; palette commands are executables in
+[cli.md](cli.md). Skills go in `~/best/areas/dotfiles/skills/`; palette commands are executables in
 `~/.config/umi/commands/` (both kept in dotfiles); config lines go in `~/.config/umi/config`.
 
 | Idea | Built as | Needs from Umi beyond the design |
