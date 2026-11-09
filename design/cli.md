@@ -92,13 +92,17 @@ VALUE  := a word, or text in double quotes
   order of `ls`.
 - Without `sort`, matches come in `ls` order: windows by index, tabs in sidebar order, panes on show
   in layout order (left to right, top to bottom), then hidden panes in strip order.
+- `tab.KEY` reads the attribute KEY of the pane's tab: `tab.archived=true` holds for the panes of
+  archived tabs (design/archive.md). Panes can't hold keys starting with `tab.`.
 - A query that doesn't parse fails with exit 1 and names the position of the error.
 
 ## Objects in JSON
 
 - **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab], "drawer": {"open": bool,
-  "panes": [Pane]}, "attributes": {…}}`
-- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "color"?, "group"?:
+  "panes": [Pane]}, "archive": {"open": bool, "tabs": [id]}, "attributes": {…}}`. The archive's
+  `tabs` are in the order they were archived.
+- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "archived": bool,
+  "archive_until"?: [condition], "color"?, "group"?:
   its tab group's name, "focused_pane": id, "visible_limit": int, "strip": [id] (every pane's chip,
   in strip order), "panes": [Pane], "attributes": {…}}`. `panes` lists the panes on show in layout
   order, then hidden ones in strip order.
@@ -134,6 +138,8 @@ Pane `title` is its name, else `agent.title`, else what its program set, else it
     `role=manager` on a pane removes it from the pane that had it. The Docs tab is the tab with
     `role=docs` (decided here).
   - `visible_limit` (tabs): how many panes the tab shows; default 3, at least 1.
+  - `archived` (tabs): `true` while the tab is archived, else `false`. Setting it archives the tab or
+    brings it back, as `tab archive|unarchive`.
 - Attributes live and die with their pane (or tab, window). They are saved and restored with the
   layout.
 
@@ -151,8 +157,10 @@ Kept from today unless noted.
 | `tab next\|prev [--window W]` | next or previous tab in sidebar order, wrapping (⇧⌘] / ⇧⌘[ and ⌃Tab / ⌃⇧Tab). JSON `{"tab", "window", "index", "title"}` |
 | `tab rename [TAB] NAME` | `""` clears |
 | `tab color [TAB] COLOR` | red green yellow blue magenta cyan purple pink orange teal graphite none |
-| `tab pin\|unpin [TAB]` | |
-| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down` (⌃⇧↑ / ⌃⇧↓): one place within the pin group and tab group, past a whole neighbouring group; fails at the end of the group |
+| `tab pin\|unpin [TAB]` | an archived tab can't be pinned |
+| `tab archive [TAB] [--until CONDITION]…` | (⌃⌘A) into the window's archive at the top of the sidebar, still running, out of its tab group and unpinned. `--until` as on `pane hide`, a query about any of the tab's panes or a duration. JSON `{"tab", "tabs": [id]}` |
+| `tab unarchive [TAB]` | back to the top of the unpinned tabs; clears its conditions. JSON `{"tab", "tabs": [id]}` |
+| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down` (⌃⇧↑ / ⌃⇧↓): one place within the pin group and tab group, past a whole neighbouring group; fails at the end of the group. `--up` on the first tab archives it; `--down` on an archived tab brings it back |
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id. When the tab already shows its limit, `strip.make-room` hides one; JSON `{"pane", "hid"?: id}` |
 | `pane focus [PANE]` | a hidden pane is brought in first (it takes the right end of the tab; `strip.make-room` hides one); JSON `{"pane", "tab", "window", "hid"?}` |
 | `pane close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window` |
@@ -195,7 +203,7 @@ Removed: `jump` (use `go`), `tab back` (decided here), and every stack field and
 | `go --back` | back to the pane focused before the walk's first step (decided here: one walk per window). Exit 1 when there is no walk |
 
 ⌃⌘J runs `go --next jump` and ⌃⌘K runs `go --back`. `jump` is a named list; its default is
-"needs you, then unseen, oldest first in each".
+"needs you, then unseen, oldest first in each", leaving out panes in archived tabs.
 
 ## Drawer
 
@@ -244,6 +252,7 @@ Event names:
 | `pane.changed` | `pane`, `key`, `old`, `new`. Agent status changes are this event with key `agent.status` (decided here) |
 | `pane.renamed`, `pane.zoomed`, `pane.resized`, `pane.swapped` | as today |
 | `tab.created`, `tab.closed`, `tab.moved`, `tab.renamed`, `tab.colored`, `tab.pinned`, `tab.selected`, `tab.changed` | `tab.changed` as `pane.changed`, for tab attributes |
+| `tab.archived`, `tab.unarchived` | `tab`, `window`, `by_condition`? (brought back by `--until`) |
 | `window.created`, `window.closed`, `window.changed` | |
 | `drawer.opened`, `drawer.closed` | `window`, `pane`? |
 | `sidebar.changed` | shown, hidden, or width changed |

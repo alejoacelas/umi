@@ -15,7 +15,8 @@ panes and the three-pane limit ("Hidden panes"; `hid` on `split`, `pane focus`, 
 `edit`; the tab's `visible_limit` and `strip`) and removed stacks and the tab's `docs` field. Step 6
 removed `tab back` (design/cli.md, choice 11) and gave `tab next|prev` and `tab move --up|--down`
 their keys. Step 7 brought the drawer ("Drawer"; the window's `drawer` and the pane's `in_drawer`).
-This now covers all of `design/cli.md`.
+The archive (design/archive.md) brought `tab archive|unarchive`, the tab's `archived`, the window's
+`archive` and `tab.KEY` in queries. This now covers all of `design/cli.md`.
 
 ## General
 
@@ -82,8 +83,11 @@ VALUE  := a word, or text in double quotes
   10m` holds for a status older than 10 minutes); otherwise as text.
 - `sort KEY` sorts ascending, `-KEY` descending, with the same comparisons. Panes missing the key
   sort last. Ties keep the order of `ls`.
+- `tab.KEY` reads the attribute KEY of the pane's tab (`tab.archived=true`: the panes of archived
+  tabs). A pane can't hold a key that starts with `tab.` (setting one fails with exit 1).
 - `then` lists the panes of the next part after those of the parts before it, each pane once (the
-  list `jump` is `@needs-you then @unseen`).
+  list `jump` is `@needs-you and tab.archived=false | sort status_since then @unseen and
+  tab.archived=false | sort changed_at`).
 - Without `sort`, matches come in `ls` order: windows by index, tabs in sidebar order, panes on show
   in layout order, then the others.
 - A query that doesn't parse fails with exit 1 and names the character position of the error.
@@ -100,8 +104,10 @@ VALUE  := a word, or text in double quotes
 | `tab next\|prev [--window W]` | the next or previous tab in sidebar order, wrapping (⇧⌘] / ⇧⌘[ and ⌃Tab / ⌃⇧Tab); JSON `{"tab", "window", "index", "title"}` |
 | `tab rename [TAB] NAME` | `""` clears |
 | `tab color [TAB] COLOR` | red green yellow blue magenta cyan (Warp's six, from the theme's ANSI colors), purple pink orange teal graphite, none |
-| `tab pin\|unpin [TAB]` | |
-| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down` (⌃⇧↑ / ⌃⇧↓): one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group |
+| `tab pin\|unpin [TAB]` | pinning an archived tab fails with exit 1 |
+| `tab archive [TAB] [--until CONDITION]…` | (⌃⌘A) puts every matching tab in its window's archive, at its end; it keeps running, leaves its tab group and is unpinned; the window shows instead the tab closing it would. `--until` as on `pane hide`: a query about any of the tab's panes, or a duration; the first to hold brings the tab back. JSON `{"tab": id, "tabs": [id]}` |
+| `tab unarchive [TAB]` | (⌃⌘A on an archived tab) brings every matching tab back, to the top of the unpinned tabs; clears its `--until` conditions; selection doesn't change. JSON `{"tab": id, "tabs": [id]}` |
+| `tab move [TAB] (--window W [--index I] \| --index I \| --up \| --down \| --new-window) [--no-focus]` | `--up`/`--down` (⌃⇧↑ / ⌃⇧↓): one place, within the tab's pin group and tab group (past a whole neighboring tab group); fails at the end of the group. The archive is the last place above the first tab: `--up` on the first tab archives it, `--down` on an archived tab brings it back |
 | `split [right\|down\|left\|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R] [--no-focus] [--worktree W]` | prints the new pane's id; R is the new pane's share of its row (or column), the others keep their proportions. When the tab already shows its limit, `strip.make-room` hides one; JSON `{"pane", "tab", "window", "hid"?: id}` |
 | `pane focus [PANE]` | a hidden pane is brought in first (it takes the right end of the tab; `strip.make-room` hides one); JSON `{"pane", "tab", "window", "hid"?}` |
 | `pane close\|info\|zoom [PANE]` | `info` JSON: Pane plus `tab`, `window`; `close` closes every pane a query matches |
@@ -126,8 +132,10 @@ VALUE  := a word, or text in double quotes
 
 Objects in JSON:
 - **Window**: `{"id", "index", "selected_tab": id, "tabs": [Tab], "drawer": {"open": bool, "panes":
-  [Pane], "current"?: id (the pane the drawer shows, or showed last)}, "attributes": {…}}`
-- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "color"?, "group"?:
+  [Pane], "current"?: id (the pane the drawer shows, or showed last)}, "archive": {"open": bool,
+  "tabs": [id] (its archived tabs, in the order they were archived)}, "attributes": {…}}`
+- **Tab**: `{"id", "index", "title", "name"?, "selected": bool, "pinned": bool, "archived": bool,
+  "archive_until"?: [{"query"} or {"at"}] (an archived tab's pending conditions), "color"?, "group"?:
   its tab group's name, "focused_pane": id, "visible_limit": int, "strip": [id] (every pane's chip,
   in strip order), "panes": [Pane], "attributes": {…}}`
 - **Pane**: `{"id", "kind": "terminal"|"file"|"web", "cwd", "name"?, "focused": bool, "zoomed": bool,
@@ -236,7 +244,9 @@ calling pane's window (a drawer pane's too), else the current one.
   tabs for tabs: setting `role=manager` on a pane removes it from the pane that had it. The Docs tab
   (SPEC E-10) is the tab with `role=docs`. `pinned` (panes): never hidden to make room.
   `visible_limit` (tabs): how many panes the tab shows; default 3, at least 1; lowering it hides
-  panes at once.
+  panes at once. `archived` (tabs): `true` while the tab is in its window's archive, else `false`;
+  setting it to `true` or `false` (or unsetting it) archives the tab or brings it back, as `tab
+  archive|unarchive`; any other value fails with exit 1.
 - Attributes live and die with their pane (or tab, window). They are saved and restored with the
   layout.
 
@@ -324,6 +334,9 @@ Slots:
 - `pane.changed` `{"pane", "key", "old", "new"}` (null for a key that wasn't set, or was removed), and
   `tab.changed` / `window.changed` the same with `tab` / `window`: one per changed key. An agent's
   status change is `pane.changed` with key `agent.status`, before its other `agent.*` keys.
+- `tab.archived` `{"tab", "window"}` and `tab.unarchived` `{"tab", "window", "by_condition"?: true}`
+  (true when an `--until` condition brought it back, caused by `config`). Archiving a pinned tab is
+  also a `tab.unpinned`, and one in a tab group a `tab.ungrouped`.
 - `pane.moved` has `from` and `to`: `{"tab", "window", "index"}` (the pane's place in its tab's
   layout, from 1), or `{"window", "drawer": true}` for a window's drawer.
 - A focus stretch counts only while the app is active, the screen is unlocked, and the user typed or

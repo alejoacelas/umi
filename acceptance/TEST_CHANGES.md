@@ -1580,3 +1580,26 @@ clears "shown, not seen" redraws the marks).
     screenshot once the drawer has gone down.
   - `test_a_drawer_panes_program_ending_takes_it_out` also checks that `pane.closed` has `tab`
     (design/cli.md's event table).
+
+## The archive (2026-11-09)
+
+**Added** `tests/test_archive.py` (AR-1 to AR-6, design/archive.md): the Archived row and its count,
+closed by default, opened and closed by a click and remembered per window, with no indicator; a
+search listing archived matches; archiving the selected tab selecting what closing it would;
+unpinning and ungrouping, and coming back at the top of the unpinned tabs; selecting an archived tab
+leaving it archived; ⌃⌘A both ways and its two Window menu items; the row menu, Window ▸ Archive Tab
+/ Unarchive Tab / Show Archived and the palette; ⌃⇧↑ on the first tab and ⌃⇧↓ on an archived one;
+"Close other tabs" leaving the archive alone; ⇧⌘[ ⇧⌘], ⌘2, ⌘9 and the ⌘ hints skipping archived
+tabs; the default `jump` list leaving their panes out; `tab.archived` and `tab.KEY` in queries, `tab
+set archived=…`; `--until` with a query about any of the tab's panes and with a duration; and the
+archive across a relaunch. `test_real_ctrl_cmd_a_and_clicks_on_the_archived_row_ui` presses the real
+⌃⌘A and clicks the Archived row and an archived tab's row with real mouse events.
+
+**Changed**, each because the product changed as design/archive.md says, not because the test was wrong:
+- `test_umi_sidebar_warp.py::test_the_row_menu_has_warps_labels_in_warps_order` and
+  `::test_the_row_menu_opens_with_warps_items_and_color_dots_ui` (S-4): the row menu now has Archive Tab after
+  Pin tab, so the expected lists include it. The rest of each list and its order are unchanged.
+- `test_queries.py::test_umis_lists` (Q-2): the default `jump` list leaves out panes in archived tabs
+  (AR-3), so its query is now `@needs-you and tab.archived=false | sort status_since then @unseen and
+  tab.archived=false | sort changed_at`. The check that it is a default is unchanged.
+- `test_layout.py::test_shortcuts_are_menu_items` (L-9): ⌃⌘A added to the shortcuts it checks.
