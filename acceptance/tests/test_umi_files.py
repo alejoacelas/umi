@@ -260,7 +260,8 @@ def test_explorer_follows_changes_in_open_and_closed_folders(inst, win, tmp_path
 @pytest.mark.req("S-2")
 def test_explorer_reopening_a_folder_shows_current_entries_in_its_open_subfolders(inst, win, tmp_path):
     """A subfolder left open inside a folder the user closed: files made and deleted in it
-    meanwhile show (and go) as soon as the outer folder is opened again."""
+    meanwhile show (and go) once the outer folder is opened again, read in the background as any
+    change in a shown folder is (within 2 s)."""
     repo = make_repo(tmp_path)
     open_repo(inst, win, repo)
     show_by_key(inst, win, repo)
@@ -274,10 +275,12 @@ def test_explorer_reopening_a_folder_shows_current_entries_in_its_open_subfolder
     os.remove(os.path.join(lib, "util.py"))
     time.sleep(1)   # the change events arrive while src is closed
     set_open_by_key(inst, win, src, True)
+    assert row(files(inst, win, update=False), lib)["expanded"], "src/lib stays open"
+    wait_until(lambda: row(files(inst, win, update=False), made) is not None, 2,
+               message="a file made in the open subfolder shows on reopening its parent")
     state = files(inst, win, update=False)
-    assert row(state, lib)["expanded"], "src/lib stays open"
-    assert row(state, made) is not None, "a file made in the open subfolder shows on reopening its parent"
     assert row(state, os.path.join(lib, "util.py")) is None, "a file deleted there doesn't"
+    assert row(state, lib)["expanded"], "src/lib stays open"
     inst.cli("sidebar", "tabs")
 
 

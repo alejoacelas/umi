@@ -1608,9 +1608,13 @@ the keys (`show_by_key`, `select_by_key`, `set_open_by_key`):
 
 - `test_explorer_reopening_a_folder_shows_current_entries_in_its_open_subfolders` (after review 1,
   finding 1): `src/lib` left open inside `src`, `src` closed, a file made and one deleted in
-  `src/lib`, `src` opened again: both changes show at once. It failed on the first version of the
-  change (`ca959adc7`), which read only `src` again; `test_explorer_follows_changes_in_open_and_closed_folders`
-  reopens the changed folder itself and missed it.
+  `src/lib`, `src` opened again: both changes show, `src/lib` still open. It failed on the first
+  version of the change (`ca959adc7`), which read only `src` again; `test_explorer_follows_changes_in_open_and_closed_folders`
+  reopens the changed folder itself and missed it. After review 2 the folders left open inside a
+  reopened one are read again in the background (a synchronous read of each could stall the main
+  thread), so the test waits up to 2 s for the made file, as tests wait for any change in a shown
+  folder, and then checks the deleted file is gone; `src` itself is still read at once (`src/lib`
+  shows as open straight away). It still fails on `ca959adc7`, where the rows never update.
 
 **Added** `perf/explorer_churn.py`: not a test (pytest doesn't collect it) but the reproduction
 script for the stall: an isolated instance with the explorer on a ~6,500-file repository, `git

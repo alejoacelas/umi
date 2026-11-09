@@ -213,6 +213,11 @@ final class UmiFileTreeModel: ObservableObject {
     /// Bumped when reads in flight can no longer stand for what's on disk (the explorer was
     /// hidden, or the root changed): their results are dropped and the folders stay marked.
     private var readEpoch = 0
+    /// Tests only: called on the reading thread once a background read has taken its snapshot and
+    /// sent it to the main thread, so a test can act while that result is on its way.
+    var snapshotSent: (@Sendable () -> Void)?
+    /// Whether folders are queued or being read in the background.
+    var readsPending: Bool { reading != nil || !readQueue.isEmpty }
     /// Relative paths (`dir/`, `file`) git ignores, as `git ls-files --ignored --directory` lists them.
     private var ignored: Set<String> = []
     /// The listed folders that a .gitignore rule ignores by themselves (not only because all their
@@ -451,6 +456,7 @@ final class UmiFileTreeModel: ObservableObject {
         let urls = batch.map(\.url)
         let generations = batch.map(\.generation)
         let epoch = readEpoch
+        let snapshotSent = self.snapshotSent
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let entries = urls.map { UmiFileNode.read($0) }
             DispatchQueue.main.async {
@@ -468,6 +474,7 @@ final class UmiFileTreeModel: ObservableObject {
                     self.readPending()
                 }
             }
+            snapshotSent?()
         }
     }
 
@@ -654,14 +661,25 @@ final class UmiFileTreeModel: ObservableObject {
         rebuild()
     }
 
-    /// A folder just opened shows again the folders left open inside it: those that may have
-    /// changed while out of sight (stale) are read now, so they show what's on disk, as the
-    /// folder itself does.
+    /// A folder just opened shows again the folders left open inside it. Those that may have
+    /// changed while out of sight (stale) are read again in the background, as a shown folder is
+    /// when its files change: until then they show what was last read, and their nodes (so what
+    /// is open inside them, and the selection) are kept. Hidden, they stay marked: showing the
+    /// explorer reads every shown folder again.
     private func readOpenFolders(under folder: UmiFileNode) {
-        for child in folder.children ?? [] where child.isDirectory && child.expanded && child.children != nil {
-            child.loadChildren()
-            readOpenFolders(under: child)
+        guard visible else { return }
+        var queued = false
+        func walk(_ folder: UmiFileNode) {
+            for child in folder.children ?? [] where child.isDirectory && child.expanded && child.children != nil {
+                if child.stale {
+                    queueRead(child)
+                    queued = true
+                }
+                walk(child)
+            }
         }
+        walk(folder)
+        if queued { readPending() }
     }
 
     /// → expands a collapsed folder.
