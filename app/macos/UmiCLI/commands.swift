@@ -202,9 +202,10 @@ let commandTable: [CommandHelp] = [
     CommandHelp(section: "Pane data", usage: "log [--since T] [--until T] [--filter PREFIX]… [--pane P]",
                 summary: "the activity log: every event with its cause, oldest first (kept 30 days)",
                 actions: [PaletteAction(title: "Show Activity Log (Last Hour)", argv: ["log", "--since", "1h"])]),
-    CommandHelp(section: "Pane data", usage: "focus-log [--since T] [--until T] [--pane P]",
-                summary: "stretches of keyboard focus on each pane, with what it showed (kept 30 days)",
-                actions: [PaletteAction(title: "Show Focus Log (Today)", argv: ["focus-log", "--since", "00:00"])]),
+    CommandHelp(section: "Pane data", usage: "focus-log [--since T] [--until T] [--pane P] [--by session|folder|pane]",
+                summary: "stretches of keyboard focus on each pane, with what it showed (kept 30 days); --by: time summed per agent session (else file, page or folder), folder or pane, with total, first and last focus, and breaks of 30 min or more",
+                actions: [PaletteAction(title: "Show Focus Log (Today)", argv: ["focus-log", "--since", "00:00"]),
+                          PaletteAction(title: "Show Focus Time by Session (Today)", argv: ["focus-log", "--since", "00:00", "--by", "session"])]),
 
     // Lists and go
     CommandHelp(section: "Lists and go", usage: "list ls", summary: "named lists (list.NAME = QUERY in the config) and how many panes each holds",
