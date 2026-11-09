@@ -193,9 +193,32 @@ def test_claudes_question_permission_and_tool_failure(inst, pane):
 
 # ---- the real agents (ACCEPTANCE_REAL=1) ----------------------------------------------------------
 
+
+def wait_status(inst, pane, status, timeout):
+    """wait_agent_status, saying what the pane showed and its attributes when it times out."""
+    try:
+        return inst.wait_agent_status(pane, status, timeout)
+    except AssertionError as error:
+        raise AssertionError(f"{error}\nattributes: {inst.attributes(pane)}\n"
+                             f"screen:\n{inst.screen(pane, scrollback=True)[-6000:]}")
+
+
 def real_instance(fresh):
     # The user's own logins: no CLAUDE_CONFIG_DIR or CODEX_HOME of the instance's.
     return fresh(prefix="acc-real-hooks-", fakes=False)
+
+
+def claude_login(inst):
+    """Where Claude Code can't read its login from the keychain (a run started over SSH), the run
+    passes CLAUDE_CODE_OAUTH_TOKEN. Umi keeps CLAUDE_CODE_* out of its panes, so the token goes in a
+    file only this user can read, and the typed command reads it (never shown on the screen)."""
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if not token:
+        return ""
+    path = os.path.join(inst.dir, "claude-token")
+    with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        f.write(token)
+    return f"CLAUDE_CODE_OAUTH_TOKEN=\"$(cat '{path}')\" "
 
 
 def real_pane(inst):
@@ -217,7 +240,7 @@ def answer_until(inst, pane, wanted, prompts, timeout):
                 inst.cli("keys", "--pane", pane, *keys)
                 time.sleep(1.5)
         time.sleep(0.5)
-    raise AssertionError(f"{wanted!r} never showed; screen:\n{inst.screen(pane)}")
+    raise AssertionError(f"{wanted!r} never showed; screen:\n{inst.screen(pane, scrollback=True)[-6000:]}")
 
 
 def codex_hook_flags(plugin):
@@ -240,36 +263,43 @@ def test_real_claude_code_reports_each_state(fresh):
     inst = real_instance(fresh)
     pane = real_pane(inst)
     trust = [("trust this folder", ["down", "enter"])]
-    inst.type_line(pane, f"claude --model haiku --permission-mode default --plugin-dir '{inst.plugin('claude')}'")
-    answer_until(inst, pane, "? for shortcuts", trust, 60)
-    inst.wait_agent_status(pane, "idle", 20)
+    login = claude_login(inst)
+    flags = f"--permission-mode default --plugin-dir '{inst.plugin('claude')}'"
+    inst.type_line(pane, f"{login}claude --model haiku {flags}")
+    answer_until(inst, pane, "Claude Code v", trust, 60)
+    wait_status(inst, pane, "idle", 20)     # Claude Code runs SessionStart at launch
     prompt = "Reply with exactly two lines: 'All set.' then 'Status: done'"
     inst.type_line(pane, prompt)
-    inst.wait_agent_status(pane, "working", 15)
-    inst.wait_agent_status(pane, "idle", 60)
+    wait_status(inst, pane, "working", 15)
+    wait_status(inst, pane, "idle", 60)
     attributes = inst.attributes(pane)
+    assert attributes.get("agent.summary"), f"{attributes}\n{inst.screen(pane)}"
     assert (attributes["agent.summary"], attributes["agent.done"], attributes["agent.title"]) == \
         ("All set.", "true", prompt), attributes
     session = attributes["agent.session"]
     inst.type_line(pane, "Use the AskUserQuestion tool to ask me: red or blue? Nothing else.")
-    inst.wait_agent_status(pane, "needs_input", 60)
+    wait_status(inst, pane, "needs_input", 60)
     inst.cli("keys", "--pane", pane, "enter")
-    inst.wait_agent_status(pane, "idle", 60)
+    wait_status(inst, pane, "idle", 60)
     inst.type_line(pane, "Run the bash command: touch umi-real-hook.txt")
-    inst.wait_agent_status(pane, "needs_input", 60)
+    wait_status(inst, pane, "needs_input", 60)
     inst.cli("keys", "--pane", pane, "enter")
-    inst.wait_agent_status(pane, "idle", 60)
+    wait_status(inst, pane, "idle", 60)
     assert inst.attributes(pane)["agent.session"] == session
     inst.type_line(pane, "/exit")
-    inst.wait_agent_status(pane, "stopped", 20)
+    wait_status(inst, pane, "stopped", 20)
+    # SessionEnd comes before Claude Code has given the terminal back: wait for its last words.
+    wait_until(lambda: "Resume this session with" in inst.screen(pane), 20, message="Claude Code to exit")
+    time.sleep(1)
     # A failed turn: a model that doesn't exist.
-    inst.type_line(pane, f"claude --model claude-nonexistent-9 --plugin-dir '{inst.plugin('claude')}'")
-    answer_until(inst, pane, "? for shortcuts", trust, 60)
+    inst.type_line(pane, f"{login}claude --model claude-nonexistent-9 {flags}")
+    answer_until(inst, pane, "Claude Code v", trust, 60)
+    wait_status(inst, pane, "idle", 20)
     inst.type_line(pane, "hi")
-    inst.wait_agent_status(pane, "error", 60)
+    wait_status(inst, pane, "error", 60)
     assert inst.attributes(pane)["agent.done"] == "false"
     inst.type_line(pane, "/exit")
-    inst.wait_agent_status(pane, "stopped", 20)
+    wait_status(inst, pane, "stopped", 20)
 
 
 @pytest.mark.real
@@ -283,35 +313,42 @@ def test_real_codex_reports_each_state(fresh):
              f"{codex_hook_flags(inst.plugin('codex'))}")
     inst.type_line(pane, f"codex -m gpt-6-luna -a on-request -s workspace-write {flags}")
     answer_until(inst, pane, "? for shortcuts", trust, 60)
-    # Codex reports a session only with its first prompt (item 14): nothing on the pane until then.
+    # Codex reports a session only with its first prompt (item 14): nothing on the pane until then,
+    # and its SessionStart (idle) comes just before the prompt's UserPromptSubmit.
+    assert inst.agent_status(pane) is None, inst.attributes(pane)
     prompt = "Reply with exactly two lines: 'All set.' then 'Status: done'"
     inst.type_line(pane, prompt)
-    inst.wait_agent_status(pane, "idle", 60)
+    wait_until(lambda: inst.attributes(pane).get("agent.summary"), 60,
+               message="the turn's Stop (agent.summary)")
+    wait_status(inst, pane, "idle", 10)
     attributes = inst.attributes(pane)
+    assert attributes.get("agent.summary"), f"{attributes}\n{inst.screen(pane)}"
     assert (attributes["agent.summary"], attributes["agent.done"], attributes["agent.title"]) == \
         ("All set.", "true", prompt), attributes
     session = attributes["agent.session"]
     # A permission prompt, answered "no": Codex interrupts the turn (its Interrupt hook).
     inst.type_line(pane, f"Run this shell command with escalated permissions (outside the sandbox): "
                          f"touch /tmp/umi-real-hook-{nonce()}.txt")
-    inst.wait_agent_status(pane, "needs_input", 60)
+    wait_status(inst, pane, "needs_input", 60)
     inst.cli("keys", "--pane", pane, "3")
-    inst.wait_agent_status(pane, "idle", 10)
+    wait_status(inst, pane, "idle", 10)
     # An interrupt.
     inst.type_line(pane, "Write a 2000-word essay about the sea. No tools.")
-    inst.wait_agent_status(pane, "working", 30)
+    wait_status(inst, pane, "working", 30)
     time.sleep(2)
     inst.cli("keys", "--pane", pane, "esc")
-    inst.wait_agent_status(pane, "idle", 10)
+    wait_status(inst, pane, "idle", 10)
     assert inst.attributes(pane)["agent.session"] == session
     inst.type_line(pane, "/exit")
-    inst.wait_agent_status(pane, "stopped", 20)
+    wait_status(inst, pane, "stopped", 20)
+    wait_until(lambda: "To continue this session" in inst.screen(pane), 20, message="Codex to exit")
+    time.sleep(1)
     # A failed turn: a model that doesn't exist.
     inst.type_line(pane, f"codex -m gpt-nonexistent-9 {flags}")
     answer_until(inst, pane, "? for shortcuts", trust, 60)
     inst.type_line(pane, "hi")
-    inst.wait_agent_status(pane, "error", 60)
+    wait_status(inst, pane, "error", 60)
     attributes = inst.attributes(pane)
     assert attributes["agent.done"] == "false" and "not supported" in attributes["agent.summary"], attributes
     inst.type_line(pane, "/exit")
-    inst.wait_agent_status(pane, "stopped", 20)
+    wait_status(inst, pane, "stopped", 20)

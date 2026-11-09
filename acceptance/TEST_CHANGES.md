@@ -1672,7 +1672,11 @@ file shows.
   `test_real_codex_reports_each_state`): the user's own `claude` (Haiku, Umi's plugin by
   `--plugin-dir`) and `codex` (gpt-6-luna, Umi's hooks by `-c hooks.…`, so the user's installed plugins
   are untouched) go through a turn ending `Status: done`, a question or a permission prompt, an
-  interrupt (Codex), an unknown model and exit.
+  interrupt (Codex), an unknown model and exit. Where Claude Code can't read its login from the
+  keychain (a run started over SSH, as on mac-air-2), the run passes `CLAUDE_CODE_OAUTH_TOKEN`; Umi
+  keeps `CLAUDE_CODE_*` out of its panes, so the test puts the token in a file only the user can read
+  and the typed command reads it. Run on mac-air-2 with
+  `CLAUDE_CODE_OAUTH_TOKEN=op://mac-agents/6drosdmzu2qb3jefhsh3d5b7dy/credential op-agent run --no-masking -- env ACCEPTANCE_REAL=1 …`.
 
 **Changed.**
 - The fakes send what the real agents sent on 2026-11-09 (fakes/README.md, "Hooks"). Claude: a
