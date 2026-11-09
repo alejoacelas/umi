@@ -269,7 +269,7 @@ Umi's lists (the config can redefine each):
 |---|---|
 | `needs-you` | `agent.status=needs_input \| sort status_since` |
 | `unseen` | `unseen and agent.status!=working and agent.status!=needs_input \| sort changed_at` |
-| `jump` | `@needs-you then @unseen` |
+| `jump` | `@needs-you and tab.archived=false \| sort status_since then @unseen and tab.archived=false \| sort changed_at` (panes in archived tabs left out) |
 | `manager` | `role=manager` |
 
 ## Configuration
@@ -296,7 +296,7 @@ Slots:
 
 | Slot | Default | Notes |
 |---|---|---|
-| `jump` | `@needs-you then @unseen` | the list `jump` (`slot.jump` sets it too) |
+| `jump` | the list `jump`'s default | the list `jump` (`slot.jump` sets it too) |
 | `badge` | `@needs-you` | the Dock badge counts its matches |
 | `landing` | `none` | a query: the pane focused when the app comes back to the front after `landing.after` |
 | `landing.after` | `10m` | |
