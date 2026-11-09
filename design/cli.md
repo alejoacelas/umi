@@ -308,6 +308,15 @@ Kept from today, with placement changed.
 | `editor default [--dry-run]` | |
 | `comments …` | all of today's `comments` commands, unchanged (`ls`, `add`, `reply`, `edit`, `resolve`, `reopen`, `delete`, `wait`) |
 
+## Session links
+
+| Command | Notes |
+|---|---|
+| `link umi://open?task=URL` | what clicking the link does: fetch the task from an `umi-web-origin` and start its agent in a new tab, named after the task, in front. JSON `{"pane", "tab", "window", "task", "title", "where", "folder", "notes", "command"}`. A refused link exits 1 with the reason |
+
+`umi://open?task=URL` works the same from a browser or another app, a ⌘-click in a terminal pane,
+a web pane's page and a Markdown preview. Events: `link.opened`, `link.refused` (`url`, `reason`).
+
 ## Updates and the app
 
 | Command | Notes |

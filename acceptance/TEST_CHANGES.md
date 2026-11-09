@@ -1699,3 +1699,17 @@ file shows.
   `revision` at most every 0.2 s from the run loop, so the test read it before the bump and failed on
   main. It still checks both things: a look at a pane shown since bumps the revision, a second look
   doesn't.
+
+
+**Session links (AG-20).**
+- Added `tests/test_session_links.py`: a link opens its task in a new tab named after it, in the
+  checkout whose remote matches, with the fake agent reporting itself on the pane; a multi-line
+  prompt with quotes reaches the agent whole; resume links and Codex; a branch the checkout isn't on
+  leads the prompt and the checkout stays on its branch; a task with no folder here, and a server
+  task, run `ssh -t agent-server sudo -iu agent umi-link attach ID`; links to other origins and bad
+  tasks are refused (exit 1 with the reason, a `link.refused` event, no tab, nothing run); a link
+  ⌘-clicked in a terminal and one followed on a web page open the task. The instance's `~/best`
+  and the programs Umi types come from `UMI_TEST_BEST_DIR` and `UMI_TEST_LINK_BIN` (test hooks).
+- Added `app/macos/Tests/Umi/UmiSessionLinksTests.swift` (Swift): the origin check, reading tasks,
+  remote matching across URL forms, folder resolution (worktrees, `orgs/`), the branch note and
+  the typed commands.

@@ -95,6 +95,17 @@ When Umi relaunches (after a quit, a crash or an update), each pane that ran an 
 again with the flags it was typed with and resumes its conversation, using the session id its hooks
 reported.
 
+## Session links
+
+`umi://open?task=URL` opens an agent session in a new tab named after the task. URL must be on an
+origin in `umi-web-origin`; Umi fetches the task from there (title, folder under `~/best`, git remote
+and branch, `mac` or `server`, `claude` or `codex`, a prompt or a session to resume) and runs only
+what it builds from it. On the Mac it starts the agent in the checkout whose remote matches, else in
+`~/best/<folder>`; on the server, or when the Mac has no such folder, it runs
+`ssh -t SSH sudo -iu USER umi-link attach ID`, which keeps the session in tmux there. The agent
+server's `umi-link` command makes the tasks (in `~/best/ops/clerk`); `umi link URL` opens one from
+a script.
+
 ## Rules
 
 Reactions to events live in the user's own scripts, which read `umi events` and call `umi`, plus

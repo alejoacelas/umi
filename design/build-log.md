@@ -1588,3 +1588,28 @@ Released from main after merging `agent-hooks` (`2b8d6df3f`). Verified before re
 hooks" section says: the whole suite with the UI tests at `4d7259c9f` (557 passed, 1 failed,
 `test_builds_from_a_path_with_spaces`, failing on main too), the Swift unit tests, and the two
 real-agent tests. Installed copies take it through Umi's updater; this Mac's copy was left to it.
+
+## Session links
+
+Built from `BRIEF-session-links.md` on 9 November 2026: `umi://open?task=URL` opens an agent
+session in a new tab (SPEC AG-20). The server half (`umi-link`, the `/umi` page, the docket's links)
+is in `~/best/ops/clerk/umi-links/`; the `queue` skill makes these links.
+
+**Choices for Alejo to check**
+
+1. `umi link URL` is the CLI form of clicking a link: scripts can open a task, and the suite tests
+   the same code the click runs.
+2. The prompt goes to the agent through a file: Umi saves it as `links/<task id>.prompt` in its
+   state folder and types `claude --dangerously-skip-permissions "$(cat FILE)"`, so a long or
+   multi-line prompt isn't typed into the shell line by line.
+3. The task says how to reach its server (`server: {"ssh": "agent-server", "user": "agent"}`), so
+   nothing about Alejo's server is built into Umi. Both are checked to be plain host and user names.
+4. When the Mac has several checkouts with the task's remote, the one at the task's own path wins,
+   then the first in name order.
+5. A refused link shows a red note at the top of the window for 10 seconds and is a `link.refused`
+   event. Umi comes to the front for it when a window is open.
+6. The link regex in the terminal (`app/src/config/url.zig`) now knows `umi://`, so these links are
+   ⌘-clickable like web links.
+7. A resumed session runs on whichever Mac clicks the link. Claude Code keeps sessions per machine,
+   so a session queued on one Mac and opened on the other won't be found there; the page shows the
+   machine it came from.

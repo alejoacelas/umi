@@ -1160,6 +1160,23 @@ agent's own hooks, through Umi's plugin.
   hook (Claude Code sends none), and a Codex MCP elicitation isn't `needs_input` (no hook). The one
   inference is Claude Code's interrupt, which sends no hook: a turn with no hook for two seconds after
   Esc or Ctrl-C is `idle`.
+- **AG-20 [A]** Session links open an agent session in a new tab. The app registers the `umi://`
+  scheme. `umi://open?task=URL` is accepted only when URL's origin is listed in `umi-web-origin`
+  (E-12); any other link is refused with a note at the top of the window saying why, and nothing
+  runs. The app fetches the task (JSON: `id`, `title`, `folder` relative to `~/best`, optional
+  `remote` and `branch`, `where` = `mac` (default) or `server`, `agent` = `claude` (default) or
+  `codex`, either `prompt` or `session`, and `server` = `{"ssh", "user"}`) and runs only what it
+  builds from the task, never anything the link carries. It opens a new tab named after the task,
+  in front:
+  - On this Mac, in the task's folder: a checkout under `~/best/*/*` or `~/best/orgs/*/*` whose
+    `origin` matches the task's remote, else `~/best/<folder>`. The agent starts there with
+    `claude --dangerously-skip-permissions PROMPT` or `--resume ID` (`codex
+    --dangerously-bypass-approvals-and-sandbox PROMPT` or `resume ID`). The checkout's branch is
+    never switched; when the task names another branch, the prompt's first line says so.
+  - On the server, when the task says so or this Mac has no folder for it (the pane says so at
+    its top): `ssh -t SSH sudo -iu USER umi-link attach ID`.
+  The same holds for a link clicked in a browser or another app, ⌘-clicked in a terminal pane,
+  followed on a web pane's page or in a Markdown preview, and given to `<cli> link URL`.
 
 ## R. Robustness
 

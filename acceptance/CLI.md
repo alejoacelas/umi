@@ -358,6 +358,12 @@ Slots:
 | `comments edit FILE ID TEXT…` / `comments resolve FILE ID [--note TEXT]` / `comments reopen FILE ID` / `comments delete FILE ID` | change, resolve, reopen or delete (a thread goes with its replies and its markup; its words stay) |
 | `comments wait FILE [--timeout SECS]` | block until the user presses Done on FILE's comments in the editor, then print its open comments as `comments ls` does; exits 124 on timeout. Needs the app |
 
+## Session links
+
+| Command | Notes |
+|---|---|
+| `link umi://open?task=URL` | opens the task as a link clicked anywhere does (SPEC AG-20): a new tab, named after the task, in front. JSON `{"pane", "tab", "window", "task", "title", "where": "mac"\|"server", "folder"\|null, "notes": [str], "command"}`. A refused link exits 1 with the reason. Events `link.opened` (the same fields) and `link.refused` (`url`, `reason`) |
+
 ## Updates
 
 | Command | Notes |
