@@ -587,6 +587,7 @@ func printTree(_ result: Any) {
             var line = "  \((tab["selected"] as? Bool ?? false) ? "▸" : " ") tab #\(tab["index"] ?? "?") \(dim(shortID(tab["id"])))"
             line += "  \(tab["name"] as? String ?? tab["title"] as? String ?? "")"
             if tab["pinned"] as? Bool ?? false { line += "  📌" }
+            if tab["archived"] as? Bool ?? false { line += "  (archived)" }
             if let color = tab["color"] as? String { line += "  [\(color)]" }
             print(line)
             for pane in tab["panes"] as? [[String: Any]] ?? [] {
@@ -1097,7 +1098,7 @@ func windowCommand(_ argv: [String]) {
 }
 
 func tabCommand(_ argv: [String]) {
-    guard let sub = argv.first else { fail("tab: use set, unset, get, new, focus, back, next, prev, close, rename, color, pin, unpin, move or equalize") }
+    guard let sub = argv.first else { fail("tab: use set, unset, get, new, focus, next, prev, close, rename, color, pin, unpin, archive, unarchive, move or equalize") }
     let rest = Array(argv.dropFirst())
     switch sub {
     case "set", "unset", "get":
@@ -1122,6 +1123,20 @@ func tabCommand(_ argv: [String]) {
         if let tab = args.positional.first { params["tab"] = tab }
         let method = sub == "select" ? "focus" : sub
         printOK(call("tab.\(method)", params))
+    case "archive":
+        let args = parse(rest, ArgSpec(valued: ["--until"]))
+        guard args.positional.count <= 1 else { fail("tab archive [TAB] [--until CONDITION]…") }
+        var params: [String: Any] = [:]
+        if let tab = args.positional.first { params["tab"] = tab }
+        let until = args.all("--until")
+        if !until.isEmpty { params["until"] = until }
+        printOK(call("tab.archive", params))
+    case "unarchive":
+        let args = parse(rest, ArgSpec())
+        guard args.positional.count <= 1 else { fail("tab unarchive [TAB]") }
+        var params: [String: Any] = [:]
+        if let tab = args.positional.first { params["tab"] = tab }
+        printOK(call("tab.unarchive", params))
     case "next", "prev", "previous":
         let args = parse(rest, ArgSpec(valued: ["--window"], aliases: ["-w": "--window"]))
         guard args.positional.isEmpty else { fail("tab \(sub) takes no tab: it goes from the selected one") }

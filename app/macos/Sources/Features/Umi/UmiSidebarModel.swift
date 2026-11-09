@@ -39,6 +39,9 @@ final class UmiSidebarModel: ObservableObject {
     /// lists each where its first member is. Their tabs say which they belong to (`UmiTab.groupID`).
     @Published var groups: [UmiTabGroup] = []
 
+    /// Whether the archive at the top of the sidebar is open (design/archive.md). Remembered per window.
+    @Published var archiveOpen = false
+
     /// Whether the search field has keyboard focus (set by the field).
     var searchFocused = false
 
@@ -93,7 +96,8 @@ final class UmiSidebarModel: ObservableObject {
     /// previous matching tab after the current one, wrapping around (as Warp's
     /// `activate_next_tab` does with a query).
     func adjacentMatch(_ delta: Int, in controller: TerminalController) -> UmiTab? {
-        let matching = matchingTabs(in: controller)
+        // Archived tabs are skipped, as without a query.
+        let matching = matchingTabs(in: controller).filter { !$0.archived }
         guard !matching.isEmpty, let current = controller.index(of: controller.selectedTab) else { return nil }
         let indexed = matching.compactMap { tab in controller.index(of: tab).map { ($0, tab) } }
         if delta > 0 {
