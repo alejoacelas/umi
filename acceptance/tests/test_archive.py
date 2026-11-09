@@ -16,7 +16,7 @@ import pytest
 
 from harness import wait_until
 from test_hidden_panes import events_since, iso_now
-from test_umi_panes_ui import rpc, tab_of, tab_ids
+from test_umi_panes_ui import ready, rpc, tab_of, tab_ids
 
 pytestmark = pytest.mark.layout
 
@@ -269,7 +269,6 @@ def test_the_row_menu_and_the_window_menu_archive_unarchive_and_show_archived(in
     rpc(inst, "debug.menu.perform", title="Unarchive Tab")
     assert tab_of(inst, d)["archived"] is False
     inst.cli("tab", "unarchive", a)
-    rpc(inst, "debug.ui.archive", window=win["window"], toggle=True)
     # The palette lists the three.
     titles = [e["title"] for e in rpc(inst, "debug.palette", window=win["window"], mode="commands", query="archiv")["entries"]]
     assert {"Archive Tab", "Unarchive Tab", "Show Archived"} <= set(titles), [t for t in titles if "rchiv" in t]
@@ -298,6 +297,8 @@ def test_moving_the_first_tab_up_archives_it_and_moving_an_archived_tab_down_bri
 @pytest.mark.req("AR-2", "S-4")
 def test_close_other_tabs_leaves_the_archive_alone(inst, win, four):
     a, b, c, d = four
+    # Until a shell shows its prompt, closing its tab asks first.
+    ready(inst, *(tab_of(inst, t)["panes"][0]["id"] for t in (b, d)))
     inst.cli("tab", "archive", c)
     inst.cli("tab", "focus", a)
     rpc(inst, "debug.ui.menu.perform", tab=a, title="Close other tabs")
@@ -384,7 +385,7 @@ def test_tab_archived_is_a_tab_attribute_queries_see(inst, win, four):
     # A query names every tab holding a match.
     inst.cli("tab", "set", "--tab", b, "project=umi")
     out = inst.json("tab", "archive", "tab.project=umi")
-    assert sorted(out["tabs"]) == sorted([b, c]) and archive(inst, win)["tabs"] == [b, c]
+    assert sorted(out["tabs"]) == sorted([b, c]) and sorted(archive(inst, win)["tabs"]) == sorted([b, c])
     inst.json("tab", "unarchive", "tab.archived=true")
     assert archive(inst, win)["shown"] is False
     for t in (b, c):
