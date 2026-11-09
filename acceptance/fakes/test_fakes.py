@@ -2179,8 +2179,9 @@ def ws_server(env=None):
     return p, sock
 
 
-HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Notification",
-               "Stop", "StopFailure", "SessionEnd"]
+HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
+               "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd", "Interrupt",
+               "PreModelRequest", "PostModelRequest"]
 
 
 def make_plugin(name, harness, matchers=None):
@@ -2497,7 +2498,14 @@ def t_codex_tui_local():
     hs = hook_log(plugin)
     evs = [h["ev"] for h in hs]
     assert evs[0] == "SessionStart" and hs[0]["in"]["source"] == "startup", evs
-    assert evs[-1] == "SessionEnd" and hs[-1]["in"]["reason"] == "exit", evs
+    assert evs[-1] == "SessionEnd" and hs[-1]["in"]["reason"] == "other", evs    # codex-cli 0.164: /exit is "other"
+    # Each model request: PreModelRequest, then PostModelRequest; the interrupted turn ends with
+    # PostModelRequest cancelled (none here: the interrupt came during a tool) and Interrupt, no Stop.
+    assert evs.count("Interrupt") == 1 and evs.count("Stop") == 3, evs
+    statuses = [h["in"]["status"] for h in hs if h["ev"] == "PostModelRequest"]
+    assert set(statuses) == {"completed"} and evs.count("PreModelRequest") == len(statuses), evs
+    first = evs[evs.index("UserPromptSubmit"):evs.index("Stop") + 1]
+    assert first == ["UserPromptSubmit", "PreModelRequest", "PostModelRequest", "Stop"], first
     for h in hs:
         assert h["ppid"] == tui.pid, ("hooks are children of the fake", h["ppid"], tui.pid)
         assert h["tty"] == "no", "Codex runs hooks detached from the terminal"
@@ -2563,10 +2571,16 @@ def t_codex_hooks_app_server():
     assert x.exit_code() == 0
     hs = hook_log(plugin)
     evs = [h["ev"] for h in hs]
-    assert evs == ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "UserPromptSubmit"], evs
+    assert evs == ["SessionStart", "UserPromptSubmit", "PreModelRequest", "PostModelRequest", "PostToolUse",
+                   "PreModelRequest", "PostModelRequest", "Stop",
+                   "UserPromptSubmit", "PreModelRequest", "PostModelRequest"], evs
     assert all(h["ppid"] == x.p.pid for h in hs)
-    assert hs[2]["in"]["tool_input"] == {"command": "sleep 0.2"} and hs[3]["in"]["last_assistant_message"] == \
+    assert hs[4]["in"]["tool_input"] == {"command": "sleep 0.2"} and hs[7]["in"]["last_assistant_message"] == \
         "ok: SLEEP 0.2"
+    # a failed turn: PostModelRequest failed with the API's error, and no Stop (codex-cli 0.164.0)
+    failed = hs[-1]["in"]
+    assert failed["status"] == "failed" and '"code":"model_not_found"' in failed["error"], failed
+    assert failed["token_usage"] is None and hs[3]["in"]["status"] == "completed", hs[3]
     # a hook that outlives its "timeout" (seconds) is killed and the turn goes on
     slow = tempfile.mkdtemp(prefix="plugin-slow-", dir=TMP)
     nap = "29.%06d" % (os.getpid() % 1000000)     # unique, so parallel runs don't see each other's
@@ -2848,7 +2862,7 @@ def t_claude_tui():
     hs = hook_log(plugin)
     evs = [h["ev"] for h in hs]
     assert evs[0] == "SessionStart" and hs[0]["in"]["source"] == "resume", evs
-    assert evs[-1] == "SessionEnd" and hs[-1]["in"]["reason"] == "exit", evs
+    assert evs[-1] == "SessionEnd" and hs[-1]["in"]["reason"] == "prompt_input_exit", evs
     for h in hs:
         assert h["ppid"] == tui.pid and h["tty"] == "yes", ("Claude's hooks share its terminal", h)
     stops = [h["in"]["last_assistant_message"] for h in hs if h["ev"] == "Stop"]
@@ -2857,9 +2871,11 @@ def t_claude_tui():
     ups = [h["in"]["prompt"] for h in hs if h["ev"] == "UserPromptSubmit"]
     assert "FIG typed meanwhile" in ups and "SLEEP 10 to interrupt" in ups
     perms = [h["in"] for h in hs if h["ev"] == "PermissionRequest"]
-    assert [p["tool_input"]["command"] for p in perms] == ["touch tui_p1", "touch tui_p2"]
+    assert [p["tool_name"] for p in perms] == ["Bash", "Bash", "AskUserQuestion"], perms   # a question too
+    assert [p["tool_input"]["command"] for p in perms[:2]] == ["touch tui_p1", "touch tui_p2"]
+    assert "permission_suggestions" not in perms[2], perms[2]
     notes = [h["in"]["notification_type"] for h in hs if h["ev"] == "Notification"]
-    assert notes.count("permission_prompt") == 2 and "idle_prompt" in notes, notes
+    assert notes.count("permission_prompt") == 3 and "idle_prompt" in notes, notes
     # the same conversation continues headless: RECALL sees what was typed in the TUI
     c = FC("--resume", sid)
     c.init()

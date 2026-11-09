@@ -5,12 +5,17 @@ import Darwin
 /// (design/primitives.md, "Agent hook plugin"; SPEC AG-18, AG-19). Inside a pane, each hook event
 /// runs `umi hook EVENT --agent claude|codex --pid PID`; the pane is the caller's (`UMI_PANE`).
 ///
-/// The status stays truthful:
+/// Each state maps the same way for both agents wherever their hooks allow (design/ideas.md, item 14,
+/// has what each sends):
+/// - working: UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure (Claude Code), and
+///   PreModelRequest (Codex: also a request retried after a failed one);
 /// - a turn that ends with background work still pending (Claude Code's background tasks and
 ///   scheduled wake-ups) stays `working`;
-/// - an interrupt (Esc or Ctrl-C typed while it works) fires no hook: a turn with no hook for two
-///   seconds after one is taken as interrupted, and the agent is `idle` (Warp does the same);
-/// - a permission prompt or a question is `needs_input`.
+/// - needs_input: a permission prompt (PermissionRequest) or a question (PreToolUse of Claude
+///   Code's AskUserQuestion or Codex's request_user_input);
+/// - idle: Stop; an interrupt: Codex's Interrupt hook, while Claude Code fires none for it, so a turn
+///   with no hook for two seconds after Esc or Ctrl-C is taken as interrupted (Warp does the same);
+/// - error: Claude Code's StopFailure, Codex's PostModelRequest with status `failed`.
 ///
 /// It also follows the agent's input line (keys and text sent to the pane), so an update waits
 /// while something is typed there (I-4), and brings agents back after a relaunch: each pane that
@@ -40,6 +45,9 @@ enum UmiAgentHooks {
         let typed = pid.flatMap { $0 > 1 ? UmiTypedCommand.command(pid: $0, kind: kind) : nil }
         // `claude -p` run by a script in the pane is a one-off, not the pane's agent.
         if let typed, UmiTypedCommand.isOneOff(typed.args, kind: kind) { return }
+        // A Codex subagent's model requests (they carry its agent_id) say nothing about the pane's
+        // agent: its own turn goes on, and only its Stop or Interrupt ends it.
+        if event.hasSuffix("ModelRequest"), let id = payload["agent_id"] as? String, !id.isEmpty { return }
         let now = Date()
         var agent = attention.agent(forPane: pane.id) ?? UmiAttention.Agent(kind: kind, status: .idle, at: now)
         if agent.kind != kind || (agent.status == .stopped && event == "SessionStart") {
@@ -95,19 +103,38 @@ enum UmiAgentHooks {
                 agent.title = oneLine(prompt, max: 60)
             }
         case "PreToolUse":
-            if tool == "AskUserQuestion" {
+            if questionTools.contains(tool) {
                 agent.status = .needsInput
                 agent.detail = "asking you a question"
                 agent.lastStop = now
             } else {
                 agent.status = .working
             }
-        case "PostToolUse", "PostToolUseFailure":
+        case "PostToolUse", "PostToolUseFailure", "PreModelRequest":
             agent.status = .working
             agent.detail = nil
         case "PermissionRequest":
+            // Claude Code asks permission for its question tool too: it's still a question.
             agent.status = .needsInput
-            agent.detail = "asking permission: \(tool)"
+            agent.detail = questionTools.contains(tool) ? "asking you a question" : "asking permission: \(tool)"
+            agent.lastStop = now
+        case "PostModelRequest":
+            // Codex: a request that failed is the turn's error (Stop follows only a completed turn).
+            // A retry starts with PreModelRequest, which makes it `working` again.
+            guard payload["status"] as? String == "failed" else { break }
+            let failure = apiError(payload["error"] as? String ?? "")
+            agent.status = .error
+            agent.detail = failure.code ?? "the turn failed"
+            if let line = failure.message?.split(whereSeparator: \.isNewline).first {
+                agent.summary = oneLine(String(line), max: 160)
+            }
+            agent.done = false
+            agent.background = 0
+            agent.lastStop = now
+        case "Interrupt":
+            agent.status = .idle
+            agent.background = 0
+            agent.detail = nil
             agent.lastStop = now
         case "Notification":
             let type = payload["notification_type"] as? String ?? ""
@@ -151,6 +178,22 @@ enum UmiAgentHooks {
            event == "SessionStart" {
             attention.update(pane.id) { touch(&$0) }
         }
+    }
+
+    /// The tools that put a question to the user: Claude Code's and Codex's.
+    static let questionTools: Set<String> = ["AskUserQuestion", "request_user_input"]
+
+    /// What Codex's PostModelRequest `error` says: the API's error JSON
+    /// (`{"type":"error","status":400,"error":{"message":…,"code":…}}`), or plain text.
+    static func apiError(_ text: String) -> (code: String?, message: String?) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let data = trimmed.data(using: .utf8),
+           let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            let inner = object["error"] as? [String: Any] ?? object
+            let code = (inner["code"] as? String) ?? (inner["type"] as? String)
+            return (code, inner["message"] as? String)
+        }
+        return (nil, trimmed.isEmpty ? nil : trimmed)
     }
 
     /// The `done-check` slot (default: the last line of the agent's last message starts with
