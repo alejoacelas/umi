@@ -1580,3 +1580,34 @@ clears "shown, not seen" redraws the marks).
     screenshot once the drawer has gone down.
   - `test_a_drawer_panes_program_ending_takes_it_out` also checks that `pane.closed` has `tab`
     (design/cli.md's event table).
+
+
+## The explorer under file churn (2026-11-09)
+
+Umi 0.12.0 stalled while a build and `git worktree add` churned files under the explorer's root:
+it read every folder it had ever loaded on the main thread for each batch of file events, also
+while hidden. The fix watches only while the explorer is shown, reads folders off the main thread,
+and ignores changes in folders it hasn't read or that a rule ignores. These tests cover what that
+could break. No existing test was changed or weakened.
+
+**Added** to `tests/test_umi_files.py` (S-2), with helpers that open folders and select rows with
+the keys (`show_by_key`, `select_by_key`, `set_open_by_key`):
+- `test_explorer_follows_changes_in_open_and_closed_folders`: files made, renamed and deleted, and
+  a folder made, in an open subfolder show without a refresh, in Warp's order; a folder opened,
+  closed, changed and opened again shows what's on disk; open folders and the selection are kept.
+- `test_explorer_handles_changes_in_unopened_and_ignored_folders`: a burst of 400 files in an
+  unopened ignored folder and 40 in an unopened tracked one leaves the explorer current (a new file
+  at the top shows); a new `*.log` is marked ignored; `logs/`, ignored only because `*.log` covers
+  all it holds, is unmarked when a file git doesn't ignore appears in it (unopened) and marked
+  again when that file goes; the ignored folder opened afterwards lists what was made there, marked
+  ignored, and follows changes; unignoring `build/` in `.gitignore` unmarks it.
+- `test_explorer_shows_changes_made_while_it_was_hidden`: hidden, then shown: files made and deleted
+  meanwhile (top folder, open subfolder) and a `.gitignore` change show; open folders and the
+  selection are as they were; it follows the files again; a file made while hidden and shown in the
+  focused pane is revealed and selected on showing.
+
+**Added** `perf/explorer_churn.py`: not a test (pytest doesn't collect it) but the reproduction
+script for the stall: an isolated instance with the explorer on a ~6,500-file repository, `git
+worktree add` and a Zig-cache-like churn in the ignored worktree; it reports the app's CPU, how busy
+its main thread is (`sample`), `umi ls` round trips and, with the explorer shown, how soon a new
+file shows.
