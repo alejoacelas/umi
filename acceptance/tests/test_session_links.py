@@ -255,7 +255,10 @@ def test_a_link_on_a_web_page_opens_the_task_and_a_refused_one_opens_nothing(lin
     bad = "umi://open?task=" + urllib.parse.quote(site.replace("127.0.0.1", "localhost") + "/umi/tEabcdef.json", safe="")
     server.pages["/bad"] = f"<title>Bad</title><script>setTimeout(() => location.href = {json.dumps(bad)}, 200)</script>"
     inst.cli("edit", site + "/bad", "--pane", links["home"]["pane"])
-    time.sleep(3)
+    # The refusal is a note at the top of the window, saying why.
+    wait_until(lambda: "umi-web-origin" in rpc(inst, "debug.ui.toast")["text"], 10, message="the refusal note")
+    assert rpc(inst, "debug.ui.toast")["showing"] is True
+    time.sleep(2)
     assert len(links["ran"]("claude")) == 1
     browser = links["tmp"] / "browser.log"
     assert not browser.exists() or "umi://" not in browser.read_text()

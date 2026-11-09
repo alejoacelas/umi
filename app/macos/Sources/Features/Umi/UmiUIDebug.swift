@@ -72,6 +72,10 @@ enum UmiUIDebug {
         case "debug.ui.editor":
             return try UmiEditorDebug.handle(params, caller: caller)
 
+        case "debug.ui.toast":
+            // The last note shown at the top of a window, and whether it is still on screen.
+            return ["text": UmiToast.last?.text ?? "", "showing": UmiToast.isShowing]
+
         case "debug.ui.open_url":
             // A link ⌘-clicked in a pane: what the terminal's open-URL action runs (E-12).
             let pane = try UmiTopology.pane(params.string("pane"), caller: caller)
