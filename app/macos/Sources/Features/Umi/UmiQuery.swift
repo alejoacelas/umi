@@ -317,15 +317,23 @@ enum UmiQuery {
     static func isoTime(_ text: String) -> Date? {
         guard text.count >= 10, text.first?.isNumber == true, text.contains("-") else { return nil }
         for formatter in isoFormatters { if let date = formatter.date(from: text) { return date } }
-        let local = DateFormatter()
-        local.locale = Locale(identifier: "en_US_POSIX")
-        local.timeZone = .current
-        for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd"] {
-            local.dateFormat = format
-            if let date = local.date(from: text) { return date }
+        localLock.lock()
+        defer { localLock.unlock() }
+        for formatter in localFormatters {
+            formatter.timeZone = .current
+            if let date = formatter.date(from: text) { return date }
         }
         return nil
     }
+
+    /// Local times without a zone, made once (making a `DateFormatter` costs more than parsing).
+    private static let localFormatters: [DateFormatter] = ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd"].map { format in
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = format
+        return f
+    }
+    private static let localLock = NSLock()
 
     /// A time on the right of a comparison: ISO 8601, a clock time today (`9am`, `14:30`), or a
     /// duration back from now (`10m`).
@@ -441,11 +449,16 @@ enum UmiQuery {
                 } else {
                     matched = items.filter { matches(part.expr, $0) }
                 }
-                if !part.sort.isEmpty {
-                    matched = matched.enumerated().sorted { a, b in
-                        for key in part.sort {
-                            let va = a.element.value(key.key), vb = b.element.value(key.key)
-                            switch (va, vb) {
+                if !part.sort.isEmpty, matched.count > 1 {
+                    // Each value is read as a number, duration and time once, not at every comparison.
+                    let keyed = matched.enumerated().map { offset, item in
+                        (offset: offset, item: item, keys: part.sort.map { key in
+                            item.value(key.key).map { SortValue($0, now: now) }
+                        })
+                    }
+                    matched = keyed.sorted { a, b in
+                        for (index, key) in part.sort.enumerated() {
+                            switch (a.keys[index], b.keys[index]) {
                             case (nil, nil): continue
                             case (nil, _): return false     // missing sorts last
                             case (_, nil): return true
@@ -456,7 +469,7 @@ enum UmiQuery {
                             }
                         }
                         return a.offset < b.offset
-                    }.map(\.element)
+                    }.map(\.item)
                 }
                 if let limit = part.limit { matched = Array(matched.prefix(limit)) }
                 for item in matched where listed.insert(item.id).inserted { out.append(item) }
@@ -501,10 +514,38 @@ enum UmiQuery {
 
     /// How two values sort: the same rules as comparisons, with times compared as times.
     static func sortOrder(_ a: String, _ b: String) -> ComparisonResult {
-        if let ta = isoTime(a), let tb = isoTime(b) {
-            return ta < tb ? .orderedAscending : (ta > tb ? .orderedDescending : .orderedSame)
+        let now = Date()
+        return sortOrder(SortValue(a, now: now), SortValue(b, now: now))
+    }
+
+    /// A value to sort by, read once as everything `order` may compare it as.
+    struct SortValue {
+        let text: String
+        let number: Double?
+        let duration: Double?
+        let time: Date?
+        /// As the right side of a time comparison (`timeValue`).
+        let timeValue: Date?
+
+        init(_ text: String, now: Date) {
+            self.text = text
+            number = Double(text)
+            duration = UmiQuery.duration(text)
+            time = UmiQuery.isoTime(text)
+            timeValue = duration.map { now.addingTimeInterval(-$0) } ?? time ?? UmiQuery.timeValue(text, now: now)
         }
-        return order(a, b)
+    }
+
+    /// `sortOrder` on values read already: times as times, then `order`'s rules in its order.
+    static func sortOrder(_ a: SortValue, _ b: SortValue) -> ComparisonResult {
+        func cmp<T: Comparable>(_ x: T, _ y: T) -> ComparisonResult { x < y ? .orderedAscending : (x > y ? .orderedDescending : .orderedSame) }
+        if let x = a.time, let y = b.time { return cmp(x, y) }
+        if let x = a.number, let y = b.number { return cmp(x, y) }
+        if let x = a.duration, let y = b.duration { return cmp(x, y) }
+        if let x = a.duration, let y = b.number { return cmp(x, y) }
+        if let x = a.number, let y = b.duration { return cmp(x, y) }
+        if let x = a.time, let y = b.timeValue { return cmp(x, y) }
+        return cmp(a.text, b.text)
     }
 
     // MARK: Templates
