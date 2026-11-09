@@ -1582,10 +1582,18 @@ func logCommand(_ argv: [String]) {
 }
 
 func focusLogCommand(_ argv: [String]) {
-    let args = parse(argv, ArgSpec(valued: ["--since", "--until", "--pane"], aliases: ["-p": "--pane"]))
+    let args = parse(argv, ArgSpec(valued: ["--since", "--until", "--pane", "--by"], aliases: ["-p": "--pane"]))
     var params = logTimes(args)
     if let pane = args.value("--pane") { params["pane"] = pane }
+    let by = args.value("--by")
+    if let by, !focusGroupings.contains(by) { fail("focus-log: --by takes \(focusGroupings.joined(separator: ", "))") }
     let result = callDict("focus_log", params)
+    if let by {
+        let groups = focusGroups(result["stretches"] as? [[String: Any]] ?? [], by: by,
+                                 since: params["since"] as? Double, until: params["until"] as? Double)
+        if jsonOutput { printJSON(groups) } else { printFocusGroups(groups) }
+        return
+    }
     if jsonOutput {
         printJSON(result)
         return

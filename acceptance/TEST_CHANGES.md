@@ -1580,6 +1580,11 @@ clears "shown, not seen" redraws the marks).
     screenshot once the drawer has gone down.
   - `test_a_drawer_panes_program_ending_takes_it_out` also checks that `pane.closed` has `tab`
     (design/cli.md's event table).
+- Added `test_pane_data.py::test_the_focus_log_sums_time_per_pane_folder_and_session` (D-8):
+  `focus-log --by pane` has one group per pane with its stretch count, largest first, with the
+  span's total, first and last focus and no breaks; `--by session` groups a plain terminal by its
+  folder; `--by folder` prints text; an unknown `--by` fails.
+
 
 ## The archive (2026-11-09)
 

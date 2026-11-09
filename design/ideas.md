@@ -5,23 +5,23 @@ scripts on top of the design. None of it is built into Umi; each piece uses comm
 [cli.md](cli.md). Skills go in `~/best/areas/dotfiles/skills/`; palette commands are executables in
 `~/.config/umi/commands/` (both kept in dotfiles); config lines go in `~/.config/umi/config`.
 
-| Idea | Built as | Needs from Umi beyond the design |
-|---|---|---|
-| Become the manager | skill | nothing |
-| Defer this pane | skill and palette command | nothing |
-| Hide until it needs me | palette command and key | nothing |
-| Delegate to the manager | palette command and key | nothing |
-| Important panes | config and key | nothing |
-| Review walk | config and key | nothing |
-| Status line from the agent | skill line and hook | nothing |
-| Organize into tabs | skill and palette command | nothing |
-| Split tab by project | palette command | nothing |
-| End-of-day focus report | script | nothing |
-| Return digest | script | an `app.activated` event |
-| Project focus | palette command | a way to dim or collapse tabs |
-| Links on panes | palette command | nothing |
+| # | Idea | Built as | Needs from Umi beyond the design |
+|---|---|---|---|
+| 1 | Become the manager | skill | nothing |
+| 2 | Defer this pane | skill and palette command | nothing |
+| 3 | Hide until it needs me | palette command and key | nothing |
+| 4 | Delegate to the manager | palette command and key | nothing |
+| 5 | Important panes | config and key | nothing |
+| 6 | Review walk | config and key | nothing |
+| 7 | Status line from the agent | skill line and hook | nothing |
+| 8 | Organize into tabs | skill and palette command | nothing |
+| 9 | Split tab by project | palette command | nothing |
+| 10 | End-of-day focus report | script | nothing |
+| 11 | Return digest | script | an `app.activated` event |
+| 12 | Project focus | palette command | a way to dim or collapse tabs |
+| 13 | Links on panes | palette command | nothing |
 
-## Become the manager
+## 1. Become the manager
 
 A skill an agent runs to take the manager role, so ⌃⌘M brings it up in the drawer.
 
@@ -32,7 +32,7 @@ A skill an agent runs to take the manager role, so ⌃⌘M brings it up in the d
   `umi pane set P escalated=true`, which the user's `jump` list can include.
 - It reports in its own pane, so its indicator shows its state like any other.
 
-## Defer this pane
+## 2. Defer this pane
 
 "Move me out of the way": a skill an agent can run on itself, and a palette command for the user.
 
@@ -42,7 +42,7 @@ A skill an agent runs to take the manager role, so ⌃⌘M brings it up in the d
   sorted later.
 - `umi pane move P --back` returns one to where it was.
 
-## Hide until it needs me
+## 3. Hide until it needs me
 
 ⌃⌘H hides the focused pane and brings it back by itself. It's one config line plus the condition:
 
@@ -65,12 +65,12 @@ Variants, each its own key or palette command:
 
 ⌃⌘H is free in Umi and macOS.
 
-## Delegate to the manager
+## 4. Delegate to the manager
 
 A palette command bound to a key: `umi pane set . owner=manager` and `umi pane hide .`. The manager
 skill handles the rest. Alternative without hiding: move the pane to a tab the manager watches.
 
-## Important panes
+## 5. Important panes
 
 ```
 key.ctrl+cmd+i = pane set . priority=high      # toggled by a small command script instead, if preferred
@@ -81,53 +81,53 @@ key.ctrl+cmd+] = go --next @important
 
 (`cli.md` doesn't fix the config syntax for slots yet; the `landing` line shows the intent.)
 
-## Review walk
+## 6. Review walk
 
 `key.ctrl+cmd+u = go --next @unseen` with `list.unseen = changed_at > seen_at | sort changed_at`.
 Each visit sets `seen_at`, so the list shrinks as you go; ⌃⌘K returns.
 
-## Status line from the agent
+## 7. Status line from the agent
 
 A line in the user's CLAUDE.md or a small skill: "when you start a new phase of work, run
 `umi pane set . status='…'`". With the `sidebar.line2` slot set to `{status or agent.title or command or
 cwd}`, the sidebar shows it. A Stop hook can also write `agent.summary` from the agent's last line.
 
-## Organize into tabs
+## 8. Organize into tabs
 
 A skill started from ⌘P. It reads `umi ls --json` (folders, branches, files, agent titles,
 attributes), proposes groups as a dry run the user approves, then applies them with `tab new`,
 `pane move` and `tab rename`.
 
-## Split tab by project
+## 9. Split tab by project
 
 A palette command, no agent needed: group the current tab's panes by git repository root (from
 each pane's `cwd`), keep the largest group, and move each other group into a new tab named after
 its repository. Panes outside any repository stay.
 
-## End-of-day focus report
+## 10. End-of-day focus report
 
 A script over `umi focus-log --since 6am --json`, grouping time by file, agent session or
 `project=`, and writing a short note (for example into the desk's day log). It counts keyboard
 focus only.
 
-## Return digest
+## 11. Return digest
 
 When Umi becomes active after a long absence, a script counts `@unseen`, `@needs-you` and
 `agent.status=working` and shows them with `umi notify` or in the drawer. **Needs:** an event when
 Umi becomes active (`app.activated`, with how long it was away); `cli.md` has none.
 
-## Project focus
+## 12. Project focus
 
 A palette command that shows only the tabs with a pane matching `project=X`. **Needs:** a way to
 dim, collapse or filter tabs in the sidebar. Tab search (`warp/parity`) filters by text; it could
 take a query instead.
 
-## Links on panes
+## 13. Links on panes
 
 `umi pane set . pr=https://…` or `desk=…`; a palette command "Open link" opens the focused pane's
 `pr` or `desk` attribute.
 
-## How agents feed the indicator
+## 14. How agents feed the indicator
 
 The indicator reads `agent.status`, which Umi's hook plugin writes from each agent's hooks. The two
 agents report different things:

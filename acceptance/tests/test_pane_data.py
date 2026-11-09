@@ -466,6 +466,42 @@ def test_the_focus_log_records_stretches_of_focus(inst, win, active):
 
 
 @pytest.mark.req("D-8")
+def test_the_focus_log_sums_time_per_pane_folder_and_session(inst, win, active):
+    a = win["pane"]
+    b = split(inst, "right", a, "--no-focus")
+    try:
+        rpc(inst, "debug.update.input")
+        inst.cli("pane", "focus", a)
+        time.sleep(1.5)
+        inst.cli("pane", "focus", b)
+        rpc(inst, "debug.update.input")
+        time.sleep(1.5)
+        inst.cli("pane", "focus", a)
+        wait_until(lambda: any(not s.get("open") for s in stretches(inst, b)), 5, message="b's stretch")
+        raw = [s for s in inst.json("focus-log", "--since", "10m")["stretches"] if s["pane"] in (a, b)]
+        by_pane = inst.json("focus-log", "--since", "10m", "--by", "pane")
+        groups = {g["key"]: g for g in by_pane["groups"]}
+        for pane in (a, b):
+            g = groups[f"pane:{pane}"]
+            assert g["panes"] == [pane] and g["kind"] == "pane", g
+            assert g["stretches"] == len([s for s in raw if s["pane"] == pane]), (g, raw)
+            assert g["seconds"] >= 1, g
+        # Groups come largest first; the span's total covers every group.
+        seconds = [g["seconds"] for g in by_pane["groups"]]
+        assert seconds == sorted(seconds, reverse=True)
+        assert by_pane["total_seconds"] >= sum(groups[f"pane:{p}"]["seconds"] for p in (a, b)) - 1
+        assert by_pane["first"] and by_pane["last"] and by_pane["breaks"] == []
+        # Plain terminals group by folder under --by session.
+        sessions = inst.json("focus-log", "--since", "10m", "--by", "session")["groups"]
+        cwd = inst.attributes(a)["cwd"]
+        assert any(g["key"] == f"folder:{cwd}" and g["kind"] == "terminal" for g in sessions), sessions
+        assert "focused" in inst.cli("focus-log", "--since", "10m", "--by", "folder").stdout
+        assert inst.cli("focus-log", "--by", "day", check=False).returncode != 0
+    finally:
+        inst.cli("pane", "focus", a)
+
+
+@pytest.mark.req("D-8")
 def test_a_stretch_ends_when_the_user_stops_or_the_screen_locks(inst, win, active):
     pane = win["pane"]
     try:
