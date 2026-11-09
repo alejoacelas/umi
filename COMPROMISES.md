@@ -228,3 +228,12 @@ The inbox, the toasts and Warp's badges were removed in design step 1 (2026-11-0
 | **The Dock badge follows changes to panes, tabs and windows, not a config edit alone**: after changing `slot.badge` the badge updates at the next such change (any event about a pane, tab or window). | Watching the config file for the badge alone would add a timer; the badge is recounted whenever what it can count changes. | Q-4 without a polling loop. |
 | **Problems in the config's Umi lines show in `list ls` and `slot ls` (`problems`, `error`), not in Ghostty's configuration-errors window.** | Ghostty skips these keys before it parses them; Umi reads them itself. | Q-2: Ghostty never calls Umi's own lines unknown. |
 | **A key binding's command runs as a `umi` process** (≈30 ms before it acts); Umi's own ⌃⌘J and ⌃⌘K stay in the app. | The CLI parses its arguments itself; running it is the one way a binding behaves exactly as the command typed. | Q-5: a binding does what the same command line does. |
+
+===================================================================================================
+
+# Compromises (fix-markdown: large Markdown files, 2026-11-09)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **A large Markdown file's preview lags its text.** After an edit the page keeps showing the previous render until the new one is ready (about 2–5 s for a 5 MB file; a few milliseconds for ordinary files), and a render that's no longer the newest is dropped. | Foundation's Markdown parser takes seconds on a 5 MB file and can't be made faster from Umi; it now runs off the main thread. | The app stays responsive while editing or switching to a large file. |
+| **The tested build was signed ad hoc on mac-air-2** (a test-only local edit of `app/dist/signing.sh` there, never committed), not with "Switcher Local Code Signing" on the main Mac. | The main Mac's disk was full (under 150 MB free; other worktrees' builds and 52 GB of Xcode DerivedData), so the build there failed with "No space left on device". | Measuring and testing tonight; the code is unchanged by how it's signed. |
