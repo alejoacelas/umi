@@ -243,7 +243,12 @@ final class UmiFileTreeModel: ObservableObject {
         models[ObjectIdentifier(controller)]
     }
 
-    init() {
+    /// Whether the model watches its root with FSEvents. Unit tests turn it off and hand
+    /// `filesChanged` the events themselves, so a late event can't stand in for the code under test.
+    private let watchesFiles: Bool
+
+    init(watchesFiles: Bool = true) {
+        self.watchesFiles = watchesFiles
         hiddenObserver = UmiState.shared.$showHiddenFiles.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.rebuild() }
         }
@@ -282,7 +287,7 @@ final class UmiFileTreeModel: ObservableObject {
 
     private func startWatching() {
         stopWatching()
-        guard visible, let root else { return }
+        guard watchesFiles, visible, let root else { return }
         watchToken &+= 1
         let token = watchToken
         watcher = UmiFSWatcher(path: root.url.path) { [weak self] events in

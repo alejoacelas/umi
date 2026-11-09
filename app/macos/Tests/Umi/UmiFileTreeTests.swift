@@ -71,7 +71,7 @@ struct UmiFileTreeTests {
         defer { try? FileManager.default.removeItem(at: url) }
         let src = url.appendingPathComponent("src"), lib = src.appendingPathComponent("lib")
         try Data().write(to: lib.appendingPathComponent("old.py"))
-        let model = UmiFileTreeModel()
+        let model = UmiFileTreeModel(watchesFiles: false)
         model.start()
         defer { model.stop() }
         model.setRoot(url)
@@ -91,14 +91,14 @@ struct UmiFileTreeTests {
     @Test func showingAgainDuringABackgroundReadShowsChangesMadeWhileHidden() async throws {
         let url = UmiFileTreeModel.realURL(try folder(["old.txt"]))
         defer { try? FileManager.default.removeItem(at: url) }
-        let model = UmiFileTreeModel()
+        let model = UmiFileTreeModel(watchesFiles: false)
         model.start()
         defer { model.stop() }
         model.setRoot(url)
         // A background read of the root, held back from the main thread: it finishes reading
-        // (Thread.sleep keeps the main actor busy) before anything else happens.
+        // (blocking keeps the main actor busy) before anything else happens.
         model.filesChanged([UmiFSWatcher.Event(path: url.path, flags: 0)])
-        Thread.sleep(forTimeInterval: 0.3)
+        blockMainThread(seconds: 0.3)
         model.stop()
         try Data().write(to: url.appendingPathComponent("hidden.txt"))
         model.start()
@@ -109,6 +109,8 @@ struct UmiFileTreeTests {
         #expect(names(in: model, under: url) == ["hidden.txt", "old.txt"])
         #expect(model.root?.stale == false)
     }
+
+    private func blockMainThread(seconds: TimeInterval) { Thread.sleep(forTimeInterval: seconds) }
 
     @Test func loadedFoldersSayWhichAreShown() throws {
         let url = try folder([], dirs: ["a/inner", "b"])
