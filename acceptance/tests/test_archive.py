@@ -297,8 +297,12 @@ def test_moving_the_first_tab_up_archives_it_and_moving_an_archived_tab_down_bri
 @pytest.mark.req("AR-2", "S-4")
 def test_close_other_tabs_leaves_the_archive_alone(inst, win, four):
     a, b, c, d = four
-    # Until a shell shows its prompt, closing its tab asks first.
+    # Until a shell shows its prompt and runs nothing, closing its tab asks first; a dialog left open
+    # would hold up every later test of the shared instance.
     ready(inst, *(tab_of(inst, t)["panes"][0]["id"] for t in (b, d)))
+    wait_until(lambda: not next(w for w in rpc(inst, "debug.confirm")["windows"]
+                                if w["window"] == win["window"])["needs_confirmation"], 20,
+               message="no pane of the window runs a program")
     inst.cli("tab", "archive", c)
     inst.cli("tab", "focus", a)
     rpc(inst, "debug.ui.menu.perform", tab=a, title="Close other tabs")
