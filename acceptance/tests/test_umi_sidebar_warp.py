@@ -201,7 +201,7 @@ def test_the_row_menu_has_warps_labels_in_warps_order(inst, win, tmp_path):
     inst.cli("tab", "rename", tab, "named")
     inst.cli("pane", "rename", pane, "pane-named")
     wait_until(lambda: "Copy branch" in titles(inst, tab), 10, message="Copy branch")
-    expected = ["Pin tab",
+    expected = ["Pin tab", "Archive Tab",
                 "New group with tab",
                 "Copy branch", "Copy tab title", "Copy working directory",
                 "Rename tab", "Reset tab name", "Rename active pane", "Reset active pane name",
@@ -802,7 +802,7 @@ def test_the_row_menu_opens_with_warps_items_and_color_dots_ui(inst, win, ui):
     texts = [t for m in menus for t in ui.texts(m)]
     ui.key(ui.ESCAPE)
     wait_until(lambda: not ui.find_all(lambda e: ui.role(e) == "AXMenu"), 3, message="Escape closed the menu")
-    wanted = ["Pin tab", "Copy tab title", "Rename tab", "Rename active pane", "Move Tab Down", "Move Tab Up",
+    wanted = ["Pin tab", "Archive Tab", "Copy tab title", "Rename tab", "Rename active pane", "Move Tab Down", "Move Tab Up",
               "Close tab", "Close other tabs", "Close Tabs Below", "Default (no color)", "Red", "Cyan",
               "Move Tab to New Window"]
     missing = [t for t in wanted if t not in texts]

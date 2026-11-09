@@ -10,29 +10,47 @@ enum UmiNavigation {
     // MARK: Tabs in sidebar order
 
     /// The next (`delta` 1) or previous (-1) tab of the current window in sidebar order,
-    /// wrapping around.
+    /// wrapping around. Archived tabs are skipped; from an archived tab, ⇧⌘] goes to the first
+    /// tab and ⇧⌘[ to the last.
     @discardableResult
     static func selectAdjacentTab(_ delta: Int, in window: TerminalController? = nil) -> UmiTab? {
-        guard let window = window ?? UmiTopology.currentWindow, window.tabs.count > 1, let index = window.index(of: window.selectedTab) else { return nil }
-        let count = window.tabs.count
-        let tab = window.tabs[((index + delta) % count + count) % count]
+        guard let window = window ?? UmiTopology.currentWindow else { return nil }
+        let tabs = window.activeTabs
+        guard let index = tabs.firstIndex(where: { $0 === window.selectedTab }) else {
+            guard let tab = delta > 0 ? tabs.first : tabs.last else { return nil }
+            UmiLayout.focusTab(tab, in: window)
+            return tab
+        }
+        guard tabs.count > 1 else { return nil }
+        let count = tabs.count
+        let tab = tabs[((index + delta) % count + count) % count]
         UmiLayout.focusTab(tab, in: window)
         return tab
     }
 
-    /// ⌘1–8: the Nth tab of the current window (the last one when there are fewer).
+    /// Whether ⇧⌘[ / ⇧⌘] have somewhere to go in the current window.
+    static var canSelectAdjacentTab: Bool {
+        guard let window = UmiTopology.currentWindow else { return false }
+        let count = window.activeTabs.count
+        return window.selectedTab.archived ? count > 0 : count > 1
+    }
+
+    /// ⌘1–8: the Nth tab of the current window (the last one when there are fewer), not counting
+    /// archived tabs.
     @discardableResult
     static func selectTab(number: Int, in window: TerminalController? = nil) -> UmiTab? {
-        guard let window = window ?? UmiTopology.currentWindow, !window.tabs.isEmpty, number >= 1 else { return nil }
-        let tab = window.tabs[min(number, window.tabs.count) - 1]
+        guard let window = window ?? UmiTopology.currentWindow, number >= 1 else { return nil }
+        let tabs = window.activeTabs
+        guard !tabs.isEmpty else { return nil }
+        let tab = tabs[min(number, tabs.count) - 1]
         UmiLayout.focusTab(tab, in: window)
         return tab
     }
 
-    /// ⌘9: the last tab of the current window.
+    /// ⌘9: the last tab of the current window out of the archive.
     @discardableResult
     static func selectLastTab(in window: TerminalController? = nil) -> UmiTab? {
-        guard let window = window ?? UmiTopology.currentWindow, let tab = window.tabs.last else { return nil }
+        guard let window = window ?? UmiTopology.currentWindow, let tab = window.activeTabs.last else { return nil }
         UmiLayout.focusTab(tab, in: window)
         return tab
     }
@@ -41,11 +59,17 @@ enum UmiNavigation {
 
     /// Whether a tab can move up (-1) or down (1), as Warp's `can_move_tab`: a tab in a group
     /// only within its group; any other tab not past the end of its pin group.
-    static func canMoveTab(_ tab: UmiTab, by delta: Int, in window: TerminalController) -> Bool {
+    static func canMoveTab(_ tab: UmiTab, by delta: Int, in window: TerminalController,
+                           throughArchive: Bool = true) -> Bool {
+        // The Archived row is the last place above the first tab: moving the first tab up archives
+        // it, and an archived tab moved down comes back (design/archive.md).
+        if tab.archived { return throughArchive && delta > 0 }
+        if delta < 0, tab === window.activeTabs.first { return throughArchive }
         guard let index = window.index(of: tab) else { return false }
         let target = index + delta
         guard window.tabs.indices.contains(target) else { return false }
         let neighbor = window.tabs[target]
+        if neighbor.archived { return false }
         if let group = tab.groupID { return neighbor.groupID == group }
         return neighbor.pinned == tab.pinned
     }
@@ -66,7 +90,16 @@ enum UmiNavigation {
     /// when it can't move that way.
     @discardableResult
     static func moveTab(_ tab: UmiTab, by delta: Int, in window: TerminalController) -> Bool {
-        guard canMoveTab(tab, by: delta, in: window), let target = moveTarget(tab, by: delta, in: window) else { return false }
+        guard canMoveTab(tab, by: delta, in: window) else { return false }
+        if tab.archived {
+            UmiArchive.unarchive(tab, in: window)
+            return true
+        }
+        if delta < 0, tab === window.activeTabs.first {
+            UmiArchive.archive(tab, in: window)
+            return true
+        }
+        guard let target = moveTarget(tab, by: delta, in: window) else { return false }
         UmiLayout.undoable(delta < 0 ? "Move Tab Up" : "Move Tab Down", windows: [window]) {
             window.moveTab(tab, to: target)
         }

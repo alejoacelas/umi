@@ -267,6 +267,7 @@ enum UmiTopology {
             "attributes": window.umiAttributes,
             "tabs": window.tabs.enumerated().map { tabJSON($0.element, index: $0.offset + 1, in: window) },
             "drawer": UmiDrawer.lsJSON(window),
+            "archive": UmiArchive.json(window),
         ]
     }
 
@@ -281,6 +282,7 @@ enum UmiTopology {
             "title": tab.title,
             "selected": tab === window.selectedTab,
             "pinned": tab.pinned,
+            "archived": tab.archived,
             "visible_limit": tab.visibleLimit,
             "strip": UmiHidden.strip(of: tab, in: window).map(\.umiID),
             "focused_pane": focused?.umiID ?? "",
@@ -301,6 +303,7 @@ enum UmiTopology {
         if let name = tab.name, !name.isEmpty { json["name"] = name }
         if tab.color != .none { json["color"] = UmiTopology.colorName(tab.color) }
         if let group = UmiTabGroups.group(of: tab, in: window) { json["group"] = group.displayName }
+        if let until = UmiArchive.conditionsJSON(tab) { json["archive_until"] = until }
         return json
     }
 

@@ -98,6 +98,16 @@ import Testing
         #expect(try run("@needs-you", rows) == ["ask1", "ask2"])   // the Dock badge counts these
     }
 
+    /// design/archive.md: the default jump list leaves out panes in archived tabs (`tab.archived`).
+    @Test func jumpLeavesOutPanesInArchivedTabs() throws {
+        var archived = pane("archived", "needs_input", since: 10, changed: 10, unseen: true)
+        archived["tab.archived"] = "true"
+        var shown = pane("shown", "needs_input", since: 20, changed: 20, unseen: true)
+        shown["tab.archived"] = "false"
+        let unknown = pane("unknown", "idle", since: 5, changed: 5, unseen: true)
+        #expect(try run("@jump", [archived, shown, unknown]) == ["shown", "unknown"])
+    }
+
     @Test func seenAndWorkingPanesAreNotJumpTargets() throws {
         let rows = [pane("seen", "idle", since: 5, changed: 5, unseen: false), pane("busy", "working", since: 5, changed: 5, unseen: true),
                     pane("seenFailure", "error", since: 5, changed: 5, unseen: false), ["n": "shell"]]

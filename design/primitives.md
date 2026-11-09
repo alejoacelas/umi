@@ -53,7 +53,7 @@ behaviour. The set is fixed and documented, and grows one slot at a time.
 
 | Slot | Default |
 |---|---|
-| `jump` (next pane that needs you) | `needs-you`, then unseen |
+| `jump` (next pane that needs you) | `needs-you`, then unseen, leaving out archived tabs |
 | `badge` (Dock count) | count of `needs-you` |
 | `landing` (pane focused on returning after N minutes) | none |
 | `tab.summary` (which pane speaks for a tab in the sidebar) | the focused pane's agent, else the one most in need, else the latest stop |

@@ -44,7 +44,7 @@ The Warp-like interface and everything about panes, tabs and windows: creating, 
 terminals (and agents shown in panes) between panes, tabs and windows, from the UI and the CLI. Also
 the product's identity, packaging and editor.
 
-Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, PI-1 to PI-4, KM-1 to KM-5, DR-1 to DR-5, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
+Requirements: P-1 to P-4, I-1 to I-5, L-1 to L-21, L-31 to L-33, M-1 to M-6, H-1 to H-8, PI-1 to PI-4, KM-1 to KM-5, DR-1 to DR-5, AR-1 to AR-6, T-1 to T-7, S-1 to S-14, E-1 to E-12, E-21 to E-24, MD-1 to MD-5.
 
 ### Core: agents in panes
 These outcomes must hold every time, with both agents: the plugin's hooks report each agent's state
@@ -73,7 +73,7 @@ toasts), and the delivery phases that built them. Their IDs are not reused. Desi
 (PI-1 to PI-4). Design step 6 (2026-11-08) replaced ⌃⌘←/→ "move the pane to the previous or next
 tab", keyboard resizing of splits and L-19's hand-placed divider rules with keyboard moves (KM-1 to
 KM-5), and ⇧⌘[ "back through the tabs visited" with Warp's previous tab (L-11). Design step 7
-(2026-11-08) added the drawer (DR-1 to DR-5).
+(2026-11-08) added the drawer (DR-1 to DR-5). The archive (2026-11-09) added AR-1 to AR-6.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -186,6 +186,7 @@ the menu.
   - ⌃⌘R / ⌃⇧⌘R rename the tab or pane;
   - ⌃⌘J goes to the next pane whose agent needs the user, and ⌃⌘K goes back (L-12);
   - ⌃⌘M shows and hides the manager pane in the drawer (DR-2);
+  - ⌃⌘A archives the tab, or brings an archived one back (AR-2);
   - ⌘[ and ⌘] walk the tab's panes, those on show then the hidden ones (H-6);
   - ⇧⌘T reopens the last closed pane, tab or window (L-20);
   - (Warp parity, 2026-11-05) ⌥⌘I and ⌥⇧⌘I synchronize input and stop it (L-32); ⌘= ⌘- ⌘0 zoom
@@ -204,6 +205,7 @@ the menu.
     ⇧⌘[ no longer goes back through the tabs visited, and `<cli> tab back` is gone; `<cli> go
     --back` returns from a walk, L-12.)
   - ⌘1–⌘8 show the Nth tab of the window and ⌘9 its last tab.
+  - All of these skip archived tabs (AR-3).
   - Showing another tab fades its panes in from the window's background (about 140 ms, none with
     Reduce Motion), so a tab switch looks different from a window switch, which stays as macOS
     draws it. The fade never holds up typing or clicks.
@@ -217,7 +219,9 @@ the menu.
 
 - **L-13 [A+W]** ⌃⇧↑ and ⌃⇧↓ (`<cli> tab move [TAB] --up|--down`, and the sidebar row's menu) move
   a tab up or down the sidebar, within its group: a tab never crosses into or out of the pinned
-  tabs. At the end of its group nothing moves (the CLI fails with a message).
+  tabs. At the end of its group nothing moves (the CLI fails with a message), except that the
+  Archived row is the last place above the first tab: moving the first tab up archives it, and
+  moving an archived tab down brings it back (AR-2).
 
 - **L-14 [A+W]** ⌘P opens a command palette offering the CLI's commands. The palette takes them
   from the CLI's own description of itself (`<cli> help --json`), so it follows the CLI as it
@@ -578,6 +582,41 @@ From design/attention-ui.md ("The drawer") and prototypes/drawer.html (option B:
   window's. Events: `drawer.opened` and `drawer.closed` (`window`, `pane`), and `pane.moved` with
   `to.drawer` or `from.drawer` true. Drawer panes are saved with the layout and come back in the
   drawer, closed, after a relaunch.
+
+## AR. The archive
+
+From design/archive.md: a place at the top of each window's sidebar for tabs the user will work on
+later, like a messaging app's archived chats.
+
+- **AR-1 [A+W]** While a window has an archived tab, its sidebar shows an Archived row at the top,
+  above the pinned tabs, reading "Archived · N" (how many tabs it holds). It is closed by default; a
+  click opens it in place, listing its tabs under the row in the box a tab group uses, in the order
+  they were archived (latest last), and a second click closes it. Each window remembers whether its
+  archive is open. The row shows no indicator: no mark and nothing from the tabs inside. Open, an
+  archived tab's own row looks like any other. A sidebar search lists the archived tabs that match.
+- **AR-2 [A+W]** ⌃⌘A archives the current tab; on an archived tab it brings the tab back. Both are
+  Window menu items (Archive Tab, Unarchive Tab), next to Show Archived, which opens the archive and
+  selects its first tab; the palette lists all three, and a tab's right-click menu has Archive Tab
+  (Unarchive Tab on an archived one). `<cli> tab archive [TAB]` and `<cli> tab unarchive [TAB]` do
+  the same, for every tab a query names. An archived tab keeps running. Archiving the selected tab
+  selects the tab closing it would; archiving takes the tab out of its group and unpins it. A tab
+  brought back goes to the top of the unpinned tabs, ungrouped. Selecting an archived tab (a click in
+  the open archive, `tab focus`, a jump to one of its panes) shows it and leaves it archived.
+  "Close other tabs" and "Close Tabs Below" leave the archive alone.
+- **AR-3 [A]** ⇧⌘[ ⇧⌘], ⌃Tab, ⌘1–⌘9 and the ⌘ hints skip archived tabs, and the default `jump`
+  list leaves out panes in archived tabs (L-12).
+- **AR-4 [A]** `archived=true` is a tab attribute: `ls --json` gives each tab `archived` and its
+  attributes `archived` (`true` or `false`); `tab set archived=true|false` and `tab unset archived`
+  archive and bring back. Queries read a pane's tab's attributes as `tab.KEY`, so `ls --where
+  'tab.archived=true'` lists the panes of archived tabs. Each window's `archive` in `ls --json` gives
+  `open` and its `tabs` in archive order. Events: `tab.archived` and `tab.unarchived`, in the
+  activity log.
+- **AR-5 [A]** `tab archive [TAB] --until CONDITION` (repeatable) brings the tab back by itself when
+  the first condition holds: a query about any of the tab's panes, or a duration. Its pending
+  conditions are the tab's `archive_until` in `ls --json`; bringing it back by any means clears them.
+  A tab brought back so has `by_condition: true` on its `tab.unarchived` event, caused by `config`.
+- **AR-6 [A]** Archived tabs, their order, whether each window's archive is open and pending
+  `--until` conditions come back after a relaunch.
 
 ## T. Terminal input and output, and events
 

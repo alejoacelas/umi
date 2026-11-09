@@ -200,6 +200,8 @@ class TerminalController: BaseTerminalController {
     /// `end` puts it last). One opened in the background goes last, so no tab shifts while the
     /// user isn't looking. `insertTab` keeps it below the pinned tabs.
     func newTabIndex(selecting: Bool) -> Int {
+        // Umi: next to an archived tab, a new tab goes last among the tabs out of the archive.
+        if selectedTab.archived, let first = tabs.firstIndex(where: \.archived) { return selecting ? first : tabs.count }
         guard selecting, ghostty.config.windowNewTabPosition == "current",
               let selected = index(of: selectedTab) else { return tabs.count }
         return selected + 1
@@ -261,6 +263,8 @@ class TerminalController: BaseTerminalController {
     /// if it was the last tab, the window closes (unless `keepWindow`).
     func detachTab(_ tab: UmiTab, focusNeighbor: Bool = true, keepWindow: Bool = false) {
         guard let index = index(of: tab) else { return }
+        // Umi: the next tab of the same sidebar list (out of the archive, or in it), as UmiArchive.
+        let neighbor = tab === selectedTabStorage ? UmiArchive.neighbor(afterRemoving: tab, in: self) : nil
         if tab === selectedTabStorage {
             tab.tree = surfaceTree
             if let focusedSurface, tab.contains(focusedSurface) { tab.focusedSurface = focusedSurface }
@@ -277,7 +281,8 @@ class TerminalController: BaseTerminalController {
                 }
                 return
             }
-            let neighbor = tabs[min(index, tabs.count - 1)]
+            // With no other tab in its list, the first of the others (a tab out of the archive first).
+            guard let neighbor = neighbor ?? activeTabs.first ?? tabs.first else { return }
             selectTab(neighbor, focus: focusNeighbor && (window?.isKeyWindow ?? false))
         }
         UmiState.shared.layoutDidChange()
@@ -1015,14 +1020,19 @@ class TerminalController: BaseTerminalController {
 
     /// Close every tab but `keep` (the sidebar row's menu), asking first if a program runs in
     /// one of them. Pinned tabs aren't spared, as in Warp. Each can be reopened (⇧⌘T).
+    /// Umi: the tabs listed with `tab` in the sidebar: the archived ones for an archived tab, else the
+    /// others (UmiArchive). "Close other tabs" and "Close Tabs Below" stay within them.
+    func umiList(of tab: UmiTab) -> [UmiTab] { tab.archived ? archivedTabs : activeTabs }
+
     func closeTabs(otherThan keep: UmiTab) {
-        closeTabs(tabs.filter { $0 !== keep }, actionName: "Close Other Tabs", question: "Close Other Tabs?")
+        closeTabs(umiList(of: keep).filter { $0 !== keep }, actionName: "Close Other Tabs", question: "Close Other Tabs?")
     }
 
     /// Close the tabs listed below `tab` in the sidebar.
     func closeTabs(below tab: UmiTab) {
-        guard let index = index(of: tab) else { return }
-        closeTabs(Array(tabs[(index + 1)...]), actionName: "Close Tabs Below", question: "Close Tabs Below?")
+        let list = umiList(of: tab)
+        guard let index = list.firstIndex(where: { $0 === tab }) else { return }
+        closeTabs(Array(list[(index + 1)...]), actionName: "Close Tabs Below", question: "Close Tabs Below?")
     }
 
     func closeTabs(_ toClose: [UmiTab], actionName: String, question: String) {
@@ -1048,15 +1058,16 @@ class TerminalController: BaseTerminalController {
         let keep = selectedTab
         undoManager?.beginUndoGrouping()
         defer { undoManager?.endUndoGrouping() }
-        for tab in tabs where tab !== keep {
+        for tab in umiList(of: keep) where tab !== keep {
             closeTabImmediately(tab)
         }
         undoManager?.setActionName("Close Other Tabs")
     }
 
     private func closeTabsOnTheRightImmediately() {
-        guard let current = index(of: selectedTab) else { return }
-        let toClose = tabs.enumerated().filter { $0.offset > current }.map(\.element)
+        let list = umiList(of: selectedTab)
+        guard let current = list.firstIndex(where: { $0 === selectedTab }) else { return }
+        let toClose = list.enumerated().filter { $0.offset > current }.map(\.element)
         guard !toClose.isEmpty else { return }
         undoManager?.beginUndoGrouping()
         defer { undoManager?.endUndoGrouping() }
@@ -1322,8 +1333,8 @@ class TerminalController: BaseTerminalController {
     }
 
     @IBAction func closeOtherTabs(_ sender: Any?) {
-        guard tabs.count > 1 else { return }
-        let needsConfirm = tabs.contains { $0 !== selectedTab && runsProgram($0) }
+        guard umiList(of: selectedTab).count > 1 else { return }
+        let needsConfirm = umiList(of: selectedTab).contains { $0 !== selectedTab && runsProgram($0) }
         guard needsConfirm else {
             closeOtherTabsImmediately()
             return
@@ -1337,8 +1348,9 @@ class TerminalController: BaseTerminalController {
     }
 
     @IBAction func closeTabsOnTheRight(_ sender: Any?) {
-        guard let current = index(of: selectedTab) else { return }
-        let toClose = tabs.enumerated().filter { $0.offset > current }.map(\.element)
+        let list = umiList(of: selectedTab)
+        guard let current = list.firstIndex(where: { $0 === selectedTab }) else { return }
+        let toClose = list.enumerated().filter { $0.offset > current }.map(\.element)
         guard !toClose.isEmpty else { return }
         let needsConfirm = toClose.contains { runsProgram($0) }
         guard needsConfirm else {

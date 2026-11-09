@@ -146,20 +146,20 @@ enum UmiShortcuts {
             // sidebar has a search query).
             Item(id: "tab.previous", title: "Show Previous Tab", key: "[", modifiers: [.command, .shift], symbol: "arrow.up.square",
                  menu: "Window", action: { adjacentTab(-1) },
-                 enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
+                 enabled: { UmiNavigation.canSelectAdjacentTab }),
             Item(id: "tab.next", title: "Show Next Tab", key: "]", modifiers: [.command, .shift], symbol: "arrow.down.square",
                  menu: "Window", action: { adjacentTab(1) },
-                 enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
+                 enabled: { UmiNavigation.canSelectAdjacentTab }),
             Item(id: "tab.cycle_next", title: "Cycle to Next Tab", key: tab, modifiers: [.control], symbol: "arrow.down.square",
                  menu: "Window", action: { adjacentTab(1) },
-                 enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
+                 enabled: { UmiNavigation.canSelectAdjacentTab }),
             Item(id: "tab.cycle_previous", title: "Cycle to Previous Tab", key: tab, modifiers: [.control, .shift],
                  symbol: "arrow.up.square", menu: "Window", action: { adjacentTab(-1) },
-                 enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) > 1 }),
+                 enabled: { UmiNavigation.canSelectAdjacentTab }),
         ] + (1...8).map { n in
             Item(id: "tab.\(n)", title: "Tab \(n)", key: "\(n)", modifiers: [.command], symbol: "\(n).square", menu: "Window",
                  submenu: "Show Tab", action: { UmiNavigation.selectTab(number: n) },
-                 enabled: { (UmiTopology.currentWindow?.tabs.count ?? 0) >= n })
+                 enabled: { (UmiTopology.currentWindow?.activeTabs.count ?? 0) >= n })
         } + [
             Item(id: "tab.last", title: "Last Tab", key: "9", modifiers: [.command], symbol: "9.square", menu: "Window",
                  submenu: "Show Tab", action: { UmiNavigation.selectLastTab() }),
@@ -167,6 +167,16 @@ enum UmiShortcuts {
                  menu: "Window", action: { moveSelectedTab(-1) }, enabled: { canMoveSelectedTab(-1) }),
             Item(id: "tab.move_down", title: "Move Tab Down", key: downArrow, modifiers: [.control, .shift], symbol: "arrow.down",
                  menu: "Window", action: { moveSelectedTab(1) }, enabled: { canMoveSelectedTab(1) }),
+            // The archive (design/archive.md): ⌃⌘A archives the current tab, or brings an archived
+            // one back (two items on one key; the one that applies runs).
+            Item(id: "tab.archive", title: "Archive Tab", key: "a", modifiers: [.command, .control], symbol: "archivebox",
+                 menu: "Window", action: { UmiArchive.archiveCurrent() },
+                 enabled: { UmiTopology.currentWindow != nil && !UmiArchive.currentIsArchived }),
+            Item(id: "tab.unarchive", title: "Unarchive Tab", key: "a", modifiers: [.command, .control],
+                 symbol: "arrow.up.bin", menu: "Window", action: { UmiArchive.unarchiveCurrent() },
+                 enabled: { UmiArchive.currentIsArchived }),
+            Item(id: "tab.show_archived", title: "Show Archived", key: "", modifiers: [], symbol: "archivebox.fill",
+                 menu: "Window", action: { UmiArchive.showArchived() }, enabled: { UmiArchive.currentHasArchive }),
 
             // Moving panes and tabs, pins and names.
             Item(id: "pane.move_new_tab", title: "Move Pane to New Tab", key: "t", modifiers: [.command, .control],
@@ -199,9 +209,9 @@ enum UmiShortcuts {
             // Tab groups (Warp's "New group with tab"), from the keyboard through the palette.
             Item(id: "tab.group_new", title: "New Group with Tab", key: "", modifiers: [], symbol: "rectangle.stack.badge.plus",
                  menu: "Window", action: {
-                     guard let window = UmiTopology.currentWindow else { return }
+                     guard let window = UmiTopology.currentWindow, !window.selectedTab.archived else { NSSound.beep(); return }
                      UmiTabGroups.newGroup(with: window.selectedTab, in: window)
-                 }),
+                 }, enabled: { !UmiArchive.currentIsArchived }),
             Item(id: "tab.group_toggle", title: "Collapse or Expand Tab Group", key: "", modifiers: [],
                  symbol: "chevron.up.chevron.down", menu: "Window", action: {
                      guard let (window, group) = UmiTabGroups.currentGroup() else { NSSound.beep(); return }
@@ -555,6 +565,8 @@ enum UmiShortcuts {
     private static func togglePin() {
         guard let window = UmiTopology.currentWindow else { return }
         let tab = window.selectedTab
+        // An archived tab isn't pinned (design/archive.md).
+        guard !tab.archived else { NSSound.beep(); return }
         let pin = !tab.pinned
         UmiLayout.undoable(pin ? "Pin Tab" : "Unpin Tab", windows: [window]) {
             window.setPinned(tab, pin)

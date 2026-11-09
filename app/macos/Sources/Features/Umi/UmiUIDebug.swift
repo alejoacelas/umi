@@ -28,6 +28,15 @@ enum UmiUIDebug {
             if params.bool("rename_cancel") == true { model.renaming = nil }
             return sidebarJSON(window)
 
+        case "debug.ui.archive":
+            // The archive at the top of the sidebar; `toggle` clicks the Archived row.
+            let window = try UmiTopology.window(params.string("window"), caller: caller)
+            if params.bool("toggle") == true {
+                guard !window.archivedTabs.isEmpty else { throw UmiError.failed("the window has no archived tab") }
+                UmiArchive.setOpen(!window.sidebarModel.archiveOpen, in: window)
+            }
+            return archiveJSON(window)
+
         case "debug.ui.groups":
             // A window's tab groups; `toggle` clicks a group's header (collapse or expand).
             let window = try UmiTopology.window(params.string("window"), caller: caller)
@@ -372,9 +381,19 @@ enum UmiUIDebug {
 
     /// A window's sidebar besides its rows: shown, the search and what it matches, the ⌘ hints,
     /// what is being renamed in place, and whether the search field has focus.
+    /// The Archived row as the sidebar draws it: shown only while the window has an archived tab.
+    private static func archiveJSON(_ window: TerminalController) -> [String: Any] {
+        let tabs = window.archivedTabs
+        var json: [String: Any] = ["shown": !tabs.isEmpty, "open": window.sidebarModel.archiveOpen,
+                                   "count": tabs.count, "tabs": tabs.map(\.idString)]
+        if !tabs.isEmpty { json["title"] = UmiArchiveRow.title(count: tabs.count) }
+        return json
+    }
+
     private static func sidebarJSON(_ window: TerminalController) -> [String: Any] {
         let model = window.sidebarModel
         var json: [String: Any] = [
+            "archive": archiveJSON(window),
             "visible": window.sidebarVisible, "query": model.query,
             "matching": model.matchingTabs(in: window).map(\.idString),
             "hints": UmiTabHints.shared.revealed, "search_focused": model.searchFocused,

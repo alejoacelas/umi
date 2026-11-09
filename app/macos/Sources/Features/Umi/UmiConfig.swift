@@ -23,9 +23,14 @@ final class UmiConfig {
     static let defaultLists: [(name: String, query: String)] = [
         ("needs-you", "agent.status=needs_input | sort status_since"),
         ("unseen", "unseen and agent.status!=working and agent.status!=needs_input | sort changed_at"),
-        ("jump", "@needs-you then @unseen"),
+        // Panes in archived tabs are left out (design/archive.md).
+        ("jump", jumpDefault),
         ("manager", "role=manager"),
     ]
+
+    /// The default `jump` list: the panes that need you, then the unseen ones, each in its own
+    /// list's order, leaving out panes in archived tabs.
+    static let jumpDefault = "@needs-you and tab.archived!=true | sort status_since then @unseen and tab.archived!=true | sort changed_at"
 
     struct Slot {
         let name: String
@@ -37,7 +42,7 @@ final class UmiConfig {
 
     /// The slots, a fixed set (design/primitives.md, "Slots"). `jump`'s value is the list `jump`.
     static let slots: [Slot] = [
-        Slot(name: "jump", defaultValue: "@needs-you then @unseen",
+        Slot(name: "jump", defaultValue: jumpDefault,
              summary: "where ⌃⌘J (go --next jump) goes: the list `jump`"),
         Slot(name: "badge", defaultValue: "@needs-you", summary: "the Dock badge: how many panes match"),
         Slot(name: "landing", defaultValue: "none",

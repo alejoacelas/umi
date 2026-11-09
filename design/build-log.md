@@ -1313,6 +1313,111 @@ skipped (the benchmark), none failed (`~/umi-final-step7-swift.log`).
     focused, though only the drawer's prompt has a cursor. Left as built; the lift follows the tab's
     focused pane (`UmiIndicator`).
 
+## Archive
+
+**Status:** built on `design/archive` from design/archive.md; merged into main and released as 0.13.0
+(see "Releases").
+
+**What changed**
+
+- `UmiArchive.swift`: an archived tab is a tab with the attribute `archived=true`. It stays in its
+  window's tabs, at their end in the order it was archived, and keeps running. The sidebar lists it
+  under the Archived row (`UmiArchiveBox`, `UmiArchiveRow`) instead of with the other tabs.
+- The Archived row: "Archived · N" above the pinned tabs, shown only while the window has an archived
+  tab; an archive-box icon while closed, a chevron while open; open, the tabs under it in the box a
+  tab group uses. A click opens or closes it; each window remembers that (`archive_open` in the
+  layout). No mark or line 2 from the tabs inside.
+- ⌃⌘A: Window ▸ Archive Tab and Unarchive Tab share the key, and the one that applies is enabled.
+  Window ▸ Show Archived (no key) opens the archive and selects its first tab. The palette lists the
+  three, plus `tab archive`'s "Archive Tab Until…". The row menu has Archive Tab after Pin tab; an
+  archived tab's menu has Unarchive Tab instead of Pin tab and the group items.
+- `tab archive [TAB] [--until CONDITION]…` and `tab unarchive [TAB]`, for every tab a query names.
+  `tab set archived=true|false` and `tab unset archived` do the same. `--until` works as on `pane
+  hide`, with a query about any of the tab's panes; the conditions are the tab's `archive_until` in
+  `ls --json`, saved with the layout.
+- Queries read a pane's tab's attributes as `tab.KEY` (`tab.archived=true`). The tab's attributes
+  always have `archived` (`true` or `false`).
+- ⇧⌘[ ⇧⌘], ⌃Tab, ⌘1–⌘9, the ⌘ hints and search cycling skip archived tabs. The default `jump` list
+  is now `@needs-you and tab.archived!=true | sort status_since then @unseen and tab.archived!=true |
+  sort changed_at`.
+- ⌃⇧↑ on the first tab (and `tab move --up`) archives it; ⌃⇧↓ on an archived tab brings it back.
+- Closing the selected tab now selects the next tab of its own list (out of the archive, or in it),
+  as archiving does. Close other tabs, Close Tabs Below and Close Tabs on the Right stay within that
+  list too.
+- Events `tab.archived` and `tab.unarchived` (`by_condition` when `--until` brought it back, caused
+  by `config`); the window's `archive` (`open`, `tabs`) and the tab's `archived` in `ls --json`;
+  `(archived)` in `ls`.
+- SPEC: new section AR (AR-1 to AR-6, fixed tier); L-9, L-11 and L-13 mention it. CLI.md and
+  design/cli.md: the commands, `tab.KEY`, the fields, the events, the new `jump` default.
+  TEST_CHANGES.md lists the added and changed tests.
+
+**Verified, and how**
+
+- The dev build (`app/dist/dev.sh`, Debug, a copy with its own state in `~/umi-dev-archive`) on
+  mac-air-2, driven by `~/umi-test-archive-trial.py`: ⌃⌘A both ways, Window ▸ Archive Tab, Unarchive
+  Tab and Show Archived, the row menu's Archive Tab and Unarchive Tab, clicks on the Archived row,
+  the palette's four entries, ⇧⌘] and ⌘1 skipping the archive, ⌃⇧↑ on the first tab and ⌃⇧↓ back,
+  `tab archive`, `tab unarchive`, `tab set archived=…`, `--until` with a query and with a moment,
+  `tab.archived` in queries, `ls` and `ls --json`, the events, and a relaunch keeping the archive
+  and its open state. Each result was read back through the CLI and `debug.ui.*`: 48 of 48
+  (`~/umi-test-archive-trial2.log`, screenshots in `~/umi-test-archive-shots`).
+- The whole acceptance suite with the UI tests at `d0adef3cf` (main merged in) on mac-air-2 under the
+  screen lock (`~/umi-test-archive-final.log`): 536 passed, 2 failed, 1 skipped (a window too narrow
+  for three panes). The failures: `test_builds_from_a_path_with_spaces` (fails on main too) and
+  `test_find_keys` (the Markdown editor's ⌘G; it fails the same way in the full run of
+  `session-links`, which has none of this work, and passes 14 of 14 alone,
+  `~/umi-test-archive-findkeys.log`).
+- An earlier full run left a "Close Other Tabs?" sheet open after
+  `test_close_other_tabs_leaves_the_archive_alone`, which broke four later tests. The test now
+  waits until the window needs no confirmation before closing; the rerun of the affected files
+  passed 85 of 85 (`~/umi-test-archive-targeted.log`).
+- Swift unit tests at `d0adef3cf`: 441 passed, 0 failed (`~/umi-test-archive-swift.log`), with the
+  new `UmiArchiveTests` and `UmiQueryTests.jumpLeavesOutPanesInArchivedTabs`.
+
+**Choices for Alejo to check**
+
+1. The design says "a ⌃⌘↑/↓ tab move", but ⌃⌘↑/↓ moves the focused pane to the tab above or below
+   (KM-2). I read it as the tab move, ⌃⇧↑/↓ (Move Tab Up / Down, `tab move --up|--down`): moving the
+   first tab up archives it. As the mirror, ⌃⇧↓ on an archived tab brings it back. The row menu's
+   Move Tab Up / Down never go through the archive, since Archive Tab and Unarchive Tab stand next
+   to them. Where: `UmiNavigation.canMoveTab`, `moveTab`.
+2. A pane move with ⌃⌘↑/↓ skips archived tabs (except the pane's own tab, when it is archived).
+   Where: `UmiPaneMove.order`.
+3. Archived tabs stay in the window's list of tabs, at its end. So `ls` lists them last, and `#N`
+   and `ls`'s `index` count them; only the sidebar puts them at the top. Where: `UmiArchive.archive`.
+4. From an archived tab, ⇧⌘] goes to the first tab out of the archive and ⇧⌘[ to the last.
+   Where: `UmiNavigation.selectAdjacentTab`.
+5. Archiving the window's last tab outside the archive is allowed: the window keeps showing it, now
+   archived.
+6. Archiving and bringing back aren't undoable with ⌘Z; ⌃⌘A reverses either. Where: `UmiArchive`.
+7. `tab.KEY` in queries is new and general (any tab attribute, not only `archived`). In exchange, a
+   pane can no longer hold a key starting with `tab.` (setting one fails). Where:
+   `UmiAttributes.value`, `set(_:on:)`.
+8. `archived` can be set like any attribute (`tab set archived=true`), and doing so archives the tab.
+   That is reported as `tab.archived` / `tab.unarchived`, not `tab.changed`. A value other than
+   `true` or `false` fails. Where: `UmiAttributes.set(_:on:in:)`.
+9. An archived tab can't be pinned or grouped: its row menu has neither, `tab pin` fails, Window ▸
+   Pin or Unpin Tab beeps and New Group with Tab is off. Archiving a pinned tab also reports
+   `tab.unpinned`, and a grouped one `tab.ungrouped`.
+10. Close other tabs, Close Tabs Below and Close Tabs on the Right act within the tab's own list:
+    they never close archived tabs from a tab outside the archive, and from an archived tab they
+    close only other archived tabs. The same for a group header's "Close other tabs". Where:
+    `TerminalController.umiList(of:)`.
+11. A sidebar search lists the archived tabs that match under the Archived row, open, whether or not
+    the archive was open; the row is hidden when none matches.
+12. A new tab opened while an archived tab is selected goes last among the tabs outside the archive
+    (it can't open "after the current tab" there). Where: `TerminalController.newTabIndex`.
+13. The row's look, with no prototype: an archive-box icon while closed and a chevron while open,
+    12-point text, the tab-group box's fill (none, 5% while hovered or holding the selected tab).
+    While closed and holding the selected tab, the row is outlined as a collapsed group's header is.
+14. Dropping a dragged tab on the Archived row doesn't archive it (not in the design). Dragging rows
+    around never changes whether a tab is archived.
+15. The default `jump` list leaves out archived tabs' panes, but a list of your own can still land on
+    one; that shows the tab without bringing it back, as the design says for ⌃⌘J.
+16. The Dock badge (the `badge` slot, `@needs-you`) still counts panes in archived tabs; the design
+    doesn't say. Leaving them out is a one-line config change (`slot.badge = @needs-you and
+    tab.archived!=true`) or a change of the default.
+
 ## Releases
 
 ### 0.10.0: steps 1–3
@@ -1352,6 +1457,12 @@ main's step 4–5 fixes). Verified before release: the whole acceptance suite wi
 (`~/umi-final-step7-final.log`): 519 passed, 1 failed (`test_builds_from_a_path_with_spaces`,
 failing on main too), 1 skipped (a window too narrow for three panes). Swift unit tests at
 `7f90eb4ae` (the same code): 432 passed, 0 failed (`~/umi-final-step7-swift.log`).
+
+### 0.13.0: the archive
+
+Released from main after merging `design/archive`. Verified before release as listed in
+"Archive" ▸ "Verified, and how": the whole suite with the UI tests at `d0adef3cf` (later commits
+change only this log) and the Swift unit tests at the same commit.
 
 ### Installing on mac-air-2
 

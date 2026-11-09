@@ -91,6 +91,7 @@ final class UmiPersistence {
         if !window.umiAttributes.isEmpty { json["attributes"] = window.umiAttributes }
         json["sidebar_width"] = Double(window.sidebarWidth)
         json["sidebar_visible"] = window.sidebarVisible
+        if window.sidebarModel.archiveOpen { json["archive_open"] = true }
         if !window.sidebarModel.groups.isEmpty {
             json["tab_groups"] = window.sidebarModel.groups.map { group in
                 ["id": group.idString, "name": group.name ?? "", "color": UmiTopology.colorName(group.color),
@@ -113,6 +114,8 @@ final class UmiPersistence {
         if let name = tab.name { json["name"] = name }
         if !tab.attributes.isEmpty { json["attributes"] = tab.attributes }
         if let group = tab.groupID { json["group"] = group.uuidString.lowercased() }
+        // An archived tab's `archived` is in its attributes; its pending `--until` conditions here.
+        if let until = UmiArchive.conditionsJSON(tab) { json["archive_until"] = until }
         if let root = tree.root { json["tree"] = encode(node: root) }
         if let focused = (tab === window.selectedTab ? window.focusedSurface : nil) ?? tab.focusedSurface {
             json["focused_pane"] = focused.umiID
@@ -207,6 +210,7 @@ final class UmiPersistence {
                 if tabJSON["docs"] as? Bool == true, tab.attributes["role"] == nil { tab.isDocs = true }
                 tab.groupID = (tabJSON["group"] as? String).flatMap(UUID.init(uuidString:))
                 tab.color = (tabJSON["color"] as? String).flatMap(UmiTopology.color(named:)) ?? .none
+                UmiArchive.restoreConditions(tabJSON["archive_until"], for: tab)
                 if let focusedID = tabJSON["focused_pane"] as? String {
                     tab.focusedSurface = root.leaves().first { $0.umiID == focusedID }
                 }
@@ -239,6 +243,7 @@ final class UmiPersistence {
             controller.umiAttributes = UmiPersistence.attributes(windowJSON["attributes"])
             if let width = windowJSON["sidebar_width"] as? Double { controller.sidebarWidth = CGFloat(width) }
             if let visible = windowJSON["sidebar_visible"] as? Bool { controller.sidebarVisible = visible }
+            controller.sidebarModel.archiveOpen = windowJSON["archive_open"] as? Bool ?? false
             controller.sidebarModel.groups = (windowJSON["tab_groups"] as? [[String: Any]] ?? []).compactMap { json in
                 guard let id = (json["id"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
                 let group = UmiTabGroup(id: id)

@@ -79,8 +79,16 @@ struct UmiSidebar: View {
         let _ = attention.revision
         let _ = hints.revealed
         let blocks = UmiTabGroups.sidebarBlocks(in: controller)
+        // The archive, above the pinned tabs, while the window has an archived tab (design/archive.md).
+        let archived = controller.archivedTabs
+        let archivedShown = controller.sidebarModel.isSearching
+            ? archived.filter { UmiTabGroups.tabMatches($0, query: controller.sidebarModel.query, in: controller) }
+            : archived
 
-        if blocks.isEmpty && controller.sidebarModel.isSearching {
+        if !archived.isEmpty && !(controller.sidebarModel.isSearching && archivedShown.isEmpty) {
+            UmiArchiveBox(controller: controller, model: controller.sidebarModel, tabs: archivedShown, tick: tick)
+        }
+        if blocks.isEmpty && archivedShown.isEmpty && controller.sidebarModel.isSearching {
             Text("No tabs match your search.")
                 .font(.system(size: 12))
                 .foregroundColor(UmiTheme.rowSubtitle)
@@ -315,8 +323,10 @@ struct UmiSidebarRowModel {
         } else {
             detail = .folder(cwd.map(Self.abbreviate) ?? "shell")
         }
-        hint = UmiTabHints.shared.revealed
-            ? controller.index(of: tab).flatMap { UmiTabHints.label(index: $0, count: controller.tabs.count) }
+        // ⌘1–9 skip archived tabs, which show no key.
+        let active = controller.activeTabs
+        hint = UmiTabHints.shared.revealed && !tab.archived
+            ? active.firstIndex { $0 === tab }.flatMap { UmiTabHints.label(index: $0, count: active.count) }
             : nil
     }
 
@@ -336,6 +346,7 @@ struct UmiSidebarRowModel {
         if failed { parts.append("last command failed") }
         if maximized { parts.append("Maximized") }
         if tab.pinned { parts.append("pinned") }
+        if tab.archived { parts.append("archived") }
         guard let agent else { return (parts + [detail.text]).joined(separator: " · ") }
         parts += [agent.kind.rawValue, Self.describe(agent.status.rawValue)]
         switch indicator {
@@ -359,14 +370,15 @@ struct UmiSidebarRowModel {
 
     func json(in controller: TerminalController? = nil) -> [String: Any] {
         var json: [String: Any] = [
-            "tab": tab.idString, "selected": selected, "pinned": tab.pinned, "panes": paneCount,
+            "tab": tab.idString, "selected": selected, "pinned": tab.pinned, "archived": tab.archived, "panes": paneCount,
             "line1": title, "line2": detail.text, "icon": icon.rawValue, "mark": markName,
             "color": UmiTopology.colorName(tab.color), "failed": failed, "maximized": maximized,
         ]
         if let hint { json["hint"] = hint }
         if let controller {
-            json["shown"] = UmiTabGroups.isShown(tab, in: controller)
-                && UmiSidebarModel.matches(self, query: controller.sidebarModel.query)
+            let model = controller.sidebarModel
+            json["shown"] = (tab.archived ? model.archiveOpen || model.isSearching : UmiTabGroups.isShown(tab, in: controller))
+                && UmiTabGroups.tabMatches(tab, query: model.query, in: controller)
             if let group = UmiTabGroups.group(of: tab, in: controller) { json["group"] = group.name }
         }
         // Umi: synchronized input (L-32).

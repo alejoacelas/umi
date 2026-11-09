@@ -39,13 +39,17 @@ enum UmiTabMenu {
         let paneName = pane.flatMap { UmiState.shared.paneName($0.id) }
         var sections: [[UmiTabMenuItem]] = []
 
-        sections.append([.init(title: tab.pinned ? "Unpin tab" : "Pin tab") {
-            let pin = !tab.pinned
-            UmiLayout.undoable(pin ? "Pin Tab" : "Unpin Tab", windows: [controller]) { controller.setPinned(tab, pin) }
-            UmiEvents.shared.emit(pin ? "tab.pinned" : "tab.unpinned", ["tab": tab.idString, "window": controller.umiIDString])
-        }])
-
-        sections.append(UmiTabGroups.menuItems(for: tab, in: controller))
+        // An archived tab is neither pinned nor grouped (design/archive.md): it offers only Unarchive Tab.
+        if tab.archived {
+            sections.append([.init(title: "Unarchive Tab") { UmiArchive.unarchive(tab, in: controller) }])
+        } else {
+            sections.append([.init(title: tab.pinned ? "Unpin tab" : "Pin tab") {
+                let pin = !tab.pinned
+                UmiLayout.undoable(pin ? "Pin Tab" : "Unpin Tab", windows: [controller]) { controller.setPinned(tab, pin) }
+                UmiEvents.shared.emit(pin ? "tab.pinned" : "tab.unpinned", ["tab": tab.idString, "window": controller.umiIDString])
+            }, .init(title: "Archive Tab") { UmiArchive.archive(tab, in: controller) }])
+            sections.append(UmiTabGroups.menuItems(for: tab, in: controller))
+        }
 
         var copies: [UmiTabMenuItem] = []
         if let branch = row.git?.branch, !branch.isEmpty {
@@ -82,10 +86,11 @@ enum UmiTabMenu {
         sections.append(modify)
 
         var close: [UmiTabMenuItem] = [.init(title: "Close tab") { controller.closeTab(tab, sender: nil) }]
-        if controller.tabs.count > 1 {
+        let list = controller.umiList(of: tab)
+        if list.count > 1 {
             close.append(.init(title: "Close other tabs") { controller.closeTabs(otherThan: tab) })
         }
-        if let index = controller.index(of: tab), index < controller.tabs.count - 1 {
+        if let index = list.firstIndex(where: { $0 === tab }), index < list.count - 1 {
             close.append(.init(title: "Close Tabs Below") { controller.closeTabs(below: tab) })
         }
         sections.append(close)
@@ -188,8 +193,10 @@ enum UmiTabMenu {
 
     /// Moving a tab up or down stays within its group (pinned or not): the same as ⌃⇧↑/↓
     /// (UmiNavigation), with its undo step, event and sidebar-order hold.
+    /// The menu's moves stay among the tabs; Archive Tab and Unarchive Tab stand for the moves
+    /// into and out of the archive.
     static func canMove(_ tab: UmiTab, by delta: Int, in controller: TerminalController) -> Bool {
-        UmiNavigation.canMoveTab(tab, by: delta, in: controller)
+        UmiNavigation.canMoveTab(tab, by: delta, in: controller, throughArchive: false)
     }
 
     static func move(_ tab: UmiTab, by delta: Int, in controller: TerminalController) {
