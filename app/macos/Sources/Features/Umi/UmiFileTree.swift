@@ -341,6 +341,10 @@ final class UmiFileTreeModel: ObservableObject {
     // MARK: Rows
 
     func rebuild() {
+        UmiPerf.measure("file tree rebuild") { rebuildRows() }
+    }
+
+    private func rebuildRows() {
         guard let root else {
             rows = []
             return

@@ -67,8 +67,10 @@ final class UmiPersistence {
 
     func saveLayoutNow() {
         guard !restoring, windowStateEnabled else { return }
-        let windows = UmiTopology.windows.map(encode(window:))
-        write(["version": 1, "windows": windows, "saved": ISO8601DateFormatter().string(from: Date())], to: layoutPath)
+        UmiPerf.measure("save layout") {
+            let windows = UmiTopology.windows.map(encode(window:))
+            write(["version": 1, "windows": windows, "saved": ISO8601DateFormatter().string(from: Date())], to: layoutPath)
+        }
     }
 
     private func write(_ json: [String: Any], to path: String) {

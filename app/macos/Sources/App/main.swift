@@ -40,4 +40,7 @@ ghostty_cli_try_action()
 // integration) run without the app, so they come first.
 UmiSingleInstance.acquireOrExit()
 
+// Umi: record main-thread hangs and slow operations (UmiPerf).
+MainActor.assumeIsolated { UmiPerf.shared.start() }
+
 _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)

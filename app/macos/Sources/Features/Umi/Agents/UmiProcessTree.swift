@@ -19,6 +19,10 @@ enum UmiProcessTree {
     /// Every process of this user (`everyone`: of every user, for links through root-owned
     /// processes such as `login`).
     static func all(everyone: Bool = false) -> [Info] {
+        UmiPerf.measure("process scan") { scan(everyone: everyone) }
+    }
+
+    private static func scan(everyone: Bool) -> [Info] {
         var mib: [Int32] = everyone ? [CTL_KERN, KERN_PROC, KERN_PROC_ALL] : [CTL_KERN, KERN_PROC, KERN_PROC_UID, Int32(getuid())]
         let length = u_int(mib.count)
         var size = 0

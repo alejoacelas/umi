@@ -6,7 +6,9 @@ import GhosttyKit
 enum UmiRPC {
     static func handle(method: String, params: UmiParams, caller: UmiCaller, connection: UmiConnection) async throws -> [String: Any]? {
         defer { UmiUndo.requestDidEnd() }
-        return try await dispatch(method: method, params: params, caller: caller, connection: connection)
+        return try await UmiPerf.measureAsync("rpc", method) {
+            try await dispatch(method: method, params: params, caller: caller, connection: connection)
+        }
     }
 
     private static func dispatch(method: String, params: UmiParams, caller: UmiCaller, connection: UmiConnection) async throws -> [String: Any]? {
@@ -479,6 +481,11 @@ enum UmiRPC {
         // paths that otherwise need the accessibility tree.
         case "debug.menu":
             return ["items": UmiDebug.menuItems()]
+        case "debug.hang":
+            // Block the main thread for `ms` milliseconds, to check the hang recorder (UmiPerf).
+            let ms = min(max(params.int("ms") ?? 500, 0), 60_000)
+            usleep(useconds_t(ms) * 1000)
+            return ["blocked_ms": ms]
         case "debug.dock_badge":
             return ["badge": NSApp.dockTile.badgeLabel ?? ""]
         case "debug.undo":
