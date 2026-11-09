@@ -30,7 +30,8 @@ def frames(record):
 def test_hang_is_recorded_with_its_stack(inst):
     seen = {r["id"] for r in hangs(inst, set())}
     inst.rpc("debug.hang", ms=700)
-    found = wait_until(lambda: [r for r in hangs(inst, seen) if not r.get("ongoing")], 5,
+    # Other hangs (such as one during launch) may be written meanwhile: find the one debug.hang made.
+    found = wait_until(lambda: [r for r in hangs(inst, seen) if not r.get("ongoing") and "usleep" in frames(r)], 5,
                        message="a hang record")
     hang = found[-1]
     assert 600 <= hang["duration_ms"] <= 1500, hang["duration_ms"]
@@ -46,13 +47,13 @@ def test_freeze_is_recorded_while_it_lasts(inst):
     thread = threading.Thread(target=lambda: inst.rpc("debug.hang", ms=4000))
     thread.start()
     try:
-        ongoing = wait_until(lambda: [r for r in hangs(inst, seen) if r.get("ongoing")], 3.5,
+        ongoing = wait_until(lambda: [r for r in hangs(inst, seen) if r.get("ongoing") and "usleep" in frames(r)], 3.5,
                              message="an ongoing hang record before the freeze ends")
         assert ongoing[0]["duration_ms"] >= 2000
         assert "usleep" in frames(ongoing[0])
     finally:
         thread.join()
-    final = wait_until(lambda: [r for r in hangs(inst, seen) if not r.get("ongoing")], 5,
+    final = wait_until(lambda: [r for r in hangs(inst, seen) if not r.get("ongoing") and r["id"] == ongoing[0]["id"]], 5,
                        message="the final hang record")
     assert final[-1]["id"] == ongoing[0]["id"]
     assert final[-1]["duration_ms"] >= 3900
@@ -63,4 +64,4 @@ def test_short_blocks_are_not_hangs(inst):
     for _ in range(5):
         inst.rpc("debug.hang", ms=100)
     inst.rpc("debug.hang", ms=0)
-    assert not hangs(inst, seen)
+    assert not [r for r in hangs(inst, seen) if "usleep" in frames(r)]
