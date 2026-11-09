@@ -210,6 +210,9 @@ final class UmiFileTreeModel: ObservableObject {
     /// Shown folders to read again in the background (`readPending`), and the batch being read.
     private var readQueue: [UmiFileNode] = []
     private var reading: [UmiFileNode]?
+    /// Bumped when reads in flight can no longer stand for what's on disk (the explorer was
+    /// hidden, or the root changed): their results are dropped and the folders stay marked.
+    private var readEpoch = 0
     /// Relative paths (`dir/`, `file`) git ignores, as `git ls-files --ignored --directory` lists them.
     private var ignored: Set<String> = []
     /// The listed folders that a .gitignore rule ignores by themselves (not only because all their
@@ -252,15 +255,13 @@ final class UmiFileTreeModel: ObservableObject {
     func start() {
         stop()
         visible = true
-        // Changes made while it was hidden weren't watched: what was read may be out of date
-        // (before `update()`, so revealing the active file reads its folders again).
+        // Changes made while it was hidden weren't watched: watch again, then read again what
+        // was read (before `update()`, so revealing the active file reads its folders again).
         let before = root
+        startWatching()
         markAllStale()
-        update()   // a new root is watched from the start
-        if let root, root === before {
-            startWatching()
-            refreshIgnored()
-        }
+        update()   // a new root is read and watched by setRoot
+        if let root, root === before { refreshIgnored() }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.update() }
         }
@@ -272,6 +273,7 @@ final class UmiFileTreeModel: ObservableObject {
         timer?.invalidate()
         timer = nil
         stopWatching()
+        dropReads()
         // Unwatched from now on: whatever is opened or revealed meanwhile is read again first.
         var all: [(node: UmiFileNode, shown: Bool)] = []
         root?.loadedFolders(into: &all)
@@ -295,7 +297,13 @@ final class UmiFileTreeModel: ObservableObject {
         watcher?.stop()
         watcher = nil
         watchToken &+= 1
+    }
+
+    /// Forget queued reads and drop the results of reads in flight.
+    private func dropReads() {
         readQueue = []
+        reading = nil
+        readEpoch &+= 1
     }
 
     /// The pane the explorer follows: the window's focused pane.
@@ -332,6 +340,7 @@ final class UmiFileTreeModel: ObservableObject {
         ignored = []
         ignoredByRule = []
         collapsedByUser = []
+        dropReads()
         startWatching()
         rebuild()
         refreshIgnored()
@@ -436,13 +445,15 @@ final class UmiFileTreeModel: ObservableObject {
         reading = batch
         let urls = batch.map(\.url)
         let generations = batch.map(\.generation)
+        let epoch = readEpoch
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let entries = urls.map { UmiFileNode.read($0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self, let batch = self.reading else { return }
+                    // Hidden or moved to another root meanwhile: this read may predate changes
+                    // nobody watched. The folders stay marked, and are read again when needed.
+                    guard let self, self.readEpoch == epoch, let batch = self.reading else { return }
                     self.reading = nil
-                    // Hidden meanwhile: the folders stay marked, to be read again when needed.
                     if self.visible, self.root === root {
                         for (index, folder) in batch.enumerated() where folder.generation == generations[index] {
                             folder.apply(entries[index])
@@ -631,8 +642,21 @@ final class UmiFileTreeModel: ObservableObject {
         }
         guard node.expanded != expanded else { return }
         node.expanded = expanded
-        if expanded { node.loadChildren() }
+        if expanded {
+            node.loadChildren()
+            readOpenFolders(under: node)
+        }
         rebuild()
+    }
+
+    /// A folder just opened shows again the folders left open inside it: those that may have
+    /// changed while out of sight (stale) are read now, so they show what's on disk, as the
+    /// folder itself does.
+    private func readOpenFolders(under folder: UmiFileNode) {
+        for child in folder.children ?? [] where child.isDirectory && child.expanded && child.children != nil {
+            child.loadChildren()
+            readOpenFolders(under: child)
+        }
     }
 
     /// → expands a collapsed folder.
@@ -688,17 +712,21 @@ final class UmiFileTreeModel: ObservableObject {
         let rootURL = Self.realURL(root.url)
         guard target.path.hasPrefix(rootURL.path + "/"), !collapsedByUser.contains(root.path) else { return }
         let relative = target.path.dropFirst(rootURL.path.count + 1).split(separator: "/")
+        func open(_ folder: UmiFileNode) {
+            let wasOpen = folder.expanded
+            folder.expanded = true
+            folder.loadChildren()
+            if !wasOpen { readOpenFolders(under: folder) }
+        }
         var node = root
-        node.expanded = true
-        node.loadChildren()
+        open(node)
         var found = true
         for (index, part) in relative.enumerated() {
             guard let next = node.children?.first(where: { $0.name == part }) else { found = false; break }
             node = next
             if index < relative.count - 1 {
                 if collapsedByUser.contains(node.path) { found = false; break }
-                node.expanded = true
-                node.loadChildren()
+                open(node)
             }
         }
         rebuild()
