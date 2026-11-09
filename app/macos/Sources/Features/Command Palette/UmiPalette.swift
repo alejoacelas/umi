@@ -1413,28 +1413,35 @@ final class UmiFileIndex {
         let recent = Self.recent
         Task.detached(priority: .userInitiated) {
             let listing = Self.list(folder)
+            // Built here, off the main thread: a large repository has hundreds of thousands of paths.
+            let candidates = Self.candidates(listing, recent: recent)
             await MainActor.run {
                 self.root = listing.root
-                var candidates: [Candidate] = []
-                candidates.reserveCapacity(listing.files.count)
-                let changed = Set(listing.changed)
-                let resolvedRoot = URL(fileURLWithPath: listing.root).resolvingSymlinksInPath().path
-                for path in listing.files {
-                    let absolute = resolvedRoot + "/" + path
-                    let recentIndex = recent.firstIndex(of: absolute)
-                    let isChanged = changed.contains(path)
-                    let nameStart = (path.lastIndex(of: "/").map { path.utf8.distance(from: path.startIndex, to: $0) + 1 }) ?? 0
-                    let rank = recentIndex.map { 1000 - $0 } ?? (isChanged ? 100 : 0)
-                    candidates.append(Candidate(path: path, lowered: Array(path.lowercased().utf8), nameStart: nameStart,
-                                                rank: rank, recent: recentIndex != nil, changed: isChanged))
-                }
-                // Recent, then changed, then the rest by path.
-                candidates.sort { a, b in a.rank != b.rank ? a.rank > b.rank : a.path < b.path }
                 self.candidates = candidates
                 self.isLoaded = true
                 done()
             }
         }
+    }
+
+    nonisolated private static func candidates(_ listing: (root: String, files: [String], changed: [String]),
+                                               recent: [String]) -> [Candidate] {
+        var candidates: [Candidate] = []
+        candidates.reserveCapacity(listing.files.count)
+        let changed = Set(listing.changed)
+        let resolvedRoot = URL(fileURLWithPath: listing.root).resolvingSymlinksInPath().path
+        for path in listing.files {
+            let absolute = resolvedRoot + "/" + path
+            let recentIndex = recent.firstIndex(of: absolute)
+            let isChanged = changed.contains(path)
+            let nameStart = (path.lastIndex(of: "/").map { path.utf8.distance(from: path.startIndex, to: $0) + 1 }) ?? 0
+            let rank = recentIndex.map { 1000 - $0 } ?? (isChanged ? 100 : 0)
+            candidates.append(Candidate(path: path, lowered: Array(path.lowercased().utf8), nameStart: nameStart,
+                                        rank: rank, recent: recentIndex != nil, changed: isChanged))
+        }
+        // Recent, then changed, then the rest by path.
+        candidates.sort { a, b in a.rank != b.rank ? a.rank > b.rank : a.path < b.path }
+        return candidates
     }
 
     /// The best matches for a query; `path:line` (and `path:line:column`) are understood.
