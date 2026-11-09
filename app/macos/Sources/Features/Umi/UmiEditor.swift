@@ -169,6 +169,9 @@ final class UmiDocument: ObservableObject, Identifiable {
     @Published var reviewWaiters = 0
     /// The shown view, which starts a comment on its selection (E-11).
     weak var commentTarget: UmiCommentTarget?
+    /// The preview's latest render, so showing the document again (its tab, or Rendered after
+    /// Raw) shows it without rendering the same text again.
+    var previewRender: UmiPreviewRender?
     /// The source view's find, go to line and comments (E-21 to E-23), while it's shown.
     weak var code: UmiCodeEditor?
 
@@ -1183,7 +1186,9 @@ struct UmiMarkdownPreview: NSViewRepresentable {
         let doc: UmiDocument
         weak var web: WKWebView?
         weak var group: UmiEditorGroup?
-        var lastKey: String?
+        /// What the page shows, or is being rendered to show: the text, the document's render
+        /// revision and the page's look.
+        private var requested: (text: String, revision: Int, light: Bool, fontSize: Double)?
         /// The text the page shows: a new comment's offsets are in it.
         private(set) var renderedText = ""
         /// While a comment or reply is being written, the page isn't reloaded under it.
@@ -1197,35 +1202,76 @@ struct UmiMarkdownPreview: NSViewRepresentable {
 
         init(doc: UmiDocument) { self.doc = doc }
 
+        /// Renders run here, one at a time, so a large document never holds up the main thread;
+        /// the page keeps showing the previous render until the new one is ready.
+        private let queue = DispatchQueue(label: "dev.umi.preview-render", qos: .userInitiated)
+        /// The newest render asked for. A render that's no longer the newest is skipped, or dropped
+        /// when it finishes.
+        private let latest = UmiRenderTicket()
+
         func render(force: Bool = false) {
-            guard let web else { return }
-            let key = "\(doc.renderRevision):\(doc.text.hashValue):\(UmiTheme.isLight):\(UmiMarkdownStyle.fontSize)"
-            guard force || lastKey != key else { return }
+            guard web != nil else { return }
+            let text = doc.text
+            let revision = doc.renderRevision
+            let light = UmiTheme.isLight
+            let fontSize = UmiMarkdownStyle.fontSize
+            if !force, let requested, requested.revision == revision, requested.light == light,
+               requested.fontSize == fontSize, requested.text == text {
+                return
+            }
             if composing && !force {
                 renderPending = true
                 return
             }
             renderPending = false
-            lastKey = key
-            renderedText = doc.text
-            guard doc.isMarkdown else {
-                // JSON and CSV/TSV previews have no comments.
-                let body = UmiDataPreview.html(for: doc.url, text: doc.text)
-                web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight), baseURL: nil)
+            requested = (text, revision, light, fontSize)
+            if let cached = doc.previewRender, cached.revision == revision, cached.text == text {
+                latest.next()
+                show(cached)
                 return
             }
-            let threads = UmiComments.Document(doc.text).threads
-            let preview = UmiComments.preview(doc.text, resolvedIDs: Set(threads.filter(\.resolved).map(\.id)))
-            let body = UmiMarkdown.html(from: preview.source, baseURL: doc.url.deletingLastPathComponent(),
-                                        positions: preview.fileOffset(of:))
+            let latest = latest
+            let ticket = latest.next()
+            let url = doc.url
+            let isMarkdown = doc.isMarkdown
+            queue.async { [weak self, weak doc = self.doc] in
+                guard latest.isCurrent(ticket) else { return }
+                let made = UmiPreviewRender.make(text: text, revision: revision, url: url, markdown: isMarkdown)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        // Kept while it's the document's text, even when this view is gone (its tab
+                        // was hidden): showing the document again uses it.
+                        if let doc, doc.renderRevision == revision, doc.text == text { doc.previewRender = made }
+                        guard let self, latest.isCurrent(ticket) else { return }
+                        // A comment started while this rendered: the page waits until it's done.
+                        if self.composing {
+                            self.renderPending = true
+                            self.requested = nil
+                            return
+                        }
+                        self.show(made)
+                    }
+                }
+            }
+        }
+
+        /// Load a render into the page, with the margin's state as it is now.
+        private func show(_ render: UmiPreviewRender) {
+            guard let web else { return }
+            renderedText = render.text
+            guard doc.isMarkdown else {
+                // JSON and CSV/TSV previews have no comments.
+                web.loadHTMLString(UmiMarkdown.page(body: render.body, background: "transparent", light: UmiTheme.isLight), baseURL: nil)
+                return
+            }
             shownWaiters = doc.reviewWaiters
             let data: [String: Any] = [
-                "threads": threads.map(\.json), "focus": focus ?? NSNull(), "scroll": scroll,
+                "threads": render.threads, "focus": focus ?? NSNull(), "scroll": scroll,
                 "waiting": doc.reviewWaiters, "showResolved": showResolved, "reveal": focus != nil,
             ]
             let head = UmiCommentsScript.head(data: data, light: UmiTheme.isLight)
-            hasDiagrams = body.contains("umi-code umi-mermaid")
-            web.loadHTMLString(UmiMarkdown.page(body: body, background: "transparent", light: UmiTheme.isLight, head: head,
+            hasDiagrams = render.hasDiagrams
+            web.loadHTMLString(UmiMarkdown.page(body: render.body, background: "transparent", light: UmiTheme.isLight, head: head,
                                                 markdown: true, fontSize: UmiMarkdownStyle.fontSize),
                                baseURL: nil)
         }
@@ -1386,6 +1432,50 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                 NSWorkspace.shared.open(url)
             }
         }
+    }
+}
+
+/// A document's preview, rendered (off the main thread) from one version of its text.
+struct UmiPreviewRender: @unchecked Sendable {
+    let text: String
+    let revision: Int
+    /// The page's body: the rendered Markdown, or the data preview of JSON and CSV/TSV.
+    let body: String
+    /// The comment threads, as the margin's script reads them (Markdown only).
+    let threads: [[String: Any]]
+    let hasDiagrams: Bool
+
+    static func make(text: String, revision: Int, url: URL, markdown: Bool) -> UmiPreviewRender {
+        guard markdown else {
+            return UmiPreviewRender(text: text, revision: revision, body: UmiDataPreview.html(for: url, text: text),
+                                    threads: [], hasDiagrams: false)
+        }
+        let document = UmiComments.Document(text)
+        let threads = document.threads
+        let preview = UmiComments.preview(document, resolvedIDs: Set(threads.filter(\.resolved).map(\.id)))
+        let body = UmiMarkdown.html(from: preview.source, baseURL: url.deletingLastPathComponent(),
+                                    positions: preview.fileOffset(of:))
+        return UmiPreviewRender(text: text, revision: revision, body: body, threads: threads.map(\.json),
+                                hasDiagrams: body.contains("umi-code umi-mermaid"))
+    }
+}
+
+/// Which render is the newest one asked for, readable from the render queue.
+final class UmiRenderTicket: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    /// A new ticket, which makes every earlier one stale.
+    @discardableResult
+    func next() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        value += 1
+        return value
+    }
+
+    func isCurrent(_ ticket: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return value == ticket
     }
 }
 

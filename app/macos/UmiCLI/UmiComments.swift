@@ -206,8 +206,7 @@ enum UmiComments {
     /// 5 MB document character by character take seconds; these read any offset directly.
     static func utf16(_ text: String) -> (units: [UInt16], ns: NSString) {
         let units = Array(text.utf16)
-        let ns = units.withUnsafeBufferPointer { NSString(characters: $0.baseAddress ?? UnsafePointer([0]), length: $0.count) }
-        return (units, ns)
+        return (units, NSString(characters: units, length: units.count))
     }
 
     /// The parts of `body` that are code (fenced blocks and inline code spans), where review markup
@@ -389,7 +388,7 @@ enum UmiComments {
 
     /// The anchors and the code ranges of a body's UTF-16 code units.
     static func scan(_ units: [UInt16]) -> (anchors: [Anchor], code: [NSRange]) {
-        let ns = units.withUnsafeBufferPointer { NSString(characters: $0.baseAddress ?? UnsafePointer([0]), length: $0.count) }
+        let ns = NSString(characters: units, length: units.count)
         let code = codeRanges(units)
         var anchors: [Anchor] = []
         var i = 0
