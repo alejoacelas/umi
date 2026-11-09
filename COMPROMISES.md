@@ -237,3 +237,11 @@ The inbox, the toasts and Warp's badges were removed in design step 1 (2026-11-0
 |---|---|---|
 | **A large Markdown file's preview lags its text.** After an edit the page keeps showing the previous render until the new one is ready (seconds for a 5 MB file, mostly in Foundation's Markdown parser; milliseconds for ordinary files), and a render that's no longer the newest is dropped. | Foundation's Markdown parser takes seconds on a 5 MB file and can't be made faster from Umi; it now runs off the main thread. | The app stays responsive while editing or switching to a large file. |
 | **The tested build was signed ad hoc on mac-air-2** (a test-only local edit of `app/dist/signing.sh` there, never committed), not with "Switcher Local Code Signing" on the main Mac. | The main Mac's disk was full during this run (under 150 MB free), so the build there failed with "No space left on device". | Measuring and testing tonight; the code is unchanged by how it's signed. |
+
+===================================================================================================
+
+# Compromises (memory after closing panes, 2026-11-09)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **Closing panes gives back most, not all, of their memory.** After opening and closing 30 panes many times, the footprint levels off at about twice the starting one (111 → 222 MB) instead of returning to it. Every closed pane is freed; the rest is pages malloc keeps because a few long-lived allocations share them (acceptance/perf/baseline-2026-11-09.md, "Memory after closing panes"). | Returning those pages would mean giving each terminal its own allocator in libghostty; asking malloc to release them frees nothing. | Closed panes keep no objects alive, and memory stops growing after the first few rounds. |

@@ -656,12 +656,15 @@ class Perf:
         return {"seconds": self.args.idle_secs}
 
     def scenario_close(self):
-        """Close every tab the run opened (and the agents and the document in them)."""
+        """Close every tab the run opened (and the agents and the document in them), then wait until
+        their memory is let go."""
         for tab in self.tabs:
             self.cli("tab", "close", tab, check=False)
         n = len(self.tabs)
         self.tabs, self.panes, self.agent_panes = [], [], []
-        time.sleep(10)
+        # Closed tabs stay held for 60 s so they can be reopened (UmiReopen); their memory comes
+        # back only after that, so wait past it.
+        time.sleep(75)
         return {"tabs_closed": n}
 
     # -- running
