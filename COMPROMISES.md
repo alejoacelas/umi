@@ -228,3 +228,11 @@ The inbox, the toasts and Warp's badges were removed in design step 1 (2026-11-0
 | **The Dock badge follows changes to panes, tabs and windows, not a config edit alone**: after changing `slot.badge` the badge updates at the next such change (any event about a pane, tab or window). | Watching the config file for the badge alone would add a timer; the badge is recounted whenever what it can count changes. | Q-4 without a polling loop. |
 | **Problems in the config's Umi lines show in `list ls` and `slot ls` (`problems`, `error`), not in Ghostty's configuration-errors window.** | Ghostty skips these keys before it parses them; Umi reads them itself. | Q-2: Ghostty never calls Umi's own lines unknown. |
 | **A key binding's command runs as a `umi` process** (≈30 ms before it acts); Umi's own ⌃⌘J and ⌃⌘K stay in the app. | The CLI parses its arguments itself; running it is the one way a binding behaves exactly as the command typed. | Q-5: a binding does what the same command line does. |
+
+===================================================================================================
+
+# Compromises (memory after closing panes, 2026-11-09)
+
+| What is given up | Why | What it protects |
+|---|---|---|
+| **Closing panes gives back most, not all, of their memory.** After opening and closing 30 panes many times, the footprint levels off at about twice the starting one (111 → 222 MB) instead of returning to it. Every closed pane is freed; the rest is pages malloc keeps because a few long-lived allocations share them (acceptance/perf/baseline-2026-11-09.md, "Memory after closing panes"). | Returning those pages would mean giving each terminal its own allocator in libghostty; asking malloc to release them frees nothing. | Closed panes keep no objects alive, and memory stops growing after the first few rounds. |
