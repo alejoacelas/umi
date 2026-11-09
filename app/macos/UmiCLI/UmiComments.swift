@@ -100,15 +100,20 @@ enum UmiComments {
         var bodyEnd: Int
         var anchors: [Anchor]
         var endmatter: Endmatter
+        /// The body's code (`codeRanges`), where review markup is literal text.
+        let code: [NSRange]
 
         var body: String { (text as NSString).substring(to: bodyEnd) }
 
         init(_ text: String) {
             self.text = text
-            let split = Endmatter.split(text)
+            let utf16 = UmiComments.utf16(text)
+            let split = Endmatter.split(utf16.ns)
             bodyEnd = split.bodyEnd
             endmatter = split.endmatter
-            anchors = UmiComments.scanAnchors((text as NSString).substring(to: split.bodyEnd))
+            let scan = UmiComments.scan(Array(utf16.units[..<split.bodyEnd]))
+            anchors = scan.anchors
+            code = scan.code
         }
 
         /// Every thread, in document order, then the detached ones.
@@ -116,9 +121,16 @@ enum UmiComments {
             let ns = text as NSString
             var result: [Thread] = []
             var seen: Set<String> = []
+            // Anchors are in document order: count lines once, from one anchor to the next.
+            var lines = text.utf16.makeIterator()
+            var line = 1
+            var counted = 0
             for anchor in anchors {
                 let quote = anchor.highlighted ? ns.substring(with: anchor.textRange) : ""
-                let line = UmiComments.line(of: anchor.range.location, in: ns)
+                while counted < anchor.range.location, let unit = lines.next() {
+                    if unit == 0x0A { line += 1 }
+                    counted += 1
+                }
                 for comment in anchor.comments {
                     let id = comment.id ?? "@\(comment.range.location)"
                     seen.insert(id)
@@ -187,46 +199,45 @@ enum UmiComments {
         }
     }
 
-    static func line(of offset: Int, in text: NSString) -> Int {
-        var line = 1
-        var index = 0
-        let limit = min(offset, text.length)
-        while index < limit {
-            if text.character(at: index) == 0x0A { line += 1 }
-            index += 1
-        }
-        return line
-    }
-
     // MARK: Scanning inline markup
+
+    /// `text`'s UTF-16 code units, and an NSString of them. A Swift string seen as an NSString
+    /// finds each UTF-16 offset by walking from the nearest of its breadcrumbs, which made reading a
+    /// 5 MB document character by character take seconds; these read any offset directly.
+    static func utf16(_ text: String) -> (units: [UInt16], ns: NSString) {
+        let units = Array(text.utf16)
+        return (units, NSString(characters: units, length: units.count))
+    }
 
     /// The parts of `body` that are code (fenced blocks and inline code spans), where review markup
     /// is literal text.
-    static func codeRanges(_ body: String) -> [NSRange] {
-        let ns = body as NSString
+    static func codeRanges(_ body: String) -> [NSRange] { codeRanges(Array(body.utf16)) }
+
+    /// `codeRanges` of a body's UTF-16 code units. Lines end as `NSString.lineRange` ends them.
+    static func codeRanges(_ u: [UInt16]) -> [NSRange] {
+        let length = u.count
         var ranges: [NSRange] = []
-        var fence: (char: unichar, count: Int, start: Int)?
-        var lineStart = 0
+        var fence: (char: UInt16, count: Int, start: Int)?
         var proseStart = 0
         func spans(_ range: NSRange) {
             // Backtick code spans in prose: a run of N backticks up to the next run of exactly N.
             var i = range.location
             let end = NSMaxRange(range)
             while i < end {
-                guard ns.character(at: i) == 0x60 else { i += 1; continue }
+                guard u[i] == 0x60 else { i += 1; continue }
                 var n = 0
-                while i + n < end, ns.character(at: i + n) == 0x60 { n += 1 }
+                while i + n < end, u[i + n] == 0x60 { n += 1 }
                 var j = i + n
                 var closed: Int?
                 while j < end {
-                    if ns.character(at: j) == 0x60 {
+                    if u[j] == 0x60 {
                         var m = 0
-                        while j + m < end, ns.character(at: j + m) == 0x60 { m += 1 }
+                        while j + m < end, u[j + m] == 0x60 { m += 1 }
                         if m == n { closed = j + m; break }
                         j += m
                     } else {
                         // A code span doesn't cross a blank line.
-                        if ns.character(at: j) == 0x0A, j + 1 < end, ns.character(at: j + 1) == 0x0A { break }
+                        if u[j] == 0x0A, j + 1 < end, u[j + 1] == 0x0A { break }
                         j += 1
                     }
                 }
@@ -238,41 +249,69 @@ enum UmiComments {
                 }
             }
         }
-        while lineStart <= ns.length {
-            let lineRange = ns.lineRange(for: NSRange(location: min(lineStart, ns.length), length: 0))
-            let line = ns.substring(with: lineRange)
-            let trimmed = line.drop { $0 == " " }
-            let indent = line.count - trimmed.count
-            if indent < 4, let first = trimmed.first, first == "`" || first == "~" {
-                let char: unichar = first == "`" ? 0x60 : 0x7E
-                let count = trimmed.prefix { $0 == first }.count
+        func endsLine(_ c: UInt16) -> Bool { c == 0x0A || c == 0x0D || c == 0x85 || c == 0x2028 || c == 0x2029 }
+        var lineStart = 0
+        while true {
+            // The line, with its line break (CR LF is one).
+            var lineEnd = lineStart
+            while lineEnd < length, !endsLine(u[lineEnd]) { lineEnd += 1 }
+            if lineEnd < length {
+                lineEnd += u[lineEnd] == 0x0D && lineEnd + 1 < length && u[lineEnd + 1] == 0x0A ? 2 : 1
+            }
+            var first = lineStart
+            while first < lineEnd, u[first] == 0x20 { first += 1 }
+            if first - lineStart < 4, first < lineEnd, u[first] == 0x60 || u[first] == 0x7E {
+                let char = u[first]
+                var after = first
+                while after < lineEnd, u[after] == char { after += 1 }
+                let count = after - first
                 if count >= 3 {
                     if let open = fence {
-                        if open.char == char, count >= open.count,
-                           trimmed.dropFirst(count).allSatisfy({ $0 == " " || $0 == "\n" || $0 == "\r" }) {
-                            ranges.append(NSRange(location: open.start, length: NSMaxRange(lineRange) - open.start))
+                        // Only spaces and the line break may follow a closing fence. (A CR LF break
+                        // doesn't count: the scan this replaced compared Characters, and "\r\n" is
+                        // one Character, neither "\r" nor "\n".)
+                        var blank = true
+                        var k = after
+                        while k < lineEnd {
+                            let c = u[k]
+                            if !(c == 0x20 || c == 0x0A || c == 0x0D) || (c == 0x0D && k + 1 < lineEnd && u[k + 1] == 0x0A) {
+                                blank = false
+                                break
+                            }
+                            k += 1
+                        }
+                        if open.char == char, count >= open.count, blank {
+                            ranges.append(NSRange(location: open.start, length: lineEnd - open.start))
                             fence = nil
-                            proseStart = NSMaxRange(lineRange)
+                            proseStart = lineEnd
                         }
                     } else {
-                        spans(NSRange(location: proseStart, length: lineRange.location - proseStart))
-                        fence = (char, count, lineRange.location)
+                        spans(NSRange(location: proseStart, length: lineStart - proseStart))
+                        fence = (char, count, lineStart)
                     }
                 }
             }
-            if NSMaxRange(lineRange) >= ns.length { break }
-            lineStart = NSMaxRange(lineRange)
+            if lineEnd >= length { break }
+            lineStart = lineEnd
         }
         if let open = fence {
-            ranges.append(NSRange(location: open.start, length: ns.length - open.start))
+            ranges.append(NSRange(location: open.start, length: length - open.start))
         } else {
-            spans(NSRange(location: proseStart, length: ns.length - proseStart))
+            spans(NSRange(location: proseStart, length: length - proseStart))
         }
         return ranges.sorted { $0.location < $1.location }
     }
 
+    /// Whether `offset` is in one of `code` (sorted and apart, as `codeRanges` gives them).
     static func inCode(_ offset: Int, _ code: [NSRange]) -> Bool {
-        code.contains { NSLocationInRange(offset, $0) }
+        var low = 0, high = code.count - 1
+        while low <= high {
+            let mid = (low + high) / 2
+            if offset < code[mid].location { high = mid - 1 }
+            else if offset >= NSMaxRange(code[mid]) { low = mid + 1 }
+            else { return true }
+        }
+        return false
     }
 
     /// `{#id}` or `{id="…" by="…"}` right at `at`: its attributes and where it ends.
@@ -321,10 +360,11 @@ enum UmiComments {
 
     /// Where `close` next occurs at or after `from`, on the same paragraph (no blank line between).
     static func find(_ close: String, in ns: NSString, from: Int) -> Int? {
-        let range = ns.range(of: close, options: [], range: NSRange(location: from, length: ns.length - from))
-        guard range.location != NSNotFound else { return nil }
-        let between = ns.range(of: "\n\n", options: [], range: NSRange(location: from, length: range.location - from))
-        return between.location == NSNotFound ? range.location : nil
+        // Only up to the paragraph's end, so an unclosed token doesn't search the rest of the file.
+        let blank = ns.range(of: "\n\n", options: [], range: NSRange(location: from, length: ns.length - from))
+        let end = blank.location == NSNotFound ? ns.length : blank.location
+        let range = ns.range(of: close, options: [], range: NSRange(location: from, length: end - from))
+        return range.location == NSNotFound ? nil : range.location
     }
 
     /// `{>>body<<}` plus its metadata at `at`.
@@ -344,9 +384,12 @@ enum UmiComments {
 
     /// Anchors: `{==text==}` followed by comments, and comments on their own. Suggestions
     /// (`{++ ++}`, `{-- --}`, `{~~ ~> ~~}`) followed by comments anchor them too.
-    static func scanAnchors(_ body: String) -> [Anchor] {
-        let ns = body as NSString
-        let code = codeRanges(body)
+    static func scanAnchors(_ body: String) -> [Anchor] { scan(Array(body.utf16)).anchors }
+
+    /// The anchors and the code ranges of a body's UTF-16 code units.
+    static func scan(_ units: [UInt16]) -> (anchors: [Anchor], code: [NSRange]) {
+        let ns = NSString(characters: units, length: units.count)
+        let code = codeRanges(units)
         var anchors: [Anchor] = []
         var i = 0
         func comments(after start: Int) -> (list: [InlineComment], end: Int) {
@@ -358,9 +401,8 @@ enum UmiComments {
             }
             return (list, at)
         }
-        while i < ns.length {
-            let c = ns.character(at: i)
-            guard c == 0x7B, i + 2 < ns.length, !inCode(i, code) else { i += 1; continue }
+        while i < units.count {
+            guard units[i] == 0x7B, i + 2 < units.count, !inCode(i, code) else { i += 1; continue }
             let opener = ns.substring(with: NSRange(location: i, length: 3))
             switch opener {
             case "{==":
@@ -397,7 +439,7 @@ enum UmiComments {
                 i += 1
             }
         }
-        return anchors
+        return (anchors, code)
     }
 
     // MARK: Changing a document
@@ -719,8 +761,9 @@ enum UmiComments {
         /// Split a document into its body and endmatter. The endmatter is the last `---` line,
         /// after a blank line (so it isn't a setext heading), followed only by YAML whose
         /// top-level keys include `comments` or `suggestions`.
-        static func split(_ text: String) -> (bodyEnd: Int, endmatter: Endmatter) {
-            let ns = text as NSString
+        static func split(_ text: String) -> (bodyEnd: Int, endmatter: Endmatter) { split(UmiComments.utf16(text).ns) }
+
+        static func split(_ ns: NSString) -> (bodyEnd: Int, endmatter: Endmatter) {
             let none = (ns.length, Endmatter())
             // The last `---` after a blank line, or a file that is nothing but endmatter.
             var marker = ns.range(of: "\n\n---\n", options: .backwards)
@@ -731,8 +774,8 @@ enum UmiComments {
                 yamlStart = NSMaxRange(marker)
                 // The body ends with the newline before the blank line.
                 bodyEnd = marker.location + 1
-            } else if text.hasPrefix("---\n") || text.hasPrefix("---\r\n") {
-                yamlStart = text.hasPrefix("---\n") ? 4 : 5
+            } else if ns.hasPrefix("---\n") || ns.hasPrefix("---\r\n") {
+                yamlStart = ns.hasPrefix("---\n") ? 4 : 5
                 bodyEnd = 0
             } else {
                 return none
@@ -966,8 +1009,11 @@ extension UmiComments {
     }
 
     static func preview(_ text: String, resolvedIDs: Set<String>) -> Preview {
-        let doc = Document(text)
-        let ns = text as NSString
+        preview(Document(text), resolvedIDs: resolvedIDs)
+    }
+
+    static func preview(_ doc: Document, resolvedIDs: Set<String>) -> Preview {
+        let ns = utf16(doc.text).ns
         let body = doc.bodyEnd
         var out = ""
         var outLength = 0
@@ -984,7 +1030,7 @@ extension UmiComments {
             outLength += (html as NSString).length
         }
         func attribute(_ ids: [String]) -> String { UmiComments.escapeHTML(ids.joined(separator: " ")) }
-        let code = codeRanges(doc.body)
+        let code = doc.code
         var cursor = 0
         /// Text inside an anchor: a suggestion's parts, or the words themselves.
         func renderSuggestionOrText(_ range: NSRange) {
@@ -1025,9 +1071,14 @@ extension UmiComments {
         // Lone review markup (no comments): highlights and suggestions with their `{#id}`.
         if let regex = try? NSRegularExpression(pattern: #"\{==(.*?)==\}|\{\+\+(.*?)\+\+\}|\{--(.*?)--\}|\{~~(.*?)~~\}"#,
                                                 options: []) {
-            for match in regex.matches(in: doc.body, range: NSRange(location: 0, length: body)) {
+            // Matches and anchors are both in document order (and anchors don't overlap): `next` is
+            // the first anchor that doesn't end before the match.
+            var next = 0
+            for match in regex.matches(in: ns as String, range: NSRange(location: 0, length: body)) {
                 let r = match.range
-                guard !inCode(r.location, code), !doc.anchors.contains(where: { NSIntersectionRange($0.range, r).length > 0 }) else { continue }
+                while next < doc.anchors.count, NSMaxRange(doc.anchors[next].range) <= r.location { next += 1 }
+                let inAnchor = next < doc.anchors.count && NSIntersectionRange(doc.anchors[next].range, r).length > 0
+                guard !inCode(r.location, code), !inAnchor else { continue }
                 var whole = r
                 if let meta = metadata(ns, at: NSMaxRange(r)) { whole.length = meta.end - r.location }
                 marks.append((whole, {

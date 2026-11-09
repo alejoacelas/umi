@@ -29,8 +29,9 @@ enum UmiMarkdown {
             return "<pre><code>\(escape(markdown))</code></pre>"
         }
         // Runs are found in the source in order: their text is copied from it, except for
-        // escapes and entities, whose runs go unmarked.
-        let ns = source as NSString
+        // escapes and entities, whose runs go unmarked. (An NSString of the code units: searching
+        // the Swift string itself walks to each offset.)
+        let ns = UmiComments.utf16(source).ns
         var cursor = 0
         let tracing = positions != nil && source == markdown
         func offset(of text: String) -> Int? {
