@@ -148,7 +148,7 @@ final class UmiDocument: ObservableObject, Identifiable {
     let id = UUID()
     let url: URL
     @Published var text: String {
-        didSet { isDirty = text != savedText }
+        didSet { isDirty = !text.sameText(as: savedText) }
     }
     @Published private(set) var isDirty = false
     @Published var mode: Mode {
@@ -269,7 +269,7 @@ final class UmiDocument: ObservableObject, Identifiable {
         self.encoding = encoding
         self.bom = bom
         savedText = saved
-        isDirty = text != savedText
+        isDirty = !text.sameText(as: savedText)
         error = nil
         watch()
     }
@@ -1029,7 +1029,7 @@ struct UmiSourceEditor: NSViewRepresentable {
     func updateNSView(_ container: UmiEditorContainerView, context: Context) {
         guard let scroll = container.subviews.first as? NSScrollView,
               let textView = scroll.documentView as? NSTextView else { return }
-        if textView.string != doc.text {
+        if !textView.string.sameText(as: doc.text) {
             let selection = textView.selectedRanges
             textView.string = doc.text
             // The text was replaced from outside the editor (reload, comments, the CLI): the
@@ -1216,7 +1216,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
             let light = UmiTheme.isLight
             let fontSize = UmiMarkdownStyle.fontSize
             if !force, let requested, requested.revision == revision, requested.light == light,
-               requested.fontSize == fontSize, requested.text == text {
+               requested.fontSize == fontSize, requested.text.sameText(as: text) {
                 return
             }
             if composing && !force {
@@ -1225,7 +1225,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
             }
             renderPending = false
             requested = (text, revision, light, fontSize)
-            if let cached = doc.previewRender, cached.revision == revision, cached.text == text {
+            if let cached = doc.previewRender, cached.revision == revision, cached.text.sameText(as: text) {
                 latest.next()
                 show(cached)
                 return
@@ -1241,7 +1241,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
                     MainActor.assumeIsolated {
                         // Kept while it's the document's text, even when this view is gone (its tab
                         // was hidden): showing the document again uses it.
-                        if let doc, doc.renderRevision == revision, doc.text == text { doc.previewRender = made }
+                        if let doc, doc.renderRevision == revision, doc.text.sameText(as: text) { doc.previewRender = made }
                         guard let self, latest.isCurrent(ticket) else { return }
                         // A comment started while this rendered: the page waits until it's done.
                         if self.composing {
@@ -1431,6 +1431,19 @@ struct UmiMarkdownPreview: NSViewRepresentable {
             } else if ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
                 NSWorkspace.shared.open(url)
             }
+        }
+    }
+}
+
+extension String {
+    /// Whether two texts are the same, code unit for code unit. `==` compares by Unicode canonical
+    /// equivalence, which walks a text bridged from AppKit (the source view's) character by
+    /// character: about 200 ms for a 5 MB document, on the main thread at every edit.
+    func sameText(as other: String) -> Bool {
+        guard isContiguousUTF8, other.isContiguousUTF8 else { return (self as NSString).isEqual(to: other) }
+        var a = self, b = other
+        return a.withUTF8 { x in
+            b.withUTF8 { y in x.count == y.count && (x.isEmpty || memcmp(x.baseAddress!, y.baseAddress!, x.count) == 0) }
         }
     }
 }
