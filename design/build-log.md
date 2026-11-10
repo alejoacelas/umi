@@ -1489,3 +1489,14 @@ hours on a 1Password prompt and was stopped, so this release replaces it.
   `test_builds_from_a_path_with_spaces` (fails on main too) and `test_find_keys` (passes alone).
   Stress run: no hangs except 2 when a 5 MB file switches to Raw (4.5 s, the source editor);
   agents scenario CPU 92 → 37%; slowest CLI answer under load 638 → 92 ms.
+
+### Soak of 0.13.0: memory after closing everything grows
+
+A 4-hour `umi_perf.py --soak 4` of the released 0.13.0 on mac-air-2 (32 cycles of every scenario):
+the footprint 75 s after each cycle's close step went 269, 352, 413, 449, 502 … 1335 MB, about
+35 MB a cycle, with threads steady at ~19. Single scenarios looped 7 times mostly level off
+(flood 174 → 216 MB, slowing; markdown 220–407 MB, noisy; agents 162 → 191 MB after 3 cycles), so
+no single leaking object was found. Each soak cycle is far heavier than real use (30 panes, output
+floods, a 5 MB Markdown file, ~300 agent updates a second). Not fixed: the recorder's
+`kind: "resources"` records (footprint every 10 minutes, in `<state>/logs/perf/`) from a week of
+real use decide whether it needs a fix.
