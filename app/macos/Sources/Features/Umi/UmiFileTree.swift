@@ -14,9 +14,12 @@ final class UmiFileNode {
     /// The entries may have changed since they were read (a change came while they weren't
     /// shown, or while the explorer was hidden): the next `loadChildren()` reads them again.
     private(set) var stale = false
-    /// Bumped on every read and every change notice, so a background read taken before either
-    /// is dropped: it may predate the change.
+    /// Bumped on every read, so a background read that a newer read overtook is dropped.
     private(set) var generation = 0
+    /// Bumped on every change notice. A background read started before the latest notice may
+    /// predate the change: its entries are taken (they're newer than what's shown) but the folder
+    /// stays stale, so it's read again (at once if shown, else when next shown).
+    private(set) var changes = 0
 
     var name: String { url.lastPathComponent }
     var path: String { url.path }
@@ -44,21 +47,23 @@ final class UmiFileNode {
     }
 
     /// The folder's entries may have changed since anything read so far: read them again when
-    /// next needed, and drop reads already under way (they may have been taken before the change).
+    /// next needed. A read already under way doesn't count as that read (see `changes`).
     func markChanged() {
         stale = true
-        generation &+= 1
+        changes &+= 1
     }
 
-    /// Take entries read by `read(_:)` (on any thread), in their order.
-    func apply(_ entries: [Entry]) {
+    /// Take entries read by `read(_:)` (on any thread), in their order. `changesSeen`: for a read
+    /// started earlier (in the background), `changes` when it started; the folder stays stale if a
+    /// change notice came since.
+    func apply(_ entries: [Entry], changesSeen: Int? = nil) {
         let old = Dictionary((children ?? []).map { ($0.url.lastPathComponent, $0) }, uniquingKeysWith: { a, _ in a })
         children = entries.map { entry in
             if let known = old[entry.name], known.isDirectory == entry.isDirectory { return known }
             return UmiFileNode(url: url.appendingPathComponent(entry.name, isDirectory: entry.isDirectory),
                                isDirectory: entry.isDirectory)
         }
-        stale = false
+        stale = changesSeen.map { $0 != changes } ?? false
         generation &+= 1
     }
 
@@ -224,6 +229,9 @@ final class UmiFileTreeModel: ObservableObject {
     /// Tests only: called on the reading thread once a background read has taken its snapshot and
     /// sent it to the main thread, so a test can act while that result is on its way.
     var snapshotSent: (@Sendable () -> Void)?
+    /// Tests only: called on the reading thread once a background read has taken its snapshot,
+    /// before it sends the result to the main thread (a test can hold it there).
+    var resultReady: (@Sendable () -> Void)?
     /// Whether folders are queued or being read in the background.
     var readsPending: Bool { reading != nil || !readQueue.isEmpty }
     /// Relative paths (`dir/`, `file`) git ignores, as `git ls-files --ignored --directory` lists them.
@@ -458,8 +466,9 @@ final class UmiFileTreeModel: ObservableObject {
 
     /// Read the queued folders off the main thread, then show what changed. One batch at a time;
     /// folders queued meanwhile are read once it ends. A folder read again on the main thread in
-    /// between (opened, a file made or renamed there) keeps that newer read; one changed again in
-    /// between (a change notice, shown or not) drops this read and stays stale.
+    /// between (opened, a file made or renamed there) keeps that newer read. One changed again in
+    /// between (a change notice, shown or not) takes this read but stays stale: if shown, it's
+    /// queued again, so under steady churn each read still shows; if closed, it's read when shown.
     private func readPending() {
         guard reading == nil, !readQueue.isEmpty, let root else { return }
         let batch = readQueue
@@ -467,10 +476,13 @@ final class UmiFileTreeModel: ObservableObject {
         reading = batch
         let urls = batch.map(\.url)
         let generations = batch.map(\.generation)
+        let changes = batch.map(\.changes)
+        let resultReady = self.resultReady
         let epoch = readEpoch
         let snapshotSent = self.snapshotSent
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let entries = urls.map { UmiFileNode.read($0) }
+            resultReady?()
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     // Hidden or moved to another root meanwhile: this read may predate changes
@@ -479,7 +491,7 @@ final class UmiFileTreeModel: ObservableObject {
                     self.reading = nil
                     if self.visible, self.root === root {
                         for (index, folder) in batch.enumerated() where folder.generation == generations[index] {
-                            folder.apply(entries[index])
+                            folder.apply(entries[index], changesSeen: changes[index])
                         }
                         self.rebuild()
                     }

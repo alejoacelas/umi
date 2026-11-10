@@ -17,6 +17,7 @@ import json
 import os
 import socket
 import subprocess
+import threading
 import time
 import uuid
 
@@ -393,6 +394,54 @@ def test_explorer_shows_changes_made_while_it_was_hidden(inst, win, tmp_path):
     wait_until(lambda: os.path.realpath(files(inst, win)["selected"] or "/") == newer, 10,
                message="the file made while hidden is revealed and selected")
     assert row(files(inst, win), os.path.join(src, "lib"))["expanded"]
+    inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2")
+def test_explorer_shows_new_files_in_open_folders_that_keep_changing(inst, win, tmp_path):
+    """Ten open folders of 2,900 files each, with a file rewritten in every one of them each 50 ms
+    (as a build or an agent writing logs would): a file made in each shows while the writes go on,
+    within 5 s, not only once they stop."""
+    repo = os.path.realpath(str(tmp_path / ("busy-" + uuid.uuid4().hex[:6])))
+    folders = [os.path.join(repo, f"d{i}") for i in range(10)]
+    for d in folders:
+        os.makedirs(d)
+        for j in range(2900):
+            open(os.path.join(d, f"f{j:04d}.txt"), "w").close()
+    subprocess.run(["git", "init", "-q", repo], check=True)
+    open_repo(inst, win, repo)
+    show_by_key(inst, win, repo)
+    for d in reversed(folders):   # from the bottom up, so the next folder is one row up
+        set_open_by_key(inst, win, d, True)
+
+    stop = threading.Event()
+
+    def keep_writing():
+        n = 0
+        while not stop.is_set():
+            for d in folders:
+                with open(os.path.join(d, "f0000.txt"), "w") as f:
+                    f.write(f"{n}\n")
+            n += 1
+            time.sleep(0.05)
+
+    writer = threading.Thread(target=keep_writing, daemon=True)
+    writer.start()
+    try:
+        time.sleep(1)   # the writes are under way
+        markers = [os.path.join(d, "marker.txt") for d in folders]
+        for m in markers:
+            write(m)
+
+        def all_shown():
+            paths = {r["path"] for r in files(inst, win, update=False)["rows"]}
+            return all(m in paths for m in markers)
+
+        wait_until(all_shown, 5, interval=0.25, message="files made in folders that keep changing")
+        assert writer.is_alive(), "the writes were still going on"
+    finally:
+        stop.set()
+        writer.join()
     inst.cli("sidebar", "tabs")
 
 

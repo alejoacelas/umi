@@ -1616,6 +1616,12 @@ the keys (`show_by_key`, `select_by_key`, `set_open_by_key`):
   folder, and then checks the deleted file is gone; `src` itself is still read at once (`src/lib`
   shows as open straight away). It still fails on `ca959adc7`, where the rows never update.
 
+- `test_explorer_shows_new_files_in_open_folders_that_keep_changing` (after review 4): ten open
+  folders of 2,900 files, a file rewritten in each every 50 ms; a file made in each shows within
+  5 s while the writes go on (the test checks the writer is still running). It fails on
+  `51d2709a7`, where every change notice dropped the background read under way, so a folder that
+  kept changing showed nothing new until the writes stopped.
+
 **Added** `perf/explorer_churn.py`: not a test (pytest doesn't collect it) but the reproduction
 script for the stall: an isolated instance with the explorer on a ~6,500-file repository, `git
 worktree add` and a Zig-cache-like churn in the ignored worktree; it reports the app's CPU, how busy

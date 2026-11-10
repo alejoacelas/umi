@@ -176,6 +176,60 @@ struct UmiFileTreeTests {
         semaphore.wait(timeout: .now() + 5) == .success
     }
 
+    /// Waits for a semaphore without holding the main thread, so results can land meanwhile.
+    private func waitAsync(_ semaphore: DispatchSemaphore) async throws -> Bool {
+        for _ in 0..<500 {
+            if semaphore.wait(timeout: .now()) == .success { return true }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+
+    /// Review 4: a shown folder that keeps changing (a change notice during every background read)
+    /// shows each read while the changes go on, not only once they stop.
+    @Test func aShownFolderUnderSteadyChangeShowsEachRead() async throws {
+        let url = UmiFileTreeModel.realURL(try folder(["top.txt"], dirs: ["src"]))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let src = url.appendingPathComponent("src")
+        let busy = src.appendingPathComponent("busy.log")
+        try Data("0".utf8).write(to: busy)
+        let model = UmiFileTreeModel(watchesFiles: false)
+        model.start()
+        defer { model.stop() }
+        model.setRoot(url)
+        model.setExpanded(src, true, byUser: true)
+        let srcNode = try #require(child(model.root, "src"))
+        // Each background read waits after its snapshot until let go, so the test knows where it is.
+        let ready = DispatchSemaphore(value: 0), go = DispatchSemaphore(value: 0)
+        model.resultReady = { ready.signal(); go.wait() }
+        defer {
+            model.resultReady = nil
+            for _ in 0..<3 { go.signal() }
+        }
+
+        try Data().write(to: src.appendingPathComponent("marker.txt"))
+        model.filesChanged([UmiFSWatcher.Event(path: src.path, flags: 0)])
+        try #require(try await waitAsync(ready), "the first read takes its snapshot (with marker.txt)")
+        for cycle in 1...5 {
+            // The producer: a change, and its notice, while the read is under way.
+            try Data("\(cycle)".utf8).write(to: busy)
+            model.filesChanged([UmiFSWatcher.Event(path: src.path, flags: 0)])
+            go.signal()
+            // The read queued by that notice takes its snapshot only after the previous result
+            // was handled on the main thread; it waits at the gate, so nothing else lands now.
+            try #require(try await waitAsync(ready), "read \(cycle + 1) takes its snapshot")
+            #expect(names(in: model, under: src) == ["busy.log", "marker.txt"],
+                    "cycle \(cycle): marker.txt shows while the folder keeps changing")
+            #expect(srcNode.stale, "cycle \(cycle): a change came after the read began")
+        }
+        // The producer stops: the last read lands and the folder is current.
+        model.resultReady = nil
+        go.signal()
+        try await settle(model)
+        #expect(names(in: model, under: src) == ["busy.log", "marker.txt"])
+        #expect(!srcNode.stale)
+    }
+
     /// What starts the background read that a later change must overtake.
     enum FirstRead { case reopeningTheParent, aChangeWhileShown }
 
