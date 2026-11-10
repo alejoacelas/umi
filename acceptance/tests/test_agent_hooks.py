@@ -309,7 +309,9 @@ def test_real_codex_reports_each_state(fresh):
     inst = real_instance(fresh)
     pane = real_pane(inst)
     trust = [("Trust this folder?", ["enter"])]
-    flags = (f"-c model_reasoning_effort=low -c check_for_update_on_startup=false --dangerously-bypass-hook-trust "
+    # Approvals go to the user, not to an automatic reviewer the user's config may name.
+    flags = (f"-c model_reasoning_effort=low -c check_for_update_on_startup=false -c approvals_reviewer=user "
+             f"--dangerously-bypass-hook-trust "
              f"{codex_hook_flags(inst.plugin('codex'))}")
     # A read-only sandbox: any file written needs an approval.
     inst.type_line(pane, f"codex -m gpt-6-luna -a on-request -s read-only {flags}")
