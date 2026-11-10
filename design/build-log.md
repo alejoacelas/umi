@@ -1642,3 +1642,17 @@ picked the newest. The installed Umi (`dev.umi.app`, not isolated) now makes its
 handler at launch (`UmiSessionLinks.claimScheme`, event `link.handler`). Dev and test builds and the
 suite's isolated instances never do. The suite can't test this (its instances are isolated), so it
 was checked by installing 0.15.1 on mac-air-2 and clicking the links.
+
+**End-to-end check on mac-air-2 with 0.15.1 installed** (10 November): tasks made with `umi-link new`
+on the agent server, links clicked in mac-air-2's Chrome, Chrome's "Open Umi.app?" answered Open.
+- The Mac task's page link opened a tab named after the task in `~/best/projects/2026-10-26-umi`
+  with Claude started on the task's prompt. (Claude there answered "Login expired": mac-air-2's own
+  Claude Code login, not Umi.)
+- The server task's page link opened a tab that ran `ssh -t agent-server sudo -iu agent umi-link
+  attach ID`; Claude answered from `/home/agent/work/clerk` on main, inside tmux `umi-<id>`. The
+  first try failed because tmux on the server has no terminfo for `xterm-ghostty`; `umi-link attach`
+  now falls back to `xterm-256color`.
+- A docket entry's "Work on this in Umi" link (a preview docket on the docket page) opened the Mac
+  task the same way.
+Chrome asks "Open Umi.app?" on every click until "Always allow agent-server… to open links of
+this type" is ticked once; it was left unticked.
