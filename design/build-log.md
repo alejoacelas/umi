@@ -1622,3 +1622,14 @@ was rerun alone (14 passed). Swift unit tests: passed, the 13 new ones included
 (`~/umi-test-session-links-swift.log`). A link delivered by LaunchServices (`open -a Umi.app
 umi://…`) with a real task from the agent server opened a tab named after it in
 `~/best/projects/2026-10-26-umi`, and a link to another origin was refused.
+
+### 0.15.0: session links
+
+Released from main after rebasing `session-links` onto it (0.14.0). Verified before release at
+`6d9285c9e` (the next commit changes only this log) on mac-air-2 under the screen lock
+(`~/umi-test-session-links-final.log`): 565 passed, 2 failed, 3 skipped (two real-agent tests
+without `ACCEPTANCE_REAL`, and a window too narrow for three panes). The failures:
+`test_builds_from_a_path_with_spaces`, failing on main too, and
+`test_real_ctrl_cmd_m_and_the_drawers_buttons_ui`, a real-keystroke timing check that passed in
+the run before the rebase and again when `test_drawer.py` was rerun alone (16 passed). Swift unit
+tests passed.
