@@ -379,6 +379,22 @@ state on its pane.
 | `plugins [status\|install [--force]\|remove]` | Umi's plugins in Claude Code and Codex (SPEC AG-18); JSON per agent `{"installed", "version"?, "bundled_version"?, "current", "enabled"? (Claude), "hooks_trusted"? (Codex), "agent_installed", "steps"? (install)}`; current means this app's version, from this copy of the app, enabled and (Codex) its hooks trusted; `--force` reinstalls even when current |
 | `doctor` | reports whether `<cli>` is on the login PATH and whether the hook plugins are installed and current (for each agent that is installed); exits non-zero when a plugin isn't installed and current (SPEC I-2), and 0 otherwise, also when `<cli>` isn't on PATH (that is reported, not required); JSON `{"ok", "checks": [{"check", "ok", "detail", "required"}]}` |
 
+Each agent event sets `agent.status` (SPEC AG-19; design/ideas.md, item 14):
+
+| Event | `agent.status` |
+|---|---|
+| `SessionStart` | `idle` (from `stopped` or `error`) |
+| `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure`, `PreModelRequest` | `working` |
+| `PreToolUse` | `needs_input` for a question tool (`AskUserQuestion`, `request_user_input`), otherwise `working` |
+| `PermissionRequest`; `Notification` of type `permission_prompt`, `elicitation_dialog` or `agent_needs_input` | `needs_input` |
+| `Stop` | `idle`, or `working` while background tasks or scheduled wake-ups remain |
+| `Interrupt` | `idle` |
+| `StopFailure`; `PostModelRequest` with `status: failed` | `error` |
+| `SessionEnd` | `stopped` |
+
+Other events, `PostModelRequest` with another status, and model requests of a Codex subagent (with
+`agent_id`) change nothing.
+
 Keys written by the hooks, in each pane's `attributes`:
 
 | Key | Value |
@@ -386,7 +402,7 @@ Keys written by the hooks, in each pane's `attributes`:
 | `agent.kind` | `claude` or `codex` |
 | `agent.status` | `working`, `needs_input`, `idle`, `stopped` or `error` (SPEC AG-19) |
 | `agent.title` | the conversation's first prompt, on one line |
-| `agent.summary` | the first line of the agent's last reply |
+| `agent.summary` | the first line of the agent's last reply; after a failed turn, the first line of the reason (Claude Code's message, or the `message` of Codex's API error) |
 | `agent.done` | `true` or `false`, set at the end of each turn by the `done-check` slot (default: the reply's last line starts with `Status: done`) |
 | `agent.session` | the agent's own session (Claude Code) or thread (Codex) id; a relaunch resumes it |
 

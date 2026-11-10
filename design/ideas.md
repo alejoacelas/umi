@@ -129,18 +129,44 @@ take a query instead.
 
 ## 14. How agents feed the indicator
 
-The indicator reads `agent.status`, which Umi's hook plugin writes from each agent's hooks. The two
-agents report different things:
+The indicator reads `agent.status`, which Umi's hook plugin writes from each agent's hooks. Tested
+for real on 9 November 2026 with Claude Code 2.1.319 and codex-cli 0.164.0
+(`acceptance/reference/agent-logs/2026-11-09-hooks/` has every hook input they sent). Umi 0.14.0
+maps each state this way:
 
-| State | Claude Code | Codex |
-|---|---|---|
-| working | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | the same three |
-| needs you: approval | `PermissionRequest` | `PermissionRequest` |
-| needs you: a question or an idle prompt | `Notification` | no matching hook in Umi's Codex plugin |
-| error | `StopFailure`, `PostToolUseFailure` | no matching hook |
-| finished | `Stop` | `Stop` |
+| State | Claude Code sends | Codex sends | Umi shows |
+|---|---|---|---|
+| started | `SessionStart` at launch | `SessionStart` only with the first prompt, also on `codex resume` | `idle`; a Codex pane shows nothing until its first prompt |
+| working | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | the same, and `PreModelRequest` before each model request | `working` |
+| a command fails | `PostToolUseFailure` | `PostToolUse` (the exit code is in its output) | `working`: the turn goes on |
+| a question | `PreToolUse` and `PermissionRequest` for `AskUserQuestion` | `PreToolUse` for `request_user_input` (Plan mode only) | `needs_input` |
+| a permission prompt | `PermissionRequest` (then `Notification` `permission_prompt` about 6 s later) | `PermissionRequest` | `needs_input` |
+| the prompt answered "no" | nothing | `Interrupt` | Claude Code: stays `needs_input` until its next hook (Esc: `idle` as an interrupt); Codex: `idle` |
+| finished | `Stop` | `Stop` | `idle` (`working` while Claude Code's background tasks run) |
+| interrupted (Esc, Ctrl-C) | nothing | `PostModelRequest` `cancelled`, then `Interrupt` | Claude Code: `idle` two seconds after the key; Codex: `idle` at once |
+| failed (API error, unknown model) | `StopFailure` with `error` (such as `model_not_found`) and the reason as `last_assistant_message` | `PostModelRequest` with `status: failed` and the API's error JSON in `error`; no `Stop` | `error` |
+| a retried request | (inside one turn, no hook) | `PostModelRequest` `failed`, then `PreModelRequest` | `error`, then `working` again |
+| idle a minute | `Notification` `idle_prompt` | nothing | no change |
+| exited | `SessionEnd` (`prompt_input_exit`) | `SessionEnd` (`other`) | `stopped` |
+| killed or crashed | nothing | nothing | `stopped` once the process is gone |
 
-So with Codex, a question to the user or a failed turn may show as finished instead of "needs you".
-To check before relying on it: which Codex events cover questions and failures, and whether each
-agent's `Stop` hook input carries the last message (needed for `agent.done`) or only a transcript
-path to read it from.
+The other attributes come out the same for both:
+
+- **`agent.summary` and `agent.done`**: both agents' `Stop` carries the reply as
+  `last_assistant_message`, so neither needs its transcript. The summary is the reply's first line;
+  `done` is whether its last line starts with `Status: done`. A failed turn has no reply: the
+  summary is the reason (Claude Code's message, or the `message` in Codex's error JSON), and `done`
+  is false.
+- **`agent.title`**: the first `UserPromptSubmit`'s prompt, for both.
+- **`agent.session`**: `session_id`, Claude Code's session and Codex's thread, for both.
+
+What the agents can't report, so Umi doesn't show it (SPEC AG-19):
+
+- **A Codex that hasn't had a prompt yet.** Codex runs no hook until its first prompt, so a freshly
+  typed or resumed Codex isn't an agent to Umi until then. After a relaunch, a resumed Codex shows
+  `stopped` until it gets a prompt.
+- **A Claude Code permission prompt answered "No" from its list.** It sends nothing, so the pane
+  stays `needs_input` until the next prompt. Esc on the prompt counts as an interrupt (below).
+- **A Codex MCP server asking the user something** (an elicitation): no hook.
+- **A Claude Code interrupt** sends nothing either: Umi takes a turn with no hook for two seconds
+  after Esc or Ctrl-C as interrupted.

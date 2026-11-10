@@ -217,7 +217,8 @@ def test_a_plugin_installed_from_another_copy_of_umi_is_not_current(inst):
     development build of the same plugin version, and the installed app took it as current, so its
     marketplace kept pointing at that build."""
     home = os.path.join(inst.fake_dir, "codex-home")
-    os.makedirs(os.path.join(home, "plugins", "cache", "umi", "umi", "1.2.0"), exist_ok=True)
+    bundled = inst.json("plugins")["codex"]["bundled_version"]     # the same version: only its source differs
+    os.makedirs(os.path.join(home, "plugins", "cache", "umi", "umi", bundled), exist_ok=True)
     with open(os.path.join(home, "config.toml"), "w") as f:
         f.write('[marketplaces.umi]\nsource_type = "local"\nsource = "/somewhere/else/Umi.app/Contents/Resources/agent-plugins"\n\n'
                 '[plugins."umi@umi"]\nenabled = true\n\n'
@@ -232,9 +233,10 @@ def test_a_disabled_claude_plugin_is_not_current(inst):
     """Found while updating this Mac's copy: Claude Code had Umi's plugin installed but disabled (its
     settings had been rewritten), and Umi took it as current, so it reported nothing."""
     config = inst.claude_config
+    bundled = inst.json("plugins")["claude"]["bundled_version"]    # the same version: only disabled
     os.makedirs(os.path.join(config, "plugins"), exist_ok=True)
     with open(os.path.join(config, "plugins", "installed_plugins.json"), "w") as f:
-        json.dump({"version": 2, "plugins": {"umi@umi": [{"scope": "user", "version": "1.2.0"}]}}, f)
+        json.dump({"version": 2, "plugins": {"umi@umi": [{"scope": "user", "version": bundled}]}}, f)
     with open(os.path.join(config, "settings.json"), "w") as f:
         json.dump({"enabledPlugins": {}}, f)
     claude = inst.json("plugins").get("claude") or {}

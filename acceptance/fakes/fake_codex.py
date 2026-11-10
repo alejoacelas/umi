@@ -650,6 +650,7 @@ class ActiveTurn(object):
         self.done = threading.Event()  # set once turn/completed has been written
         self.prev = None           # previous (finishing) turn to wait for
         self.first_input = None
+        self.model_open = False    # a PreModelRequest hook ran and its PostModelRequest hasn't
 
 
 class FakeCodex(object):
@@ -751,13 +752,30 @@ class FakeCodex(object):
         cwd = th["cwd"] if os.path.isdir(th["cwd"]) else os.getcwd()
         self.hooks.run(event, d, cwd, match=match)
 
-    def pre_tool(self, th, turn, command, item_id):
-        self.fire(th, "PreToolUse", turn, match="Bash", tool_name="Bash", tool_use_id=item_id,
-                  tool_input={"command": command})
+    def pre_tool(self, th, turn, command, item_id, tool="Bash"):
+        self.model_post(th, turn, "completed")     # the model request that asked for the tool
+        self.fire(th, "PreToolUse", turn, match=tool, tool_name=tool, tool_use_id=item_id,
+                  tool_input={"command": command} if tool == "Bash" else {})
 
-    def post_tool(self, th, turn, command, item_id, output):
-        self.fire(th, "PostToolUse", turn, match="Bash", tool_name="Bash", tool_use_id=item_id,
-                  tool_input={"command": command}, tool_response=output)
+    def post_tool(self, th, turn, command, item_id, output, tool="Bash"):
+        self.fire(th, "PostToolUse", turn, match=tool, tool_name=tool, tool_use_id=item_id,
+                  tool_input={"command": command} if tool == "Bash" else {}, tool_response=output)
+        self.model_pre(th, turn)                   # the tool's result goes back to the model
+
+    # Model requests (codex-cli 0.164.0, 2026-11-09): PreModelRequest before each request to the model,
+    # PostModelRequest after it with status completed, failed (and `error`) or cancelled (an interrupt).
+    def model_pre(self, th, turn):
+        if not turn.model_open:
+            turn.model_open = True
+            self.fire(th, "PreModelRequest", turn)
+
+    def model_post(self, th, turn, status, error=None):
+        if turn.model_open:
+            turn.model_open = False
+            usage = None if status != "completed" else {
+                "input_tokens": 100, "cached_input_tokens": 0, "cache_write_input_tokens": 0, "output_tokens": 5,
+                "reasoning_output_tokens": 0, "total_tokens": 105}
+            self.fire(th, "PostModelRequest", turn, status=status, error=error, token_usage=usage)
 
     def status(self, th, typ, flags=None):
         st = {"type": typ}
@@ -1450,6 +1468,7 @@ class FakeCodex(object):
 
     def user_item(self, th, turn, inp):
         self.fire(th, "UserPromptSubmit", turn, prompt=inp["text"])    # also for a steered input (inferred)
+        self.model_pre(th, turn)
         item = {"type": "userMessage", "id": uuid7(), "clientId": inp["clientId"], "content": inp["content"]}
         self.item_started(turn, item)
         self.item_completed(turn, item)
@@ -1700,6 +1719,7 @@ class FakeCodex(object):
             self.pending_server[req_id] = turn
         self.status(th, "active", ["waitingOnUserInput"])
         item_id = "call_" + uuidlib.uuid4().hex[:12]
+        self.pre_tool(th, turn, None, item_id, tool="request_user_input")
         self.server_request(th, {"method": "item/tool/requestUserInput", "id": req_id, "params": {
             "threadId": th["id"], "turnId": turn.id, "itemId": item_id, "isBlocking": True, "autoResolutionMs": None,
             "questions": [
@@ -1715,6 +1735,7 @@ class FakeCodex(object):
         self.close_request(req_id)
         self.notify("serverRequest/resolved", {"threadId": th["id"], "requestId": req_id})
         self.status(th, "active", [])
+        self.post_tool(th, turn, None, item_id, json.dumps(result), tool="request_user_input")
         answers = result.get("answers") or {}
         return "answers: " + "; ".join("%s=%s" % (k, ",".join((answers[k] or {}).get("answers", [])))
                                        for k in sorted(answers))
@@ -1740,10 +1761,12 @@ class FakeCodex(object):
 
     def fail_turn(self, th, turn):
         msg = ('{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'%s\' '
-               'model is not supported when using Codex with a ChatGPT account."}}' % th["model"])
+               'model is not supported when using Codex with a ChatGPT account.","code":"model_not_found"}}'
+               % th["model"])
         err = {"message": msg, "codexErrorInfo": "other", "additionalDetails": None, "misalignment": None}
         with self.cv:
             turn.finishing = True
+        self.model_post(th, turn, "failed", msg)   # no Stop for a failed turn
         self.status(th, "systemError")
         self.notify("error", {"error": err, "willRetry": False, "threadId": th["id"], "turnId": turn.id})
         self.persist_turn(th, turn, "failed", err)
@@ -1891,10 +1914,13 @@ class FakeCodex(object):
                 if pending:
                     self.pending_server.pop(pending["id"], None)
                     self.open_requests.pop(pending["id"], None)
+            self.model_post(th, turn, "cancelled")
+            self.fire(th, "Interrupt", turn)       # also for an approval answered "no" (cancel)
             self.status(th, "idle")
             self.persist_turn(th, turn, "interrupted")
             self.end_turn(th, turn, self.turn_obj(turn, "interrupted"), pending)
             return
+        self.model_post(th, turn, "completed")
         # Stop once no input can join the turn any more; an interrupted or failed turn fires none
         self.fire(th, "Stop", turn, stop_hook_active=False, last_assistant_message=turn.last_final["text"])
         self.status(th, "idle")
@@ -2181,14 +2207,14 @@ class CodexTui(object):
                 if not self.ui.tty:            # piped input: let the work finish first
                     while self.active or self.started_turns - self.ended:
                         time.sleep(0.05)
-                self.quit("other" if self.ui.hangup else "exit")
+                self.quit("other")
             text = line.strip()
             if not text:
                 continue
             if self.answer(text):
                 continue
             if text in ("/exit", "/quit"):
-                self.quit("exit")
+                self.quit("other")
             self.submit(text)
 
     def overrides(self):

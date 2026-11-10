@@ -1418,6 +1418,74 @@ skipped (the benchmark), none failed (`~/umi-final-step7-swift.log`).
     doesn't say. Leaving them out is a one-line config change (`slot.badge = @needs-you and
     tab.archived!=true`) or a change of the default.
 
+## Agent hooks
+
+Brief: `BRIEF-agent-hooks.md`. Claude Code and Codex now report the same pane states wherever their
+hooks allow; `design/ideas.md` item 14 has what each agent sends and what Umi shows.
+
+**How it was tested.** A logging hook registered for every event of each agent (Claude Code 2.1.319
+by `--plugin-dir`, codex-cli 0.164.0 by the project's `.codex/hooks.json` with
+`--dangerously-bypass-hook-trust`), driven in tmux on this Mac with cheap models: a plain turn,
+`Status: done`, a question, a permission prompt (yes, then no), a failing command, Esc and Ctrl-C, an
+unknown model, a resume, exit. The inputs are in
+`acceptance/reference/agent-logs/2026-11-09-hooks/`. The event list came from Codex's source at
+`rust-v0.164.0` (`codex-rs/hooks`, `core/src/hook_runtime.rs`) and Claude Code's hooks reference;
+0.167.0 has the same Codex events, and 0.162.1 has `Interrupt` and ignores the model-request event
+names in a plugin's hooks.json (only unknown top-level keys are rejected), so the new plugin is safe
+on older Codex.
+
+**Choices to check.**
+- **Codex's failed turn comes from `PostModelRequest`.** Codex has no `StopFailure`; a failed turn
+  fires `PostModelRequest` with `status: failed` and no `Stop`. Codex also fires it for each attempt
+  it retries, so a pane shows `error` during a retry until the next `PreModelRequest` makes it
+  `working` again (Codex's own screen says "Reconnecting…" then). Taking only the last failure
+  would mean guessing from timing, which the brief rules out.
+- **`PreModelRequest` is `working`.** It's what clears a retried failure. It costs one `umi hook`
+  run (a few milliseconds) per model request. A subagent's model requests (with `agent_id`) are
+  ignored, so they can't change the pane's session or mark the parent's turn failed.
+- **The failure's summary is the reason.** Claude Code's `StopFailure` carries its message as
+  `last_assistant_message`; Codex's error is the API's JSON, from which Umi takes `message` as the
+  summary and `code` as the detail, so both read alike.
+- **No transcript reading.** Both agents' `Stop` carried the reply in every case tested, so Umi reads
+  no transcript; a turn without a reply keeps the previous summary for both.
+- **A Codex before its first prompt stays unseen.** Codex runs `SessionStart` only with the first
+  prompt (also on `codex resume`), so Umi can't see a new Codex, and a Codex resumed after a
+  relaunch shows `stopped`, until then. Showing it would need Umi to find the `codex` process in
+  the pane without a hook, a separate change. The fake Codex still runs `SessionStart` at startup,
+  because the suite's relaunch and `type_agent` tests rely on it; fakes/README.md lists this under
+  "Known limits".
+- **A Claude Code permission prompt answered "No" from its list stays `needs_input`.** Claude Code
+  sends nothing for it, and Umi can't tell "No" from "Yes" by the key (a "Yes" for a long command
+  also sends nothing until it finishes).
+- **Plugin versions 1.3.0 for both agents**, though only Codex's hooks changed, so both stay in
+  step.
+
+**Mishap.** While starting Codex in tmux, a line typed for Codex answered its "Update available"
+prompt and updated this Mac's Codex to 0.167.0. It was put back: `~/.codex/packages/standalone/current`
+points at the 0.164.0 release again (the 0.167.0 folder stays next to it).
+
+**Verified** on mac-air-2 under the screen lock, screen unlocked, after rebasing onto main at 0.13.1,
+ReleaseLocal build of `4d7259c9f` (the commit after this changes only this log): the whole suite with
+the UI tests (`~/umi-test-agent-hooks-final2.log`): 557 passed, 1 failed
+(`test_builds_from_a_path_with_spaces`, failing on main too), 3 skipped (the two real-agent tests, a
+window too narrow for three panes). Swift unit tests: succeeded (`~/umi-test-agent-hooks-swift.log`),
+after fixing `aLookAtAPaneShownSinceBumpsTheRevision`, which fails on main since 0.13.0's throttled
+redraw (TEST_CHANGES.md). The real-agent tests: 2 passed, with mac-air-2's Codex moved from 0.162.1 to
+0.164.0 for the purpose. Fake self-tests: 55 of 55.
+
+**Real-agent checks on mac-air-2.** Three things about that Mac, not Umi, made them fail before they
+passed: Claude Code can't read its login from the keychain in a run started over SSH (the run passes
+`CLAUDE_CODE_OAUTH_TOKEN` from 1Password, and the test hands it to the typed command through a file,
+since Umi keeps `CLAUDE_CODE_*` out of its panes); its Codex sends approvals to the automatic reviewer,
+so the Codex check asks a question in Plan mode instead of waiting on a permission prompt; and since
+about 09:00 on 10 November its login shell's `codex` (a dotfiles wrapper running a copy in
+`~/.local/share/codex-runtimes`) hangs at launch, even for `--version`, so the check ran
+`ACCEPTANCE_CODEX=~/.local/bin/codex` (the 0.164.0 standalone). **For Alejo:** that wrapper's copy
+on mac-air-2 needs looking at.
+
+**Friction.** AGENTS.md's build command lacks `SYMROOT="$PWD/build"`, without which Xcode can't find
+the tree-sitter module maps; `release.sh` and `dev.sh` pass it.
+
 ## Releases
 
 ### 0.10.0: steps 1–3

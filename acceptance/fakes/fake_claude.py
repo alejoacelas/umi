@@ -1191,7 +1191,13 @@ class FakeClaude(object):
         shown = output.rstrip("\n")
         result = {"stdout": shown, "stderr": "", "interrupted": False, "isImage": False,
                   "noOutputExpected": shown == ""}
-        self.post_tool(turn, "Bash", tool_input, tid, result, start)
+        if code != 0:   # a command that fails: PostToolUseFailure instead (Claude Code 2.1.319, 2026-11-09)
+            self.fire("PostToolUseFailure", self.hook_input(
+                "PostToolUseFailure", turn, effort=True, tool_name="Bash", tool_input=tool_input, tool_use_id=tid,
+                error=("Exit code %d\n%s" % (code, shown)).rstrip("\n"), is_interrupt=False,
+                duration_ms=int((time.time() - start) * 1000)), match="Bash")
+        else:
+            self.post_tool(turn, "Bash", tool_input, tid, result, start)
         self.emit(self.user_frame([{"tool_use_id": tid, "type": "tool_result", "content": shown,
                                     "is_error": code != 0}], tool_use_result=result))
         turn.tool_use_id = None
@@ -1418,15 +1424,15 @@ class FakeClaude(object):
                 {"type": "setMode", "mode": "acceptEdits", "destination": "session"}]
             request["blocked_path"] = os.path.join(os.getcwd(), target)
         request["tool_use_id"] = tid
-        if not questions:
-            # PermissionRequest as the prompt is about to show; in the TUI also Notification permission_prompt
-            self.fire("PermissionRequest", self.hook_input(
-                "PermissionRequest", turn, effort=True, tool_name=tool, tool_input=inp,
-                permission_suggestions=request["permission_suggestions"]), match=tool)
-            if self.tui is not None:
-                self.fire("Notification", self.hook_input(
-                    "Notification", perm=True, message="Claude needs your permission to use %s" % tool,
-                    notification_type="permission_prompt"), match="permission_prompt")
+        # PermissionRequest as the prompt is about to show, for a question too (AskUserQuestion, with no
+        # suggestions; Claude Code 2.1.319, 2026-11-09); in the TUI also Notification permission_prompt
+        extra = {} if questions else {"permission_suggestions": request["permission_suggestions"]}
+        self.fire("PermissionRequest", self.hook_input(
+            "PermissionRequest", turn, effort=True, tool_name=tool, tool_input=inp, **extra), match=tool)
+        if self.tui is not None:
+            self.fire("Notification", self.hook_input(
+                "Notification", perm=True, message="Claude needs your permission",
+                notification_type="permission_prompt"), match="permission_prompt")
         self.emit({"type": "control_request", "request_id": rid, "request": request})
         if eof:
             with self.cv:
@@ -1485,9 +1491,11 @@ class FakeClaude(object):
         self.emit(m)
         self.history.append({"role": "assistant", "text": text})
         self.save()
-        # an API error ends the turn with StopFailure instead of Stop (error type: inferred)
-        self.fire("StopFailure", self.hook_input("StopFailure", turn, error="invalid_request",
-                                                 last_assistant_message=text), match="invalid_request")
+        # an API error ends the turn with StopFailure instead of Stop; a model that doesn't exist is
+        # model_not_found (Claude Code 2.1.319, 2026-11-09), FAIL's error type is inferred
+        error = "model_not_found" if "no-such-model" in (self.model or "") else "invalid_request"
+        self.fire("StopFailure", self.hook_input("StopFailure", turn, error=error,
+                                                 last_assistant_message=text), match=error)
         for u in turn.started[1:]:
             self.lifecycle(u, "completed")
         self.emit(self.result(True, text, turn.started, turn.denials, turn.num_turns, t0, stop="stop_sequence",
@@ -1624,14 +1632,14 @@ class ClaudeTui(object):
                 if not self.ui.tty:            # piped input: let the work finish first
                     while self.app.turn_active or self.app.pending or self.app.wakes_due:
                         time.sleep(0.05)
-                self.quit("other" if self.ui.hangup else "exit")
+                self.quit("other" if self.ui.hangup else "prompt_input_exit")
             text = line.strip()
             if not text:
                 continue
             if self.answer(text):
                 continue
             if text in ("/exit", "/quit"):
-                self.quit("exit")
+                self.quit("prompt_input_exit")
             self.send(text)
 
     def send(self, text):
