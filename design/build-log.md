@@ -1464,14 +1464,14 @@ on older Codex.
 prompt and updated this Mac's Codex to 0.167.0. It was put back: `~/.codex/packages/standalone/current`
 points at the 0.164.0 release again (the 0.167.0 folder stays next to it).
 
-**Verified** on mac-air-2 under the screen lock, screen unlocked, after rebasing onto main at 0.13.0:
-ReleaseLocal build of `e828e68fb`, the whole suite with the UI tests (`~/umi-test-agent-hooks-final.log`):
-552 passed, 1 failed (`test_builds_from_a_path_with_spaces`, failing on main too), 3 skipped (the
-two real-agent tests, a window too narrow for three panes). Swift unit tests at `e828e68fb`: succeeded
-(`~/umi-test-agent-hooks-swift.log`), after fixing `aLookAtAPaneShownSinceBumpsTheRevision`, which
-fails on main since 0.13.0's throttled redraw (TEST_CHANGES.md). The real-agent tests at `e3a264e2d`
-(later commits change only those two tests and this log): 2 passed, with mac-air-2's Codex moved
-from 0.162.1 to 0.164.0 for the purpose. Fake self-tests: 55 of 55.
+**Verified** on mac-air-2 under the screen lock, screen unlocked, after rebasing onto main at 0.13.1,
+ReleaseLocal build of `4d7259c9f` (the commit after this changes only this log): the whole suite with
+the UI tests (`~/umi-test-agent-hooks-final2.log`): 557 passed, 1 failed
+(`test_builds_from_a_path_with_spaces`, failing on main too), 3 skipped (the two real-agent tests, a
+window too narrow for three panes). Swift unit tests: succeeded (`~/umi-test-agent-hooks-swift.log`),
+after fixing `aLookAtAPaneShownSinceBumpsTheRevision`, which fails on main since 0.13.0's throttled
+redraw (TEST_CHANGES.md). The real-agent tests: 2 passed, with mac-air-2's Codex moved from 0.162.1 to
+0.164.0 for the purpose. Fake self-tests: 55 of 55.
 
 **Real-agent checks on mac-air-2.** Three things about that Mac, not Umi, made them fail before they
 passed: Claude Code can't read its login from the keychain in a run started over SSH (the run passes
