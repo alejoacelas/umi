@@ -1500,3 +1500,16 @@ no single leaking object was found. Each soak cycle is far heavier than real use
 floods, a 5 MB Markdown file, ~300 agent updates a second). Not fixed: the recorder's
 `kind: "resources"` records (footprint every 10 minutes, in `<state>/logs/perf/`) from a week of
 real use decide whether it needs a fix.
+
+### 0.13.1: the explorer under file churn
+
+0.12.0 sat at 70–100% CPU and stuttered for minutes while an agent's Zig build churned
+`.worktrees/…/.zig-cache` under the explorer's root: every FSEvents batch with a rescan flag re-read
+every folder the explorer had ever loaded, on the main thread, even with the explorer hidden. The
+`perf-explorer` branch (a Claude implementer, reviewed by Codex over five rounds; `REPORT-perf-explorer.md`)
+reads folders off the main thread, re-reads only changed folders that are shown, skips events in
+unloaded and git-ignored folders, and stops watching while the explorer is hidden; ⌘O's file list is
+also built off the main thread. `acceptance/perf/explorer_churn.py` measures it: main thread busy
+100% → 1.5–1.9%, `umi ls` p95 ~390 → 29 ms. After merging with 0.13.0, `test_umi_files.py` passed
+(18) and the Swift tests had one failure, `UmiIndicatorTests/aLookAtAPaneShownSinceBumpsTheRevision`,
+which fails the same way alone on 0.13.0 (`revision` stays 0) and is not fixed here.
