@@ -53,7 +53,7 @@ struct UmiFileTreeTests {
         try Data().write(to: url.appendingPathComponent("two.txt"))
         node.loadChildren()
         #expect(node.children?.count == 1, "a folder already read isn't read again unasked")
-        node.stale = true
+        node.markChanged()
         node.loadChildren()
         #expect(node.children?.map(\.name) == ["one.txt", "two.txt"])
         #expect(!node.stale)
@@ -174,6 +174,94 @@ struct UmiFileTreeTests {
 
     private func waitBlocking(_ semaphore: DispatchSemaphore) -> Bool {
         semaphore.wait(timeout: .now() + 5) == .success
+    }
+
+    /// What starts the background read that a later change must overtake.
+    enum FirstRead { case reopeningTheParent, aChangeWhileShown }
+
+    /// Review 3: a background read of `src/inner` has taken its snapshot and sent it to the main
+    /// thread; then `src` is closed, `inner` changes and the change notice comes (inner closed);
+    /// then the old result lands. It mustn't stand for `inner`: reopening `src` shows what's on disk.
+    private func aChangeAfterTheSnapshot(firstRead: FirstRead) async throws {
+        let url = UmiFileTreeModel.realURL(try folder(["top.txt"], dirs: ["src/inner"]))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let src = url.appendingPathComponent("src"), inner = src.appendingPathComponent("inner")
+        try Data().write(to: inner.appendingPathComponent("old.txt"))
+        let model = UmiFileTreeModel(watchesFiles: false)
+        model.start()
+        defer { model.stop() }
+        model.setRoot(url)
+        model.setExpanded(src, true, byUser: true)
+        model.setExpanded(inner, true, byUser: true)
+        let innerNode = try #require(child(child(model.root, "src"), "inner"))
+        let sent = DispatchSemaphore(value: 0)
+
+        switch firstRead {
+        case .reopeningTheParent:
+            // inner changes while src is closed, so reopening src reads it in the background.
+            model.setExpanded(src, false, byUser: true)
+            try Data().write(to: inner.appendingPathComponent("first.txt"))
+            model.filesChanged([UmiFSWatcher.Event(path: inner.path, flags: 0)])
+            model.snapshotSent = { sent.signal() }
+            model.setExpanded(src, true, byUser: true)
+        case .aChangeWhileShown:
+            model.snapshotSent = { sent.signal() }
+            try Data().write(to: inner.appendingPathComponent("first.txt"))
+            model.filesChanged([UmiFSWatcher.Event(path: inner.path, flags: 0)])
+        }
+        // The read has taken its snapshot of inner ([first.txt, old.txt]); its result can't land
+        // while the main thread waits.
+        try #require(waitBlocking(sent), "the background read sends its result")
+        model.snapshotSent = nil
+
+        model.setExpanded(src, false, byUser: true)
+        try Data().write(to: inner.appendingPathComponent("lost.txt"))
+        try FileManager.default.removeItem(at: inner.appendingPathComponent("old.txt"))
+        model.filesChanged([UmiFSWatcher.Event(path: inner.path, flags: 0)])
+        try await settle(model)   // the old result lands
+        #expect(innerNode.stale, "a read taken before the change doesn't stand for inner")
+
+        model.setExpanded(src, true, byUser: true)
+        try await settle(model)
+        #expect(names(in: model, under: inner) == ["first.txt", "lost.txt"])
+        #expect(!innerNode.stale)
+        #expect(child(child(model.root, "src"), "inner") === innerNode && innerNode.expanded)
+    }
+
+    @Test func aChangeAfterAReopeningReadsSnapshotIsKept() async throws {
+        try await aChangeAfterTheSnapshot(firstRead: .reopeningTheParent)
+    }
+
+    @Test func aChangeAfterAShownFoldersReadSnapshotIsKept() async throws {
+        try await aChangeAfterTheSnapshot(firstRead: .aChangeWhileShown)
+    }
+
+    /// Review 3, shown variant: a change notice for a folder still shown, after a background read
+    /// of it took its snapshot, reads it again; the folder ends up current and not stale.
+    @Test func aChangeToAShownFolderAfterTheSnapshotIsReadAgain() async throws {
+        let url = UmiFileTreeModel.realURL(try folder(["top.txt"], dirs: ["src"]))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let src = url.appendingPathComponent("src")
+        try Data().write(to: src.appendingPathComponent("old.txt"))
+        let model = UmiFileTreeModel(watchesFiles: false)
+        model.start()
+        defer { model.stop() }
+        model.setRoot(url)
+        model.setExpanded(src, true, byUser: true)
+        let srcNode = try #require(child(model.root, "src"))
+        let sent = DispatchSemaphore(value: 0)
+        model.snapshotSent = { sent.signal() }
+        try Data().write(to: src.appendingPathComponent("first.txt"))
+        model.filesChanged([UmiFSWatcher.Event(path: src.path, flags: 0)])
+        try #require(waitBlocking(sent), "the background read sends its result")
+        model.snapshotSent = nil
+        try Data().write(to: src.appendingPathComponent("lost.txt"))
+        try FileManager.default.removeItem(at: src.appendingPathComponent("old.txt"))
+        model.filesChanged([UmiFSWatcher.Event(path: src.path, flags: 0)])
+        #expect(model.readsPending)
+        try await settle(model)
+        #expect(names(in: model, under: src) == ["first.txt", "lost.txt"])
+        #expect(!srcNode.stale)
     }
 
     @Test func loadedFoldersSayWhichAreShown() throws {

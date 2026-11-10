@@ -13,8 +13,9 @@ final class UmiFileNode {
     private(set) var children: [UmiFileNode]?
     /// The entries may have changed since they were read (a change came while they weren't
     /// shown, or while the explorer was hidden): the next `loadChildren()` reads them again.
-    var stale = false
-    /// Bumped on every read, so a background read that a newer one overtook is dropped.
+    private(set) var stale = false
+    /// Bumped on every read and every change notice, so a background read taken before either
+    /// is dropped: it may predate the change.
     private(set) var generation = 0
 
     var name: String { url.lastPathComponent }
@@ -40,6 +41,13 @@ final class UmiFileNode {
     func loadChildren(force: Bool = false) {
         guard isDirectory, force || stale || children == nil else { return }
         apply(Self.read(url))
+    }
+
+    /// The folder's entries may have changed since anything read so far: read them again when
+    /// next needed, and drop reads already under way (they may have been taken before the change).
+    func markChanged() {
+        stale = true
+        generation &+= 1
     }
 
     /// Take entries read by `read(_:)` (on any thread), in their order.
@@ -287,7 +295,7 @@ final class UmiFileTreeModel: ObservableObject {
         // Unwatched from now on: whatever is opened or revealed meanwhile is read again first.
         var all: [(node: UmiFileNode, shown: Bool)] = []
         root?.loadedFolders(into: &all)
-        for (folder, _) in all { folder.stale = true }
+        for (folder, _) in all { folder.markChanged() }
     }
 
     private func startWatching() {
@@ -417,7 +425,8 @@ final class UmiFileTreeModel: ObservableObject {
             }
             for (folder, shown) in hits {
                 touched = true
-                if shown { queueRead(folder) } else { folder.stale = true }
+                folder.markChanged()
+                if shown { queueRead(folder) }
             }
         }
         if touched, let selected, !FileManager.default.fileExists(atPath: selected.path) {
@@ -435,19 +444,22 @@ final class UmiFileTreeModel: ObservableObject {
         var all: [(node: UmiFileNode, shown: Bool)] = []
         root.loadedFolders(into: &all)
         for (folder, shown) in all {
-            if shown { queueRead(folder) } else { folder.stale = true }
+            folder.markChanged()
+            if shown { queueRead(folder) }
         }
         readPending()
     }
 
+    /// Queue a stale folder (marked by `markChanged`) for a background read. Until it lands, the
+    /// folder stays stale, so a main-thread lookup (`node(at:)`, reveal) reads it at once.
     private func queueRead(_ folder: UmiFileNode) {
-        folder.stale = true
         if !readQueue.contains(where: { $0 === folder }) { readQueue.append(folder) }
     }
 
     /// Read the queued folders off the main thread, then show what changed. One batch at a time;
     /// folders queued meanwhile are read once it ends. A folder read again on the main thread in
-    /// between (opened, a file made or renamed there) keeps that newer read.
+    /// between (opened, a file made or renamed there) keeps that newer read; one changed again in
+    /// between (a change notice, shown or not) drops this read and stays stale.
     private func readPending() {
         guard reading == nil, !readQueue.isEmpty, let root else { return }
         let batch = readQueue
