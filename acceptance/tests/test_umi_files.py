@@ -17,6 +17,7 @@ import json
 import os
 import socket
 import subprocess
+import threading
 import time
 import uuid
 
@@ -172,6 +173,275 @@ def test_explorer_follows_the_file_system(inst, win, tmp_path):
     assert made_row["icon"] == "fileicon-rust" and made_row["icon_loaded"], made_row
     os.remove(made)
     wait_until(lambda: row(files(inst, win, update=False), made) is None, 5, message="a deleted file goes")
+    inst.cli("sidebar", "tabs")
+
+
+def show_by_key(inst, win, repo):
+    """Show the explorer with ⌃1 (from Tabs), so the tree has keyboard focus."""
+    inst.cli("sidebar", "tabs")
+    press(inst, win, "ctrl+1", focus="terminal")
+    wait_until(lambda: files(inst, win)["focused"], 5, message="the tree has keyboard focus")
+    wait_until(lambda: os.path.realpath(files(inst, win)["root"] or "/") == repo, 10, message="the repository")
+
+
+def select_by_key(inst, win, path):
+    """Move the selection to `path`'s row with ↑ and ↓."""
+    path = os.path.realpath(path)
+    for _ in range(80):
+        state = files(inst, win, update=False)
+        items = [os.path.realpath(r["path"]) for r in state["rows"] if not r["new_file"]]
+        assert path in items, f"no row for {path}"
+        selected = os.path.realpath(state["selected"]) if state["selected"] else None
+        if selected == path:
+            return
+        if selected not in items:
+            press(inst, win, "down")
+        else:
+            press(inst, win, "down" if items.index(path) > items.index(selected) else "up")
+    raise AssertionError(f"couldn't select {path}")
+
+
+def set_open_by_key(inst, win, path, open_):
+    select_by_key(inst, win, path)
+    if row(files(inst, win, update=False), path)["expanded"] != open_:
+        press(inst, win, "right" if open_ else "left")
+    assert row(files(inst, win, update=False), path)["expanded"] == open_
+
+
+def write(path, text="x\n"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+
+
+@pytest.mark.req("S-2")
+def test_explorer_follows_changes_in_open_and_closed_folders(inst, win, tmp_path):
+    """Files made, deleted and renamed in open subfolders show without a refresh; a folder opened
+    once, closed, changed and opened again shows its current entries; open folders and the
+    selection stay as they were."""
+    repo = make_repo(tmp_path)
+    open_repo(inst, win, repo)
+    show_by_key(inst, win, repo)
+    src, lib = os.path.join(repo, "src"), os.path.join(repo, "src", "lib")
+    set_open_by_key(inst, win, src, True)
+    set_open_by_key(inst, win, lib, True)
+    select_by_key(inst, win, os.path.join(src, "main.rs"))
+
+    made = os.path.join(lib, "fresh.py")
+    write(made)
+    wait_until(lambda: row(files(inst, win, update=False), made) is not None, 5, message="a new file in an open subfolder")
+    os.mkdir(os.path.join(lib, "inner"))
+    wait_until(lambda: (r := row(files(inst, win, update=False), os.path.join(lib, "inner"))) and r["dir"], 5,
+               message="a new folder in an open subfolder")
+    os.rename(os.path.join(lib, "util.py"), os.path.join(lib, "renamed.py"))
+    wait_until(lambda: row(files(inst, win, update=False), os.path.join(lib, "renamed.py")) is not None
+               and row(files(inst, win, update=False), os.path.join(lib, "util.py")) is None, 5, message="a rename")
+    os.remove(made)
+    wait_until(lambda: row(files(inst, win, update=False), made) is None, 5, message="a deleted file goes")
+    # The order is Warp's (folders first, then files, natural order), as on first read.
+    state = files(inst, win, update=False)
+    under_lib = [r["name"] for r in state["rows"] if os.path.dirname(os.path.realpath(r["path"])) == lib]
+    assert under_lib == ["inner", "renamed.py"], under_lib
+
+    # Close src/lib, change it, open it again: what's on disk now.
+    set_open_by_key(inst, win, lib, False)
+    later = os.path.join(lib, "later.py")
+    write(later)
+    os.remove(os.path.join(lib, "renamed.py"))
+    time.sleep(1)
+    set_open_by_key(inst, win, lib, True)
+    state = files(inst, win, update=False)
+    assert row(state, later) is not None, "a file made while its folder was closed shows on opening it"
+    assert row(state, os.path.join(lib, "renamed.py")) is None, "a file deleted meanwhile doesn't"
+    assert row(state, src)["expanded"] and row(state, lib)["expanded"]
+    assert os.path.realpath(state["selected"]) == lib, "the selection is where the keys left it"
+    inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2")
+def test_explorer_reopening_a_folder_shows_current_entries_in_its_open_subfolders(inst, win, tmp_path):
+    """A subfolder left open inside a folder the user closed: files made and deleted in it
+    meanwhile show (and go) once the outer folder is opened again, read in the background as any
+    change in a shown folder is (within 2 s)."""
+    repo = make_repo(tmp_path)
+    open_repo(inst, win, repo)
+    show_by_key(inst, win, repo)
+    src, lib = os.path.join(repo, "src"), os.path.join(repo, "src", "lib")
+    set_open_by_key(inst, win, src, True)
+    set_open_by_key(inst, win, lib, True)
+    assert row(files(inst, win, update=False), os.path.join(lib, "util.py")) is not None
+    set_open_by_key(inst, win, src, False)
+    made = os.path.join(lib, "made_while_closed.py")
+    write(made)
+    os.remove(os.path.join(lib, "util.py"))
+    time.sleep(1)   # the change events arrive while src is closed
+    set_open_by_key(inst, win, src, True)
+    assert row(files(inst, win, update=False), lib)["expanded"], "src/lib stays open"
+    wait_until(lambda: row(files(inst, win, update=False), made) is not None, 2,
+               message="a file made in the open subfolder shows on reopening its parent")
+    state = files(inst, win, update=False)
+    assert row(state, os.path.join(lib, "util.py")) is None, "a file deleted there doesn't"
+    assert row(state, lib)["expanded"], "src/lib stays open"
+    inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2")
+def test_explorer_handles_changes_in_unopened_and_ignored_folders(inst, win, tmp_path):
+    """Many changes in folders the explorer hasn't opened, ignored or not, leave it current: new
+    files at the top still show, an ignored folder opened afterwards lists what was made there
+    (marked ignored), and what git ignores is marked as it changes, a folder ignored only because
+    all its files are included."""
+    repo = make_repo(tmp_path)
+    write(os.path.join(repo, "logs", "a.log"))   # ignored only because *.log ignores all it holds
+    open_repo(inst, win, repo)
+    show_by_key(inst, win, repo)
+    build, logs = os.path.join(repo, "build"), os.path.join(repo, "logs")
+    wait_until(lambda: row(files(inst, win), build)["ignored"] and row(files(inst, win), logs)["ignored"], 5,
+               message="build/ and logs/ marked ignored")
+
+    # A burst in an unopened ignored folder and in an unopened tracked one.
+    for i in range(400):
+        write(os.path.join(build, "cache", f"o{i % 20:02d}", f"f{i}.o"))
+    for i in range(40):
+        write(os.path.join(repo, "src", "lib", f"gen{i}.py"))
+    top = os.path.join(repo, "after-burst.txt")
+    write(top)
+    wait_until(lambda: row(files(inst, win, update=False), top) is not None, 5, message="a new file at the top")
+    assert not row(files(inst, win, update=False), top)["ignored"]
+
+    # Ignored marks follow changes: a new *.log at the top; a file git doesn't ignore in logs/
+    # (unopened) makes logs/ no longer ignored, and removing it makes it ignored again.
+    log = os.path.join(repo, "new.log")
+    write(log)
+    wait_until(lambda: (r := row(files(inst, win, update=False), log)) and r["ignored"], 5, message="new.log marked ignored")
+    keep = os.path.join(logs, "keep.txt")
+    write(keep)
+    wait_until(lambda: not row(files(inst, win, update=False), logs)["ignored"], 5,
+               message="logs/ no longer ignored once it holds a file git doesn't ignore")
+    os.remove(keep)
+    wait_until(lambda: row(files(inst, win, update=False), logs)["ignored"], 5, message="logs/ ignored again")
+
+    # Opening the ignored folder lists what was made there, marked ignored.
+    set_open_by_key(inst, win, build, True)
+    cache = os.path.join(build, "cache")
+    state = files(inst, win, update=False)
+    assert row(state, cache) is not None and row(state, cache)["ignored"], row(state, cache)
+    set_open_by_key(inst, win, cache, True)
+    state = files(inst, win, update=False)
+    assert [r["name"] for r in state["rows"] if os.path.dirname(os.path.realpath(r["path"])) == cache] == \
+        [f"o{i:02d}" for i in range(20)]
+    # A change inside the open ignored folder shows too.
+    write(os.path.join(cache, "o99", "late.o"))
+    wait_until(lambda: row(files(inst, win, update=False), os.path.join(cache, "o99")) is not None, 5,
+               message="a new folder in an open ignored folder")
+
+    # Unignoring build/ in .gitignore unmarks it.
+    with open(os.path.join(repo, ".gitignore"), "w") as f:
+        f.write("*.log\n")
+    wait_until(lambda: not row(files(inst, win, update=False), build)["ignored"], 5, message="build/ no longer ignored")
+    assert row(files(inst, win, update=False), log)["ignored"]
+    inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2")
+def test_explorer_shows_changes_made_while_it_was_hidden(inst, win, tmp_path):
+    """Hidden, then shown again: files made and deleted meanwhile (in the top folder, an open
+    subfolder and a closed one), and .gitignore changes, show; open folders and the selection are
+    as they were; a file made meanwhile and shown in the focused pane is revealed; and it follows
+    the files again."""
+    repo = make_repo(tmp_path)
+    term = open_repo(inst, win, repo)
+    show_by_key(inst, win, repo)
+    src = os.path.join(repo, "src")
+    set_open_by_key(inst, win, src, True)
+    main = os.path.join(src, "main.rs")
+    select_by_key(inst, win, main)
+
+    inst.cli("sidebar", "tabs")
+    wait_until(lambda: inst.json("sidebar", "status")["mode"] == "tabs", 5, message="the explorer hidden")
+    top = os.path.join(repo, "while-hidden.md")
+    write(top)
+    added = os.path.join(src, "added.rs")
+    write(added)
+    os.remove(os.path.join(repo, "notes.txt"))
+    with open(os.path.join(repo, ".gitignore"), "a") as f:
+        f.write("while-hidden.md\n")
+    write(os.path.join(src, "lib", "deeper.py"))
+    time.sleep(1)
+
+    inst.cli("sidebar", "files")
+    wait_until(lambda: (r := row(files(inst, win, update=False), top)) and r["ignored"], 5,
+               message="a file made while hidden shows, marked as .gitignore now says")
+    wait_until(lambda: row(files(inst, win, update=False), added) is not None, 5, message="a file made in an open folder")
+    wait_until(lambda: row(files(inst, win, update=False), os.path.join(repo, "notes.txt")) is None, 5,
+               message="a file deleted while hidden goes")
+    state = files(inst, win, update=False)
+    assert row(state, src)["expanded"] and not row(state, os.path.join(src, "lib"))["expanded"]
+    assert os.path.realpath(state["selected"]) == main, "the selection is kept"
+
+    # It follows the files again.
+    after = os.path.join(repo, "after-show.md")
+    write(after)
+    wait_until(lambda: row(files(inst, win, update=False), after) is not None, 5, message="a file made after showing")
+
+    # Hidden again: a file made then and shown in the focused pane is revealed on showing.
+    inst.cli("sidebar", "tabs")
+    newer = os.path.join(src, "lib", "made_hidden.py")
+    write(newer)
+    shown = inst.json("edit", newer, "--pane", term["pane"])["documents"][0]["pane"]
+    inst.cli("pane", "focus", shown)
+    inst.cli("sidebar", "files")
+    wait_until(lambda: os.path.realpath(files(inst, win)["selected"] or "/") == newer, 10,
+               message="the file made while hidden is revealed and selected")
+    assert row(files(inst, win), os.path.join(src, "lib"))["expanded"]
+    inst.cli("sidebar", "tabs")
+
+
+@pytest.mark.req("S-2")
+def test_explorer_shows_new_files_in_open_folders_that_keep_changing(inst, win, tmp_path):
+    """Ten open folders of 2,900 files each, with a file rewritten in every one of them each 50 ms
+    (as a build or an agent writing logs would): a file made in each shows while the writes go on,
+    within 5 s, not only once they stop."""
+    repo = os.path.realpath(str(tmp_path / ("busy-" + uuid.uuid4().hex[:6])))
+    folders = [os.path.join(repo, f"d{i}") for i in range(10)]
+    for d in folders:
+        os.makedirs(d)
+        for j in range(2900):
+            open(os.path.join(d, f"f{j:04d}.txt"), "w").close()
+    subprocess.run(["git", "init", "-q", repo], check=True)
+    open_repo(inst, win, repo)
+    show_by_key(inst, win, repo)
+    for d in reversed(folders):   # from the bottom up, so the next folder is one row up
+        set_open_by_key(inst, win, d, True)
+
+    stop = threading.Event()
+
+    def keep_writing():
+        n = 0
+        while not stop.is_set():
+            for d in folders:
+                with open(os.path.join(d, "f0000.txt"), "w") as f:
+                    f.write(f"{n}\n")
+            n += 1
+            time.sleep(0.05)
+
+    writer = threading.Thread(target=keep_writing, daemon=True)
+    writer.start()
+    try:
+        time.sleep(1)   # the writes are under way
+        markers = [os.path.join(d, "marker.txt") for d in folders]
+        for m in markers:
+            write(m)
+
+        def all_shown():
+            paths = {r["path"] for r in files(inst, win, update=False)["rows"]}
+            return all(m in paths for m in markers)
+
+        wait_until(all_shown, 5, interval=0.25, message="files made in folders that keep changing")
+        assert writer.is_alive(), "the writes were still going on"
+    finally:
+        stop.set()
+        writer.join()
     inst.cli("sidebar", "tabs")
 
 

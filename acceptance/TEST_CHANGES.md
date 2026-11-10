@@ -1608,3 +1608,49 @@ archive across a relaunch. `test_real_ctrl_cmd_a_and_clicks_on_the_archived_row_
   (AR-3), so its query is now `@needs-you and tab.archived!=true | sort status_since then @unseen and
   tab.archived!=true | sort changed_at`. The check that it is a default is unchanged.
 - `test_layout.py::test_shortcuts_are_menu_items` (L-9): ⌃⌘A added to the shortcuts it checks.
+
+## The explorer under file churn (2026-11-09)
+
+Umi 0.12.0 stalled while a build and `git worktree add` churned files under the explorer's root:
+it read every folder it had ever loaded on the main thread for each batch of file events, also
+while hidden. The fix watches only while the explorer is shown, reads folders off the main thread,
+and ignores changes in folders it hasn't read or that a rule ignores. These tests cover what that
+could break. No existing test was changed or weakened.
+
+**Added** to `tests/test_umi_files.py` (S-2), with helpers that open folders and select rows with
+the keys (`show_by_key`, `select_by_key`, `set_open_by_key`):
+- `test_explorer_follows_changes_in_open_and_closed_folders`: files made, renamed and deleted, and
+  a folder made, in an open subfolder show without a refresh, in Warp's order; a folder opened,
+  closed, changed and opened again shows what's on disk; open folders and the selection are kept.
+- `test_explorer_handles_changes_in_unopened_and_ignored_folders`: a burst of 400 files in an
+  unopened ignored folder and 40 in an unopened tracked one leaves the explorer current (a new file
+  at the top shows); a new `*.log` is marked ignored; `logs/`, ignored only because `*.log` covers
+  all it holds, is unmarked when a file git doesn't ignore appears in it (unopened) and marked
+  again when that file goes; the ignored folder opened afterwards lists what was made there, marked
+  ignored, and follows changes; unignoring `build/` in `.gitignore` unmarks it.
+- `test_explorer_shows_changes_made_while_it_was_hidden`: hidden, then shown: files made and deleted
+  meanwhile (top folder, open subfolder) and a `.gitignore` change show; open folders and the
+  selection are as they were; it follows the files again; a file made while hidden and shown in the
+  focused pane is revealed and selected on showing.
+
+- `test_explorer_reopening_a_folder_shows_current_entries_in_its_open_subfolders` (after review 1,
+  finding 1): `src/lib` left open inside `src`, `src` closed, a file made and one deleted in
+  `src/lib`, `src` opened again: both changes show, `src/lib` still open. It failed on the first
+  version of the change (`ca959adc7`), which read only `src` again; `test_explorer_follows_changes_in_open_and_closed_folders`
+  reopens the changed folder itself and missed it. After review 2 the folders left open inside a
+  reopened one are read again in the background (a synchronous read of each could stall the main
+  thread), so the test waits up to 2 s for the made file, as tests wait for any change in a shown
+  folder, and then checks the deleted file is gone; `src` itself is still read at once (`src/lib`
+  shows as open straight away). It still fails on `ca959adc7`, where the rows never update.
+
+- `test_explorer_shows_new_files_in_open_folders_that_keep_changing` (after review 4): ten open
+  folders of 2,900 files, a file rewritten in each every 50 ms; a file made in each shows within
+  5 s while the writes go on (the test checks the writer is still running). It fails on
+  `51d2709a7`, where every change notice dropped the background read under way, so a folder that
+  kept changing showed nothing new until the writes stopped.
+
+**Added** `perf/explorer_churn.py`: not a test (pytest doesn't collect it) but the reproduction
+script for the stall: an isolated instance with the explorer on a ~6,500-file repository, `git
+worktree add` and a Zig-cache-like churn in the ignored worktree; it reports the app's CPU, how busy
+its main thread is (`sample`), `umi ls` round trips and, with the explorer shown, how soon a new
+file shows.
