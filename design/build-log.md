@@ -1581,3 +1581,10 @@ also built off the main thread. `acceptance/perf/explorer_churn.py` measures it:
 100% → 1.5–1.9%, `umi ls` p95 ~390 → 29 ms. After merging with 0.13.0, `test_umi_files.py` passed
 (18) and the Swift tests had one failure, `UmiIndicatorTests/aLookAtAPaneShownSinceBumpsTheRevision`,
 which fails the same way alone on 0.13.0 (`revision` stays 0) and is not fixed here.
+
+### 0.14.0: agent hooks
+
+Released from main after merging `agent-hooks` (`2b8d6df3f`). Verified before release as the "Agent
+hooks" section says: the whole suite with the UI tests at `4d7259c9f` (557 passed, 1 failed,
+`test_builds_from_a_path_with_spaces`, failing on main too), the Swift unit tests, and the two
+real-agent tests. Installed copies take it through Umi's updater; this Mac's copy was left to it.
