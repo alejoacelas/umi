@@ -1471,6 +1471,16 @@ window too narrow for three panes). The real-agent tests with `ACCEPTANCE_REAL=1
 Codex moved from 0.162.1 to 0.164.0 for the purpose (`~/umi-test-agent-hooks-real.log`): 2 passed.
 Swift unit tests: succeeded (`~/umi-test-agent-hooks-swift.log`). Fake self-tests: 55 of 55.
 
+**Real-agent checks on mac-air-2.** Three things about that Mac, not Umi, made them fail before they
+passed: Claude Code can't read its login from the keychain in a run started over SSH (the run passes
+`CLAUDE_CODE_OAUTH_TOKEN` from 1Password, and the test hands it to the typed command through a file,
+since Umi keeps `CLAUDE_CODE_*` out of its panes); its Codex sends approvals to the automatic reviewer,
+so the Codex check asks a question in Plan mode instead of waiting on a permission prompt; and since
+about 09:00 on 10 November its login shell's `codex` (a dotfiles wrapper running a copy in
+`~/.local/share/codex-runtimes`) hangs at launch, even for `--version`, so the check ran
+`ACCEPTANCE_CODEX=~/.local/bin/codex` (the 0.164.0 standalone). **For Alejo:** that wrapper's copy
+on mac-air-2 needs looking at.
+
 **Friction.** AGENTS.md's build command lacks `SYMROOT="$PWD/build"`, without which Xcode can't find
 the tree-sitter module maps; `release.sh` and `dev.sh` pass it.
 

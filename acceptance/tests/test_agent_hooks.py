@@ -240,7 +240,7 @@ def answer_until(inst, pane, wanted, prompts, timeout):
                 inst.cli("keys", "--pane", pane, *keys)
                 time.sleep(1.5)
         time.sleep(0.5)
-    raise AssertionError(f"{wanted!r} never showed; screen:\n{inst.screen(pane, scrollback=True)[-6000:]}")
+    raise AssertionError(f"{wanted!r} never showed; screen:\n{inst.screen(pane)}")
 
 
 def codex_hook_flags(plugin):
@@ -309,12 +309,12 @@ def test_real_codex_reports_each_state(fresh):
     inst = real_instance(fresh)
     pane = real_pane(inst)
     trust = [("Trust this folder?", ["enter"])]
-    # Approvals go to the user, not to an automatic reviewer the user's config may name.
-    flags = (f"-c model_reasoning_effort=low -c check_for_update_on_startup=false -c approvals_reviewer=user "
-             f"--dangerously-bypass-hook-trust "
+    # The user's `codex`, or the one ACCEPTANCE_CODEX names (on mac-air-2 the login shell's `codex`
+    # wrapper runs a copy that hangs at launch; the standalone install is the one to test).
+    codex = os.environ.get("ACCEPTANCE_CODEX", "codex")
+    flags = (f"-c model_reasoning_effort=low -c check_for_update_on_startup=false --dangerously-bypass-hook-trust "
              f"{codex_hook_flags(inst.plugin('codex'))}")
-    # A read-only sandbox: any file written needs an approval.
-    inst.type_line(pane, f"codex -m gpt-6-luna -a on-request -s read-only {flags}")
+    inst.type_line(pane, f"{codex} -m gpt-6-luna -a on-request -s workspace-write {flags}")
     answer_until(inst, pane, "? for shortcuts", trust, 60)
     # Codex reports a session only with its first prompt (item 14): nothing on the pane until then,
     # and its SessionStart (idle) comes just before the prompt's UserPromptSubmit.
@@ -329,12 +329,22 @@ def test_real_codex_reports_each_state(fresh):
     assert (attributes["agent.summary"], attributes["agent.done"], attributes["agent.title"]) == \
         ("All set.", "true", prompt), attributes
     session = attributes["agent.session"]
-    # A permission prompt, answered "no": Codex interrupts the turn (its Interrupt hook).
-    inst.type_line(pane, "Run this shell command with escalated permissions (outside the sandbox): "
-                         "touch umi-real-hook.txt")
+    # A question (request_user_input, offered in Plan mode only). A permission prompt isn't
+    # dependable here: the user's config may hand approvals to Codex's automatic reviewer.
+    inst.cli("keys", "--pane", pane, "shift+tab")
+    try:
+        wait_until(lambda: "Plan mode" in inst.screen(pane), 10, message="Plan mode")
+    except AssertionError as error:
+        raise AssertionError(f"{error}\n{inst.screen(pane)}")
+    inst.type_line(pane, "Before planning anything, use request_user_input to ask me one multiple-choice "
+                         "question: red or blue? Then stop.")
     wait_status(inst, pane, "needs_input", 60)
-    inst.cli("keys", "--pane", pane, "3")
-    wait_status(inst, pane, "idle", 10)
+    inst.cli("keys", "--pane", pane, "enter")
+    wait_status(inst, pane, "idle", 60)
+    inst.cli("keys", "--pane", pane, "shift+tab")
+    # The footer says the mode (the history above keeps saying the model changed for Plan mode).
+    wait_until(lambda: "Plan mode" not in "\n".join(inst.screen(pane).strip().splitlines()[-3:]), 10,
+               message="Default mode")
     # An interrupt.
     inst.type_line(pane, "Write a 2000-word essay about the sea. No tools.")
     wait_status(inst, pane, "working", 30)
@@ -347,7 +357,7 @@ def test_real_codex_reports_each_state(fresh):
     wait_until(lambda: "To continue this session" in inst.screen(pane), 20, message="Codex to exit")
     time.sleep(1)
     # A failed turn: a model that doesn't exist.
-    inst.type_line(pane, f"codex -m gpt-nonexistent-9 {flags}")
+    inst.type_line(pane, f"{codex} -m gpt-nonexistent-9 {flags}")
     answer_until(inst, pane, "? for shortcuts", trust, 60)
     inst.type_line(pane, "hi")
     wait_status(inst, pane, "error", 60)
