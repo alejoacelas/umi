@@ -49,13 +49,22 @@ struct UmiIndicatorTests {
         let id = UUID()
         try attention.standIn(forPane: id, kind: .claude, title: "t", status: "idle", mark: "none", ago: 5)
         attention.placeChanged(id, shown: true)
+        settle()
         let before = attention.revision
         attention.looked(atPane: id)
+        settle()
         #expect(attention.revision != before)
         // Looking again changes nothing: no redraw.
         let after = attention.revision
         attention.looked(atPane: id)
+        settle()
         #expect(attention.revision == after)
         try attention.standIn(forPane: id, kind: nil, title: nil, status: nil, mark: nil, ago: nil)
+    }
+
+    /// A change reaches the views (`revision`) at most every `viewInterval`, from the main run loop
+    /// (UmiAttention.changed): let the one pending land.
+    private func settle() {
+        RunLoop.main.run(until: Date().addingTimeInterval(UmiAttention.viewInterval + 0.15))
     }
 }

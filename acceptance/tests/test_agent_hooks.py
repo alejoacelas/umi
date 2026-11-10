@@ -311,7 +311,8 @@ def test_real_codex_reports_each_state(fresh):
     trust = [("Trust this folder?", ["enter"])]
     flags = (f"-c model_reasoning_effort=low -c check_for_update_on_startup=false --dangerously-bypass-hook-trust "
              f"{codex_hook_flags(inst.plugin('codex'))}")
-    inst.type_line(pane, f"codex -m gpt-6-luna -a on-request -s workspace-write {flags}")
+    # A read-only sandbox: any file written needs an approval.
+    inst.type_line(pane, f"codex -m gpt-6-luna -a on-request -s read-only {flags}")
     answer_until(inst, pane, "? for shortcuts", trust, 60)
     # Codex reports a session only with its first prompt (item 14): nothing on the pane until then,
     # and its SessionStart (idle) comes just before the prompt's UserPromptSubmit.
@@ -327,8 +328,8 @@ def test_real_codex_reports_each_state(fresh):
         ("All set.", "true", prompt), attributes
     session = attributes["agent.session"]
     # A permission prompt, answered "no": Codex interrupts the turn (its Interrupt hook).
-    inst.type_line(pane, f"Run this shell command with escalated permissions (outside the sandbox): "
-                         f"touch /tmp/umi-real-hook-{nonce()}.txt")
+    inst.type_line(pane, "Run this shell command with escalated permissions (outside the sandbox): "
+                         "touch umi-real-hook.txt")
     wait_status(inst, pane, "needs_input", 60)
     inst.cli("keys", "--pane", pane, "3")
     wait_status(inst, pane, "idle", 10)

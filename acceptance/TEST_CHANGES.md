@@ -1691,3 +1691,8 @@ file shows.
   `1.2.0`. With the plugins now at 1.3.0, a hard-coded `1.2.0` would make the installed copy "not
   current" for its version alone, and the tests would pass without checking their case (another
   copy's plugin, a disabled plugin).
+- `UmiIndicatorTests.aLookAtAPaneShownSinceBumpsTheRevision` (Swift) lets the main run loop run for
+  `viewInterval` plus 0.15 s before each check. Since `10da5e7bb` (0.13.0), changes reach the views'
+  `revision` at most every 0.2 s from the run loop, so the test read it before the bump and failed on
+  main. It still checks both things: a look at a pane shown since bumps the revision, a second look
+  doesn't.
