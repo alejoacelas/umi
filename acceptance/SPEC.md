@@ -1176,7 +1176,9 @@ agent's own hooks, through Umi's plugin.
   - On the server, when the task says so or this Mac has no folder for it (the pane says so at
     its top): `ssh -t SSH sudo -iu USER umi-link attach ID`.
   The same holds for a link clicked in a browser or another app, ⌘-clicked in a terminal pane,
-  followed on a web pane's page or in a Markdown preview, and given to `<cli> link URL`.
+  followed on a web pane's page or in a Markdown preview, and given to `<cli> link URL`. The
+  installed app makes itself the handler of `umi://` at launch, so links reach it rather than a
+  dev or test build of the app.
 
 ## R. Robustness
 

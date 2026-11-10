@@ -1633,3 +1633,12 @@ without `ACCEPTANCE_REAL`, and a window too narrow for three panes). The failure
 `test_real_ctrl_cmd_m_and_the_drawers_buttons_ui`, a real-keystroke timing check that passed in
 the run before the rebase and again when `test_drawer.py` was rerun alone (16 passed). Swift unit
 tests passed.
+
+### 0.15.1: links reach the installed Umi
+
+The first real click on mac-air-2 found that LaunchServices sent `umi://` links to a test build
+(`dev.umi.app.local` in a test worktree): every built copy declares the scheme, and LaunchServices
+picked the newest. The installed Umi (`dev.umi.app`, not isolated) now makes itself the scheme's
+handler at launch (`UmiSessionLinks.claimScheme`, event `link.handler`). Dev and test builds and the
+suite's isolated instances never do. The suite can't test this (its instances are isolated), so it
+was checked by installing 0.15.1 on mac-air-2 and clicking the links.

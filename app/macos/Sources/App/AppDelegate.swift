@@ -216,6 +216,7 @@ class AppDelegate: NSObject,
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handleGetURL(_:withReply:)),
             forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+        UmiSessionLinks.claimScheme()
     }
 
     /// Umi: a `umi://` URL opened through LaunchServices.

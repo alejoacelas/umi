@@ -333,6 +333,21 @@ enum UmiSessionLinks {
 
     static func isLink(_ url: URL) -> Bool { url.scheme?.lowercased() == "umi" }
 
+    /// The user's own Umi (the installed app, `dev.umi.app`, not an isolated instance) makes itself
+    /// the handler of `umi://` at launch. Otherwise LaunchServices may send links to any other copy
+    /// that declares the scheme: a dev or test build, or an old release in a build folder.
+    static func claimScheme() {
+        guard !UmiPaths.isIsolated, Bundle.main.bundleIdentifier == "dev.umi.app" else { return }
+        let me = Bundle.main.bundleURL.standardizedFileURL
+        let current = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "umi://open")!)?.standardizedFileURL
+        guard current != me else { return }
+        NSWorkspace.shared.setDefaultApplication(at: me, toOpenURLsWithScheme: "umi") { error in
+            let detail: [String: Any] = ["app": me.path, "was": current?.path ?? NSNull(),
+                                         "error": error.map { $0.localizedDescription } ?? NSNull()]
+            DispatchQueue.main.async { MainActor.assumeIsolated { UmiEvents.shared.emit("link.handler", detail) } }
+        }
+    }
+
     /// A link ⌘-clicked in a terminal pane: a session link is handled on the next turn of the main
     /// loop (the click arrives while the terminal is still handling its mouse event). False for
     /// every other link.
