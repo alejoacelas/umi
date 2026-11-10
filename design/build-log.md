@@ -1464,6 +1464,13 @@ on older Codex.
 prompt and updated this Mac's Codex to 0.167.0. It was put back: `~/.codex/packages/standalone/current`
 points at the 0.164.0 release again (the 0.167.0 folder stays next to it).
 
+**Verified** on mac-air-2 under the screen lock, ReleaseLocal build of `1af572c55`, screen unlocked:
+the whole suite with the UI tests (`~/umi-test-agent-hooks-full.log`): 531 passed, 1 failed
+(`test_builds_from_a_path_with_spaces`, failing on main too), 3 skipped (the two real-agent tests, a
+window too narrow for three panes). The real-agent tests with `ACCEPTANCE_REAL=1`, with mac-air-2's
+Codex moved from 0.162.1 to 0.164.0 for the purpose (`~/umi-test-agent-hooks-real.log`): 2 passed.
+Swift unit tests: succeeded (`~/umi-test-agent-hooks-swift.log`). Fake self-tests: 55 of 55.
+
 **Friction.** AGENTS.md's build command lacks `SYMROOT="$PWD/build"`, without which Xcode can't find
 the tree-sitter module maps; `release.sh` and `dev.sh` pass it.
 
