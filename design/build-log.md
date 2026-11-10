@@ -1471,3 +1471,21 @@ quiet moment: two of its Umi-run Claude sessions may have unsent text. It wasn't
 (`umi update --now`), because 0.10.0 removes Umi-run sessions and those sessions belong to
 someone working there. **For Alejo:** let those sessions end or send their text, or run
 `umi update --now` there yourself.
+
+### Performance: the hang recorder and the first fixes (released in 0.13.0)
+
+Released together with the archive as 0.13.0. The archive's own `release.sh` run had waited three
+hours on a 1Password prompt and was stopped, so this release replaces it.
+
+- `UmiPerf.swift` records every main-thread block of 250 ms or more, with sampled stacks, slow named
+  operations and resource use in `<state>/logs/perf/<day>.jsonl` (`acceptance/tests/test_perf_recorder.py`).
+- `acceptance/perf/umi_perf.py` drives an isolated Umi through stress scenarios; the baseline and its
+  numbers are in `acceptance/perf/baseline-2026-11-09.md`.
+- Fixes: the Markdown preview scans in linear time and renders off the main thread (`fix-markdown`);
+  sidebar queries read sort values once and attention redraws at most every 0.2 s (`fix-sidebar`).
+  Memory after closing panes was measured and is not a leak (`fix-memory`, COMPROMISES.md).
+- Merged build `22f93b9d2` on mac-air-2: 525 passed, 1 skipped. The failures were the update and
+  install tests (mac-air-2 has no signing identity, so `release.sh` can't sign there),
+  `test_builds_from_a_path_with_spaces` (fails on main too) and `test_find_keys` (passes alone).
+  Stress run: no hangs except 2 when a 5 MB file switches to Raw (4.5 s, the source editor);
+  agents scenario CPU 92 → 37%; slowest CLI answer under load 638 → 92 ms.
