@@ -28,6 +28,9 @@ Umi.app = (() => {
     const msg = {
       type: 'rects',
       rects: Umi.views.panes.terminalRects(),
+      passThrough: Umi.views.panes.passThroughRects(),
+      // The terminal native brightens (SPEC PI-3): the focused one, when the tab shows several.
+      tint: M.paneIds(M.activeTab().root).length > 1 ? M.activeTab().focused : null,
       viewport: { w: window.innerWidth, h: window.innerHeight },
     };
     const web = webWantsKeys();

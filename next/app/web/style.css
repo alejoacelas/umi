@@ -5,8 +5,9 @@
   --sidebar: rgba(255, 255, 255, 0.05);
   --line: rgba(255, 255, 255, 0.10);
   --accent: #19aad8;
-  --gap: 6px;
-  --titlebar: 30px;
+  --divider: #262626;
+  --focus-tint: #0c0c0c;
+  --titlebar: 32px;
   --sidebar-width: 240px;
 }
 
@@ -139,7 +140,7 @@ body.cmd-held .tab .key { display: block; }
   min-width: 0;
   min-height: 0;
   display: flex;
-  padding: var(--titlebar) var(--gap) var(--gap) var(--gap);
+  padding-top: var(--titlebar);
 }
 
 .split { display: flex; flex: 1; min-width: 0; min-height: 0; }
@@ -147,23 +148,29 @@ body.cmd-held .tab .key { display: block; }
 .split.column { flex-direction: column; }
 .split > .child { display: flex; min-width: 0; min-height: 0; }
 
-.divider { flex: none; }
-.split.row > .divider { width: var(--gap); cursor: col-resize; }
-.split.column > .divider { height: var(--gap); cursor: row-resize; }
-.divider:hover { background: rgba(255, 255, 255, 0.06); }
+/* Umi's splits (Ghostty's): panes meet at a 1-point line in split-divider-color, with no gap and
+   no margin round the panes. The line's grab area reaches 3 points into each pane; native lets
+   clicks there through to the web layer (`passThrough` in the rects message). */
+.divider { flex: none; position: relative; background: var(--divider); z-index: 1; }
+.divider::before { content: ''; position: absolute; }
+.split.row > .divider { width: 1px; cursor: col-resize; }
+.split.row > .divider::before { top: 0; bottom: 0; left: -3px; right: -3px; }
+.split.column > .divider { height: 1px; cursor: row-resize; }
+.split.column > .divider::before { left: 0; right: 0; top: -3px; bottom: -3px; }
 
 .slot {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  border-radius: 2px;
-  background: #0b0b0b;
+  background: var(--bg);
 }
 .slot:not([data-view="terminal"]) { padding: 16px; color: var(--dim); overflow: auto; }
-.multi .slot:not(.focused) { box-shadow: 0 0 0 1px var(--line); }
+/* SPEC PI-3: in a tab showing more than one pane the focused pane is 3% brighter (native tints
+   terminals the same way). */
+.multi .slot.focused { background: var(--focus-tint); }
 
 /* Picker (a pane drawn by the web layer) */
-.slot.picker { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; color: var(--ink); background: #0b0b0b; }
+.slot.picker { display: flex; flex-direction: column; gap: 10px; padding: 10px 16px; color: var(--ink); }
 .picker-head { display: flex; align-items: center; gap: 10px; }
 .picker-name {
   flex: 1; min-width: 0; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);

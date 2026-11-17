@@ -89,6 +89,15 @@ Umi.views.panes = (() => {
     return out;
   }
 
+  // Where clicks over a terminal belong to the web layer: each divider's grab area (its ::before).
+  function passThroughRects() {
+    return [...document.querySelectorAll('#panes .divider')].map((d) => {
+      const r = d.getBoundingClientRect(), row = d.parentElement.classList.contains('row');
+      return row ? { x: r.left - 3, y: r.top, w: r.width + 6, h: r.height }
+                 : { x: r.left, y: r.top - 3, w: r.width, h: r.height + 6 };
+    });
+  }
+
   // Redraws the pickers' lists in place (new session data) without touching their name fields.
   function refreshPickers() {
     document.querySelectorAll('#panes .slot[data-view="picker"]').forEach((el) => {
@@ -97,5 +106,5 @@ Umi.views.panes = (() => {
     });
   }
 
-  return { render, renderers, slotRects, terminalRects, refreshPickers };
+  return { render, renderers, slotRects, terminalRects, passThroughRects, refreshPickers };
 })();

@@ -16,10 +16,26 @@ final class UmiWindow: NSWindow {
 /// Holds the terminals. Flipped, so a CSS rect (top-left origin) is its frame as is.
 final class TerminalLayerView: NSView {
     override var isFlipped: Bool { true }
+    /// Areas over terminals whose clicks go to the web layer (the dividers' grab areas), in this
+    /// view's coordinates.
+    var passThrough: [CGRect] = []
     override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        if passThrough.contains(where: { $0.contains(local) }) { return nil }
         let hit = super.hitTest(point)
-        return hit === self ? nil : hit
+        return hit === self || hit is FocusTintView ? nil : hit
     }
+}
+
+/// White at 3% over the focused terminal of a tab showing several panes (SPEC PI-3), as Umi does.
+final class FocusTintView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.03).cgColor
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// A strip along the top that drags the window (the web view would take those clicks).
@@ -34,6 +50,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     let window: UmiWindow
     let webView: WKWebView
     let terminalLayer = TerminalLayerView()
+    private let focusTint = FocusTintView(frame: .zero)
     private let banner = NSTextField(labelWithString: "")
     private var watcher: FileWatcher?
     let sessions = SessionMonitor()
@@ -361,6 +378,18 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         for (id, v) in surfaces where !shown.contains(id) {
             v.setVisible(false)
             lastRects[id] = nil
+        }
+        terminalLayer.passThrough = ((msg["passThrough"] as? [[String: Double]]) ?? []).compactMap { r in
+            guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
+            return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
+        }
+        if let id = msg["tint"] as? String, let frame = lastRects[id] {
+            focusTint.frame = frame
+            if focusTint.superview == nil { terminalLayer.addSubview(focusTint) }
+            else if terminalLayer.subviews.last !== focusTint { terminalLayer.addSubview(focusTint, positioned: .above, relativeTo: nil) }
+            focusTint.isHidden = false
+        } else {
+            focusTint.isHidden = true
         }
         CATransaction.commit()
 
