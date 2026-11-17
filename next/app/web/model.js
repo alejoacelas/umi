@@ -7,8 +7,8 @@
 // - ⌘W stops showing a pane; the session keeps running. Only Exit (palette) ends a session. A
 //   session whose program ends by itself leaves its pane.
 // - A pane shows a `view`: 'terminal' (a native Ghostty view) or 'picker' (drawn here; ⌘D).
-// - The palette is the bottom panel; it takes height from the panes (terminals sit above the web
-//   view), and the web view has the keys while it's open.
+// - The palette is the bottom panel; it lies over the bottom of the panes, which keep their size
+//   (native clips the terminals it covers), and the web view has the keys while it's open.
 'use strict';
 window.Umi = window.Umi || {};
 

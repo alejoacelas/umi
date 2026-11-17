@@ -30,6 +30,7 @@ Umi.app = (() => {
       rects: Umi.views.panes.terminalRects(),
       passThrough: Umi.views.panes.passThroughRects(),
       chrome: Umi.views.panes.chromeRects(),
+      cover: Umi.views.panel.coverRect(),
       // The terminal native brightens (SPEC PI-3): the focused one, when the tab shows several.
       tint: M.paneIds(M.activeTab().root).length > 1 ? M.activeTab().focused : null,
       viewport: { w: window.innerWidth, h: window.innerHeight },

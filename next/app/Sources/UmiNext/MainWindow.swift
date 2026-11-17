@@ -390,15 +390,22 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             v.setVisible(false)
             lastRects[id] = nil
         }
-        terminalLayer.passThrough = ((msg["passThrough"] as? [[String: Double]]) ?? []).compactMap { r in
-            guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
+        func rect(_ r: [String: Double]?) -> CGRect? {
+            guard let r, let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
             return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
         }
+        // The bottom panel lies over the panes: terminals keep their frames and are clipped where it
+        // covers them, so the web layer's panel shows through and takes the clicks there.
+        let cover = rect(msg["cover"] as? [String: Double])
+        for id in shown { if let v = surfaces[id] { clip(v, by: cover) } }
+        terminalLayer.passThrough = ((msg["passThrough"] as? [[String: Double]]) ?? []).compactMap { rect($0) }
+            + (cover.map { [$0] } ?? [])
         terminalLayer.chrome = ((msg["chrome"] as? [[String: Double]]) ?? []).compactMap { r in
             guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
             return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
         }
-        if let id = msg["tint"] as? String, let frame = lastRects[id] {
+        if let id = msg["tint"] as? String, var frame = lastRects[id] {
+            if let cover, cover.intersects(frame) { frame.size.height = max(0, cover.minY - frame.minY) }
             focusTint.frame = frame
             if focusTint.superview == nil { terminalLayer.addSubview(focusTint) }
             else if terminalLayer.subviews.last !== focusTint { terminalLayer.addSubview(focusTint, positioned: .above, relativeTo: nil) }
@@ -425,6 +432,20 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             pendingReload = nil
         }
         if let f = msg["focus"] as? String { focusPane(f) }
+    }
+
+    /// Hides the part of a terminal under `cover` (a band along the bottom of the work area).
+    private func clip(_ v: TerminalSurfaceView, by cover: CGRect?) {
+        guard let layer = v.layer else { return }
+        let f = v.frame
+        guard let cover, cover.intersects(f) else { layer.mask = nil; return }
+        let visible = max(0, min(f.height, cover.minY - f.minY))
+        let mask = layer.mask ?? CALayer()
+        mask.backgroundColor = NSColor.black.cgColor
+        // The view isn't flipped: layer y runs up from the bottom, so the visible top part starts at
+        // height - visible.
+        mask.frame = CGRect(x: 0, y: f.height - visible, width: f.width, height: visible)
+        layer.mask = mask
     }
 
     func focusPane(_ id: String) {

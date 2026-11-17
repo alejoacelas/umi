@@ -126,7 +126,7 @@ body.cmd-held .tab .key { display: block; }
 .tab:hover .close { display: block; }
 .tab .close:hover { background: rgba(255, 255, 255, 0.1); color: var(--ink); }
 
-/* The work area: panes above, the bottom panel (palette) below, taking height from the panes. */
+/* The work area: the pane strip, the panes, and the bottom panel (palette) over them. */
 #work { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
 
 /* The pane strip (SPEC H-5) in the title bar above the panes: a chip per pane of the tab, in layout
@@ -145,12 +145,16 @@ body.cmd-held .tab .key { display: block; }
 .chip:hover { background: rgba(255, 255, 255, 0.06); }
 .chip.focused { background: rgba(255, 255, 255, 0.085); color: rgba(255, 255, 255, 0.95); }
 
+/* The panel lies over the bottom of the panes: they keep their size (no reflow). Native clips the
+   terminals it covers (`cover` in the rects message), so it shows through. */
 #panel {
-  flex: none;
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 2;
   max-height: 45%;
   overflow: auto;
   border-top: 1px solid var(--line);
-  background: var(--sidebar);
+  background: #111111;
   padding: 12px 16px;
 }
 #panel[hidden] { display: none; }

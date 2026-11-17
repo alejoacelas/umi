@@ -66,6 +66,8 @@ browser; one list ordered by what needs Alejo is fewer steps.
 Replaces the manager pane. A tap of Hyper alone (all four modifiers down and up with no key between)
 opens it; Hyper+Space also does, in case the Hyper tool turns a lone tap into another key. It slides
 up from the window's bottom edge, where the drawer was, like agent-emacs's menu (⌘E there).
+It lies over the bottom of the panes: they keep their size and place, so no terminal reflows while
+it is open.
 
 - Columns of commands, each on one letter, the frequent ones under the left hand: Sessions (new,
   switch, next waiting, open past), This session (rename, snooze, restart, exit, move), Review,
