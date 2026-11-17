@@ -1,7 +1,7 @@
-// node next/app/web/tests/status.test.js
+// node next/app/tests/status.test.js
 'use strict';
 const assert = require('node:assert/strict');
-const { parseStatus, isDone } = require('../status.js');
+const { parseStatus, isDone } = require('../web/status.js');
 
 const cases = [
   ['Fixed it.\n\nStatus: done', { kind: 'done', detail: '' }],
