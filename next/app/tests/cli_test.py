@@ -9,7 +9,7 @@ UMI_NEXT_OFFSCREEN=1 and no screen. Start the app with UMI_NEXT_FOCUS_ASSUME_ACT
 focus-log checks (an offscreen window is never active). It leaves the layout as it found it,
 apart from the sessions it ends. SCRATCH (default: a temp folder) holds the Markdown files.
 """
-import json, os, plistlib, re, socket, subprocess, sys, tempfile, time
+import json, os, plistlib, socket, subprocess, sys, tempfile, time, traceback
 
 app = os.path.abspath(sys.argv[1])
 scratch = sys.argv[2] if len(sys.argv) > 2 else tempfile.mkdtemp(prefix="umi-next-cli-")
@@ -59,7 +59,8 @@ def check(name, fn):
         print("ok  ", name)
     except Exception as e:  # noqa: BLE001
         failures.append(name)
-        print("FAIL", name, "—", e)
+        line = traceback.extract_tb(e.__traceback__)[-1].lineno
+        print("FAIL", name, f"(line {line}) —", e)
 
 
 def ls():
@@ -252,15 +253,32 @@ def t_edit():
         assert "editor isn't in Umi next yet" in run("edit", doc, ok=False, code=1).stderr
         print("     (no openFile yet: edit, editor checked for their refusal only)")
         return
-    r = j("edit", doc, "--source")
-    d = r["documents"][0]
+    doc2 = os.path.join(scratch, "notes.txt")
+    open(doc2, "w").write("plain\n")
+    r = j("edit", doc, doc2, "--source")
+    d, d2 = r["documents"]
     assert d["path"] == os.path.realpath(doc) and d["mode"] == "source", r
     assert ls()["current_pane"] == before, "edit took focus"
+    t = next(t for t in tabs() if t["id"] == r["tab"])
+    ids = [p["id"] for p in t["panes"]]
+    assert ids.index(before) < ids.index(d["pane"]) < ids.index(d2["pane"]), ids  # each to the right
+    assert pane(d["pane"])["kind"] == "file" and pane(d["pane"])["file"] == d["path"]
+    assert j("edit", doc)["documents"][0]["pane"] == d["pane"], "a file already open opens again"
     e = j("editor", "ls")
-    assert any(x["path"] == d["path"] for x in e["documents"]), e
+    assert [x["path"] for x in e["documents"]] == [d["path"], d2["path"]] and not e["documents"][0]["dirty"], e
     assert j("editor", "mode", "preview", doc)["mode"] == "preview"
-    j("editor", "close", doc)
+    until(lambda: debug(f"Umi.views.file.get('{d['pane']}').mode") == "rendered", what="the view in rendered mode")
+    assert j("editor", "mode", doc)["mode"] == "source"
+    # Unsaved edits: close refuses without --force; --force drops them and their draft.
+    until(lambda: debug(f"Umi.views.file.get('{d['pane']}').disk ? 1 : 0") in (1, "1"), what="the file to load")
+    debug(f"(v => {{ v.text = 'changed'; v.keepDraft(); }})(Umi.views.file.get('{d['pane']}'))")
+    assert j("editor", "ls")["documents"][0]["dirty"] is True
+    assert "unsaved changes" in run("editor", "close", doc, ok=False, code=1).stderr
+    j("editor", "close", doc, "--force")
+    assert debug(f"JSON.stringify((Umi.state.layout.meta.drafts || {{}})[{json.dumps(d['path'])}] || null)") == "null"
+    j("editor", "close", doc2)
     assert not j("editor", "ls")["documents"]
+    assert open(doc).read() == "# Doc\n\nSome words.\n"
     assert "web pages" in run("edit", "https://example.com", ok=False, code=1).stderr
 
 
@@ -293,9 +311,18 @@ def t_comments():
     s.recv(100)
     until(lambda: debug("typeof window.__beforeReload") == "undefined" and debug("Umi.cli.waiting().length") in (1, "1"),
           what="the wait to come back after the reload")
-    debug(f"Umi.cli.commentsDone({json.dumps(real)})")
+    if debug("!!Umi.actions.openFile") in (True, 1, "1", "true"):
+        # The Done button of the file's comment margin answers it.
+        fp = j("edit", f, "--preview")["documents"][0]["pane"]
+        until(lambda: debug(f"(Umi.views.file.get('{fp}').margin || 0) && 1") in (1, "1"), what="the comment margin")
+        debug(f"Umi.views.file.get('{fp}').marginMessage({{type: 'done'}})")
+    else:
+        debug(f"Umi.cli.commentsDone({json.dumps(real)})")
     out, err = p.communicate(timeout=10)
     assert p.returncode == 0 and json.loads(out)["path"] == real, (p.returncode, out, err)
+    assert debug("Umi.cli.waiting().length") in (0, "0")
+    if debug("!!Umi.actions.openFile") in (True, 1, "1", "true"):
+        j("editor", "close", f)
 
 
 def t_focus_log():
