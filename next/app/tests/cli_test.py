@@ -125,7 +125,9 @@ def t_tab_new():
     assert r["session"], r
     t = next(t for t in tabs() if t["id"] == r["tab"])
     assert t["name"] == "cli-tab" and t["selected"]
-    assert t["panes"][0]["name"] == "catter" and t["panes"][0]["cwd"] == scratch
+    # The session's name and folder reach the page at its next poll of the daemon.
+    until(lambda: (p := next(t for t in tabs() if t["id"] == r["tab"])["panes"][0])["name"] == "catter" and p["cwd"] == scratch,
+          what="the pane's session name and folder")
     # Started by the CLI: out of the user's session lists (the page learns it at the next poll).
     s = until(lambda: next((s for s in ls()["sessions"] if s["id"] == r["session"] and s["by"] == "cli"), None),
               what="the session listed as started by the CLI")
