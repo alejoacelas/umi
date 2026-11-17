@@ -43,6 +43,7 @@ Umi.views.panes = (() => {
   }
 
   const termIcon = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M4.5 6l2 1.75-2 1.75M8 10h3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const docIcon = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M4 1.5h5.5l3 3v10h-8.5z" stroke-linejoin="round"/><path d="M9.5 1.5v3h3M6 8h4.5M6 10.5h4.5" stroke-linecap="round"/></svg>';
   const shortPath = (p) => (p && S.home && (p === S.home || p.startsWith(S.home + '/')) ? '~' + p.slice(S.home.length) : p || '');
 
   // A chip's label: the session's given name, else what its terminal's title says, else its folder.
@@ -63,7 +64,7 @@ Umi.views.panes = (() => {
     for (const node of leaves) {
       const chip = document.createElement('div');
       chip.className = 'chip' + (node.id === tab.focused ? ' focused' : '') + (node.view === 'file' && Umi.views.file.isDirty(node.id) ? ' dirty' : '');
-      chip.innerHTML = termIcon + '<span></span>';
+      chip.innerHTML = (node.view === 'file' ? docIcon : termIcon) + '<span></span>';
       chip.querySelector('span').textContent = chipLabel(node);
       chip.title = chip.querySelector('span').textContent;
       chip.addEventListener('mousedown', () => Umi.app.update(() => M.focusPane(node.id)));
