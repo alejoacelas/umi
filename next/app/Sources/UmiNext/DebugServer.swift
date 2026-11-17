@@ -237,6 +237,11 @@ final class DebugServer {
             if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                                         windowNumber: window.windowNumber, context: nil, characters: flags.contains(.command) ? String(base) : chars,
                                         charactersIgnoringModifiers: ign, isARepeat: false, keyCode: code) {
+                // AppKit offers a ⌘/⌃ key to the key window's views before the menu. An off-screen
+                // window is never key, so NSApp would go straight to the menu (⌘Z to WebKit's own
+                // Undo instead of the page): offer it to the window first, as for a key window.
+                if type == .keyDown, !window.isKeyWindow, !flags.isDisjoint(with: [.command, .control]),
+                   window.performKeyEquivalent(with: e) { continue }
                 NSApp.sendEvent(e)
             }
         }
