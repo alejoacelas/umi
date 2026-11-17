@@ -18,6 +18,14 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
     private(set) var focused = false
     /// Called when this view becomes the first responder (a click or keyboard focus).
     var onFocus: ((TerminalSurfaceView) -> Void)?
+    /// umi-next: synchronized input (SPEC L-32). The other terminals what's typed here also goes to;
+    /// ⌘ keys and text still being composed stay here.
+    var syncPeers: (TerminalSurfaceView) -> [TerminalSurfaceView] = { _ in [] }
+    /// umi-next: when ⌘V (Ghostty's paste binding) was pressed here, so the paste it reads from the
+    /// clipboard is typed into the sync peers too.
+    var pasteRequestedAt: TimeInterval = 0
+    /// umi-next: the font size last set on this terminal (nil: the config's).
+    var appliedFontSize: Double?
 
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]?
@@ -318,6 +326,10 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
             return ghostty_surface_key_is_binding(surface, ev, &flags)
         }
         if isBinding {
+            if event.charactersIgnoringModifiers?.lowercased() == "v",
+               event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command {
+                pasteRequestedAt = ProcessInfo.processInfo.systemUptime
+            }
             keyDown(with: event)
             return true
         }
@@ -388,9 +400,16 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
         guard let surface else { return false }
         var ev = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
         ev.composing = composing
+        // Synchronized input: the same key into each peer, except ⌘ keys and composing text.
+        let peers = composing || event.modifierFlags.contains(.command) ? [] : syncPeers(self).compactMap(\.surface)
         if let text = text?.keyEventText {
-            return text.withCString { p in ev.text = p; return ghostty_surface_key(surface, ev) }
+            return text.withCString { p in
+                ev.text = p
+                for peer in peers { _ = ghostty_surface_key(peer, ev) }
+                return ghostty_surface_key(surface, ev)
+            }
         }
+        for peer in peers { _ = ghostty_surface_key(peer, ev) }
         return ghostty_surface_key(surface, ev)
     }
 
@@ -400,7 +419,19 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
         ev.action = action
         ev.mods = GHOSTTY_MODS_NONE
         ev.consumed_mods = GHOSTTY_MODS_NONE
-        return text.withCString { p in ev.text = p; return ghostty_surface_key(surface, ev) }
+        let peers = syncPeers(self).compactMap(\.surface)
+        return text.withCString { p in
+            ev.text = p
+            for peer in peers { _ = ghostty_surface_key(peer, ev) }
+            return ghostty_surface_key(surface, ev)
+        }
+    }
+
+    /// Runs a Ghostty binding action on this terminal ("search:foo", "set_font_size:14", …).
+    @discardableResult
+    func bindingAction(_ action: String) -> Bool {
+        guard let surface else { return false }
+        return action.withCString { ghostty_surface_binding_action(surface, $0, UInt(strlen($0))) }
     }
 
     private func shouldReplayCommittedPreeditKey(_ event: NSEvent) -> Bool {

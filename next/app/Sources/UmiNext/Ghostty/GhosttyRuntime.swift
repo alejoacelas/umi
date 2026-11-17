@@ -157,6 +157,13 @@ final class GhosttyRuntime {
         }
         let available = list ? pb.ghosttyAvailableMimes() : []
         if contents.isEmpty && !list { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+        // umi-next: a ⌘V paste in a synchronized tab goes to every synced terminal (SPEC L-32).
+        // Only a paste the user just asked for: a program's clipboard read never leaves the pane.
+        if ProcessInfo.processInfo.systemUptime - view.pasteRequestedAt < 1,
+           let text = contents.first(where: { $0.0.hasPrefix("text/plain") }).flatMap({ String(data: $0.1, encoding: .utf8) }) {
+            view.pasteRequestedAt = 0
+            for peer in view.syncPeers(view) { peer.sendText(text) }
+        }
         complete(surface, contents: contents, available: available, state: state)
         return GHOSTTY_CLIPBOARD_READ_STARTED
     }

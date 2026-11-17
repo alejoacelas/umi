@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import GhosttyKit
 
 /// The window: a WKWebView fills it and draws all chrome; terminal views sit above it in a
 /// layer that only takes clicks where a terminal is, at the rects the web layer reports.
@@ -354,6 +355,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
                 "codex": Paths.env["UMI_NEXT_CODEX_CMD"] ?? "codex --dangerously-bypass-approvals-and-sandbox",
             ],
             "home": NSHomeDirectory(),
+            "fontBase": baseFontSize,
         ]
     }
 
@@ -399,6 +401,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             paneInfo[id] = info
         }
         layout = Self.withSessions(newLayout, paneInfo)
+        applyZoom(newLayout["zoom"] as? [String: Any])
+        syncedPanes = Self.syncedPanes(newLayout)
         if save { saveLayout() }
         focusLog.update()
     }
@@ -430,7 +434,9 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         let view = TerminalSurfaceView(runtime: runtime, paneID: id, frame: frame, config: .init(
             command: launch.command, workingDirectory: launch.workingDirectory, environment: env))
         view.onFocus = { [weak self] v in self?.send(["type": "focused", "pane": v.paneID]) }
+        view.syncPeers = { [weak self] v in self?.syncPeers(of: v) ?? [] }
         terminalLayer.addSubview(view)
+        applyFont(to: view)
         surfaces[id] = view
         var info: [String: Any] = ["session": launch.sessionID]
         if let cwd { info["pwd"] = cwd }
@@ -549,6 +555,53 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         mask.fillColor = NSColor.black.cgColor
         mask.path = path
         layer.mask = mask
+    }
+
+    // MARK: Zoom, synchronized input
+
+    /// The config's font-size (Ghostty's default 13 when unset).
+    private(set) lazy var baseFontSize: Double = {
+        var size: Float = 0
+        let key = "font-size"
+        let ok = ghostty_config_get(runtime.config, &size, key, UInt(key.utf8.count))
+        return ok && size > 0 ? Double(size) : 13
+    }()
+    private var uiZoom: Double = 1
+    private var fontDelta: Double = 0
+    /// SPEC L-33: the page's zoom (layout.zoom.ui) scales the page; the terminals show
+    /// clamp(font-size + layout.zoom.font, 5, 25) times it.
+    private func applyZoom(_ z: [String: Any]?) {
+        let ui = min(3.5, max(0.5, (z?["ui"] as? Double) ?? 1)), font = (z?["font"] as? Double) ?? 0
+        guard ui != uiZoom || font != fontDelta else { return }
+        uiZoom = ui
+        fontDelta = font
+        if webView.pageZoom != ui { webView.pageZoom = ui }
+        for v in surfaces.values { applyFont(to: v) }
+    }
+    private func applyFont(to v: TerminalSurfaceView) {
+        let size = min(25, max(5, baseFontSize + fontDelta)) * uiZoom
+        if v.appliedFontSize == nil && abs(size - baseFontSize) < 0.01 { return }
+        if let a = v.appliedFontSize, abs(a - size) < 0.01 { return }
+        v.bindingAction(String(format: "set_font_size:%.2f", size))
+        v.appliedFontSize = size
+    }
+
+    /// SPEC L-32: the terminal panes of every synced tab (layout.sync {all} or {tabs: [ids]}).
+    private var syncedPanes: Set<String> = []
+    private func syncPeers(of v: TerminalSurfaceView) -> [TerminalSurfaceView] {
+        guard syncedPanes.contains(v.paneID) else { return [] }
+        return syncedPanes.compactMap { $0 == v.paneID ? nil : surfaces[$0] }
+    }
+    static func syncedPanes(_ layout: [String: Any]) -> Set<String> {
+        guard let sync = layout["sync"] as? [String: Any], let tabs = layout["tabs"] as? [[String: Any]] else { return [] }
+        let all = sync["all"] as? Bool ?? false, ids = Set(sync["tabs"] as? [String] ?? [])
+        var out = Set<String>()
+        for t in tabs where all || ids.contains(t["id"] as? String ?? "") {
+            for p in panes(in: t["root"]) where (p["view"] as? String ?? "terminal") == "terminal" {
+                if let id = p["id"] as? String { out.insert(id) }
+            }
+        }
+        return out
     }
 
     func focusPane(_ id: String) {

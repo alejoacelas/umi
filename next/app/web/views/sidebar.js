@@ -48,6 +48,8 @@ Umi.views.sidebar = (() => {
       name.className = 'name';
       name.textContent = tab.name || base(folder) || 'Terminal';
       line1.append(name);
+      if (tab.pinned) line1.prepend(mark('pin', '📌', 'Pinned (⌃⌘P)'));
+      if (Umi.arrange.isSynced(tab)) line1.append(mark('sync', linkIcon, 'Input synchronized (⌥⌘I)'));
       if (count > 1) {
         const c = document.createElement('span');
         c.className = 'count';
@@ -65,19 +67,75 @@ Umi.views.sidebar = (() => {
     }
     const sid = M.sessionOf(tab.focused);
     line2.append(document.createTextNode(shortPath(info.title) || (sid && S.live[sid]?.foreground) || shortPath(folder)));
-    el.querySelector('.key').textContent = i < 8 ? `⌘${i + 1}` : i === S.layout.tabs.length - 1 ? '⌘9' : '';
+    const listed = M.listedTabs().length;
+    el.querySelector('.key').textContent = i < 0 ? '' : i < 8 ? `⌘${i + 1}` : i === listed - 1 ? '⌘9' : '';
+    el.dataset.tab = tab.id;
     el.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.close, input')) return;
+      if (e.target.closest('.close, input') || e.button !== 0) return;
       Umi.app.update(() => { S.layout.activeTab = tab.id; });
+      if (!tab.archived) dragTab(e, tab);
     });
     el.addEventListener('dblclick', (e) => {
       if (e.target.closest('.close, input')) return;
       Umi.app.update(() => { S.layout.activeTab = tab.id; Umi.actions.renameTab(); });
     });
     el.querySelector('.close').addEventListener('click', () => {
-      Umi.app.update(() => M.paneIds(tab.root).forEach((id) => M.removePane(id)));
+      Umi.app.run('closeTab', { tab: tab.id });
     });
     return el;
+  }
+
+  const linkIcon = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 9.5l3-3"/><path d="M7.5 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1"/><path d="M8.5 11.5l-1 1A2.5 2.5 0 014 9l1-1"/></svg>';
+  function mark(cls, html, title) {
+    const m = document.createElement('span');
+    m.className = 'mark ' + cls;
+    m.innerHTML = html;
+    m.title = title;
+    return m;
+  }
+
+  // Dragging a row moves the tab within its group (pinned or not) where it's dropped (SPEC M-4).
+  function dragTab(down, tab) {
+    let moved = false, target = null, after = false;
+    const move = (e) => {
+      if (!moved && Math.abs(e.clientY - down.clientY) < 4) return;
+      moved = true;
+      document.body.classList.add('dragging-tab');
+      document.querySelectorAll('#tabs .tab').forEach((r) => r.classList.remove('drop-before', 'drop-after'));
+      const row = document.elementFromPoint(e.clientX, e.clientY)?.closest('#tabs .tab');
+      const t = row && S.layout.tabs.find((x) => x.id === row.dataset.tab);
+      target = t && t !== tab && !!t.pinned === !!tab.pinned ? t : null;
+      if (!target) return;
+      const r = row.getBoundingClientRect();
+      after = e.clientY > r.top + r.height / 2;
+      row.classList.add(after ? 'drop-after' : 'drop-before');
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      document.body.classList.remove('dragging-tab');
+      if (moved && target) Umi.app.update(() => Umi.arrange.placeTab(tab, target, after));
+      else if (moved) render();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  // SPEC AR-1: the Archived row at the top while a tab is archived; a click opens it in place.
+  function renderArchive(list) {
+    const archived = Umi.arrange.archived();
+    if (!archived.length) return;
+    const row = document.createElement('div');
+    row.className = 'archive-row' + (S.layout.archiveOpen ? ' open' : '');
+    row.innerHTML = '<span class="chev">›</span><span></span>';
+    row.lastChild.textContent = `Archived · ${archived.length}`;
+    row.addEventListener('mousedown', () => Umi.app.update(() => { S.layout.archiveOpen = !S.layout.archiveOpen; }, { focus: false }));
+    list.append(row);
+    if (!S.layout.archiveOpen) return;
+    const box = document.createElement('div');
+    box.className = 'archive-box';
+    archived.forEach((t) => box.append(tabRow(t, -1)));
+    list.append(box);
   }
 
   function renderReview() {
@@ -121,7 +179,8 @@ Umi.views.sidebar = (() => {
     renderReview();
     const list = document.querySelector('#tabs');
     list.textContent = '';
-    S.layout.tabs.forEach((tab, i) => list.append(tabRow(tab, i)));
+    renderArchive(list);
+    M.listedTabs().forEach((tab, i) => list.append(tabRow(tab, i)));
   }
 
   function focus() {

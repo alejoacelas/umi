@@ -85,21 +85,23 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 | ⌘[ / ⌘] walk (H-6) | walks panes on show then hidden | ⌘[ ⌘] step through the tab's panes on show (2fb42775b) | Hidden ones: via the strip only |
 | Tabs: new, select, next/prev (L-11) | ⌘T, ⌘1–9, ⇧⌘[ ⇧⌘], ⌃Tab | [x] done, ⌃Tab / ⌃⇧Tab included | — |
 | Tab rename, close (S-4, L-2) | double-click / ⌃⌘R rename in place; close asks when a program runs | double-click and ⌃⌘R rename in place; × and ⌥⌘W stop showing the tab | [x] done. Close keeps sessions (⌘W rule), so no question |
-| Tab move, pin, color, groups, search (L-13, S-4, S-13, S-14) | ⌃⇧↑↓, pin, colors, groups, Search tabs, right-click menu | none | ⌃⇧↑↓ move and drag to reorder now. Pin, colors, groups, search, menu: later |
+| Tab move, pin, color, groups, search (L-13, S-4, S-13, S-14) | ⌃⇧↑↓, pin, colors, groups, Search tabs, right-click menu | [x] ⌃⇧↑↓ and dragging a row move a tab within its group; ⌃⌘P pins (pinned first, Warp's order); a new tab opens below the pinned ones | Colors, groups, search, menu: later |
 | Splits (L-1, L-19) | ⌘D / ⇧⌘D, panes share space equally | ⌘D / ⇧⌘D into the picker; dividers drag | Equal sharing within a row on split (L-19); ⇧⌘D ⌘D left/up variants later |
 | Pane focus by direction | ⌥⌘ arrows | ⌥⌘ arrows | [x] done |
-| Zoom (L-3) | maximize/minimize a pane | none | ⇧⌘↩ toggles zoom of the focused pane (layout flag, other panes hidden while zoomed; their sessions keep running) |
+| Zoom (L-3) | maximize/minimize a pane | [x] ⇧⌘↩ toggles `tab.zoomed`: only that pane shows, the others' sessions keep running; focusing another pane, a split or a close unzooms | — |
 | Pane rename (L-3) | ⌃⇧⌘R in place | ⌃⇧⌘R and palette `r` rename the session | [x] done |
-| Pane move (M-1, KM-1..5, ⌃⌘T) | ⌃⌘ arrows move panes within/between tabs; ⌃⌘T to new tab; drag | palette `m` to new tab | ⌃⌘T = move to new tab. ⌃⌘←→ swap with neighbour; ⌃⌘↑↓ to the tab above/below. Drag: later |
+| Pane move (M-1, KM-1..5, ⌃⌘T) | ⌃⌘ arrows move panes within/between tabs; ⌃⌘T to new tab; drag | [x] ⌃⌘T to a new tab; ⌃⌘←→ swap with the neighbour in layout order; ⌃⌘↑↓ to the end of the tab above/below (a tab left empty closes); each step lands at once | KM's held-⌃⌘ preview and drag: later |
 | Swap, resize, equalize (L-3) | CLI | divider drag; ⌃⌘= equalizes | Actions for the CLI track: `swapPanes`, `resizePane` |
-| Reopen ⇧⌘T (L-20) | reopens a closed pane/tab/window | none | Departure: not needed: closed panes' sessions stay in the picker and the strip |
-| Attention: jump (L-12) | ⌃⌘J next pane needing you, ⌃⌘K back | palette `w` next waiting | ⌃⌘J = next waiting; ⌃⌘K back to where the walk started |
+| Reopen ⇧⌘T (L-20) | reopens a closed pane/tab/window | [x] ⇧⌘T brings back the last pane ⌘W hid (in its old place and size when the tab hasn't changed, else at the right end) or the last tab closed (its position, name, pin, sessions) | Departure: no 60 s limit, since closed sessions keep running; items whose sessions ended are skipped |
+| Attention: jump (L-12) | ⌃⌘J next pane needing you, ⌃⌘K back | [x] ⌃⌘J = next waiting (Review order); ⌃⌘K back to the session the walk started from | — |
 | Pane indicator (PI-1..4) | small mark per pane: working, needs you, finished unseen | Review list; none on panes | A mark at each terminal slot's bottom right and on strip chips, from `S.live[sid].agent` |
 | Notifications, Dock badge (T-6, `badge`) | desktop notification from panes; Dock badge counts needs-you | none | Bridge op `notify` and `badge(count)`; badge = Review items of the current project. Alerts follow DESIGN's snooze rules |
 | Tab switch fade (L-11) | 140 ms fade on tab switch | none | Later |
-| UI zoom, font size (L-33) | ⌘= ⌘- ⌘0; ⌥⇧> ⌥⇧< | none | Later |
+| UI zoom, font size (L-33) | ⌘= ⌘- ⌘0; ⌥⇧> ⌥⇧< | [x] ⌘= ⌘- step Warp's levels, ⌘0 100%: the page's zoom and the terminals' text; ⌥⇧> ⌥⇧< one point (5–25, from the config's font-size). Kept in layout.json (`zoom`) | — |
 | Sidebar width (S-8) | drag the edge, 180–600 pt | fixed | Drag the edge; width in layout |
-| Drawer, manager pane, archive (DR, AR) | drawer with ⌃⌘M; archived tabs | none | Departure: the bottom palette, Review and snooze replace them (DESIGN) |
+| Drawer, manager pane (DR) | drawer with ⌃⌘M | none | Departure: the bottom palette, Review and snooze replace them (DESIGN) |
+| Archive (AR-1..4, AR-6) | archived tabs under an Archived row | [x] ⌃⌘A archives the tab or brings it back (top of the unpinned); "Archived · N" row at the top opens in place; ⌘1–9, ⇧⌘[ ⇧⌘], ⌃Tab skip archived tabs; palette: Show archived tabs | Departure: no `--until` (DESIGN) |
+| Synchronized input (L-32) | ⌥⌘I this tab, all tabs, ⌥⇧⌘I stop; link mark | [x] as Umi (Warp's rules); native types each key and ⌘V paste into every synced terminal; link mark #4A93FF on the row | Panes of other tabs not shown since launch have no terminal yet and miss the input |
 | Command palette ⌘P, pane list ⇧⌘P (L-14, L-15) | palette from `umi help --json`; every pane, most recent first | bottom palette; picker lists sessions | Departure: bottom palette (Hyper) replaces both; ⌘P opens it too. Pane list = palette `s` |
 
 ## Track (d): `umi-next` CLI
@@ -180,7 +182,7 @@ set|get|until` attributes and queries, `list`/`slot`/`command`, `events`, `log`,
 - Settings / config file, slots, named lists, queries, key bindings and palette commands from the
   config (Q-1..Q-8).
 - Multiple windows, tab moves between windows (M-2, M-5, M-6).
-- Launch configurations (L-21), synchronized input (L-32), the terminal's right-click menu (L-31).
+- Launch configurations (L-21), the terminal's right-click menu (L-31).
 - Attributes, events and the activity log (D-1..D-8). The focus log is in (track d).
 - Warp's terminal look (S-9..S-12) beyond what Ghostty's zsh integration already gives.
 - Docs tab and default-app registration (E-10, `editor default`), web panes (E-12).

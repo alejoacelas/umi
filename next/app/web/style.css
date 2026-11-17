@@ -253,6 +253,22 @@ body.cmd-held .tab .key { display: block; }
 /* A zoomed pane's chip (⇧⌘↩) carries a small mark. */
 .chip.zoomed::after { content: '⤢'; font-style: normal; color: var(--dim); margin-left: 2px; }
 
+/* Tab marks: pinned, input synchronized (Warp's link mark, SPEC L-32). */
+.tab .mark { flex: none; display: inline-flex; align-items: center; }
+.tab .mark.pin { font-size: 9px; filter: grayscale(1); opacity: 0.7; }
+.tab .mark.sync { color: #4a93ff; }
+/* Dragging a tab row: where it will land. */
+body.dragging-tab .tab { cursor: grabbing; }
+.tab.drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.tab.drop-after { box-shadow: 0 2px 0 0 var(--accent); }
+
+/* The archive (SPEC AR-1): the row at the top, and its tabs in a group's box when open. */
+.archive-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 4px; color: var(--dim); font-size: 11px; }
+.archive-row:hover { background: rgba(255, 255, 255, 0.05); }
+.archive-row .chev { display: inline-block; transition: transform 0.1s; }
+.archive-row.open .chev { transform: rotate(90deg); }
+.archive-box { display: flex; flex-direction: column; gap: 3.5px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; }
+
 /* The shortcuts page (⌘/, SPEC L-17): Warp's keybindings panel at the window's right. */
 #shortcuts {
   width: 361px; flex: none; display: flex; flex-direction: column; padding-top: var(--titlebar);

@@ -86,7 +86,10 @@ Umi.views.panel = (() => {
     }
     const searching = p.mode === 'search';
     const q = (p.query || '').toLowerCase();
-    const matches = searching ? ALL.filter((c) => c.name.toLowerCase().includes(q)) : [];
+    // The search also finds every action of the shortcut table, with its keys.
+    const fromTable = Umi.shortcuts.table.filter((e) => e.action && e.label && !ALL.some((c) => c.name === e.label))
+      .map((e) => ({ key: e.display || Umi.shortcuts.format(e.keys), name: e.label, fn: () => (typeof e.action === 'function' ? e.action(e.arg || {}) : Umi.actions[e.action]?.(e.arg || {})), table: true }));
+    const matches = searching ? [...ALL, ...fromTable].filter((c) => c.name.toLowerCase().includes(q)) : [];
     el.innerHTML = `
       <div class="palette-cols"></div>
       <div class="palette-search"><span>/</span><input spellcheck="false" placeholder="search commands"></div>`;
