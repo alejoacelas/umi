@@ -335,8 +335,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         case (15, shiftCmd): reloadWeb(); return true                   // ⇧⌘R reloads the web layer
         case (12, cmd): NSApp.terminate(nil); return true               // ⌘Q
         default:
-            let digits: [UInt16: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9]
-            if mods == cmd, let n = digits[e.keyCode] { action = ["name": "selectTab", "index": n] }
+            // By character, so the keypad's digits count too.
+            if mods == cmd, let c = e.charactersIgnoringModifiers, let n = Int(c), (1...9).contains(n) {
+                action = ["name": "selectTab", "index": n]
+            }
         }
         guard var a = action else { return false }
         guard webReady else {

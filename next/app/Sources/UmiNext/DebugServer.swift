@@ -153,6 +153,9 @@ final class DebugServer {
         return [
             "window": r(c.window.frame), "content": r(c.window.contentView!.bounds),
             "windowNumber": c.window.windowNumber,
+            // The content's top-left in global top-left screen points (CGEvent coordinates).
+            "contentOriginGlobal": ["x": c.window.frame.minX,
+                                    "y": (NSScreen.screens.first?.frame.height ?? 0) - c.window.frame.maxY],
             "webReady": c.webReady, "webErrors": c.webErrors, "webDir": Paths.webDir,
             "viewportReported": ["w": c.lastViewport.width, "h": c.lastViewport.height],
             "panes": panes, "focusedPane": c.focusedPaneID() ?? NSNull(),
