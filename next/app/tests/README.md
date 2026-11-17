@@ -15,6 +15,9 @@
   - `services_test.py STATE_DIR SCRATCH`: every `web/fs.js` call, from the page through the bridge.
     It types nothing, so it can run without the screen lock if the app runs with
     `UMI_NEXT_OFFSCREEN=1` (window off screen, never active).
+  - `files_test.py STATE_DIR SCRATCH [BIG_REPO]`: the explorer, its right-click menu, quick open,
+    global search and Search tabs (track b), by keys through the debug socket; runs off screen.
+    BIG_REPO adds streaming, cancel, the 20,000-line cap and quick open's speed on a large repository.
   - `shortcuts_test.py STATE_DIR KEY HYPER`: today's shortcuts by real key events, keys outside
     the table reaching the terminal, and a table entry added live working without a rebuild.
 - `docket_test.sh` (mac-air-2, `lockf -k ~/umi-screen.lock zsh docket_test.sh`): snooze to docket end to
