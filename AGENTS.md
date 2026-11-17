@@ -1,5 +1,7 @@
 # Working on Umi
 
+Tags: mac-app, terminal, agents
+
 Umi is a macOS terminal for keeping track of many coding agents: a fork of Ghostty with Warp's
 sidebar, tabs and panes, an editor, and the `umi` CLI. Agents run in ordinary panes; their hook
 plugins report each pane's agent state to Umi, and scripts and skills steer them through the CLI.
