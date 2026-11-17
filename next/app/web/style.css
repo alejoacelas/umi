@@ -127,7 +127,23 @@ body.cmd-held .tab .key { display: block; }
 .tab .close:hover { background: rgba(255, 255, 255, 0.1); color: var(--ink); }
 
 /* The work area: panes above, the bottom panel (palette) below, taking height from the panes. */
-#work { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#work { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+
+/* The pane strip (SPEC H-5) in the title bar above the panes: a chip per pane of the tab, in layout
+   order, the focused one filled. Native lets clicks on chips through its drag strip (`chrome`). */
+#strip {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--titlebar);
+  display: flex; align-items: center; gap: 2px; padding: 0 8px; overflow: hidden; z-index: 1;
+}
+.chip {
+  display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; flex: none;
+  border-radius: 6px; color: rgba(255, 255, 255, 0.80); font: 500 12px -apple-system, sans-serif;
+  max-width: 220px;
+}
+.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip svg { flex: none; }
+.chip:hover { background: rgba(255, 255, 255, 0.06); }
+.chip.focused { background: rgba(255, 255, 255, 0.085); color: rgba(255, 255, 255, 0.95); }
 
 #panel {
   flex: none;

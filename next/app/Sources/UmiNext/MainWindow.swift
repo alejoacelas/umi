@@ -19,6 +19,8 @@ final class TerminalLayerView: NSView {
     /// Areas over terminals whose clicks go to the web layer (the dividers' grab areas), in this
     /// view's coordinates.
     var passThrough: [CGRect] = []
+    /// Web chrome in the title bar that takes clicks (the pane strip's chips), in this view's coordinates.
+    var chrome: [CGRect] = []
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         if passThrough.contains(where: { $0.contains(local) }) { return nil }
@@ -40,6 +42,14 @@ final class FocusTintView: NSView {
 
 /// A strip along the top that drags the window (the web view would take those clicks).
 final class DragStripView: NSView {
+    weak var terminalLayer: TerminalLayerView?
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let layer = terminalLayer {
+            let p = layer.convert(point, from: superview)
+            if layer.chrome.contains(where: { $0.contains(p) }) { return nil }
+        }
+        return super.hitTest(point)
+    }
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 { window?.performZoom(nil) } else { window?.performDrag(with: event) }
     }
@@ -125,6 +135,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         }
         let strip = DragStripView(frame: NSRect(x: 0, y: root.bounds.height - 28, width: root.bounds.width, height: 28))
         strip.autoresizingMask = [.width, .minYMargin]
+        strip.terminalLayer = terminalLayer
         root.addSubview(strip)
 
         banner.isHidden = true
@@ -380,6 +391,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             lastRects[id] = nil
         }
         terminalLayer.passThrough = ((msg["passThrough"] as? [[String: Double]]) ?? []).compactMap { r in
+            guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
+            return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
+        }
+        terminalLayer.chrome = ((msg["chrome"] as? [[String: Double]]) ?? []).compactMap { r in
             guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
             return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
         }
