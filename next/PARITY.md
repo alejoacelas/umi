@@ -132,12 +132,13 @@ How it works:
   `umi-next focus-log [--by session]` reads it with Umi's own grouping code, so the `day` skill can
   read Next's as it reads Umi's.
 
-What other tracks call or provide (the CLI uses each once it exists, and says what's missing
+What the CLI uses from the other tracks (it uses each once it exists, and says what's missing
 until then):
 
-- Track a: `Umi.actions.openFile({path, pane, mode})` (`edit`); file panes `{view: 'file', path,
-  mode}`; `Umi.editor.isDirty(paneId)` and `Umi.editor.discard(paneId)` (`editor ls|close`);
-  the editor's Done calls `Umi.cli.commentsDone(path)` (`comments wait`).
+- Track a (in): `Umi.actions.openFile({path, pane, mode, focus: false})` (`edit`); file panes
+  `{view: 'file', path, mode: 'rendered'|'raw'}`, shown as `preview`/`source`;
+  `Umi.views.file.isDirty`, `.get(pane).setMode` (`editor`); the margin's Done event
+  `umi:commentsDone` and `Umi.views.file.setWaiting` (`comments wait`).
 - Track b: `Umi.actions.sidebarMode({mode})` and `layout.sidebarMode` (`sidebar tabs|files|search`).
 - Track c: `Umi.actions.toggleZoom({pane})`, `Umi.actions.walkBack()` (⌃⌘K),
   `Umi.actions.showHidden({session, focus})` and `tab.hidden: [session]` (the strip), bridge op
@@ -158,9 +159,10 @@ until then):
 | `notify TITLE [BODY]` | waits for track c's `notify` op |
 | `go --next jump` | [x] next waiting; `go --back` waits for track c |
 | `shortcuts [ls]` | [x] prints `Umi.shortcuts.table`. Departure: `shortcuts set` → edit `web/shortcuts.js` |
-| `edit FILE…`, `open`, `editor ls\|close\|mode` | wired to track a's `openFile`; focus stays put; URLs refused until web panes |
+| `edit FILE… [--source\|--preview] [--pane\|--tab]`, `open` | [x] each file to the right of the one before; a file already open shows where it is; focus stays put. URLs refused until web panes |
+| `editor ls\|close [--force]\|mode` | [x] `close` refuses unsaved edits without `--force`, which drops them and their draft |
 | `comments [ls]\|add\|reply\|edit\|resolve\|reopen\|delete` | [x] on the file, without the app |
-| `comments wait FILE [--timeout]` | [x] answered by `Umi.cli.commentsDone(path)` (track a's Done button), survives a page reload; 124 on timeout |
+| `comments wait FILE [--timeout]` | [x] answered by the file margin's Done; survives a page reload; 124 on timeout |
 | `focus-log [--since] [--until] [--pane] [--by]` | [x] Next's own focus log |
 | `help [--json]` | [x] |
 
