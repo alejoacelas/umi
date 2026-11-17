@@ -24,12 +24,14 @@
   end with a real Claude session, a stub `~/.config/umi-next/docket-hook`, and task links served from
   `http://127.0.0.1:18765/umi/` (allowed only through `UMI_NEXT_DEBUG_TASK_ORIGIN` in debug mode). Its
   helpers (`docket_helpers.sh`, copied there as `d.sh`, plus `claude-tok`, `click`, `hyper`) live in mac-air-2's `~/umi-next-tools`.
-  - `cli_test.py APP [SCRATCH]`: every `umi-next` command against a running test copy (APP is its
-    `UmiNext.app`). Types nothing, so it runs with `UMI_NEXT_OFFSCREEN=1`; start the app with
-    `UMI_NEXT_FOCUS_ASSUME_ACTIVE=1` too for the focus-log checks.
+  - `cli_test.py APP [SCRATCH] [NOTIFY_LOG]`: every `umi-next` command against a running test copy
+    (APP is its `UmiNext.app`). Types nothing, so it runs with `UMI_NEXT_OFFSCREEN=1`; start the app
+    with `UMI_NEXT_FOCUS_ASSUME_ACTIVE=1` too for the focus-log checks, and with
+    `UMI_NEXT_TEST_NOTIFY_LOG=NOTIFY_LOG` so `notify` writes there instead of notifying.
   - `file_test.py STATE_DIR SCRATCH OPEN_LOG`: file panes (track a): Markdown preview, links,
     images, find, Rendered / Raw, comments, source editing, save, disk changes, drafts across a
-    reload, ⌘W's question, refusals. Debug-socket keys only, so it runs with `UMI_NEXT_OFFSCREEN=1`;
+    reload, ⌘W's question, refusals, JSON / CSV / TSV previews, git marks, chip icons, the pane menus. Debug-socket keys only, so it runs with `UMI_NEXT_OFFSCREEN=1`;
     start the app with `UMI_NEXT_TEST_OPEN_LOG=OPEN_LOG`.
   - `file_keys_test.py STATE_DIR KEY SCRATCH`: the file-pane keys the debug socket can't send as a
-    keyboard does (⌥⌘M, Escape in CodeMirror's panels), by real key events, under the screen lock.
+    keyboard does (⌥⌘M, Escape in CodeMirror's panels, the Edit menu's ⌘X ⌘Z ⇧⌘Z), by real key
+    events, under the screen lock.
