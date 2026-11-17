@@ -75,6 +75,10 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
+        // umi-next: never draw outside the slot, even with a frame rendered at the old size
+        // (a terminal whose program is idle redraws late; during a resize its old image would
+        // cover the chrome around it).
+        layer?.masksToBounds = true
         sendSize()
     }
 
