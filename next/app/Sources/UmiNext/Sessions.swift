@@ -154,8 +154,10 @@ final class SessionMonitor {
                        let c = (j["message"] as? [String: Any])?["content"] as? String { prompt = c }
                 } else if j["type"] as? String == "session_meta", let p = j["payload"] as? [String: Any] {
                     id = p["id"] as? String; cwd = p["cwd"] as? String
+                } else if prompt == nil, let p = j["payload"] as? [String: Any], p["type"] as? String == "user_message" {
+                    prompt = p["message"] as? String
                 }
-                if cwd != nil && id != nil && (kind == "codex" || (title != nil && prompt != nil)) { break }
+                if cwd != nil && id != nil && prompt != nil && (kind == "codex" || title != nil) { break }
             }
             guard let cwd, let id, !exclude.contains(id), self.project(of: cwd) == project else { continue }
             if kind == "codex" && prompt == nil { prompt = f.deletingPathExtension().lastPathComponent }

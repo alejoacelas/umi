@@ -143,6 +143,7 @@ Umi.model = (() => {
     const found = findPane(id);
     if (!found) return;
     const { tab } = found;
+    const folder = folderOf(id), project = projectOf(id);
     S.closed[id] = 'detach';
     const root = removeFromTree(tab.root, id);
     if (root) {
@@ -152,7 +153,8 @@ Umi.model = (() => {
     }
     const i = S.layout.tabs.indexOf(tab);
     S.layout.tabs.splice(i, 1);
-    if (S.layout.tabs.length === 0) S.layout.tabs.push(newTab(newPane({ view: 'picker', picker: { kind: 'claude', name: '', sel: 0, project: S.home } })));
+    // The window always shows something: the last pane gone, a picker in its project takes its place.
+    if (S.layout.tabs.length === 0) S.layout.tabs.push(newTab(newPane({ view: 'picker', cwd: folder, picker: { kind: 'claude', name: '', sel: 0, project } })));
     if (S.layout.activeTab === tab.id) S.layout.activeTab = S.layout.tabs[Math.min(i, S.layout.tabs.length - 1)].id;
   }
 
