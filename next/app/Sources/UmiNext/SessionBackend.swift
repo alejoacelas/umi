@@ -58,8 +58,7 @@ enum SessionBackend {
         if let existing, live?.contains(existing) == true {
             return Launch(sessionID: existing, command: shellQuote([attachPath, existing]), workingDirectory: cwd)
         }
-        var args = ["new"]
-        if let cwd { args += ["--cwd", cwd] }
+        var args = ["new", "--cwd", cwd ?? NSHomeDirectory()]
         if let name, !name.isEmpty { args += ["--name", name] }
         if let cmd { args += ["--cmd", cmd] }
         let r = run(ctlPath, args)

@@ -68,7 +68,7 @@ final class DebugServer {
         case "keys":
             // Types each character as a key press into the key window.
             for ch in (cmd["text"] as? String ?? "") { postKey(String(ch), mods: [], window: c.window) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { done(["ok": true]) }
+            done(["ok": true])
         case "shortcut":
             var mods: NSEvent.ModifierFlags = []
             for m in cmd["mods"] as? [String] ?? [] {
