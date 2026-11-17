@@ -10,3 +10,7 @@
     inside are mac-air-2's test worktree; adjust).
   - `hyper.swift` (`swiftc -O hyper.swift -o hyper; ./hyper tap|space|withkey`) and `click.swift`:
     real modifier, key and mouse events through the HID tap (needs Accessibility for the caller).
+- `docket_test.sh` (mac-air-2, `lockf -k ~/umi-screen.lock zsh docket_test.sh`): snooze to docket end to
+  end with a real Claude session, a stub `~/.config/umi-next/docket-hook`, and task links served from
+  `http://127.0.0.1:18765/umi/` (allowed only through `UMI_NEXT_DEBUG_TASK_ORIGIN` in debug mode). Its
+  helpers (`d.sh`, `claude-tok`, `click`, `hyper`) live in mac-air-2's `~/umi-next-tools`.
