@@ -27,9 +27,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = Self.makeMenu()
         runtime = GhosttyRuntime(configFiles: Paths.terminalConfigFiles)
         main = MainWindowController(runtime: runtime)
-        main.show()
         if Paths.debugEnabled { debug = DebugServer(controller: main) }
-        NSApp.activate(ignoringOtherApps: true)
+        if Paths.offscreen {
+            // Tests that only talk to the page (debug eval) while another test has the screen:
+            // the window opens off every screen, behind everything, and never takes the keys.
+            // No autosave first: the frame is shared with every UmiNext (one bundle id).
+            main.window.setFrameAutosaveName("")
+            main.window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+            main.window.orderBack(nil)
+        } else {
+            main.show()
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

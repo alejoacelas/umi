@@ -31,4 +31,6 @@ enum Paths {
     }
 
     static var debugEnabled: Bool { env["UMI_NEXT_DEBUG"] == "1" }
+    /// UMI_NEXT_OFFSCREEN=1 (with UMI_NEXT_DEBUG=1): the window stays off screen and inactive.
+    static var offscreen: Bool { debugEnabled && env["UMI_NEXT_OFFSCREEN"] == "1" }
 }
