@@ -63,9 +63,11 @@ enum SessionBackend {
         return Launch(sessionID: id, command: shellQuote([attach, id]), workingDirectory: cwd)
     }
 
-    /// A pane was closed by the user. The daemon's CLI has no documented way to end a session
-    /// yet, so the session is only detached (its attach process ends with the terminal).
-    static func paneClosed(sessionID: String) {}
+    /// A pane stopped showing a session: `how` is "detach" (the session keeps running: agents,
+    /// a pane switched to another session) or "close" (the user closed it: end the session).
+    /// The daemon's CLI has no documented way to end a session yet, so for now both only detach
+    /// (the attach process ends with the terminal). In shell mode the shell ends either way.
+    static func paneClosed(sessionID: String, how: String) {}
 
     private static func run(_ path: String, _ args: [String]) -> String? {
         let p = Process()

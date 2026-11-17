@@ -46,6 +46,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     private var liveSessions: Set<String>?
     /// Panes in the layout whose terminal starts when they first get a slot.
     private(set) var pending: [String: [String: Any]] = [:]
+    /// paneID → the last `attach` request acted on, so a request is acted on once.
+    private var attachHandled: [String: String] = [:]
 
     // State the debug hook reports.
     private(set) var webReady = false
@@ -195,11 +197,14 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             pendingReload?["helloAt"] = Self.now()
             send(stateMessage())
         case "layout":
-            if let l = msg["layout"] as? [String: Any] { applyLayout(l) }
+            if let l = msg["layout"] as? [String: Any] { applyLayout(l, closed: msg["closed"] as? [String: String] ?? [:]) }
         case "rects":
             applyRects(msg)
         case "focus":
             if let id = msg["pane"] as? String { focusPane(id) }
+        case "focusWeb":
+            // The web layer wants the keys (an open panel, a pane it draws itself).
+            window.makeFirstResponder(webView)
         case "error":
             let text = msg["message"] as? String ?? "error"
             webErrors.append(text)
@@ -234,23 +239,31 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// Creates a terminal for every pane the layout has and ends the terminals of panes it lost.
-    private func applyLayout(_ newLayout: [String: Any], save: Bool = true) {
+    /// Creates a terminal for every terminal pane the layout has and ends the terminals of panes
+    /// it lost. `closed` says how the user closed each removed pane ("close" or "detach").
+    /// A pane whose view isn't "terminal" (e.g. the picker the web layer draws) has no terminal.
+    /// A pane with `attach` set to another session shows that session instead (one pane per session).
+    private func applyLayout(_ newLayout: [String: Any], closed: [String: String] = [:], save: Bool = true) {
         var wanted: [String: [String: Any]] = [:]
-        Self.panes(in: newLayout).forEach { wanted[$0["id"] as! String] = $0 }
-
-        for (id, view) in surfaces where wanted[id] == nil {
-            view.close()
-            surfaces[id] = nil
-            if let s = paneInfo[id]?["session"] as? String { SessionBackend.paneClosed(sessionID: s) }
-            paneInfo[id] = nil
-            lastRects[id] = nil
+        Self.panes(in: newLayout).forEach { pane in
+            let view = pane["view"] as? String ?? "terminal"
+            if view == "terminal" { wanted[pane["id"] as! String] = pane }
         }
-        // New panes wait for their first slot, so their program starts at its real size.
-        for id in pending.keys where wanted[id] == nil {
-            pending[id] = nil
-            paneInfo[id] = nil
+
+        for (id, pane) in wanted {
+            guard let target = pane["attach"] as? String, attachHandled[id] != target else { continue }
+            attachHandled[id] = target
+            if target == paneInfo[id]?["session"] as? String { continue }
+            endTerminal(id, how: "detach")
+            var p = pane
+            p["session"] = target
+            wanted[id] = p
+        }
+        for id in Set(surfaces.keys).union(pending.keys) where wanted[id] == nil {
+            endTerminal(id, how: closed[id] ?? "detach")
         }
         for (id, pane) in wanted where surfaces[id] == nil && pending[id] == nil {
+            // New panes wait for their first slot, so their program starts at its real size.
             pending[id] = pane
             var info: [String: Any] = [:]
             if let s = pane["session"] { info["session"] = s }
@@ -259,6 +272,16 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         }
         layout = Self.withSessions(newLayout, paneInfo)
         if save { saveLayout() }
+    }
+
+    private func endTerminal(_ id: String, how: String) {
+        if let view = surfaces.removeValue(forKey: id) {
+            view.close()
+            if let s = paneInfo[id]?["session"] as? String { SessionBackend.paneClosed(sessionID: s, how: how) }
+        }
+        pending[id] = nil
+        paneInfo[id] = nil
+        lastRects[id] = nil
     }
 
     private func startTerminal(_ id: String, frame: CGRect) -> TerminalSurfaceView? {
