@@ -1,12 +1,13 @@
 // Quick open, ⌘O (SPEC L-16): a panel over the top of the panes, as Umi's palette filtered to
 // files (640 wide, 117 from the top). It searches the focused pane's project: what git tracks plus
 // untracked files it doesn't ignore (Umi.fs.files), fuzzy on the path with the file name counting
-// most (Umi.fs.fuzzy); files opened recently first. `path:line` (and `path:line:col`) opens the
+// most (Umi.fs.fuzzy); files opened recently first, then files changed against HEAD (Umi.fs.gitStatus),
+// as Umi's (a recent file's score gets 20 more, a changed one's 10). `path:line` (and `path:line:col`) opens the
 // file there. When nothing matches, "Create a file named NAME…" makes it (and its folders) in the
 // pane's folder; a NAME starting with `~/` or `/` names the place itself. ↑↓ (⌃P ⌃N) choose,
 // Enter opens, Esc or a click elsewhere closes.
 //
-// Departures: no "Browse…" entry (no Open panel); changed files don't rank above the rest.
+// Departure: no "Browse…" entry (no Open panel).
 'use strict';
 Umi.views = Umi.views || {};
 
@@ -28,11 +29,18 @@ Umi.views.quickOpen = (() => {
   function load(root) {
     if (index && index.root === root && index.loading) return;
     const keep = index && index.root === root ? index : null;
-    index = { root, files: keep?.files || null, set: keep?.set || null, loading: true };
+    index = { root, files: keep?.files || null, set: keep?.set || null, changed: keep?.changed || new Set(), loading: true };
     const mine = index;
-    Umi.fs.files(root).then((r) => {
+    // Changed files, relative to `root` (git lists them relative to the repository's top folder).
+    const status = Umi.fs.gitStatus(root).then((r) => {
+      if (!r.root) return new Set();
+      const pre = root.replace(/\/$/, '') + '/';
+      return new Set(r.changed.map((c) => r.root.replace(/\/$/, '') + '/' + c).filter((a) => a.startsWith(pre)).map((a) => a.slice(pre.length)));
+    }, () => new Set());
+    Promise.all([Umi.fs.files(root), status]).then(([r, changed]) => {
       mine.files = r.files;
       mine.set = new Set(r.files);
+      mine.changed = new Set([...changed].filter((c) => mine.set.has(c)));
     }, (e) => {
       mine.files = mine.files || [];
       mine.set = mine.set || new Set();
@@ -53,14 +61,16 @@ Umi.views.quickOpen = (() => {
     if (!index?.files || index.root !== p.root) return [];
     const { name } = parse(p.query || '');
     const rec = recent(p.root);
+    const changed = [...index.changed].filter((f) => !rec.includes(f)).sort();
     if (!name) {
-      const seen = new Set(rec);
-      return [...rec, ...index.files.filter((f) => !seen.has(f))].slice(0, LIMIT).map((path) => ({ path, hits: [] }));
+      const seen = new Set([...rec, ...changed]);
+      return [...rec, ...changed, ...index.files.filter((f) => !seen.has(f))].slice(0, LIMIT).map((path) => ({ path, hits: [] }));
     }
-    // Recent files get a lift (Umi adds min(rank, 200) / 10 to the score: 20 for a recent file).
+    // Recent and changed files get a lift (Umi adds min(rank, 200) / 10 to the score: 20 for a
+    // recent file, 10 for a changed one).
     const lift = new Set(rec);
     const found = Umi.fs.fuzzy(name, index.files, 1000);
-    for (const r of found) if (lift.has(r.path)) r.score += 20;
+    for (const r of found) r.score += lift.has(r.path) ? 20 : index.changed.has(r.path) ? 10 : 0;
     found.sort((a, b) => b.score - a.score);
     return found.slice(0, LIMIT);
   }
