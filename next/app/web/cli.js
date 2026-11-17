@@ -81,7 +81,7 @@ Umi.cli = (() => {
     const sid = M.sessionOf(node.id) || null, live = sid && S.live[sid];
     const out = {
       id: node.id, kind: node.view || 'terminal', session: sid, cwd: M.folderOf(node.id), project: M.projectOf(node.id),
-      focused: tab.focused === node.id, zoomed: !!node.zoomed, hidden: false,
+      focused: tab.focused === node.id, zoomed: tab.zoomed === node.id, hidden: false,
       indicator: (live && INDICATOR[M.standing(live)]) || 'none',
       title: S.panes[node.id]?.title || '',
     };
@@ -98,7 +98,7 @@ Umi.cli = (() => {
       id: tab.id, index: S.layout.tabs.indexOf(tab) + 1, title: tabTitle(tab), selected: tab.id === M.activeTab().id,
       focused_pane: tab.focused, panes: M.panesOf(tab.root).map((n) => paneJSON(n, tab, rects)),
       // The sessions ⌘W hid from this tab (the strip's chips; track c).
-      hidden: Array.isArray(tab.hidden) ? tab.hidden.slice() : [],
+      hidden: M.hiddenOf ? M.hiddenOf(tab) : [],
     };
     if (tab.name) out.name = tab.name;
     return out;
@@ -258,7 +258,12 @@ Umi.cli = (() => {
       return { panes: [r.pane], hid: [] };
     }
     if (Umi.actions.showHidden) {
-      Umi.app.run('showHidden', { session: r.session, focus: !!focus });
+      // The strip's own show (track c), which focuses what it shows; focus goes back unless --focus.
+      Umi.app.update(() => {
+        const tab = M.activeTab(), keep = tab.focused;
+        Umi.actions.showHidden({ session: r.session });
+        if (!focus && M.findPane(keep)) { S.layout.activeTab = M.findPane(keep).tab.id; M.findPane(keep).tab.focused = keep; }
+      }, { focus: true });
     } else {
       Umi.app.update(() => {
         const tab = M.activeTab(), keep = tab.focused;
@@ -340,8 +345,8 @@ Umi.cli = (() => {
 
   H.go = ({ next, back }) => {
     if (back) {
-      if (!Umi.actions.walkBack) fail('go --back isn\'t in Umi next yet (PARITY track c: ⌃⌘K)');
-      Umi.app.run('walkBack');
+      if (!Umi.actions.goBack) fail('go --back isn\'t in Umi next yet (PARITY track c: ⌃⌘K)');
+      Umi.app.run('goBack');
       return where(M.activeTab().focused);
     }
     if (!next) fail('go: use go --next jump or go --back');

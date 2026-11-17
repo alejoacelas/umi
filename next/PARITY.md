@@ -140,8 +140,8 @@ until then):
   `Umi.views.file.isDirty`, `.get(pane).setMode` (`editor`); the margin's Done event
   `umi:commentsDone` and `Umi.views.file.setWaiting` (`comments wait`).
 - Track b: `Umi.actions.sidebarMode({mode})` and `layout.sidebarMode` (`sidebar tabs|files|search`).
-- Track c: `Umi.actions.toggleZoom({pane})`, `Umi.actions.walkBack()` (⌃⌘K),
-  `Umi.actions.showHidden({session, focus})` and `tab.hidden: [session]` (the strip), bridge op
+- Track c: `Umi.actions.toggleZoom` and `tab.zoomed`, `Umi.actions.goBack` (⌃⌘K),
+  `Umi.actions.showHidden({session})` and `Umi.model.hiddenOf(tab)` (the strip), bridge op
   `notify {title, body}`.
 
 | Command (CLI.md) | Next |
