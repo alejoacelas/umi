@@ -21,6 +21,7 @@ fails = []
 
 def D(cmd):
     s = socket.socket(socket.AF_UNIX)
+    s.settimeout(30)  # a reply that never comes fails the run instead of hanging it
     s.connect(state + "/debug.sock")
     s.sendall(json.dumps(cmd).encode() + b"\n")
     b = b""
