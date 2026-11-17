@@ -178,5 +178,16 @@ open(repo + "/src/main.swift", "a").write("// after close\n")
 time.sleep(0.5)
 check("no events after close", json.loads(ev("JSON.stringify(window.__w.filter(c => c.path.endsWith('main.swift')))")) == [])
 
+# gitHead (the editor's gutter marks) and gitStatus (quick open's changed files).
+h = call(f"Umi.fs.gitHead('{repo}/src/main.swift')")
+check("gitHead gives the file as committed", h.get("text") == "let x = 1 // needle two\nlet café = \"needle\"\n", h)
+check("gitHead of an untracked file: null", call(f"Umi.fs.gitHead('{repo}/src/deep/QuickOpenTarget.js')").get("text") is None)
+check("gitHead outside a repository: null", call(f"Umi.fs.gitHead('{plain}/a.txt')").get("text") is None)
+sh("git", "mv", ".gitignore", "gitignore-moved")
+g = call(f"Umi.fs.gitStatus('{repo}/src')")
+check("gitStatus: the repository's top folder and its changed tracked files (renamed: the new name)",
+      g.get("root") == os.path.realpath(repo) and sorted(g.get("changed", [])) == ["README.md", "gitignore-moved", "src/main.swift"], g)
+check("gitStatus outside a repository: no root, nothing changed", call(f"Umi.fs.gitStatus('{plain}')") == {"root": None, "changed": []})
+
 print(f"\n{len(fails)} failed" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

@@ -27,6 +27,9 @@
 //       batches as they arrive (ranges are JS string indexes into text). `done` resolves with
 //       {count, files, truncated, cancelled, ms}. `pcre2: true` with `regex`: Perl-style (lookarounds).
 //   Umi.fs.gitRoot(path)                            → {root}            the repository's top folder (a worktree's own), or null
+//   Umi.fs.gitHead(path)                            → {path, text}      the file as of HEAD; text null when untracked
+//   Umi.fs.gitStatus(path)                          → {root, changed: ['rel/path', …]}  tracked files changed
+//       against HEAD (staged or not), relative to the repository's top folder; root null outside one
 //   Umi.fs.trash(path)                              → {path, trashed}   moved to the Trash
 //   Umi.fs.rename(path, to)                         → {path}            refused ('exists') if `to` is taken
 //   Umi.fs.reveal(path)                             shows it in Finder
@@ -132,6 +135,8 @@ Umi.fs = (() => {
   }
 
   const gitRoot = (path) => req('gitRoot', { path: resolve(path) });
+  const gitHead = (path) => req('gitHead', { path: resolve(path) });
+  const gitStatus = (path) => req('gitStatus', { path: resolve(path) });
   const trash = (path) => req('trash', { path: resolve(path) });
   const rename = (path, to) => req('rename', { path: resolve(path), to: resolve(to) });
   const reveal = (path) => req('reveal', { path: resolve(path) });
@@ -139,5 +144,5 @@ Umi.fs = (() => {
   const readData = (path) => req('readData', { path: resolve(path) });
   const openURL = (url) => req('openURL', { url });
 
-  return { root, resolve, read, write, list, watch, files, fuzzy, search, gitRoot, trash, rename, reveal, openDefault, readData, openURL };
+  return { root, resolve, read, write, list, watch, files, fuzzy, search, gitRoot, gitHead, gitStatus, trash, rename, reveal, openDefault, readData, openURL };
 })();

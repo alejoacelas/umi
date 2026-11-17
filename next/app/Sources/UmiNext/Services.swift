@@ -43,6 +43,8 @@ final class WebServices {
         case "watch": startWatch(id, args)
         case "search": startSearch(id, args)
         case "gitRoot": async(id) { let r: Any = try Self.gitRoot(Self.path(args)) ?? NSNull(); return ["root": r] }
+        case "gitHead": async(id) { try Self.gitHead(args) }
+        case "gitStatus": async(id) { try Self.gitStatus(args) }
         case "trash": async(id) { try Self.trash(args) }
         case "rename": async(id) { try Self.renameItem(args) }
         case "reveal": reply(id, Result { try Self.reveal(args) })
@@ -191,6 +193,34 @@ final class WebServices {
         guard r.status == 0, let s = String(data: r.out, encoding: .utf8) else { return nil }
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? nil : t
+    }
+
+    /// The file as of the last commit (the editor's gutter marks): `{text}`, or `{text: null}` when
+    /// git doesn't track it (or it isn't in a repository), as Umi's `UmiGitDiff.headText`.
+    static func gitHead(_ args: [String: Any]) throws -> Any {
+        let p = try path(args)
+        let url = URL(fileURLWithPath: p)
+        let r = run("/usr/bin/git", ["-C", url.deletingLastPathComponent().path, "show", "HEAD:./\(url.lastPathComponent)"])
+        guard r.status == 0 else { return ["path": p, "text": NSNull()] }
+        return ["path": p, "text": String(data: r.out, encoding: .utf8) ?? String(decoding: r.out, as: UTF8.self)]
+    }
+
+    /// The tracked files with changes against HEAD (staged or not), relative to the repository's
+    /// top folder, as Umi's quick open reads them (`git status --porcelain -z --untracked-files=no`).
+    /// `{root: null, changed: []}` outside a repository.
+    static func gitStatus(_ args: [String: Any]) throws -> Any {
+        let p = try path(args)
+        guard let top = gitRoot(p) else { return ["root": NSNull(), "changed": [String]()] }
+        let r = run("/usr/bin/git", ["-C", top, "status", "--porcelain", "-z", "--untracked-files=no"])
+        var changed: [String] = []
+        var entries = r.outString.split(separator: "\0").map(String.init)[...]
+        while let e = entries.popFirst() {
+            guard e.count > 3 else { continue }
+            changed.append(String(e.dropFirst(3)))
+            // A rename or copy is followed by its old path, which is no file any more.
+            if e.first == "R" || e.first == "C" { _ = entries.popFirst() }
+        }
+        return ["root": top, "changed": changed]
     }
 
     /// The names in `dir` git ignores (empty outside a repository).
