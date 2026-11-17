@@ -27,9 +27,10 @@ A session (an agent or a shell) exists in the daemon whether or not a pane shows
 session; a session shows in at most one pane, because two views of one terminal would fight over its
 size. Opening a session already on screen moves it.
 
-- **Closing a pane** (⌘W) on an agent session detaches it: the session keeps running and stays under
-  its project in the picker and in Review. Ending an agent is an explicit Exit in the palette. A
-  shell with no running program closes; one with a running program asks.
+- **⌘W stops showing the pane**, for every session, agents and shells alike: the session keeps
+  running and stays under its project in the picker (Alejo, 2026-11-17: "cmd + w maps to stop
+  showing the pane instead of to 'kill the process'"). Ending a session is only ever an explicit Exit
+  in the palette. A session whose program ends by itself (`exit` in a shell) leaves its pane.
 - **Project**: the main folder of the git repository a session runs in, so worktrees count as their
   repository. Outside a repository, the session's folder.
 
