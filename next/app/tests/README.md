@@ -19,4 +19,4 @@
 - `docket_test.sh` (mac-air-2, `lockf -k ~/umi-screen.lock zsh docket_test.sh`): snooze to docket end to
   end with a real Claude session, a stub `~/.config/umi-next/docket-hook`, and task links served from
   `http://127.0.0.1:18765/umi/` (allowed only through `UMI_NEXT_DEBUG_TASK_ORIGIN` in debug mode). Its
-  helpers (`d.sh`, `claude-tok`, `click`, `hyper`) live in mac-air-2's `~/umi-next-tools`.
+  helpers (`docket_helpers.sh`, copied there as `d.sh`, plus `claude-tok`, `click`, `hyper`) live in mac-air-2's `~/umi-next-tools`.

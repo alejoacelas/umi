@@ -2,9 +2,9 @@
 # Snooze-to-docket and task-link test; run under: lockf -k ~/umi-screen.lock zsh docktest.sh
 exec > /tmp/dock-test.log 2>&1
 set -x
-source ~/umi-next-tools/d.sh
+source ~/umi-next-tools/d.sh  # this folder's docket_helpers.sh
 ALLOW(){ for i in 1 2 3; do f=$(FRONT); [ "$f" = "UmiNext" ] || [ "$f" = "UserNotificationCenter" ] || [ "$f" = "universalAccessAuthWarn" ] || { echo "ALLOW skipped: frontmost $f"; continue; }; ~/umi-next-tools/click 778 367; sleep 1; done; }
-H(){ osascript -e 'tell application id "dev.umi.next" to activate' >/dev/null 2>&1; sleep 0.15; [ "$(FRONT)" = "UmiNext" ] || { echo "ABORT: hyper with $(FRONT) frontmost" >&2; pkill -f "umi-next-ui/next/app/build/UmiNext.app/Contents/MacOS/UmiNext$"; exit 9; }; ~/umi-next-tools/hyper $1; }
+H(){ osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $(MYPID)) to true" >/dev/null 2>&1; sleep 0.15; [ "$(FRONT)" = "UmiNext" ] || { echo "ABORT: hyper with $(FRONT) frontmost" >&2; pkill -f "umi-next-ui/next/app/build/UmiNext.app/Contents/MacOS/UmiNext$"; exit 9; }; ~/umi-next-tools/hyper $1; }
 J(){ D eval "$1" | python3 -c "import json,sys;print(json.load(sys.stdin).get('result'))"; }
 cd ~/umi-next-ui && git checkout -q -- . && git fetch -q origin next-ui && git checkout -q --detach origin/next-ui && (cd next/app && ./build.sh --adhoc 2>&1 | grep -E "error|\.app$"); cd ~
 pkill -f "umi-next-ui/next/app/build/UmiNext.app/Contents/MacOS/UmiNext$"; C daemon-stop --force; rm -f $UMI_NEXT_STATE_DIR/layout.json $UMI_NEXT_STATE_DIR/docket.json $UMI_NEXT_STATE_DIR/docket.log; rm -rf $UMI_NEXT_STATE_DIR/agents
@@ -47,4 +47,4 @@ open "umi-next://open?task=http%3A%2F%2F127.0.0.1%3A18765%2Fumi%2Ftask1.json"; f
 J "JSON.stringify({tab: Umi.model.activeTab().name, session: Umi.model.sessionOf(Umi.model.activeTab().focused), cwd: Umi.model.folderOf(Umi.model.activeTab().focused)})"
 NS=$(J "Umi.model.sessionOf(Umi.model.activeTab().focused)"); C ls | python3 -c "import json,sys;[print('  new session:',s['id'],s['command'],s['cwd']) for s in json.load(sys.stdin) if s['id']=='$NS']"
 D screen | grep -v '^ *$' | head -12; screencapture -x /tmp/dock6.png
-echo DONE
+echo DONE-DOCKET
