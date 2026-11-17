@@ -66,6 +66,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     let sessions = SessionMonitor()
     private var hyperMonitor: Any?
     private var hyperDown = false, hyperSpoiled = false
+    private(set) lazy var services = WebServices { [weak self] in self?.send($0) }
 
     /// paneID → terminal. Terminals live here whatever the web layer does.
     private(set) var surfaces: [String: TerminalSurfaceView] = [:]
@@ -232,6 +233,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             helloWatchdog?.cancel()
             banner.isHidden = true
             webErrors = []
+            services.reset()
             pendingReload?["helloAt"] = Self.now()
             send(stateMessage())
             send(["type": "sessions", "list": sessions.last])
@@ -239,6 +241,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             if let l = msg["layout"] as? [String: Any] { applyLayout(l, closed: msg["closed"] as? [String: String] ?? [:]) }
         case "rects":
             applyRects(msg)
+        case "request":
+            services.handle(msg)
         case "focus":
             if let id = msg["pane"] as? String { focusPane(id) }
         case "focusWeb":
