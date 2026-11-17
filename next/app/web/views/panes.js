@@ -10,6 +10,7 @@ Umi.views.panes = (() => {
   // view name -> (slot element, pane node) => void. A view without a renderer shows its name.
   const renderers = {
     terminal() {},
+    picker: (el, node) => Umi.views.picker.render(el, node),
   };
 
   function renderNode(node) {
@@ -88,5 +89,13 @@ Umi.views.panes = (() => {
     return out;
   }
 
-  return { render, renderers, slotRects, terminalRects };
+  // Redraws the pickers' lists in place (new session data) without touching their name fields.
+  function refreshPickers() {
+    document.querySelectorAll('#panes .slot[data-view="picker"]').forEach((el) => {
+      const found = M.findPane(el.dataset.pane);
+      if (found) Umi.views.picker.refresh(el, found.node);
+    });
+  }
+
+  return { render, renderers, slotRects, terminalRects, refreshPickers };
 })();
