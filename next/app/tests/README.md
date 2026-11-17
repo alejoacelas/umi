@@ -20,3 +20,6 @@
   end with a real Claude session, a stub `~/.config/umi-next/docket-hook`, and task links served from
   `http://127.0.0.1:18765/umi/` (allowed only through `UMI_NEXT_DEBUG_TASK_ORIGIN` in debug mode). Its
   helpers (`docket_helpers.sh`, copied there as `d.sh`, plus `claude-tok`, `click`, `hyper`) live in mac-air-2's `~/umi-next-tools`.
+  - `cli_test.py APP [SCRATCH]`: every `umi-next` command against a running test copy (APP is its
+    `UmiNext.app`). Types nothing, so it runs with `UMI_NEXT_OFFSCREEN=1`; start the app with
+    `UMI_NEXT_FOCUS_ASSUME_ACTIVE=1` too for the focus-log checks.
