@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Talks to a running UmiNext started with UMI_NEXT_DEBUG=1 (socket: <state dir>/debug.sock).
+
+  umi-next-ui-debug state
+  umi-next-ui-debug keys 'echo hi\r'          # typed as key presses into the key window
+  umi-next-ui-debug shortcut t cmd            # ⌘T (mods: cmd shift opt ctrl)
+  umi-next-ui-debug screen [PANE]             # the pane's visible text
+  umi-next-ui-debug click X Y                 # window points from the content's top-left
+  umi-next-ui-debug eval 'document.title'
+  umi-next-ui-debug resize W H
+  umi-next-ui-debug liveResize FROM TO [STEPS] [INTERVAL_MS]
+  umi-next-ui-debug '{"cmd": "...", ...}'     # raw
+"""
+import json, os, socket, sys
+
+state_dir = os.environ.get("UMI_NEXT_STATE_DIR") or os.path.expanduser("~/Library/Application Support/Umi-next")
+a = sys.argv[1:]
+if not a:
+    print(__doc__); sys.exit(1)
+if a[0].startswith("{"):
+    cmd = json.loads(a[0])
+elif a[0] == "keys":
+    cmd = {"cmd": "keys", "text": a[1].encode().decode("unicode_escape")}
+elif a[0] == "shortcut":
+    cmd = {"cmd": "shortcut", "key": a[1], "mods": a[2:]}
+elif a[0] == "screen":
+    cmd = {"cmd": "screen", **({"pane": a[1]} if len(a) > 1 else {})}
+elif a[0] == "click":
+    cmd = {"cmd": "click", "x": float(a[1]), "y": float(a[2])}
+elif a[0] == "eval":
+    cmd = {"cmd": "eval", "js": a[1]}
+elif a[0] == "resize":
+    cmd = {"cmd": "resize", "w": float(a[1]), "h": float(a[2])}
+elif a[0] == "liveResize":
+    cmd = {"cmd": "liveResize", "from": float(a[1]), "to": float(a[2]),
+           "steps": int(a[3]) if len(a) > 3 else 30, "interval": float(a[4]) if len(a) > 4 else 16}
+else:
+    cmd = {"cmd": a[0]}
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect(os.path.join(state_dir, "debug.sock"))
+s.sendall(json.dumps(cmd).encode() + b"\n")
+buf = b""
+while True:
+    d = s.recv(65536)
+    if not d: break
+    buf += d
+r = json.loads(buf)
+if cmd["cmd"] == "screen" and "text" in r:
+    print(r["text"])
+else:
+    print(json.dumps(r, indent=1, sort_keys=True))
