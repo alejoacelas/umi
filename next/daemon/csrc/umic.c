@@ -422,15 +422,52 @@ char *umi_vt_styles(GhosttyTerminal t, size_t *out_len) {
             memset(&st, 0, sizeof st);
             st.size = sizeof st;
             if (x) buf_append(&b, (const uint8_t *)" ", 1);
+            GhosttyCell cell = 0;
             if (ghostty_terminal_grid_ref(t, pt, &ref) != GHOSTTY_SUCCESS ||
-                ghostty_grid_ref_style(&ref, &st) != GHOSTTY_SUCCESS ||
-                ghostty_style_is_default(&st)) {
+                ghostty_grid_ref_cell(&ref, &cell) != GHOSTTY_SUCCESS ||
+                ghostty_grid_ref_style(&ref, &st) != GHOSTTY_SUCCESS) {
+                buf_append(&b, (const uint8_t *)"?", 1);
+                continue;
+            }
+            bool has_text = false;
+            ghostty_cell_get(cell, GHOSTTY_CELL_DATA_HAS_TEXT, &has_text);
+            uint32_t cp = 0;
+            ghostty_cell_get(cell, GHOSTTY_CELL_DATA_CODEPOINT, &cp);
+            if (cp == ' ') has_text = false;  // a space looks like an empty cell
+            GhosttyCellContentTag tag = GHOSTTY_CELL_CONTENT_CODEPOINT;
+            ghostty_cell_get(cell, GHOSTTY_CELL_DATA_CONTENT_TAG, &tag);
+            // What is visible: a blank cell shows only its background (an
+            // erase with a background colour stores it in the cell itself)
+            // plus inverse/underline/strikethrough.
+            GhosttyStyleColor bg = st.bg_color;
+            if (tag == GHOSTTY_CELL_CONTENT_BG_COLOR_PALETTE) {
+                bg.tag = GHOSTTY_STYLE_COLOR_PALETTE;
+                ghostty_cell_get(cell, GHOSTTY_CELL_DATA_COLOR_PALETTE, &bg.value.palette);
+            } else if (tag == GHOSTTY_CELL_CONTENT_BG_COLOR_RGB) {
+                bg.tag = GHOSTTY_STYLE_COLOR_RGB;
+                ghostty_cell_get(cell, GHOSTTY_CELL_DATA_COLOR_RGB, &bg.value.rgb);
+            }
+            if (!has_text) {
+                if (bg.tag == GHOSTTY_STYLE_COLOR_NONE && !st.inverse &&
+                    !st.underline && !st.strikethrough) {
+                    buf_append(&b, (const uint8_t *)".", 1);
+                    continue;
+                }
+                buf_append(&b, (const uint8_t *)"_/", 2);
+                color_str(&b, &bg);
+                char f[16];
+                int n = snprintf(f, sizeof f, "/%s%s%d", st.inverse ? "r" : "",
+                                 st.strikethrough ? "s" : "", st.underline);
+                buf_append(&b, (const uint8_t *)f, (size_t)n);
+                continue;
+            }
+            if (ghostty_style_is_default(&st)) {
                 buf_append(&b, (const uint8_t *)".", 1);
                 continue;
             }
             color_str(&b, &st.fg_color);
             buf_append(&b, (const uint8_t *)"/", 1);
-            color_str(&b, &st.bg_color);
+            color_str(&b, &bg);
             char f[16];
             int n = snprintf(f, sizeof f, "/%s%s%s%s%s%d", st.bold ? "b" : "",
                              st.italic ? "i" : "", st.faint ? "f" : "",

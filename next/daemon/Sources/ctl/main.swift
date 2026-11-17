@@ -131,11 +131,21 @@ case "daemon-stop":
     close(fd)
     for _ in 0..<100 { if connectDaemon() < 0 { break }; usleep(20_000) }
 case "render":
-    let json = flag("--json")
+    let json = flag("--json"), replay = flag("--replay")
     guard let c = parseSize(option("--cols")), let r = parseSize(option("--rows")) else { die("render --cols N --rows N") }
     let t = umi_vt_new(UInt16(c), UInt16(r))!
     let input = FileHandle.standardInput.readDataToEndOfFile()
     input.withUnsafeBytes { ghostty_terminal_vt_write(t, $0.bindMemory(to: UInt8.self).baseAddress, $0.count) }
+    if replay {
+        // Debug: reproduce this terminal through the attach replay and show both.
+        var n = 0
+        let p = umi_vt_replay(t, &n)
+        let t2 = umi_vt_new(UInt16(c), UInt16(r))!
+        ghostty_terminal_vt_write(t2, p, n)
+        free(p)
+        printJSON(["original": vtState(t), "replayed": vtState(t2)])
+        exit(0)
+    }
     let st = vtState(t)
     if json { printJSON(st) } else { FileHandle.standardOutput.write((st["text"] as! String).data(using: .utf8)!) }
 case "-h", "--help", "help":
