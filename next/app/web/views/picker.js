@@ -20,7 +20,7 @@ Umi.views.picker = (() => {
 
   function items(node) {
     const pk = node.picker;
-    const live = Object.values(S.live).filter((s) => s.alive && s.project === pk.project);
+    const live = Object.values(S.live).filter((s) => s.alive && M.userStarted(s) && s.project === pk.project);
     const recent = (a, b) => (b.agent?.ts || b.created || 0) - (a.agent?.ts || a.created || 0);
     const by = (st) => live.filter((s) => M.standing(s) === st).sort(recent);
     const past = S.past.project === pk.project ? S.past.list : [];

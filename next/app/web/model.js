@@ -105,6 +105,9 @@ Umi.model = (() => {
     const used = new Set(Object.keys(S.live).map(sessionName));
     for (let n = 1; ; n++) if (!used.has(`${b} ${n}`)) return `${b} ${n}`;
   }
+  // Sessions the user started (picker, new tab, resume, restart); a session with no record (an
+  // older daemon) counts as his. Session lists leave out those agents and scripts start.
+  const userStarted = (s) => !s.by || s.by === 'user';
   const isSnoozed = (sid) => { const z = S.layout.meta?.sessions?.[sid]?.snooze; return z && !z.done; };
 
   // What waits for Alejo, grouped by project, the current project first (DESIGN "Review"):
@@ -113,7 +116,7 @@ Umi.model = (() => {
     const cur = currentProject();
     const groups = {};
     for (const s of Object.values(S.live)) {
-      if (!s.alive || isSnoozed(s.id)) continue;
+      if (!s.alive || !userStarted(s) || isSnoozed(s.id)) continue;
       const z = S.layout.meta?.sessions?.[s.id]?.snooze;
       // A finished snooze shows even if it says done: snoozing asked to be told.
       if (standing(s) !== 'needs' && !(z && z.done)) continue;
@@ -297,7 +300,7 @@ Umi.model = (() => {
 
   return {
     newPane, panesOf, paneIds, findPane, activeTab, focusedPane, sessionOf, paneOfSession,
-    folderOf, projectOf, currentProject, standing, sessionName, defaultName, isSnoozed, review,
+    folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, review,
     addTab, split, removePane, openSession, showSession, startSession, focusPane,
     selectTab, stepTab, focusDir, moveToNewTab, snooze, rename, openPanel, closePanel,
     load, paneInfo, sessions,

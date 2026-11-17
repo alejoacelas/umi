@@ -31,6 +31,11 @@ size. Opening a session already on screen moves it.
   running and stays under its project in the picker (Alejo, 2026-11-17: "cmd + w maps to stop
   showing the pane instead of to 'kill the process'"). Ending a session is only ever an explicit Exit
   in the palette. A session whose program ends by itself (`exit` in a shell) leaves its pane.
+- **Sessions the user started** are the ones the session lists show (the picker, Review, "next
+  waiting"): those started from the picker, a new tab, a resume or a restart. Sessions agents or
+  scripts start with `umi-next-ctl new` run as usual but stay out of those lists (Alejo,
+  2026-11-17). The daemon records who started each session (`by`); one without a record counts as
+  the user's.
 - **Project**: the main folder of the git repository a session runs in, so worktrees count as their
   repository. Outside a repository, the session's folder.
 

@@ -62,6 +62,9 @@ func setNonBlocking(_ fd: Int32) {
 final class Session {
     let id: String
     var name: String
+    /// Who started the session: "user" (the UI, for something Alejo did) or another starter
+    /// ("cli": `umi-next-ctl new` from an agent or script). nil: not recorded (an older client).
+    let by: String?
     let cwd: String
     let command: String?
     let pid: pid_t
@@ -74,9 +77,9 @@ final class Session {
     var exitSignal: Int32? = nil
     let created = Date()
 
-    init(id: String, name: String, cwd: String, command: String?, pid: pid_t, master: Int32,
+    init(id: String, name: String, by: String?, cwd: String, command: String?, pid: pid_t, master: Int32,
          cols: UInt16, rows: UInt16) {
-        self.id = id; self.name = name; self.cwd = cwd; self.command = command
+        self.id = id; self.name = name; self.by = by; self.cwd = cwd; self.command = command
         self.pid = pid; self.master = master; self.cols = cols; self.rows = rows
         self.term = umi_vt_new(cols, rows)
     }
@@ -116,6 +119,7 @@ final class Session {
             "created": created.timeIntervalSince1970,
         ]
         d["command"] = command ?? NSNull()
+        d["by"] = by ?? NSNull()
         d["exit_status"] = exitCode.map { Int($0) } ?? NSNull()
         d["exit_signal"] = exitSignal.map { Int($0) } ?? NSNull()
         var fg: Any = NSNull()
@@ -226,7 +230,7 @@ func createSession(_ req: [String: Any]) throws -> Session {
     var master: Int32 = -1
     let pid = umi_spawn_pty(shell, &cargv, &cenv, cwd, max(cols, 1), max(rows, 1), &master)
     guard pid > 0 else { throw NSError(domain: "umi", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "forkpty failed: \(String(cString: strerror(errno)))"]) }
-    let s = Session(id: id, name: (req["name"] as? String) ?? "", cwd: cwd, command: cmd, pid: pid,
+    let s = Session(id: id, name: (req["name"] as? String) ?? "", by: req["by"] as? String, cwd: cwd, command: cmd, pid: pid,
                     master: master, cols: max(cols, 1), rows: max(rows, 1))
     umi_vt_set_write_pty(s.term, Unmanaged.passUnretained(s).toOpaque(), writePtyCallback)
     sessions.append(s)
