@@ -1,0 +1,5 @@
+module UmiC {
+    header "umic.h"
+    link "ghostty-vt"
+    export *
+}
