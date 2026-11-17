@@ -336,6 +336,7 @@ Umi.views.explorer = (() => {
       add('Open in New Tab', () => Umi.app.update(() => { const t = M.addTab(M.newPane({ cwd: n.path })); S.ui.editingTab = t.id; }));
     } else {
       add('Open in New Pane', () => V().openPath(n.path));
+      add('Open in New Tab', () => Umi.app.update(() => M.addTab(M.newPane({ view: 'file', path: n.path, cwd: dirname(n.path) }))));
       add('Open with Default App', () => Umi.fs.openDefault(n.path));
     }
     add('Reveal in Finder', () => Umi.fs.reveal(n.path));
@@ -380,7 +381,7 @@ Umi.views.explorer = (() => {
 
   // ---- on screen ----
   function build() {
-    box = document.querySelector('#files');
+    box = document.querySelector('#explorer');
     box.innerHTML = '<div class="ft-list" tabindex="0" aria-label="Project Explorer"></div>';
     listEl = box.querySelector('.ft-list');
     list = Umi.views.vlist(listEl, { rowHeight: ROW, row: rowEl });
@@ -411,7 +412,8 @@ Umi.views.explorer = (() => {
     startWatch();
     const pane = M.focusedPane();
     const file = pane && pane.view === 'file' && pane.path ? Umi.fs.resolve(pane.path) : null;
-    if (file && file !== T.revealed) { T.revealed = file; reveal(file); }
+    // Each time a file pane takes the focus (again), the tree shows its file.
+    if (file !== T.revealed) { T.revealed = file; if (file) reveal(file); }
     if ((S.layout.hideDotfiles ? 1 : 0) !== T.hideShown) { T.hideShown = S.layout.hideDotfiles ? 1 : 0; dirty = true; }
     // Only when something changed: the sidebar draws every second (sessions), and redrawing rows
     // under the pointer would lose a click.

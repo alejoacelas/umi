@@ -87,7 +87,7 @@ Umi.views.modes = (() => {
     const m = mode();
     document.body.dataset.sidebarMode = m;
     document.querySelectorAll('#sidebar-head button.mode').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
-    document.querySelector('#files').hidden = m !== 'files';
+    document.querySelector('#explorer').hidden = m !== 'files';
     document.querySelector('#search').hidden = m !== 'search';
     if (shown() && m === 'files') Umi.views.explorer.render(); else Umi.views.explorer.hide();
     if (shown() && m === 'search') Umi.views.search.render();
@@ -165,9 +165,6 @@ Umi.views.modes = (() => {
   wireHeader();
   return { mode, shown, hasKeys, focus, focusPane, render, matchesTab, root, rootOf, openPath, recentFiles, terminalPane, promptPane, shellQuote, sendText, flash };
 })();
-
-// Until track (a)'s file pane lands, a file opens with its default app (PARITY.md track b).
-if (!Umi.actions.openFile) Umi.actions.openFile = ({ path }) => { Umi.fs.openDefault(path); };
 
 Object.assign(Umi.actions, {
   // ⇧⌘E / ⌃1: Files with the keys in the tree; pressed again (Files shown), back to Tabs and the pane.

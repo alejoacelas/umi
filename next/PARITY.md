@@ -58,18 +58,21 @@ Checks: `tests/comments.test.js` (node), `tests/file_test.py` (debug socket, off
 
 ## Track (b): file explorer, quick open, global search
 
-Uses `Umi.fs` (root, list, watch, files + fuzzy, search), `Umi.shortcuts.table`; opens files
-through track (a)'s `Umi.actions.openFile({path, line?, col?})`. Until (a) lands, a stub opens the
-file in the default app.
+Uses `Umi.fs` (list, watch, files + fuzzy, search, gitRoot), `Umi.shortcuts.table`; opens files
+through track (a)'s `Umi.actions.openFile({path, line?, col?})`. Code: `web/views/modes.js`
+(modes, header, shared helpers), `explorer.js`, `search.js`, `quickopen.js`, `vlist.js` (rows drawn
+only in view), `web/icons.js` + `web/icons/` (Umi's Material file icons). Check:
+`tests/files_test.py`.
 
 | Area | Umi | Next now | Planned Next |
 |---|---|---|---|
-| Sidebar modes (S-2) | Tabs, Files, Search; ⌘B / ⌘\ toggle | Review + tabs; ⌘B toggles | Same three modes; Review stays above the tabs in Tabs mode |
-| Explorer tree (S-2 Files) | git root of the focused pane's folder; follows disk changes; folders first, dotfiles first; ignored entries italic; `.git`, `.DS_Store` never shown; follows the focused file | none | `Umi.fs.list` per expanded folder, `Umi.fs.watch` on expanded folders. Root = `Umi.fs.root()`, which follows the focused pane |
-| Explorer keys | ⇧⌘E / ⌃1 show it with focus (again: back); ↑↓ ← → Enter Esc; ⇧⌘> dotfiles | none | Same |
-| Explorer menu | New File, Rename, Delete (to Trash), cd to Directory, Open in New Pane/Tab, Reveal in Finder, Copy Path, Copy Relative Path, Insert Path in Terminal | none | Same items. Needs bridge ops: `fs.trash`, `fs.rename`, `reveal`, `openDefault`, `clipboard`; Insert Path / cd send text to the focused session (daemon `send`) |
-| Quick open ⌘O (L-16) | fuzzy over tracked + untracked-not-ignored files, recent first; `path:line`; "Create a file named…" | none | Panel at the top of the panes over `Umi.fs.files` + `Umi.fs.fuzzy`; recent files kept in layout meta; `path:line`; create via `Umi.fs.write(path, '', {version: null})`. Departure: no Browse… / Open panel |
-| Global search ⇧⌘F / ⌃3 (S-2 Search) | grouped by file, 300 ms debounce, regex/case toggles, 20,000-line cap, ↓ into results, ←/→ fold, Enter opens at line:col | none | `Umi.fs.search` streamed (rg); same keys and toggles. Departure: rg instead of `git grep` (streams, faster); bad-regex message is rg's |
+| Sidebar modes (S-2) | Tabs, Files, Search; ⌘B / ⌘\ toggle | [x] done: header buttons as Umi's; Review stays above the tabs in Tabs mode; `S.layout.sidebarMode` | — |
+| Search tabs (S-2 header) | "Search tabs..." field, ⌥⌘F | [x] done: matches the tab's name, folder, title, foreground program, session name; Esc clears, Enter shows the first | Branch and agent title once tabs show them |
+| Explorer tree (S-2 Files) | git root of the focused pane's folder; follows disk changes; folders first, dotfiles first; ignored entries italic; `.git`, `.DS_Store` never shown; follows the focused file | [x] done. Root = git top folder of the focused pane's folder (`Umi.fs.gitRoot`: a worktree's own, not `Umi.fs.root()`'s main checkout). One recursive `Umi.fs.watch` on the root while Files shows; a change re-lists the open folders it touches | — |
+| Explorer keys | ⇧⌘E / ⌃1 show it with focus (again: back); ↑↓ ← → Enter Esc; ⇧⌘> dotfiles | [x] done | — |
+| Explorer menu | New File, Rename, Delete (to Trash), cd to Directory, Open in New Pane/Tab, Reveal in Finder, Copy Path, Copy Relative Path, Insert Path in Terminal | [x] done: Umi's items and order in a native menu (bridge `menu`); ops `trash`, `rename`, `reveal`, `openDefault`, `clipboard`, `sendText` (daemon `send`) | — |
+| Quick open ⌘O (L-16) | fuzzy over tracked + untracked-not-ignored files, recent first, then changed; `path:line`; "Create a file named…" | [x] done: panel 117 from the top of the window (native clips terminals under it); Umi's scorer (`Umi.fs.fuzzy`); recent files in `layout.meta.recentFiles`. Departures: no Browse… / Open panel; changed files don't rank higher (needs a `git status` op) | — |
+| Global search ⇧⌘F / ⌃3 (S-2 Search) | grouped by file, 300 ms debounce, regex/case toggles, 20,000-line cap, ↓ into results, ←/→ fold, Enter opens at line:col | [x] done, results streaming in; a new or empty query cancels the running search. Departure: rg (`--pcre2` for regexes, so Perl-style as Umi's) instead of `git grep`; bad-regex message is rg's | — |
 | One palette (L-14 Warp parity) | ⌘P searches actions, sessions and files together with `files:` filters | bottom palette with `/` search over commands | Departure: the bottom palette stays the command palette (DESIGN); ⌘O is its own file picker, not a palette filter |
 
 ## Track (c): shortcuts page, hidden-pane strip, panes and tabs

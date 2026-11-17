@@ -87,7 +87,13 @@ w(".DS_Store", "x")
 sh("git", "add", ".")
 sh("git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
 
-ev("window.__opened = []; Umi.actions.openFile = (a) => { window.__opened.push(a); }; Umi.actions.openFile.spy = true; 1")
+# A fresh page: nothing kept from an earlier run.
+D({"cmd": "reloadWeb"})
+time.sleep(1)
+until("typeof Umi !== 'undefined' && !!Umi.state.layout && !!Umi.views.modes", 10)
+ev("window.__realOpenFile = Umi.actions.openFile; window.__opened = []; Umi.actions.openFile = (a) => { window.__opened.push(a); }; Umi.actions.openFile.spy = true; 1")
+# As a first run: the layout keeps the sidebar's mode, dotfiles and recent files.
+ev("Umi.app.update(() => { const L = Umi.state.layout; L.sidebarMode = 'tabs'; L.hideDotfiles = false; L.meta.recentFiles = []; }); 1")
 
 
 def open_tab(folder):
@@ -117,7 +123,7 @@ check("root row first, folders first, dotfiles first", n[:5] == [".", "docs", "s
 check(".git and .DS_Store never listed", ".git" not in n and ".DS_Store" not in n, n)
 ign = [r for r in rows()["rows"] if r.get("path", "").endswith("ignored.txt")]
 check("ignored files listed and marked", ign and ign[0]["ignored"], ign)
-check("ignored row drawn italic", J("[...document.querySelectorAll('#files .ft-row.ignored .name')].map(e => getComputedStyle(e).fontStyle)") == ["italic"])
+check("ignored row drawn italic", J("[...document.querySelectorAll('#explorer .ft-row.ignored .name')].map(e => getComputedStyle(e).fontStyle)") == ["italic"])
 
 key("down"); key("down"); key("down")
 check("↓ moves the selection", rel(rows()["selected"] or "") == "src", rows()["selected"])
@@ -158,10 +164,10 @@ os.remove(scratch + "/src/later.txt")
 
 # Opening a file: Enter on README.md runs openFile with its absolute path.
 ev("Umi.views.explorer.debug(); 1")
-while rel(rows()["selected"] or "") != "README.md":
-    key("down")
-    if len(fails) > 50:
+for _ in range(40):
+    if rel(rows()["selected"] or "") == "README.md":
         break
+    key("down")
 typ(ENTER)
 op = until("window.__opened.length && window.__opened[window.__opened.length - 1]", 4)
 check("Enter opens a file through Umi.actions.openFile", op and op.get("path") == scratch + "/README.md", op)
@@ -283,6 +289,21 @@ typ("zzzz")
 check("a query hides the tabs it doesn't match", J("document.querySelectorAll('#tabs .tab').length") == 0)
 typ(ESC)
 check("Esc clears it and gives the keys back", J("[document.querySelectorAll('#tabs .tab').length > 0, Umi.state.ui.keys]") == [True, "terminal"])
+
+# ---- with track (a)'s real file panes: opening shows the file, and the tree follows it ----
+if J("!!window.__realOpenFile && !window.__realOpenFile.spy"):
+    ev("Umi.actions.openFile = window.__realOpenFile; 1")
+    key("e", "cmd", "shift")
+    if J("Umi.views.modes.mode()") != "files":
+        key("e", "cmd", "shift")
+    ev(f"Umi.app.update(() => Umi.model.focusPane(Umi.model.activeTab().focused)); 1")
+    key("o", "cmd")
+    until("Umi.views.quickOpen.debug().count", 5)
+    typ("target.md" + ENTER)
+    tgt = scratch + "/docs/deep/target.md"
+    check("quick open opens a real file pane", until(f"Umi.model.focusedPane().view === 'file' && Umi.model.focusedPane().path === {json.dumps(tgt)}", 5))
+    check("the explorer opens its folders and selects it", until(f"Umi.views.explorer.debug().selected === {json.dumps(tgt)}", 5), rows()["selected"])
+    ev("Umi.app.update(() => Umi.model.removePane(Umi.model.activeTab().focused)); 1")
 
 # ---- a big repository: streaming, cancel, the cap, quick open's speed ----
 if big:

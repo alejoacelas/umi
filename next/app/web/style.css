@@ -315,7 +315,7 @@ body:not([data-sidebar-mode="tabs"]) #tab-search { display: none; }
 body:not([data-sidebar-mode="tabs"]) .head-gap { display: block; }
 body[data-sidebar-mode="files"] #review, body[data-sidebar-mode="files"] #tabs,
 body[data-sidebar-mode="search"] #review, body[data-sidebar-mode="search"] #tabs { display: none; }
-#files[hidden], #search[hidden], #sidebar-flash[hidden] { display: none; }
+#explorer[hidden], #search[hidden], #sidebar-flash[hidden] { display: none; }
 #sidebar-flash { margin: 0 8px 6px; padding: 6px 8px; border-radius: 4px; background: rgba(188, 54, 42, 0.25); color: var(--ink); font-size: 12px; }
 
 .vlist { overflow-y: auto; position: relative; outline: none; }
@@ -325,7 +325,7 @@ body[data-sidebar-mode="search"] #review, body[data-sidebar-mode="search"] #tabs
 
 /* Explorer rows (UmiFileTreeStyle, Warp's numbers): 14 pt names, 16 pt indent, 25 pt rows, 16 pt
    chevron and icon; text 60%, 90% hovered, full when selected on a 20% fill (hover 10%). */
-#files { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 8px 8px; }
+#explorer { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 8px 8px; }
 .ft-list { flex: 1; min-height: 0; }
 .ft-row, .sr-row {
   display: flex; align-items: center; box-sizing: border-box; padding-right: 8px; border-radius: 4px;
