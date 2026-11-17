@@ -110,7 +110,7 @@ final class DebugServer {
             // For each step: ms from setFrame until a rects message for that width arrived
             // (null: none did, the web layer skipped that size).
             let from = cmd["from"] as? Double ?? 1000, to = cmd["to"] as? Double ?? 1300
-            let steps = cmd["steps"] as? Int ?? 30, interval = cmd["interval"] as? Double ?? 16
+            let steps = max(cmd["steps"] as? Int ?? 30, 1), interval = cmd["interval"] as? Double ?? 16
             var sent: [(t: Double, w: Double)] = []
             var i = 0
             func step() {
