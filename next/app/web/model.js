@@ -76,7 +76,23 @@ Umi.model = (() => {
   }
   function projectOf(paneId) {
     const sid = sessionOf(paneId);
-    return (sid && S.live[sid]?.project) || folderOf(paneId);
+    return S.panes[paneId]?.project || (sid && S.live[sid]?.project) || folderOf(paneId);
+  }
+
+  // Where a session stands for Alejo (DESIGN "Detached sessions that finish done stay out of the way"):
+  //   'needs'    waiting for him: a question or permission dialog, or a finished turn whose reply
+  //              doesn't say done (waiting on you, in progress, no readable status line);
+  //   'finished' its turn ended and its reply says done (or done, pending verification);
+  //   'busy'     a turn or program is running;
+  //   'idle'     a shell at its prompt, or an agent that hasn't had a turn yet.
+  function standing(s) {
+    if (!s) return 'idle';
+    if (s.state !== 'waiting') return 'busy';
+    if (!s.agent) return 'idle';
+    const ev = s.agent.event;
+    if (ev === 'PermissionRequest' || ev === 'Notification' || ev === 'Interrupt') return 'needs';
+    if (ev === 'Stop' || ev === 'StopFailure') return Umi.status.isDone(Umi.status.parseStatus(s.agent.reply)) ? 'finished' : 'needs';
+    return 'idle';
   }
   const currentProject = () => projectOf(activeTab().focused);
   function sessionName(sid) {
@@ -99,8 +115,8 @@ Umi.model = (() => {
     for (const s of Object.values(S.live)) {
       if (!s.alive || isSnoozed(s.id)) continue;
       const z = S.layout.meta?.sessions?.[s.id]?.snooze;
-      const waiting = s.agent && s.state === 'waiting';
-      if (!waiting && !(z && z.done)) continue;
+      // A finished snooze shows even if it says done: snoozing asked to be told.
+      if (standing(s) !== 'needs' && !(z && z.done)) continue;
       (groups[s.project] = groups[s.project] || []).push({ ...s, badge: !!(z && z.done) });
     }
     for (const g of Object.values(groups)) g.sort((a, b) => (b.agent?.ts || 0) - (a.agent?.ts || 0));
@@ -281,7 +297,7 @@ Umi.model = (() => {
 
   return {
     newPane, panesOf, paneIds, findPane, activeTab, focusedPane, sessionOf, paneOfSession,
-    folderOf, projectOf, currentProject, sessionName, defaultName, isSnoozed, review,
+    folderOf, projectOf, currentProject, standing, sessionName, defaultName, isSnoozed, review,
     addTab, split, removePane, openSession, showSession, startSession, focusPane,
     selectTab, stepTab, focusDir, moveToNewTab, snooze, rename, openPanel, closePanel,
     load, paneInfo, sessions,

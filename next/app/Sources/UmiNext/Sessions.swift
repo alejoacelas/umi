@@ -91,9 +91,56 @@ final class SessionMonitor {
         }
         var a: [String: Any] = ["agent": j["agent"] ?? "claude", "event": event, "state": state, "ts": j["ts"] ?? 0]
         if let c = input["cwd"] { a["cwd"] = c }
-        if let t = input["transcript_path"] { a["transcript"] = t }
+        if let t = input["transcript_path"] as? String {
+            a["transcript"] = t
+            // The turn ended: its last reply (its status line decides Review; web/status.js).
+            if event == "Stop" || event == "StopFailure", let r = lastReply(transcript: t) { a["reply"] = r }
+        }
         if let sid = input["session_id"] { a["agentSession"] = sid }
         return a
+    }
+
+    private var replyCache: [String: (Date, String)] = [:]
+
+    /// The text of the last assistant reply in a Claude Code or Codex transcript (its last 4000
+    /// characters), read from the file's last 512 KB.
+    func lastReply(transcript path: String) -> String? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let mtime = attrs[.modificationDate] as? Date, let size = attrs[.size] as? UInt64 else { return nil }
+        if let c = replyCache[path], c.0 == mtime { return c.1 }
+        guard let h = FileHandle(forReadingAtPath: path) else { return nil }
+        let start = size > 512 * 1024 ? size - 512 * 1024 : 0
+        try? h.seek(toOffset: start)
+        let data = h.readDataToEndOfFile()
+        try? h.close()
+        var reply: String?
+        for line in data.split(separator: 10).reversed() {
+            guard let j = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { continue }
+            var texts: [String] = []
+            if j["type"] as? String == "assistant", let content = (j["message"] as? [String: Any])?["content"] as? [[String: Any]] {
+                texts = content.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }       // Claude Code
+            } else if let p = j["payload"] as? [String: Any] {
+                if p["type"] as? String == "message", p["role"] as? String == "assistant", let content = p["content"] as? [[String: Any]] {
+                    texts = content.compactMap { $0["text"] as? String }                                            // Codex
+                } else if p["type"] as? String == "agent_message", let m = p["message"] as? String {
+                    texts = [m]
+                }
+            } else if j["type"] as? String == "user", (j["message"] as? [String: Any])?["content"] is String {
+                break // a new prompt: no reply after it
+            }
+            let text = texts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { reply = String(text.suffix(4000)); break }
+        }
+        if let reply { replyCache[path] = (mtime, reply) }
+        return reply
+    }
+
+    /// `project(of:)` on the monitor's queue; `done` runs on the main thread.
+    func projectAsync(_ folder: String, done: @escaping (String) -> Void) {
+        queue.async { [self] in
+            let p = project(of: folder)
+            DispatchQueue.main.async { done(p) }
+        }
     }
 
     /// The main folder of the git repository `folder` is in (worktrees count as their repository),

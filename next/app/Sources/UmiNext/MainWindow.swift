@@ -483,6 +483,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     func surface(_ view: TerminalSurfaceView, pwdChanged pwd: String) {
         update(view, "pwd", pwd)
         if let s = paneInfo[view.paneID]?["session"] as? String { sessions.notePwd(session: s, pwd: pwd) }
+        sessions.projectAsync(pwd) { [weak self, weak view] p in
+            guard let self, let view, self.paneInfo[view.paneID]?["pwd"] as? String == pwd else { return }
+            self.update(view, "project", p)
+        }
     }
     func surface(_ view: TerminalSurfaceView, commandFinished exitCode: Int) { update(view, "exitCode", exitCode) }
 

@@ -88,7 +88,12 @@ Umi.views.sidebar = (() => {
         row.innerHTML = '<span class="dot"></span><span class="name"></span><span class="what"></span>';
         row.querySelector('.dot').classList.toggle('badge', s.badge && g.current);
         row.querySelector('.name').textContent = M.sessionName(s.id);
-        row.querySelector('.what').textContent = s.badge ? 'snooze done' : (s.agent?.event === 'PermissionRequest' ? 'needs permission' : 'waiting');
+        const st = Umi.status.parseStatus(s.agent?.reply);
+        row.querySelector('.what').textContent = s.badge ? 'snooze over'
+          : s.agent?.event === 'PermissionRequest' ? 'needs permission'
+          : st && st.kind === 'waiting' ? 'waiting on you' : st && st.kind === 'progress' ? 'stopped in progress'
+          : st ? (Umi.status.isDone(st) ? 'done' : st.detail) : 'no status line';
+        row.title = st ? `Status: ${st.kind}${st.detail ? ': ' + st.detail : ''}` : '';
         row.addEventListener('mousedown', () => Umi.app.update(() => M.showSession(s.id)));
         box.append(row);
       }
