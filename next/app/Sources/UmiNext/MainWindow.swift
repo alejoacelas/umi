@@ -55,6 +55,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     private(set) var reloads: [[String: Double]] = []
     private var pendingReload: [String: Double]?
     private(set) var resizeLags: [Double] = []
+    /// (time, viewport width) of every rects message, for the debug hook's resize timing.
+    private(set) var rectsLog: [(t: Double, w: Double)] = []
     private var resizeAt: (size: CGSize, t: Double)?
     private var helloWatchdog: DispatchWorkItem?
 
@@ -308,6 +310,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         let t = Self.now()
         if let vp = msg["viewport"] as? [String: Double], let w = vp["w"], let h = vp["h"] {
             lastViewport = CGSize(width: w * zoom, height: h * zoom)
+            rectsLog.append((t, w * zoom))
+            if rectsLog.count > 2000 { rectsLog.removeFirst(1000) }
             if let r = resizeAt, abs(r.size.width - lastViewport.width) < 1, abs(r.size.height - lastViewport.height) < 1 {
                 resizeLags.append(t - r.t)
                 if resizeLags.count > 500 { resizeLags.removeFirst() }

@@ -106,24 +106,30 @@ final class DebugServer {
             c.window.setFrame(f, display: true)
             done(["ok": true, "frame": "\(c.window.frame)"])
         case "liveResize":
-            // Steps the window width from `from` to `to` every `interval` ms, as a drag would,
-            // then reports how long each step took to get its rects back from the web layer.
+            // Steps the window width from `from` to `to` every `interval` ms, as a drag would.
+            // For each step: ms from setFrame until a rects message for that width arrived
+            // (null: none did, the web layer skipped that size).
             let from = cmd["from"] as? Double ?? 1000, to = cmd["to"] as? Double ?? 1300
             let steps = cmd["steps"] as? Int ?? 30, interval = cmd["interval"] as? Double ?? 16
-            let before = c.resizeLags.count
+            var sent: [(t: Double, w: Double)] = []
             var i = 0
             func step() {
                 guard i <= steps else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        let lags = Array(c.resizeLags.dropFirst(before)).map { ($0 * 10000).rounded() / 10 }
-                        done(["stepsSent": steps + 1, "stepsAnswered": lags.count, "lagMs": lags,
-                              "mismatchNow": self.mismatches(c)])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        let log = c.rectsLog
+                        let lags: [Any] = sent.map { s in
+                            guard let hit = log.first(where: { $0.t >= s.t && abs($0.w - s.w) < 0.5 }) else { return NSNull() }
+                            return ((hit.t - s.t) * 10000).rounded() / 10
+                        }
+                        done(["stepsSent": sent.count, "lagMs": lags, "mismatchNow": self.mismatches(c)])
                     }
                     return
                 }
                 var f = c.window.frame
-                f.size.width = from + (to - from) * Double(i) / Double(steps)
+                f.size.width = (from + (to - from) * Double(i) / Double(steps)).rounded()
+                let t = MainWindowController.now()
                 c.window.setFrame(f, display: true)
+                sent.append((t, c.webView.frame.width))
                 i += 1
                 DispatchQueue.main.asyncAfter(deadline: .now() + interval / 1000, execute: step)
             }
