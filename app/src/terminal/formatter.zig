@@ -1361,6 +1361,16 @@ pub const PageFormatter = struct {
                 // This cell is not blank. If we have accumulated blank cells
                 // then we want to emit them now.
                 if (blank_cells > 0) {
+                    // Umi: blank cells carry no style, so close the current
+                    // style first; otherwise the spaces take the previous
+                    // run's background.
+                    if (comptime formatStyled(emit)) {
+                        if (!style.default()) {
+                            try self.formatStyleClose(emit, writer);
+                            style = .{};
+                            style_id = 0;
+                        }
+                    }
                     try writer.splatByteAll(' ', blank_cells);
 
                     if (self.point_map) |*map| try self.appendBlankPoints(

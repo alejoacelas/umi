@@ -176,45 +176,31 @@ def lines(text):
     return text.split("\n")[:-1]
 
 
-def style_diffs(client_styles, daemon_styles, allow_blank_bleed=False):
-    """Cells whose style differs. With allow_blank_bleed, skip the one known
-    libghostty-vt formatter bug: never-written cells between two styled runs
-    on a row are replayed as spaces still carrying the earlier run's
-    background (formatter.zig writes the pending blanks before it switches
-    style). Only blank cells whose daemon style is default and whose replayed
-    background equals the background of the nearest styled cell to their left
-    are skipped."""
+def style_diffs(client_styles, daemon_styles):
+    """Cells whose style differs."""
     diffs = []
     for y, (a, b) in enumerate(zip(client_styles.split("\n"), daemon_styles.split("\n"))):
-        ca_row, cb_row = a.split(" "), b.split(" ")
-        for x, (ca, cb) in enumerate(zip(ca_row, cb_row)):
-            if ca == cb:
-                continue
-            if allow_blank_bleed and cb == "." and ca.startswith("_/"):
-                bg = ca.split("/")[1]
-                left = next((c for c in reversed(cb_row[:x]) if c != "."), "")
-                if left.count("/") >= 2 and left.split("/")[1] == bg:
-                    continue
-            diffs.append(f"({x},{y}) client {ca} daemon {cb}")
+        for x, (ca, cb) in enumerate(zip(a.split(" "), b.split(" "))):
+            if ca != cb:
+                diffs.append(f"({x},{y}) client {ca} daemon {cb}")
     return diffs
 
 
-def assert_same_screen(client_render, daemon, what="", allow_blank_bleed=False):
+def assert_same_screen(client_render, daemon, what=""):
     assert client_render["text"] == daemon["text"], f"{what}: text differs\nclient:\n{client_render['text']}\ndaemon:\n{daemon['text']}"
-    diffs = style_diffs(client_render["styles"], daemon["styles"], allow_blank_bleed)
+    diffs = style_diffs(client_render["styles"], daemon["styles"])
     assert not diffs, f"{what}: styles differ in {len(diffs)} cells: " + "; ".join(diffs[:12])
     for k in ("cursor", "alternate", "kitty_flags", "mouse_tracking", "bracketed_paste", "app_cursor_keys"):
         assert client_render[k] == daemon[k], f"{what}: {k} differs: client {client_render[k]} daemon {daemon[k]}"
 
 
-def test_known_formatter_blank_bleed(env):
-    """Documents the formatter bug that allow_blank_bleed skips. If this
-    starts failing, the bug is fixed: drop allow_blank_bleed."""
+def test_blank_cells_between_styled_runs(env):
+    """Never-written cells between two styled runs come back unstyled
+    (formatter.zig used to give them the earlier run's background)."""
     r = env.ctl("render", "--cols", "12", "--rows", "1", "--replay",
                 input=b"\x1b[48;2;0;0;0mAB\x1b[0m\x1b[3C\x1b[1mX")
     d = json.loads(r.stdout)
-    assert style_diffs(d["replayed"]["styles"], d["original"]["styles"])  # the bug
-    assert not style_diffs(d["replayed"]["styles"], d["original"]["styles"], allow_blank_bleed=True)
+    assert not style_diffs(d["replayed"]["styles"], d["original"]["styles"])
 
 
 # ---------- the TUI ----------
@@ -506,14 +492,14 @@ def test_claude_reattach(env):
     wait_for(lambda: "say hi" in env.screen(sid)["text"], timeout=20, what="typed text in the box")
     c1.quiet(1.5, timeout=60)
     before = env.screen(sid)
-    assert_same_screen(c1.render(env), before, "claude first attach", allow_blank_bleed=True)
+    assert_same_screen(c1.render(env), before, "claude first attach")
     c1.kill9()
     time.sleep(1)
     assert env.session(sid)["alive"]
     c2 = Client(env, sid, 100, 30)
     c2.quiet(1.5, timeout=60)
     after = env.screen(sid)
-    assert_same_screen(c2.render(env), after, "claude reattach", allow_blank_bleed=True)
+    assert_same_screen(c2.render(env), after, "claude reattach")
     assert after["text"] == before["text"], f"claude's screen changed across reattach:\n{before['text']}\n---\n{after['text']}"
     assert "say hi" in after["text"]
     (HERE / "claude-screen.txt").write_text(after["text"])
