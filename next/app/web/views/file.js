@@ -270,7 +270,7 @@ Umi.views.file = (() => {
       const meta = (S.layout.meta = S.layout.meta || { sessions: {} });
       meta.drafts = meta.drafts || {};
       const had = !!meta.drafts[this.path];
-      if (this.dirty) meta.drafts[this.path] = { text: this.text, version: this.disk?.version ?? null };
+      if (this.dirty && !this.discarded) meta.drafts[this.path] = { text: this.text, version: this.disk?.version ?? null };
       else delete meta.drafts[this.path];
       if (this.dirty || had) Umi.app.save();
     }
@@ -367,7 +367,8 @@ Umi.views.file = (() => {
         case 'scroll': this.scrollY = msg.y; break;
         case 'done': {
           const open = UmiComments.threads(this.text).filter((t) => t.status === 'open').length;
-          const n = waiting[this.path] || 0;
+          const n = waitingOn(this.path);
+          Umi.cli?.commentsDone?.(this.path);
           window.dispatchEvent(new CustomEvent('umi:commentsDone', { detail: { path: this.path, open } }));
           Umi.bridge.post({ type: 'log', message: `comments done ${this.path} (${open} open)` });
           this.margin?.notice(n ? (n === 1 ? 'Sent: the agent waiting on this file has your comments.' : `Sent to the ${n} agents waiting on this file.`)
@@ -439,7 +440,7 @@ Umi.views.file = (() => {
         relayout: () => this.margin && this.margin.layout && this.margin.layout(),
       });
       this.margin = Umi.views.comments.attach(doc, win, {
-        threads, focus: this.selected, showResolved: this.showResolved, waiting: waiting[this.path] || 0,
+        threads, focus: this.selected, showResolved: this.showResolved, waiting: waitingOn(this.path),
         scroll: y, replyDraft: this.replyDraft,
       }, (msg) => this.marginMessage(msg));
     }
@@ -453,7 +454,7 @@ Umi.views.file = (() => {
       Umi.app.update(() => M.focusPane(term.id));
     }
 
-    setMode(mode) {
+    setMode(mode, { focus = true } = {}) {
       if (!this.markdown || mode === this.mode) return;
       this.mode = mode;
       const n = this.node();
@@ -461,7 +462,7 @@ Umi.views.file = (() => {
       Umi.app.save();
       this.paint();
       if (mode === 'rendered') this.renderPreview();
-      this.focus();
+      if (focus) this.focus(true);
     }
 
     goto(line, col = 1) {
@@ -530,13 +531,17 @@ Umi.views.file = (() => {
       this.closeNow();
     }
     closeNow(discard = false) {
-      if (discard) { const d = S.layout.meta?.drafts; if (d) delete d[this.path]; }
+      if (discard) this.discarded = true;
       this.confirmClose = false;
       Umi.app.update(() => M.removePane(this.id));
     }
 
-    focus() {
-      if (this.root.contains(document.activeElement) && document.activeElement !== document.body && document.activeElement !== this.frame) return;
+    // Gives the keys to what shows: the source or the preview. Something already focused in the
+    // view and on show (a bar's field, the header) keeps them unless `force`.
+    focus(force = false) {
+      const a = document.activeElement;
+      if (!force && a && a !== document.body && a !== this.frame && this.root.contains(a) && a.offsetParent !== null
+        && !(this.mode === 'rendered' && this.source.contains(a))) return;
       if (this.confirmClose) { this.bars.querySelector('.fv-primary')?.focus(); return; }
       if (this.mode === 'rendered' && this.frame) { this.frame.focus(); this.frame.contentWindow?.focus(); }
       else if (this.cm) this.cm.focus();
@@ -651,6 +656,10 @@ Umi.views.file = (() => {
     const active = new Set(M.panesOf(M.activeTab().root).map((p) => p.id));
     for (const [id, v] of views) v.place(active.has(id) ? rects[id] : null);
     // A pending go-to (openFile on a file already open).
+    for (const [id, node] of all) {
+      const v = views.get(id);
+      if (v.markdown && node.mode && node.mode !== v.mode) v.setMode(node.mode, { focus: false });
+    }
     for (const [id, node] of all) if (node.goto && views.get(id).cm) views.get(id).goto(node.goto.line, node.goto.col);
   }
   window.addEventListener('resize', () => sync());
@@ -671,6 +680,23 @@ Umi.views.file = (() => {
     waiting[path] = n;
     for (const v of views.values()) if (v.path === path && v.mode === 'rendered' && v.margin) v.margin.setWaiting(n);
   }
+
+  // Agents waiting for a file's review: `umi-next comments wait` (web/cli.js), or setWaiting.
+  function waitingOn(path) {
+    const cli = Umi.cli?.waiting ? Umi.cli.waiting().filter((p) => p === path).length : 0;
+    return cli + (waiting[path] || 0);
+  }
+  // The margin says when an agent starts or stops waiting.
+  setInterval(() => {
+    for (const v of views.values()) {
+      if (v.mode !== 'rendered' || !v.margin) continue;
+      const n = waitingOn(v.path);
+      if (n !== v.shownWaiting) { v.shownWaiting = n; v.margin.setWaiting(n); }
+    }
+  }, 1000);
+
+  // For the CLI (`editor ls`, `editor close --force`).
+  Umi.editor = { isDirty, discard: (id) => { const v = views.get(id); if (v) v.discarded = true; } };
 
   return { sync, focus, askClose, label, isDirty, setWaiting, get: (id) => views.get(id), views, languageOf };
 })();
