@@ -94,13 +94,14 @@ Umi.views.sidebar = (() => {
         row.querySelector('.dot').classList.toggle('badge', s.badge && g.current);
         row.querySelector('.name').textContent = M.sessionName(s.id);
         const st = Umi.status.parseStatus(s.agent?.reply);
-        row.querySelector('.what').textContent = s.badge ? 'snooze over'
+        row.querySelector('.what').textContent = s.docketFailed ? 'docket hook failed'
+          : s.badge ? 'snooze over'
           : s.agent?.event === 'PermissionRequest' ? 'needs permission'
           : s.agent?.event === 'Notification' ? 'asks you'
           : s.agent?.event === 'Interrupt' ? 'interrupted'
           : st && st.kind === 'waiting' ? 'waiting on you' : st && st.kind === 'progress' ? 'stopped in progress'
           : st ? (Umi.status.isDone(st) ? 'done' : st.detail) : 'no status line';
-        row.title = st ? `Status: ${st.kind}${st.detail ? ': ' + st.detail : ''}` : '';
+        row.title = s.docketFailed ? (s.docket.error || '') : st ? `Status: ${st.kind}${st.detail ? ': ' + st.detail : ''}` : '';
         row.addEventListener('mousedown', () => Umi.app.update(() => M.showSession(s.id)));
         box.append(row);
       }

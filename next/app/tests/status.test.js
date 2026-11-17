@@ -24,9 +24,12 @@ const cases = [
 ];
 let n = 0;
 for (const [text, want] of cases) {
-  assert.deepEqual(parseStatus(text), want, JSON.stringify(text));
+  const got = parseStatus(text);
+  if (got) delete got.line;
+  assert.deepEqual(got, want, JSON.stringify(text));
   n++;
 }
+assert.equal(parseStatus('ok\n  - **Status: done**  ').line, '- **Status: done**');
 assert.equal(isDone(parseStatus('**Status: done**')), true);
 assert.equal(isDone(parseStatus('Status: done, pending verification: X')), true);
 assert.equal(isDone(parseStatus('- Status: waiting on you: X')), false);

@@ -20,7 +20,9 @@ Umi.views.picker = (() => {
 
   function items(node) {
     const pk = node.picker;
-    const live = Object.values(S.live).filter((s) => s.alive && s.project === pk.project);
+    const all = Object.values(S.live).filter((s) => s.project === pk.project);
+    const docketed = all.filter((s) => s.docket);
+    const live = all.filter((s) => s.alive && !s.docket);
     const recent = (a, b) => (b.agent?.ts || b.created || 0) - (a.agent?.ts || a.created || 0);
     const by = (st) => live.filter((s) => M.standing(s) === st).sort(recent);
     const past = S.past.project === pk.project ? S.past.list : [];
@@ -29,6 +31,7 @@ Umi.views.picker = (() => {
       ...[...by('needs'), ...by('idle')].map((s) => ({ type: 'live', section: 'Waiting for you', s })),
       ...by('busy').map((s) => ({ type: 'live', section: 'Busy', s })),
       ...by('finished').map((s) => ({ type: 'live', section: 'Finished', s })),
+      ...docketed.sort(recent).map((s) => ({ type: 'live', section: 'On the docket', s })),
       ...past.map((p) => ({ type: 'past', section: 'Past sessions', p })),
     ];
   }
@@ -131,7 +134,8 @@ Umi.views.picker = (() => {
         row.querySelector('b').textContent = M.sessionName(s.id);
         const st = s.agent && Umi.status.parseStatus(s.agent.reply);
         const said = st ? (st.kind === 'other' ? st.detail : `${st.kind === 'pending' ? 'done, pending' : st.kind}${st.detail ? ': ' + st.detail : ''}`) : '';
-        row.querySelector('.dim').textContent = [M.isSnoozed(s.id) ? 'snoozed' : '', shown ? 'on screen' : '', said || s.foreground, base(s.folder)].filter(Boolean).join(' · ');
+        const dk = s.docket && ({ pending: 'docketed, turn running', on: 'on the docket', failed: 'docket hook failed' }[s.docket.state]);
+        row.querySelector('.dim').textContent = [dk, M.isSnoozed(s.id) ? 'snoozed' : '', shown ? 'on screen' : '', said || s.foreground, base(s.folder)].filter(Boolean).join(' · ');
       } else {
         const p = item.p;
         row.innerHTML = `<span class="kind"></span><b></b><span class="dim"></span>`;
