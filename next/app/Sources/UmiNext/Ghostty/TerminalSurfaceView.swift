@@ -28,10 +28,11 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
 
-    init(runtime: GhosttyRuntime, paneID: String, config: Config) {
+    /// `frame` should be the view's real slot: the program starts at that size.
+    init(runtime: GhosttyRuntime, paneID: String, frame: NSRect, config: Config) {
         self.paneID = paneID
         self.runtime = runtime
-        super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        super.init(frame: frame)
         var cfg = ghostty_surface_config_new()
         cfg.userdata = Unmanaged.passUnretained(self).toOpaque()
         cfg.platform_tag = GHOSTTY_PLATFORM_MACOS

@@ -44,6 +44,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     /// The layout as the web layer last sent it (with sessions merged in), as JSON.
     private(set) var layout: [String: Any]?
     private var liveSessions: Set<String>?
+    /// Panes in the layout whose terminal starts when they first get a slot.
+    private(set) var pending: [String: [String: Any]] = [:]
 
     // State the debug hook reports.
     private(set) var webReady = false
@@ -239,24 +241,39 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             paneInfo[id] = nil
             lastRects[id] = nil
         }
-        for (id, pane) in wanted where surfaces[id] == nil {
-            let cwd = (pane["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
-            let launch = SessionBackend.launch(existing: pane["session"] as? String, live: liveSessions, cwd: cwd, name: nil)
-            var env = ["UMI_NEXT_PANE": id, "UMI_NEXT_SESSION": launch.sessionID]
-            env["UMI_NEXT_STATE_DIR"] = Paths.stateDir
-            let view = TerminalSurfaceView(runtime: runtime, paneID: id, config: .init(
-                command: launch.command, workingDirectory: launch.workingDirectory, environment: env))
-            view.onFocus = { [weak self] v in self?.send(["type": "focused", "pane": v.paneID]) }
-            view.setVisible(false)
-            terminalLayer.addSubview(view)
-            surfaces[id] = view
-            var info: [String: Any] = ["session": launch.sessionID]
-            if let cwd { info["pwd"] = cwd }
+        // New panes wait for their first slot, so their program starts at its real size.
+        for id in pending.keys where wanted[id] == nil {
+            pending[id] = nil
+            paneInfo[id] = nil
+        }
+        for (id, pane) in wanted where surfaces[id] == nil && pending[id] == nil {
+            pending[id] = pane
+            var info: [String: Any] = [:]
+            if let s = pane["session"] { info["session"] = s }
+            if let c = pane["cwd"] { info["pwd"] = c }
             paneInfo[id] = info
-            send(["type": "pane", "id": id, "info": info])
         }
         layout = Self.withSessions(newLayout, paneInfo)
         if save { saveLayout() }
+    }
+
+    private func startTerminal(_ id: String, frame: CGRect) -> TerminalSurfaceView? {
+        guard let pane = pending.removeValue(forKey: id) else { return nil }
+        let cwd = (pane["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+        let launch = SessionBackend.launch(existing: pane["session"] as? String, live: liveSessions, cwd: cwd, name: nil)
+        let env = ["UMI_NEXT_PANE": id, "UMI_NEXT_SESSION": launch.sessionID, "UMI_NEXT_STATE_DIR": Paths.stateDir]
+        let view = TerminalSurfaceView(runtime: runtime, paneID: id, frame: frame, config: .init(
+            command: launch.command, workingDirectory: launch.workingDirectory, environment: env))
+        view.onFocus = { [weak self] v in self?.send(["type": "focused", "pane": v.paneID]) }
+        terminalLayer.addSubview(view)
+        surfaces[id] = view
+        var info: [String: Any] = ["session": launch.sessionID]
+        if let cwd { info["pwd"] = cwd }
+        paneInfo[id] = info
+        send(["type": "pane", "id": id, "info": info])
+        layout = layout.map { Self.withSessions($0, paneInfo) }
+        saveLayout()
+        return view
     }
 
     private func saveLayout() {
@@ -272,8 +289,9 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         CATransaction.setDisableActions(true)
         var shown = Set<String>()
         for (id, r) in rects {
-            guard let v = surfaces[id], let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { continue }
+            guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { continue }
             let frame = CGRect(x: x * zoom, y: y * zoom, width: max(w * zoom, 1), height: max(h * zoom, 1))
+            guard let v = surfaces[id] ?? startTerminal(id, frame: frame) else { continue }
             if v.frame != frame { v.frame = frame }
             v.setVisible(true)
             lastRects[id] = frame

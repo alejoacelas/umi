@@ -158,7 +158,7 @@ final class DebugServer {
                                     "y": (NSScreen.screens.first?.frame.height ?? 0) - c.window.frame.maxY],
             "webReady": c.webReady, "webErrors": c.webErrors, "webDir": Paths.webDir,
             "viewportReported": ["w": c.lastViewport.width, "h": c.lastViewport.height],
-            "panes": panes, "focusedPane": c.focusedPaneID() ?? NSNull(),
+            "panes": panes, "pendingPanes": Array(c.pending.keys).sorted(), "focusedPane": c.focusedPaneID() ?? NSNull(),
             "reloads": c.reloads, "mismatches": mismatches(c),
             "layout": c.layout ?? NSNull(), "sessionMode": SessionBackend.mode,
         ]
