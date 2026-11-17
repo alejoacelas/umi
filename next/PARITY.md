@@ -29,11 +29,19 @@ Next's departures are `next/DESIGN.md`. "Departure:" below marks a deliberate di
 
 Uses `Umi.fs` (read, write with version, watch, root), `Umi.shortcuts.table` (editor keys).
 
+**For other tracks:** `Umi.actions.openFile({path, line?, col?, pane?, mode?})` opens a file pane
+(or focuses the one already showing `path`), to the right of `pane` (default: the focused pane).
+`path` is absolute or relative to `Umi.fs.root()`; `line`/`col` are 1-based and put the caret
+there in the source view (a Markdown file then opens in source); `mode` is `'rendered'` or `'raw'`.
+Run it as any action: `Umi.app.run('openFile', {path, line})`. Third-party code (markdown-it,
+CodeMirror, highlight.js, Mermaid) lives in `web/lib/` (the repository's `.gitignore` ignores
+every `vendor/`).
+
 | Area | Umi | Next now | Planned Next |
 |---|---|---|---|
 | File pane (E-1, E-9, E-24) | Markdown/text/JSON/CSV in a pane of its own; header with name, unsaved dot, Rendered/Raw, ⋯ menu, close | none | `view: 'file'` pane `{path, mode}`; opens to the right of the pane it came from; one pane per file (opening again focuses it). Header as Umi's |
 | Closing a file pane | ⌘W closes; asks when unsaved | — | ⌘W closes the file pane, asking when unsaved. A file pane has no session, so it doesn't go to the hidden-pane strip. **Open:** confirm with Alejo |
-| Source view (E-21, E-22, E-23) | Warp-like code editor: terminal font, gutter, git diff marks, tree-sitter colors, find/replace, ⌃G, ⌘/ line comments, ⇧⌘S | none | CodeMirror 6, vendored as one prebuilt ESM file in `web/vendor/` (no bundler in the web layer). Find/replace, go to line, toggle comment come with it. Git marks: later (needs a `git diff` bridge op) |
+| Source view (E-21, E-22, E-23) | Warp-like code editor: terminal font, gutter, git diff marks, tree-sitter colors, find/replace, ⌃G, ⌘/ line comments, ⇧⌘S | none | CodeMirror 6, vendored as one prebuilt file in `web/lib/` (no bundler in the web layer). Find/replace, go to line, toggle comment come with it. Git marks: later (needs a `git diff` bridge op) |
 | Save, disk changes (E-3, E-4, E-5) | ⌘S saves with a toast; reloads an unmodified doc; "saved changes not reflected here" bar with Discard / Overwrite | none | ⌘S → `Umi.fs.write(path, text, {version})`; a `conflict` shows Umi's bar. `Umi.fs.watch` reloads an unmodified doc. UTF-8 only; other encodings refused with a message. Departure: no re-encoding (rare; not worth porting) |
 | Refusals (E-6) | directories, devices, binaries, huge files refused clearly | none | `Umi.fs.read` errors shown in the pane; size cap in fs.js |
 | Unsaved edits on quit (E-3) | saved or a recovery copy | — | Drafts kept in the layout state per file pane; restored on reload. The web layer reloading on save must never lose an edit |

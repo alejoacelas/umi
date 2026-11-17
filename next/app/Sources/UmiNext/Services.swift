@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 
@@ -14,6 +15,10 @@ final class WebServices {
     // Main thread only.
     private var watches: [String: PathWatch] = [:]
     private var searches: [String: Search] = [:]
+
+    /// Shows a context menu at a point of the web view (CSS px) and gives the chosen item's index,
+    /// or nil (MainWindow sets it: the menu needs the view).
+    var popUpMenu: ((_ items: [[String: Any]], _ x: Double, _ y: Double) -> Int?)?
 
     init(send: @escaping ([String: Any]) -> Void) { self.send = send }
 
@@ -37,6 +42,19 @@ final class WebServices {
         case "listFiles": async(id) { try Self.listFiles(args) }
         case "watch": startWatch(id, args)
         case "search": startSearch(id, args)
+        case "trash": async(id) { try Self.trash(args) }
+        case "rename": async(id) { try Self.renameItem(args) }
+        case "reveal": reply(id, Result { try Self.reveal(args) })
+        case "openDefault": reply(id, Result { try Self.openDefault(args) })
+        case "clipboard": reply(id, Result { try Self.clipboard(args) })
+        case "sendText": async(id) { try Self.sendText(args) }
+        case "menu":
+            let items = args["items"] as? [[String: Any]] ?? []
+            // Popped up after this message is handled: the menu runs its own event loop.
+            DispatchQueue.main.async { [self] in
+                let chosen = popUpMenu?(items, args["x"] as? Double ?? 0, args["y"] as? Double ?? 0)
+                reply(id, .success(["index": chosen.map { $0 as Any } ?? NSNull()]))
+            }
         case "cancel":
             let target = args["target"] as? String ?? ""
             if let w = watches.removeValue(forKey: target) {
@@ -233,6 +251,71 @@ final class WebServices {
         return RunResult(status: p.terminationStatus, out: data)
     }
 
+    // MARK: Explorer actions
+
+    /// Moves to the Trash (never deletes for good).
+    static func trash(_ args: [String: Any]) throws -> Any {
+        let p = try path(args)
+        guard FileManager.default.fileExists(atPath: p) else { throw Failure(code: "notFound", message: "no file \(p)") }
+        var out: NSURL?
+        try FileManager.default.trashItem(at: URL(fileURLWithPath: p), resultingItemURL: &out)
+        return ["path": p, "trashed": out?.path ?? ""]
+    }
+
+    /// Renames or moves `path` to `to`; refused when something is already at `to`.
+    static func renameItem(_ args: [String: Any]) throws -> Any {
+        let from = try path(args), to = try path(args, "to")
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: from) else { throw Failure(code: "notFound", message: "no file \(from)") }
+        // A change of case only ("a" → "A") is the same file on macOS's file system.
+        if fm.fileExists(atPath: to), from.lowercased() != to.lowercased() {
+            throw Failure(code: "exists", message: "\((to as NSString).lastPathComponent) is already there")
+        }
+        try fm.moveItem(atPath: from, toPath: to)
+        return ["path": to]
+    }
+
+    static func reveal(_ args: [String: Any]) throws -> Any {
+        let p = try path(args)
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)])
+        return ["ok": true]
+    }
+
+    /// Opens with the file's default app. UMI_NEXT_TEST_OPEN_LOG (tests) appends the path to that
+    /// file instead, so no app opens on the test Mac.
+    static func openDefault(_ args: [String: Any]) throws -> Any {
+        let p = try path(args)
+        if let log = Paths.env["UMI_NEXT_TEST_OPEN_LOG"], !log.isEmpty {
+            if !FileManager.default.fileExists(atPath: log) { FileManager.default.createFile(atPath: log, contents: nil) }
+            if let h = FileHandle(forWritingAtPath: log) { h.seekToEndOfFile(); h.write(Data((p + "\n").utf8)); try? h.close() }
+            return ["ok": true, "logged": true]
+        }
+        guard NSWorkspace.shared.open(URL(fileURLWithPath: p)) else { throw Failure(code: "io", message: "can't open \(p)") }
+        return ["ok": true]
+    }
+
+    /// {text}: puts it on the clipboard. Without text: gives the clipboard's text.
+    static func clipboard(_ args: [String: Any]) throws -> Any {
+        let pb = NSPasteboard.general
+        if let text = args["text"] as? String {
+            pb.clearContents()
+            pb.setString(text, forType: .string)
+            return ["ok": true]
+        }
+        return ["text": pb.string(forType: .string) ?? ""]
+    }
+
+    /// {session, text}: types the text into a daemon session's terminal (umi-next-ctl send).
+    static func sendText(_ args: [String: Any]) throws -> Any {
+        guard let sid = args["session"] as? String, !sid.isEmpty, let text = args["text"] as? String else {
+            throw Failure(code: "badArgs", message: "session and text needed")
+        }
+        guard !SessionBackend.plainShell else { throw Failure(code: "noDaemon", message: "sessions aren't in the daemon (plain-shell mode)") }
+        let r = SessionBackend.run(SessionBackend.ctlPath, ["send", sid, text])
+        guard r.status == 0 else { throw Failure(code: "io", message: r.err.isEmpty ? "send failed" : r.err) }
+        return ["ok": true]
+    }
+
     // MARK: Watch
 
     private func startWatch(_ id: String, _ args: [String: Any]) {
@@ -260,6 +343,8 @@ final class WebServices {
         guard let rg = Self.rgPath else { return reply(id, .failure(Failure(code: "noRipgrep", message: "ripgrep (rg) isn't installed; install it with `brew install ripgrep`"))) }
         var a = ["--json", "--max-columns", "2000"]
         if args["regex"] as? Bool != true { a.append("--fixed-strings") }
+        // Perl-style regexes (\d, \b, lookarounds), as Umi's `git grep -P`.
+        else if args["pcre2"] as? Bool == true { a.append("--pcre2") }
         a.append(args["caseSensitive"] as? Bool == true ? "--case-sensitive" : "--ignore-case")
         if args["wholeWord"] as? Bool == true { a.append("--word-regexp") }
         if args["hidden"] as? Bool == true { a.append("--hidden") }

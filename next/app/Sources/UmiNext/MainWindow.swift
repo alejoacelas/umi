@@ -159,6 +159,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         banner.autoresizingMask = [.width, .minYMargin]
         root.addSubview(banner)
 
+        services.popUpMenu = { [weak self] items, x, y in self?.popUpMenu(items, x: x, y: y) }
         window.delegate = self
         window.shortcutHandler = { [weak self] in self?.handleShortcut($0) ?? false }
         loadSavedShortcuts()
@@ -426,9 +427,9 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
             return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
         }
-        if let id = msg["tint"] as? String, var frame = lastRects[id] {
-            if let cover, cover.intersects(frame) { frame.size.height = max(0, cover.minY - frame.minY) }
+        if let id = msg["tint"] as? String, let frame = lastRects[id] {
             focusTint.frame = frame
+            clip(focusTint, by: cover)
             if focusTint.superview == nil { terminalLayer.addSubview(focusTint) }
             else if terminalLayer.subviews.last !== focusTint { terminalLayer.addSubview(focusTint, positioned: .above, relativeTo: nil) }
             focusTint.isHidden = false
@@ -456,17 +457,44 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         if let f = msg["focus"] as? String { focusPane(f) }
     }
 
-    /// Hides the part of a terminal under `cover` (a band along the bottom of the work area).
-    private func clip(_ v: TerminalSurfaceView, by cover: CGRect?) {
+    /// A native context menu for the web layer (the explorer's right-click menu, as Umi's is native).
+    /// Items: {title, enabled?} or {separator: true}. Returns the chosen item's index.
+    private func popUpMenu(_ items: [[String: Any]], x: Double, y: Double) -> Int? {
+        final class Picker: NSObject { var chosen: Int?; @objc func pick(_ s: NSMenuItem) { chosen = s.tag } }
+        let picker = Picker()
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for (i, it) in items.enumerated() {
+            if it["separator"] as? Bool == true { menu.addItem(.separator()); continue }
+            let item = NSMenuItem(title: it["title"] as? String ?? "", action: #selector(Picker.pick(_:)), keyEquivalent: "")
+            item.target = picker
+            item.tag = i
+            item.isEnabled = it["enabled"] as? Bool ?? true
+            menu.addItem(item)
+        }
+        let zoom = webView.pageZoom
+        let p = NSPoint(x: x * zoom, y: webView.isFlipped ? y * zoom : webView.bounds.height - y * zoom)
+        menu.popUp(positioning: nil, at: p, in: webView)
+        return picker.chosen
+    }
+
+    /// Hides the part of a view under `cover` (the bottom palette, or quick open over the top of the
+    /// panes): a mask with a hole where the cover is.
+    private func clip(_ v: NSView, by cover: CGRect?) {
         guard let layer = v.layer else { return }
         let f = v.frame
         guard let cover, cover.intersects(f) else { layer.mask = nil; return }
-        let visible = max(0, min(f.height, cover.minY - f.minY))
-        let mask = layer.mask ?? CALayer()
-        mask.backgroundColor = NSColor.black.cgColor
-        // The view isn't flipped: layer y runs up from the bottom, so the visible top part starts at
-        // height - visible.
-        mask.frame = CGRect(x: 0, y: f.height - visible, width: f.width, height: visible)
+        let hole = cover.intersection(f)
+        // The view isn't flipped: layer y runs up from the bottom.
+        let local = CGRect(x: hole.minX - f.minX, y: f.maxY - hole.maxY, width: hole.width, height: hole.height)
+        let mask = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
+        let path = CGMutablePath()
+        path.addRect(CGRect(origin: .zero, size: f.size))
+        path.addRect(local)
+        mask.frame = CGRect(origin: .zero, size: f.size)
+        mask.fillRule = .evenOdd
+        mask.fillColor = NSColor.black.cgColor
+        mask.path = path
         layer.mask = mask
     }
 
