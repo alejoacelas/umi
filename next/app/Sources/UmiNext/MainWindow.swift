@@ -307,7 +307,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         case "rects":
             applyRects(msg)
         case "request":
-            services.handle(msg)
+            if !handleTerminalRequest(msg) { services.handle(msg) }
         case "shortcuts":
             if let table = msg["table"] as? [[String: Any]] { setShortcuts(table, save: true) }
         case "focus":
@@ -479,16 +479,18 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         // The bottom panel lies over the panes: terminals keep their frames and are clipped where it
         // covers them, so the web layer's panel shows through and takes the clicks there.
         let cover = rect(msg["cover"] as? [String: Double])
-        for id in shown { if let v = surfaces[id] { clip(v, by: cover) } }
+        // Web chrome lying over terminals (the find bar) is cut out of them and takes the clicks.
+        let holes = ((msg["holes"] as? [[String: Double]]) ?? []).compactMap { rect($0) }
+        for id in shown { if let v = surfaces[id] { clip(v, by: cover, holes: holes) } }
         terminalLayer.passThrough = ((msg["passThrough"] as? [[String: Double]]) ?? []).compactMap { rect($0) }
-            + (cover.map { [$0] } ?? [])
+            + (cover.map { [$0] } ?? []) + holes
         terminalLayer.chrome = ((msg["chrome"] as? [[String: Double]]) ?? []).compactMap { r in
             guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
             return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
         }
         if let id = msg["tint"] as? String, let frame = lastRects[id] {
             focusTint.frame = frame
-            clip(focusTint, by: cover)
+            clip(focusTint, by: cover, holes: holes)
             if focusTint.superview == nil { terminalLayer.addSubview(focusTint) }
             else if terminalLayer.subviews.last !== focusTint { terminalLayer.addSubview(focusTint, positioned: .above, relativeTo: nil) }
             focusTint.isHidden = false
@@ -538,18 +540,21 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// Hides the part of a view under `cover` (the bottom palette, or quick open over the top of the
-    /// panes): a mask with a hole where the cover is.
-    private func clip(_ v: NSView, by cover: CGRect?) {
+    /// panes) and under each of `holes` (web chrome lying over a terminal, such as the find bar): a
+    /// mask with a hole where each is.
+    private func clip(_ v: NSView, by cover: CGRect?, holes: [CGRect] = []) {
         guard let layer = v.layer else { return }
         let f = v.frame
-        guard let cover, cover.intersects(f) else { layer.mask = nil; return }
-        let hole = cover.intersection(f)
-        // The view isn't flipped: layer y runs up from the bottom.
-        let local = CGRect(x: hole.minX - f.minX, y: f.maxY - hole.maxY, width: hole.width, height: hole.height)
+        let cut = ([cover].compactMap { $0 } + holes).filter { $0.intersects(f) }
+        guard !cut.isEmpty else { layer.mask = nil; return }
         let mask = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
         let path = CGMutablePath()
         path.addRect(CGRect(origin: .zero, size: f.size))
-        path.addRect(local)
+        for c in cut {
+            let hole = c.intersection(f)
+            // The view isn't flipped: layer y runs up from the bottom.
+            path.addRect(CGRect(x: hole.minX - f.minX, y: f.maxY - hole.maxY, width: hole.width, height: hole.height))
+        }
         mask.frame = CGRect(origin: .zero, size: f.size)
         mask.fillRule = .evenOdd
         mask.fillColor = NSColor.black.cgColor
@@ -557,7 +562,27 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         layer.mask = mask
     }
 
-    // MARK: Zoom, synchronized input
+    // MARK: Find, zoom, synchronized input
+
+    /// The page's requests about terminals (web/views/find.js): `termSearch {pane, needle}`,
+    /// `termSearchNav {pane, dir}`, `termSearchEnd {pane}`. Returns false for other ops.
+    private func handleTerminalRequest(_ msg: [String: Any]) -> Bool {
+        guard let op = msg["op"] as? String, op.hasPrefix("termSearch"), let id = msg["id"] as? String else { return false }
+        let args = msg["args"] as? [String: Any] ?? [:]
+        guard let pane = args["pane"] as? String, let v = surfaces[pane] else {
+            send(["type": "reply", "id": id, "ok": false, "error": ["code": "notFound", "message": "no terminal for that pane"]])
+            return true
+        }
+        let done: Bool
+        switch op {
+        case "termSearch": v.bindingAction("search:" + (args["needle"] as? String ?? "")); done = true
+        case "termSearchNav": done = v.bindingAction("navigate_search:" + ((args["dir"] as? String) == "previous" ? "previous" : "next"))
+        case "termSearchEnd": done = v.bindingAction("end_search")
+        default: done = false
+        }
+        send(["type": "reply", "id": id, "ok": true, "result": done])
+        return true
+    }
 
     /// The config's font-size (Ghostty's default 13 when unset).
     private(set) lazy var baseFontSize: Double = {
@@ -758,6 +783,16 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         }
     }
     func surface(_ view: TerminalSurfaceView, commandFinished exitCode: Int) { update(view, "exitCode", exitCode) }
+
+    func surface(_ view: TerminalSurfaceView, search event: String, value: Int?) {
+        guard surfaces[view.paneID] === view else { return }
+        switch event {
+        case "end": send(["type": "searchEnded", "pane": view.paneID])
+        case "start": send(["type": "action", "name": "find"])
+        case "total": send(["type": "search", "pane": view.paneID, "total": value ?? NSNull()])
+        default: send(["type": "search", "pane": view.paneID, "selected": value ?? NSNull()])
+        }
+    }
 
     func surfaceClosed(_ view: TerminalSurfaceView, processAlive: Bool) {
         guard surfaces[view.paneID] === view else { return }

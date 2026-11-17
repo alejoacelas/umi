@@ -97,6 +97,7 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 | Pane indicator (PI-1..4) | small mark per pane: working, needs you, finished unseen | Review list; none on panes | A mark at each terminal slot's bottom right and on strip chips, from `S.live[sid].agent` |
 | Notifications, Dock badge (T-6, `badge`) | desktop notification from panes; Dock badge counts needs-you | none | Bridge op `notify` and `badge(count)`; badge = Review items of the current project. Alerts follow DESIGN's snooze rules |
 | Tab switch fade (L-11) | 140 ms fade on tab switch | none | Later |
+| Find in terminal (Ghostty's search) | ⌘F bar at the top right, ⌘G ⇧⌘G, Esc | [x] ⌘F opens a bar at the pane's top right (drawn by the page, cut out of the terminal by native: `holes`); Ghostty searches and highlights; count "N of M"; ⌘G / ⇧⌘G / Enter / ⇧Enter step; Esc closes. Keys are `when: 'terminal'` | — |
 | UI zoom, font size (L-33) | ⌘= ⌘- ⌘0; ⌥⇧> ⌥⇧< | [x] ⌘= ⌘- step Warp's levels, ⌘0 100%: the page's zoom and the terminals' text; ⌥⇧> ⌥⇧< one point (5–25, from the config's font-size). Kept in layout.json (`zoom`) | — |
 | Sidebar width (S-8) | drag the edge, 180–600 pt | fixed | Drag the edge; width in layout |
 | Drawer, manager pane (DR) | drawer with ⌃⌘M | none | Departure: the bottom palette, Review and snooze replace them (DESIGN) |

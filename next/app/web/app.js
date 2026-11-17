@@ -9,20 +9,22 @@ Umi.app = (() => {
     Umi.views.panes.render();
     Umi.views.panel.render();
     Umi.views.shortcutsPage.render();
+    Umi.views.find.render();
   }
 
   // Who should have the keys: the web layer while a panel is open, a tab name is being edited,
-  // the shortcuts page's search has them, or the focused pane is drawn here (the picker); else the
-  // focused pane's terminal.
+  // the find bar or the shortcuts page's search has them, or the focused pane is drawn here (the
+  // picker); else the focused pane's terminal.
   function webWantsKeys() {
     const pane = M.focusedPane();
-    return !!(S.ui.panel || S.ui.editingTab || Umi.views.shortcutsPage.wantsKeys()
+    return !!(S.ui.panel || S.ui.editingTab || Umi.views.find.wantsKeys() || Umi.views.shortcutsPage.wantsKeys()
       || (pane && pane.view !== 'terminal'));
   }
 
   function focusWeb() {
     if (S.ui.editingTab) Umi.views.sidebar.focus();
     else if (S.ui.panel) Umi.views.panel.focus();
+    else if (Umi.views.find.wantsKeys()) Umi.views.find.focus();
     else if (Umi.views.shortcutsPage.wantsKeys()) Umi.views.shortcutsPage.focus();
     else if (M.focusedPane()?.view === 'file') Umi.views.file.focus(M.focusedPane().id);
     else Umi.views.picker.focus();
@@ -34,6 +36,8 @@ Umi.app = (() => {
       type: 'rects',
       rects: Umi.views.panes.terminalRects(),
       passThrough: Umi.views.panes.passThroughRects(),
+      // Web chrome lying over a terminal (the find bar): native cuts it out of the terminal's view.
+      holes: [Umi.views.find.holeRect()].filter(Boolean),
       chrome: Umi.views.panes.chromeRects(),
       cover: Umi.views.panel.coverRect(),
       // The terminal native brightens (SPEC PI-3): the focused one, when the tab shows several.
@@ -80,10 +84,12 @@ Umi.bridge.on('focused', (msg) => {
       found.tab.focused = msg.pane;
       Umi.state.ui.panel = null;
       Umi.state.ui.editingTab = null;
+      if (Umi.state.ui.find) Umi.state.ui.find.focus = false;
       if (Umi.state.ui.shortcuts) Umi.state.ui.shortcuts.focus = false;
     }, { focus: false });
-  } else if (Umi.views.shortcutsPage.wantsKeys()) {
-    // A click in the terminal that was focused: it has the keys again; the page stays open.
+  } else if (Umi.views.find.wantsKeys() || Umi.views.shortcutsPage.wantsKeys()) {
+    // A click in the terminal that was focused: it has the keys again; the bar and page stay open.
+    if (Umi.state.ui.find) Umi.state.ui.find.focus = false;
     if (Umi.state.ui.shortcuts) Umi.state.ui.shortcuts.focus = false;
     Umi.app.report(false);
   }

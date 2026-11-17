@@ -9,6 +9,9 @@ protocol GhosttyRuntimeDelegate: AnyObject {
     func surface(_ view: TerminalSurfaceView, commandFinished exitCode: Int)
     func surfaceClosed(_ view: TerminalSurfaceView, processAlive: Bool)
     func quitRequested()
+    /// Ghostty's search (find in terminal): started (by a binding), ended, its match count and the
+    /// selected match (nil: unknown).
+    func surface(_ view: TerminalSurfaceView, search event: String, value: Int?)
 }
 
 final class GhosttyRuntime {
@@ -130,6 +133,24 @@ final class GhosttyRuntime {
             // ended: the pane leaves (DESIGN), as with no command.
             guard let view else { return false }
             DispatchQueue.main.async { rt?.delegate?.surfaceClosed(view, processAlive: false) }
+            return true
+        case GHOSTTY_ACTION_START_SEARCH:
+            guard let view else { return false }
+            DispatchQueue.main.async { rt?.delegate?.surface(view, search: "start", value: nil) }
+            return true
+        case GHOSTTY_ACTION_END_SEARCH:
+            guard let view else { return false }
+            DispatchQueue.main.async { rt?.delegate?.surface(view, search: "end", value: nil) }
+            return true
+        case GHOSTTY_ACTION_SEARCH_TOTAL:
+            guard let view else { return false }
+            let n = Int(action.action.search_total.total)
+            DispatchQueue.main.async { rt?.delegate?.surface(view, search: "total", value: n < 0 ? nil : n) }
+            return true
+        case GHOSTTY_ACTION_SEARCH_SELECTED:
+            guard let view else { return false }
+            let n = Int(action.action.search_selected.selected)
+            DispatchQueue.main.async { rt?.delegate?.surface(view, search: "selected", value: n < 0 ? nil : n) }
             return true
         case GHOSTTY_ACTION_RENDER, GHOSTTY_ACTION_COLOR_CHANGE, GHOSTTY_ACTION_RING_BELL:
             return true

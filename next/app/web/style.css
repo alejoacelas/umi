@@ -290,3 +290,14 @@ body.dragging-tab .tab { cursor: grabbing; }
 .sc-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-row kbd { font: 11px -apple-system, sans-serif; color: var(--ink); background: rgba(255, 255, 255, 0.08); border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
 .sc-empty { color: var(--dim); padding: 12px 0; }
+
+/* Find in a terminal: the bar at the pane's top right, cut out of the terminal by native. */
+#findbar {
+  position: absolute; z-index: 3; display: flex; align-items: center; gap: 4px; height: 30px; padding: 0 4px 0 8px;
+  background: #1a1a1a; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px;
+}
+#findbar[hidden] { display: none; }
+#findbar input { width: 180px; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink); font: 12px -apple-system, sans-serif; }
+#findbar .count { color: var(--dim); font-size: 11px; white-space: nowrap; min-width: 50px; text-align: right; }
+#findbar button { border: none; background: transparent; color: var(--dim); font-size: 13px; width: 22px; height: 22px; border-radius: 4px; }
+#findbar button:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
