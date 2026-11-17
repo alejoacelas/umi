@@ -51,7 +51,7 @@ enum SessionBackend {
 
     /// The command for a pane: reattach to `existing` when it's live, else start a new session
     /// (`cmd` nil: the login shell).
-    static func launch(existing: String?, live: Set<String>?, cwd: String?, name: String?, cmd: String? = nil) -> Launch {
+    static func launch(existing: String?, live: Set<String>?, cwd: String?, name: String?, cmd: String? = nil, by: String = "user") -> Launch {
         if plainShell {
             return Launch(sessionID: "shell-" + UUID().uuidString.prefix(8).lowercased(), command: nil, workingDirectory: cwd)
         }
@@ -59,11 +59,12 @@ enum SessionBackend {
             return Launch(sessionID: existing, command: shellQuote([attachPath, existing]), workingDirectory: cwd)
         }
         // Sessions the UI starts are the user's (picker, new tab, resume, restart): the session
-        // lists show only these, not those agents or scripts start with `umi-next-ctl new`.
-        var args = ["new", "--by", "user", "--cwd", cwd ?? NSHomeDirectory()]
+        // lists show only these, not those agents or scripts start with `umi-next-ctl new` or the
+        // `umi-next` CLI (`by: cli`).
+        var args = ["new", "--by", by == "cli" ? "cli" : "user", "--cwd", cwd ?? NSHomeDirectory()]
         if let name, !name.isEmpty { args += ["--name", name] }
         if let cmd { args += ["--cmd", cmd] }
-        let r = run(ctlPath, args, extraEnv: shellIntegrationEnv().merging(hookEnv()) { a, _ in a })
+        let r = run(ctlPath, args, extraEnv: shellIntegrationEnv().merging(hookEnv()) { a, _ in a }.merging(cliEnv()) { a, _ in a })
         let id = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
         guard r.status == 0, !id.isEmpty else {
             // No silent fallback: the pane shows the failure and stays open.
@@ -123,6 +124,14 @@ enum SessionBackend {
     static func hookEnv() -> [String: String] {
         ["UMI_CLI": (Bundle.main.resourceURL?.path ?? binDir) + "/umi-next-hook", "UMI_STATE_DIR": Paths.stateDir + "/umi-compat",
          "UMI_PANE": "umi-next", "UMI_NEXT_STATE_DIR": Paths.stateDir]
+    }
+
+    /// UMI_NEXT_CLI: this app's `umi-next`, as Umi's panes have UMI_CLI. A login shell rebuilds
+    /// PATH from the user's profile, so `umi-next` on PATH comes from install.sh's link in
+    /// ~/.local/bin; either copy drives this app, since the session's UMI_NEXT_STATE_DIR names it.
+    static func cliEnv() -> [String: String] {
+        let cli = binDir + "/umi-next"
+        return FileManager.default.isExecutableFile(atPath: cli) ? ["UMI_NEXT_CLI": cli] : [:]
     }
 
     @discardableResult

@@ -2,8 +2,10 @@
 //   to native:   hello · layout {layout, closed} · rects {rects, viewport, focus?} · focus {pane}
 //                · focusWeb · error {message} · log {message} · shortcuts {table}
 //                · request {id, op, args} (Umi.bridge.request; Sources/UmiNext/Services.swift)
+//                · cliReply {id, ok, result|error} (web/cli.js; Sources/UmiNext/ControlServer.swift)
 //   from native: state · pane {id, info} · focused {pane} · action {name, ...} · paneExited {pane}
 //                · shortcut {id} · reply {id, ok, result|error} · event {id, data}
+//                · cli {id, req} · cliCancel {id}
 'use strict';
 window.Umi = window.Umi || {};
 

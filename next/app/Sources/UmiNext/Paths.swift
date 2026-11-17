@@ -15,6 +15,8 @@ enum Paths {
 
     static var layoutFile: String { stateDir + "/layout.json" }
     static var debugSocket: String { stateDir + "/debug.sock" }
+    /// The `umi-next` CLI's socket (ControlServer.swift).
+    static var uiSocket: String { stateDir + "/ui.sock" }
 
     /// The repository's next/app folder, recorded in Info.plist by build.sh.
     static let appSourceDir: String? = Bundle.main.object(forInfoDictionaryKey: "UmiNextSourceDir") as? String

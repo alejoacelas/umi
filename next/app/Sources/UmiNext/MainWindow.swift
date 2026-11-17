@@ -77,6 +77,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     private(set) var shortcuts = ShortcutTable()
     private(set) var shortcutsHandled = 0
     private(set) lazy var services = WebServices { [weak self] in self?.send($0) }
+    let control = ControlServer()
 
     /// paneID → terminal. Terminals live here whatever the web layer does.
     private(set) var surfaces: [String: TerminalSurfaceView] = [:]
@@ -174,6 +175,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         sessions.start()
         installHyperMonitor()
         watcher = FileWatcher(path: Paths.webDir) { [weak self] in self?.webFilesChanged() }
+        control.sendToPage = { [weak self] in self?.send($0) }
     }
 
     func show() {
@@ -185,6 +187,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     private func loadWeb() {
         let index = URL(fileURLWithPath: Paths.webDir + "/index.html")
         webReady = false
+        control.pageGone()
         armWatchdog()
         webView.loadFileURL(index, allowingReadAccessTo: URL(fileURLWithPath: Paths.webDir, isDirectory: true))
     }
@@ -193,6 +196,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         let now = Self.now()
         pendingReload = ["changedAt": now]
         webReady = false
+        control.pageGone()
         webErrors = []
         armWatchdog()
         webView.reloadFromOrigin()
@@ -250,6 +254,9 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             send(stateMessage())
             send(["type": "sessions", "list": sessions.last])
             if let u = pendingTaskURL { pendingTaskURL = nil; openURL(u) }
+            control.pageReady()
+        case "cliReply":
+            control.reply(msg)
         case "layout":
             if let l = msg["layout"] as? [String: Any] { applyLayout(l, closed: msg["closed"] as? [String: String] ?? [:]) }
         case "rects":
@@ -371,7 +378,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         let start = pane["start"] as? [String: Any]
         let startCwd = (start?["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? cwd
         let launch = SessionBackend.launch(existing: pane["session"] as? String, live: liveSessions, cwd: startCwd,
-                                           name: start?["name"] as? String, cmd: start?["cmd"] as? String)
+                                           name: start?["name"] as? String, cmd: start?["cmd"] as? String,
+                                           by: start?["by"] as? String ?? "user")
         sessions.pollSoon()
         let env = ["UMI_NEXT_PANE": id, "UMI_NEXT_SESSION": launch.sessionID, "UMI_NEXT_STATE_DIR": Paths.stateDir]
         let view = TerminalSurfaceView(runtime: runtime, paneID: id, frame: frame, config: .init(
