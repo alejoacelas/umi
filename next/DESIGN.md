@@ -80,6 +80,17 @@ up from the window's bottom edge, where the drawer was, like agent-emacs's menu 
 - When a snoozed session's turn ends or its time runs out: in the project Alejo is in (the focused
   pane's), a quiet badge on its Review row; in another project, it joins that project's group in
   Review with no alert.
+- **Detached sessions that finish done stay out of the way** (Alejo, 2026-11-17). When a detached
+  session's turn ends, its last reply's status line decides, read as agent-emacs's
+  `agent-session-reply-status` does (the last line of the reply starting `Status:`, after list marks
+  and emphasis, case ignored):
+  - `done` or `done, pending verification`: it leaves Review and "next waiting"; the picker still
+    lists it, at the bottom, as finished.
+  - `waiting on you`, a question or permission dialog on screen, or no readable status line: it
+    shows in Review, since it can't be confirmed done.
+  - `in progress` with the turn ended: it shows in Review.
+  A snoozed session shows in Review when it finishes even if it says `done`: snoozing asked to be
+  told.
 - **Review** is a section of the sidebar listing what waits for Alejo, grouped by project, the current
   project first: sessions waiting for input, finished snoozes. "Next waiting" walks it in that order.
 - agent-emacs's snooze fades a session and silences its alert; grouping by project and scoping alerts
