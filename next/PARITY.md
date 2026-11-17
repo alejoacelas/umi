@@ -78,7 +78,7 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 
 | Area | Umi | Next now | Planned Next |
 |---|---|---|---|
-| Shortcuts page ⌘/ (L-17) | 361 px panel at the right, read-only, every Umi shortcut and Ghostty keybinding, searchable by name or keys ("cmd shift p", "⇧⌘P"); Esc closes | none | Panel at the right drawn from `Umi.shortcuts.table`, grouped by `group`, same search. Ghostty's keybindings: later (needs a bridge op listing them). With focus in the editor's source, ⌘/ stays the editor's |
+| Shortcuts page ⌘/ (L-17) | 361 px panel at the right, read-only, every Umi shortcut and Ghostty keybinding, searchable by name or keys ("cmd shift p", "⇧⌘P"); Esc closes | [x] done: 361 px at the right, drawn from `Umi.shortcuts.table` by `group` (live with the table), search by name or keys, Esc or ⌘/ closes; ⌘/ is `when: 'terminal'` so an editor keeps it. Panes reflow beside it | Ghostty's own keybindings: later (needs a bridge op listing them) |
 | Changing shortcuts (`umi shortcuts set`) | kept in `shortcuts.json` | none | Departure: edit `web/shortcuts.js`; it reloads live |
 | Hidden-pane strip (H-5) | chips for every pane above the panes; hidden ones dim; click brings back | [x] done: a chip per shown pane, then dim italic chips for the sessions ⌘W hid from this tab (`tab.hidden`); clicking one shows it again at the right end of the top row (equal share), focused. Exit, the docket or showing the session elsewhere removes its chip. Closing a tab's last pane closes the tab (⇧⌘T brings it back) | Departure: no pane limit, so nothing else hides panes |
 | Pane limit, make-room, `--until` (H-1, H-3) | 3 per tab, a pane hidden to make room; panes return by condition | none | Departure: none of it (DESIGN "Nothing appears or disappears by itself") |

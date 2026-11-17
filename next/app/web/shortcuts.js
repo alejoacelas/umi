@@ -48,6 +48,7 @@ Umi.shortcuts = (() => {
     { id: 'palette', keys: 'hyper+space', label: 'Palette', group: 'Window', action: 'togglePalette' },
     { id: 'paletteTap', keys: null, display: 'Hyper (tap)', label: 'Palette', group: 'Window' },
     { id: 'toggleSidebar', keys: 'cmd+b', label: 'Show or hide the sidebar', group: 'Window', action: 'toggleSidebar' },
+    { id: 'shortcutsPage', keys: 'cmd+/', label: 'Keyboard shortcuts', group: 'Window', action: 'toggleShortcuts', when: 'terminal' },
     { id: 'reloadWeb', keys: 'cmd+shift+r', label: 'Reload the web layer', group: 'Window', native: 'reload' },
     { id: 'quit', keys: 'cmd+q', label: 'Quit (sessions keep running)', group: 'Window', native: 'quit' },
   ];

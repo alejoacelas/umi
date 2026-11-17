@@ -8,18 +8,22 @@ Umi.app = (() => {
     Umi.views.sidebar.render();
     Umi.views.panes.render();
     Umi.views.panel.render();
+    Umi.views.shortcutsPage.render();
   }
 
-  // Who should have the keys: the web layer while a panel is open, a tab name is being edited
-  // or the focused pane is drawn here (the picker); else the focused pane's terminal.
+  // Who should have the keys: the web layer while a panel is open, a tab name is being edited,
+  // the shortcuts page's search has them, or the focused pane is drawn here (the picker); else the
+  // focused pane's terminal.
   function webWantsKeys() {
     const pane = M.focusedPane();
-    return !!(S.ui.panel || S.ui.editingTab || (pane && pane.view !== 'terminal'));
+    return !!(S.ui.panel || S.ui.editingTab || Umi.views.shortcutsPage.wantsKeys()
+      || (pane && pane.view !== 'terminal'));
   }
 
   function focusWeb() {
     if (S.ui.editingTab) Umi.views.sidebar.focus();
     else if (S.ui.panel) Umi.views.panel.focus();
+    else if (Umi.views.shortcutsPage.wantsKeys()) Umi.views.shortcutsPage.focus();
     else if (M.focusedPane()?.view === 'file') Umi.views.file.focus(M.focusedPane().id);
     else Umi.views.picker.focus();
   }
@@ -70,13 +74,18 @@ Umi.bridge.on('pane', (msg) => { Umi.model.paneInfo(msg.id, msg.info); Umi.views
 Umi.bridge.on('focused', (msg) => {
   const found = Umi.model.findPane(msg.pane);
   if (!found) return;
-  if (found.tab.focused !== msg.pane || Umi.state.ui.panel || Umi.state.ui.editingTab) {
+  if (found.tab.focused !== msg.pane || Umi.state.ui.panel || Umi.state.ui.editingTab || found.tab.id !== Umi.state.layout.activeTab) {
     // A click in a terminal: it has the keys now, so close what was asking for them.
     Umi.app.update(() => {
       found.tab.focused = msg.pane;
       Umi.state.ui.panel = null;
       Umi.state.ui.editingTab = null;
+      if (Umi.state.ui.shortcuts) Umi.state.ui.shortcuts.focus = false;
     }, { focus: false });
+  } else if (Umi.views.shortcutsPage.wantsKeys()) {
+    // A click in the terminal that was focused: it has the keys again; the page stays open.
+    if (Umi.state.ui.shortcuts) Umi.state.ui.shortcuts.focus = false;
+    Umi.app.report(false);
   }
 });
 Umi.bridge.on('sessions', (msg) => {
