@@ -61,7 +61,7 @@ enum SessionBackend {
         var args = ["new", "--cwd", cwd ?? NSHomeDirectory()]
         if let name, !name.isEmpty { args += ["--name", name] }
         if let cmd { args += ["--cmd", cmd] }
-        let r = run(ctlPath, args, extraEnv: shellIntegrationEnv())
+        let r = run(ctlPath, args, extraEnv: shellIntegrationEnv().merging(hookEnv()) { a, _ in a })
         let id = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
         guard r.status == 0, !id.isEmpty else {
             // No silent fallback: the pane shows the failure and stays open.
@@ -73,11 +73,9 @@ enum SessionBackend {
         return Launch(sessionID: id, command: shellQuote([attachPath, id]), workingDirectory: cwd)
     }
 
-    /// A pane stopped showing a session. "detach": the session keeps running (an agent, a pane
-    /// switched to another session). "close": the user closed it, so the session ends.
-    static func paneClosed(sessionID: String, how: String) {
-        if how == "close" { endSession(sessionID: sessionID) }
-    }
+    /// A pane stopped showing a session (⌘W, a session moved to another pane). The session keeps
+    /// running in the daemon: ⌘W never ends a program (Alejo, 2026-11-17). Only Exit ends one.
+    static func paneClosed(sessionID: String, how: String) {}
 
     /// The session's program ended (its pane's attach got the exit): forget it in the daemon.
     static func sessionEnded(sessionID: String) {
@@ -85,10 +83,17 @@ enum SessionBackend {
         DispatchQueue.global().async { _ = run(ctlPath, ["rm", sessionID]) }
     }
 
-    /// Ends a session (a closed shell, the palette's Exit): kills it and forgets it.
+    /// The palette's Exit: `umi-next-ctl kill` (TERM to its process group), then HUP and forget it
+    /// if it's still there after a second.
     static func endSession(sessionID: String) {
         guard !plainShell else { return }
-        DispatchQueue.global().async { _ = run(ctlPath, ["rm", sessionID, "--force"]) }
+        DispatchQueue.global().async {
+            _ = run(ctlPath, ["kill", sessionID])
+            Thread.sleep(forTimeInterval: 1)
+            _ = run(ctlPath, ["kill", sessionID, "--signal", "1"])
+            Thread.sleep(forTimeInterval: 0.5)
+            _ = run(ctlPath, ["rm", sessionID, "--force"])
+        }
     }
 
     /// Ghostty's zsh integration for a new session (the daemon starts the shell, so Ghostty can't
@@ -108,6 +113,14 @@ enum SessionBackend {
         ]
         if let z = env["ZDOTDIR"] { out["GHOSTTY_ZSH_ZDOTDIR"] = z }
         return out
+    }
+
+    /// Lets Umi's Claude Code / Codex plugin report to umi-next (see umi-next-hook): the plugin
+    /// acts when UMI_CLI, UMI_STATE_DIR and UMI_PANE are set. UMI_STATE_DIR is a folder of
+    /// umi-next's own, so a real `umi` run in a session never takes it for Umi's.
+    static func hookEnv() -> [String: String] {
+        ["UMI_CLI": (Bundle.main.resourceURL?.path ?? binDir) + "/umi-next-hook", "UMI_STATE_DIR": Paths.stateDir + "/umi-compat",
+         "UMI_PANE": "umi-next", "UMI_NEXT_STATE_DIR": Paths.stateDir]
     }
 
     @discardableResult

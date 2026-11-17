@@ -1,0 +1,22 @@
+#!/bin/sh
+# umi-next's stand-in for `umi hook`: Umi's Claude Code and Codex plugin (app/macos/UmiPlugins)
+# runs "$UMI_CLI hook EVENT --agent claude|codex --pid N" with the hook's JSON on stdin. Daemon
+# sessions set UMI_CLI to this script, so the same plugin reports agent state to umi-next:
+# it writes <state>/agents/<session>.json, which the UI watches.
+[ "$1" = hook ] || exit 0
+event="$2"; agent=""
+shift 2
+while [ $# -gt 0 ]; do
+  case "$1" in --agent) agent="$2"; shift 2 ;; *) shift ;; esac
+done
+[ -n "$UMI_NEXT_SESSION_ID" ] && [ -n "$UMI_NEXT_STATE_DIR" ] || { cat >/dev/null; exit 0; }
+dir="$UMI_NEXT_STATE_DIR/agents"
+mkdir -p "$dir"
+tmp="$dir/.$UMI_NEXT_SESSION_ID.$$"
+{
+  printf '{"event":"%s","agent":"%s","ts":%s,"input":' "$event" "$agent" "$(date +%s)"
+  input=$(cat)
+  [ -n "$input" ] && printf '%s' "$input" || printf 'null'
+  printf '}\n'
+} > "$tmp" && mv -f "$tmp" "$dir/$UMI_NEXT_SESSION_ID.json"
+exit 0

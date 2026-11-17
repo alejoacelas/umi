@@ -36,6 +36,9 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     let terminalLayer = TerminalLayerView()
     private let banner = NSTextField(labelWithString: "")
     private var watcher: FileWatcher?
+    let sessions = SessionMonitor()
+    private var hyperMonitor: Any?
+    private var hyperDown = false, hyperSpoiled = false
 
     /// paneID → terminal. Terminals live here whatever the web layer does.
     private(set) var surfaces: [String: TerminalSurfaceView] = [:]
@@ -123,6 +126,12 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         if let err = SessionBackend.startDaemon() { showBanner(err) }
         restoreLayout()
         loadWeb()
+        sessions.shownSessions = { [weak self] in
+            Set(self?.paneInfo.values.compactMap { $0["session"] as? String } ?? [])
+        }
+        sessions.onUpdate = { [weak self] list in self?.send(["type": "sessions", "list": list]) }
+        sessions.start()
+        installHyperMonitor()
         watcher = FileWatcher(path: Paths.webDir) { [weak self] in self?.webFilesChanged() }
     }
 
@@ -197,6 +206,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             webErrors = []
             pendingReload?["helloAt"] = Self.now()
             send(stateMessage())
+            send(["type": "sessions", "list": sessions.last])
         case "layout":
             if let l = msg["layout"] as? [String: Any] { applyLayout(l, closed: msg["closed"] as? [String: String] ?? [:]) }
         case "rects":
@@ -212,6 +222,15 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             showBanner("Web layer error: \(text). Terminals keep running.")
         case "reload":
             reloadWeb()
+        case "exitSession":
+            if let id = msg["session"] as? String { SessionBackend.endSession(sessionID: id); sessions.pollSoon() }
+        case "pastSessions":
+            let project = msg["project"] as? String ?? NSHomeDirectory()
+            sessions.past(project: project) { [weak self] list in
+                self?.send(["type": "pastSessions", "project": project, "list": list])
+            }
+        case "refreshSessions":
+            sessions.pollSoon()
         case "log":
             NSLog("umi-next web: %@", String(describing: msg["message"] ?? ""))
         default:
@@ -291,7 +310,12 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             liveSessions = SessionBackend.liveSessionIDs()
         }
         let cwd = (pane["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
-        let launch = SessionBackend.launch(existing: pane["session"] as? String, live: liveSessions, cwd: cwd, name: nil)
+        // A new session the picker asked for: {cmd, name, cwd}.
+        let start = pane["start"] as? [String: Any]
+        let startCwd = (start?["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? cwd
+        let launch = SessionBackend.launch(existing: pane["session"] as? String, live: liveSessions, cwd: startCwd,
+                                           name: start?["name"] as? String, cmd: start?["cmd"] as? String)
+        sessions.pollSoon()
         let env = ["UMI_NEXT_PANE": id, "UMI_NEXT_SESSION": launch.sessionID, "UMI_NEXT_STATE_DIR": Paths.stateDir]
         let view = TerminalSurfaceView(runtime: runtime, paneID: id, frame: frame, config: .init(
             command: launch.command, workingDirectory: launch.workingDirectory, environment: env))
@@ -401,6 +425,40 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         return true
     }
 
+    // MARK: Hyper
+
+    /// A lone Hyper tap (⌃⌥⇧⌘ all down, then all up, no key between) or Hyper+Space opens the
+    /// palette. Seen here, before the terminal, through a local event monitor.
+    private func installHyperMonitor() {
+        let hyper: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
+        hyperMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] e in
+            guard let self, e.window === self.window else { return e }
+            let mods = e.modifierFlags.intersection(hyper)
+            if e.type == .keyDown {
+                if mods == hyper && e.keyCode == 49 {          // Hyper+Space
+                    self.hyperSpoiled = true
+                    self.openPalette()
+                    return nil
+                }
+                if self.hyperDown { self.hyperSpoiled = true }
+                return e
+            }
+            if mods == hyper {
+                if !self.hyperDown { self.hyperDown = true; self.hyperSpoiled = false }
+            } else if mods.isEmpty && self.hyperDown {
+                self.hyperDown = false
+                if !self.hyperSpoiled { self.openPalette() }
+            }
+            return e
+        }
+    }
+
+    private func openPalette() {
+        lastHyperAt = Self.now()
+        if webReady { send(["type": "action", "name": "togglePalette"]) } else { showBanner("Web layer not ready: palette unavailable.") }
+    }
+    private(set) var lastHyperAt: Double = 0
+
     // MARK: Window
 
     func windowDidResize(_ notification: Notification) {
@@ -420,7 +478,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     func surface(_ view: TerminalSurfaceView, titleChanged title: String) { update(view, "title", title) }
-    func surface(_ view: TerminalSurfaceView, pwdChanged pwd: String) { update(view, "pwd", pwd) }
+    func surface(_ view: TerminalSurfaceView, pwdChanged pwd: String) {
+        update(view, "pwd", pwd)
+        if let s = paneInfo[view.paneID]?["session"] as? String { sessions.notePwd(session: s, pwd: pwd) }
+    }
     func surface(_ view: TerminalSurfaceView, commandFinished exitCode: Int) { update(view, "exitCode", exitCode) }
 
     func surfaceClosed(_ view: TerminalSurfaceView, processAlive: Bool) {
