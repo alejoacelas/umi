@@ -72,7 +72,7 @@ Umi.views.sidebar = (() => {
     el.dataset.tab = tab.id;
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('.close, input') || e.button !== 0) return;
-      Umi.app.update(() => { S.layout.activeTab = tab.id; });
+      Umi.app.update(() => { S.layout.activeTab = tab.id; S.ui.sidebarFocus = null; });
       if (!tab.archived) dragTab(e, tab);
     });
     el.addEventListener('dblclick', (e) => {
@@ -180,7 +180,9 @@ Umi.views.sidebar = (() => {
     const list = document.querySelector('#tabs');
     list.textContent = '';
     renderArchive(list);
-    M.listedTabs().forEach((tab, i) => list.append(tabRow(tab, i)));
+    // "Search tabs..." lists only the tabs it matches (keeping their ⌘ numbers).
+    M.listedTabs().forEach((tab, i) => { if (Umi.views.modes.matchesTab(tab)) list.append(tabRow(tab, i)); });
+    Umi.views.modes.render();
   }
 
   function focus() {

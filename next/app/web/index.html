@@ -9,11 +9,18 @@
 <body>
   <aside id="sidebar">
     <div id="sidebar-head">
-      <span class="mode">Tabs</span>
+      <label id="tab-search"><span class="glyph"></span><input spellcheck="false" placeholder="Search tabs..." aria-label="Search tabs"></label>
+      <span class="head-gap"></span>
+      <button class="mode" data-mode="tabs" title="Tabs"></button>
+      <button class="mode" data-mode="files" title="Project Explorer (⇧⌘E)"></button>
+      <button class="mode" data-mode="search" title="Global Search (⇧⌘F)"></button>
       <button id="new-tab" title="New tab (⌘T)">+</button>
     </div>
+    <div id="sidebar-flash" hidden></div>
     <div id="review" hidden></div>
     <div id="tabs"></div>
+    <div id="files" hidden></div>
+    <div id="search" hidden></div>
   </aside>
   <div id="work">
     <nav id="strip"></nav>
@@ -40,6 +47,12 @@
   <script src="views/panel.js"></script>
   <script src="views/shortcuts-page.js"></script>
   <script src="views/find.js"></script>
+  <script src="icons.js"></script>
+  <script src="views/vlist.js"></script>
+  <script src="views/modes.js"></script>
+  <script src="views/explorer.js"></script>
+  <script src="views/search.js"></script>
+  <script src="views/quickopen.js"></script>
   <script src="shortcuts.js"></script>
   <script src="cli.js"></script>
   <script src="app.js"></script>

@@ -13,12 +13,13 @@ Umi.app = (() => {
   }
 
   // Who should have the keys: the web layer while a panel is open, a tab name is being edited,
-  // the find bar or the shortcuts page's search has them, or the focused pane is drawn here (the
-  // picker); else the focused pane's terminal.
+  // the find bar or the shortcuts page's search has them, a part of the sidebar has them
+  // (explorer, search), or the focused pane is drawn here (the picker); else the focused pane's
+  // terminal.
   function webWantsKeys() {
     const pane = M.focusedPane();
     return !!(S.ui.panel || S.ui.editingTab || Umi.views.find.wantsKeys() || Umi.views.shortcutsPage.wantsKeys()
-      || (pane && pane.view !== 'terminal'));
+      || Umi.views.modes.hasKeys() || (pane && pane.view !== 'terminal'));
   }
 
   function focusWeb() {
@@ -26,6 +27,7 @@ Umi.app = (() => {
     else if (S.ui.panel) Umi.views.panel.focus();
     else if (Umi.views.find.wantsKeys()) Umi.views.find.focus();
     else if (Umi.views.shortcutsPage.wantsKeys()) Umi.views.shortcutsPage.focus();
+    else if (Umi.views.modes.hasKeys()) Umi.views.modes.focus();
     else if (M.focusedPane()?.view === 'file') Umi.views.file.focus(M.focusedPane().id);
     else Umi.views.picker.focus();
   }
@@ -67,7 +69,8 @@ Umi.app = (() => {
   function run(name, arg = {}) {
     const action = Umi.actions[name];
     if (!action) return post({ type: 'log', message: 'unknown action ' + name });
-    update(() => action(arg));
+    // An action gives the keys back to the pane unless it says otherwise (the sidebar's own keys).
+    update(() => { if (!action.keepsFocus) S.ui.sidebarFocus = null; action(arg); });
   }
 
   return { render, report, update, run, save, webWantsKeys };
@@ -78,7 +81,8 @@ Umi.bridge.on('pane', (msg) => { Umi.model.paneInfo(msg.id, msg.info); Umi.views
 Umi.bridge.on('focused', (msg) => {
   const found = Umi.model.findPane(msg.pane);
   if (!found) return;
-  if (found.tab.focused !== msg.pane || Umi.state.ui.panel || Umi.state.ui.editingTab || found.tab.id !== Umi.state.layout.activeTab) {
+  if (found.tab.focused !== msg.pane || Umi.state.ui.panel || Umi.state.ui.editingTab || found.tab.id !== Umi.state.layout.activeTab
+    || Umi.state.ui.sidebarFocus) {
     // A click in a terminal: it has the keys now, so close what was asking for them.
     Umi.app.update(() => {
       found.tab.focused = msg.pane;
@@ -86,6 +90,7 @@ Umi.bridge.on('focused', (msg) => {
       Umi.state.ui.editingTab = null;
       if (Umi.state.ui.find) Umi.state.ui.find.focus = false;
       if (Umi.state.ui.shortcuts) Umi.state.ui.shortcuts.focus = false;
+      Umi.state.ui.sidebarFocus = null;
     }, { focus: false });
   } else if (Umi.views.find.wantsKeys() || Umi.views.shortcutsPage.wantsKeys()) {
     // A click in the terminal that was focused: it has the keys again; the bar and page stay open.

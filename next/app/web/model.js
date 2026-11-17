@@ -20,7 +20,7 @@ Umi.state = {
   panes: {},        // paneId -> what native reports for the pane: {session, title, pwd, exitCode}
   live: {},         // sessionId -> the daemon's session + {folder, project, state, kind, agent?}
   past: { project: null, list: [] }, // resumable Claude/Codex sessions of a project
-  ui: { panel: null, keys: 'terminal', editingTab: null }, // not persisted
+  ui: { panel: null, keys: 'terminal', editingTab: null, sidebarFocus: null }, // not persisted
   closed: {},       // paneId -> 'detach': panes closed since the last layout sent to native
   home: '',
   sessionMode: 'daemon',
@@ -288,10 +288,12 @@ Umi.model = (() => {
     found.tab.focused = fresh.id;
   }
 
-  // Focusing another pane of a zoomed tab unzooms it (Ghostty's and Warp's rule).
+  // Focusing another pane of a zoomed tab unzooms it (Ghostty's and Warp's rule). Focusing a pane
+  // gives it the keys (from the sidebar's explorer or search).
   function focusPane(id) {
     const found = findPane(id);
     if (!found) return;
+    S.ui.sidebarFocus = null;
     S.layout.activeTab = found.tab.id;
     found.tab.focused = id;
     if (found.tab.zoomed && found.tab.zoomed !== id) delete found.tab.zoomed;

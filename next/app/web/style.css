@@ -45,13 +45,6 @@ body.no-sidebar #sidebar { display: none; }
   gap: 4px;
   padding: 4px 8px;
 }
-#sidebar-head .mode {
-  flex: 1;
-  color: var(--dim);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  padding-left: 4px;
-}
 #sidebar-head button {
   height: 24px;
   width: 24px;
@@ -62,7 +55,7 @@ body.no-sidebar #sidebar { display: none; }
   font-size: 16px;
   line-height: 1;
 }
-#sidebar-head button:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+#sidebar-head button:hover { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.6); }
 
 #tabs {
   flex: 1;
@@ -301,3 +294,121 @@ body.dragging-tab .tab { cursor: grabbing; }
 #findbar .count { color: var(--dim); font-size: 11px; white-space: nowrap; min-width: 50px; text-align: right; }
 #findbar button { border: none; background: transparent; color: var(--dim); font-size: 13px; width: 22px; height: 22px; border-radius: 4px; }
 #findbar button:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+/* ---- Sidebar modes (track b): header, explorer, global search, quick open ---- */
+
+/* Warp's control bar (UmiSidebarHeader): "Search tabs..." in Tabs mode, then the Tabs, Files and
+   Search buttons and +; 24 high, 4 between. Buttons at 42% ink, 60% hovered, 92% on a 8.5% fill
+   when active. */
+#sidebar-head button { color: rgba(255, 255, 255, 0.42); display: grid; place-items: center; padding: 0; }
+#sidebar-head button svg { width: 14px; height: 14px; }
+#sidebar-head button.mode.on { background: rgba(255, 255, 255, 0.085); color: rgba(255, 255, 255, 0.92); }
+#tab-search { flex: 1; min-width: 0; height: 24px; display: flex; align-items: center; gap: 6px; }
+#tab-search .glyph { width: 12px; height: 12px; color: rgba(255, 255, 255, 0.6); display: grid; place-items: center; }
+#tab-search .glyph svg { width: 12px; height: 12px; }
+#tab-search input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none; padding: 0;
+  color: rgba(255, 255, 255, 0.9); font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+#tab-search input::placeholder { color: rgba(255, 255, 255, 0.6); }
+.head-gap { flex: 1; display: none; }
+body:not([data-sidebar-mode="tabs"]) #tab-search { display: none; }
+body:not([data-sidebar-mode="tabs"]) .head-gap { display: block; }
+body[data-sidebar-mode="files"] #review, body[data-sidebar-mode="files"] #tabs,
+body[data-sidebar-mode="search"] #review, body[data-sidebar-mode="search"] #tabs { display: none; }
+#files[hidden], #search[hidden], #sidebar-flash[hidden] { display: none; }
+#sidebar-flash { margin: 0 8px 6px; padding: 6px 8px; border-radius: 4px; background: rgba(188, 54, 42, 0.25); color: var(--ink); font-size: 12px; }
+
+.vlist { overflow-y: auto; position: relative; outline: none; }
+.vlist-inner { position: relative; }
+.vlist::-webkit-scrollbar { width: 4px; }
+.vlist::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 2px; }
+
+/* Explorer rows (UmiFileTreeStyle, Warp's numbers): 14 pt names, 16 pt indent, 25 pt rows, 16 pt
+   chevron and icon; text 60%, 90% hovered, full when selected on a 20% fill (hover 10%). */
+#files { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 8px 8px; }
+.ft-list { flex: 1; min-height: 0; }
+.ft-row, .sr-row {
+  display: flex; align-items: center; box-sizing: border-box; padding-right: 8px; border-radius: 4px;
+  color: rgba(255, 255, 255, 0.6); font: 14px -apple-system, BlinkMacSystemFont, sans-serif; white-space: nowrap;
+}
+.ft-row:hover, .sr-row:hover { background: rgba(255, 255, 255, 0.10); color: rgba(255, 255, 255, 0.9); }
+.ft-row.sel, .sr-row.sel { background: rgba(255, 255, 255, 0.20); color: #fff; }
+.ft-row .chev, .sr-row .chev { width: 16px; height: 16px; flex: none; margin-right: 4px; display: grid; place-items: center; }
+.ft-row .chev svg, .sr-row .chev svg { width: 11px; height: 11px; }
+.ft-row .ficon, .sr-row .ficon, .qo-row .ficon { width: 16px; height: 16px; flex: none; margin-right: 8px; display: grid; place-items: center; }
+.ft-row .ficon svg { width: 15px; height: 15px; }
+.file-icon { display: block; }
+.ft-row .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ft-row.ignored .name { font-style: italic; font-weight: 300; }
+.ft-row.editing input {
+  flex: 1; min-width: 0; background: transparent; border: 1px solid rgba(25, 170, 216, 0.7); border-radius: 3px;
+  color: #fff; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; padding: 1px 3px; outline: none;
+}
+
+/* Global search (UmiGlobalSearchView). */
+#search { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 8px 8px; }
+.sq-title { color: rgba(255, 255, 255, 0.6); font-size: 14px; padding: 0 8px; }
+.sq-field {
+  display: flex; align-items: center; gap: 2px; margin: 4px 8px; padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px;
+}
+.sq-field input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none; padding: 0; min-height: 18px;
+  color: rgba(255, 255, 255, 0.92); font: 14px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.sq-field input::placeholder { color: rgba(255, 255, 255, 0.4); }
+.sq-toggle {
+  width: 20px; height: 18px; flex: none; border: none; border-radius: 4px; padding: 0; background: transparent;
+  color: rgba(255, 255, 255, 0.42); display: grid; place-items: center;
+}
+.sq-toggle svg { width: 13px; height: 13px; }
+.sq-toggle:hover { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.6); }
+.sq-toggle.on { background: rgba(255, 255, 255, 0.085); color: rgba(255, 255, 255, 0.92); }
+.sq-msg { color: rgba(255, 255, 255, 0.4); font-size: 12px; padding: 0 8px 4px; }
+.sq-msg.error { color: rgba(255, 255, 255, 0.6); }
+.sq-capped { display: flex; gap: 4px; align-items: flex-start; padding: 0 8px 4px; font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+.sq-capped svg { width: 12px; height: 12px; flex: none; color: #fefdc2; margin-top: 1px; }
+.sr-list { flex: 1; min-height: 0; }
+.sr-row.file { padding-left: 8px; }
+.sr-row .name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.sr-row .folder, .qo-row .folder {
+  min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
+.sr-row .folder { margin-left: 6px; font-size: 12px; color: rgba(255, 255, 255, 0.4); }
+.sr-row .count {
+  margin-left: auto; padding: 1px 4px; border-radius: 4px; background: #fefdc2; color: #000; font-size: 12px; line-height: 14px; flex: none;
+}
+.sr-row .folder + .count, .sr-row .name + .folder:empty + .count { margin-left: auto; }
+.sr-row.match { padding-left: 32px; padding-right: 12px; overflow: hidden; text-overflow: ellipsis; display: block; line-height: 25px; }
+.sr-row mark { background: rgba(254, 253, 194, 0.5); color: inherit; border-radius: 1px; }
+
+/* Quick open (Umi's palette with files:): 640 wide, 117 from the top, radius 8, surface = the
+   background with 10% ink, 1 px outline at 10%; rows 28 high, selected at the accent's 90%. */
+#panel.quickopen {
+  top: 117px; bottom: auto; left: 50%; right: auto; transform: translateX(-50%);
+  width: min(640px, calc(100% - 32px)); max-height: min(464px, calc(100% - 133px));
+  padding: 0 0 10px; border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 8px;
+  background: #1e1e1e; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; overflow: hidden;
+}
+.qo-field { display: flex; align-items: center; padding: 16px 24px; }
+.qo-filter { font: italic 600 13px -apple-system, BlinkMacSystemFont, sans-serif; color: rgba(255, 255, 255, 0.9); margin-right: 8px; }
+.qo-field input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none; padding: 0;
+  color: rgba(255, 255, 255, 0.9); font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.qo-field input::placeholder { color: rgba(255, 255, 255, 0.4); }
+.qo-list { overflow-y: auto; min-height: 0; padding: 0 4px; }
+.qo-busy { color: rgba(255, 255, 255, 0.6); font-size: 12px; padding: 4px 20px 8px; }
+.qo-row {
+  display: flex; align-items: center; height: 28px; padding: 0 20px; border-radius: 4px; white-space: nowrap;
+  color: rgba(255, 255, 255, 0.9); font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.qo-row .ficon svg { width: 13px; height: 13px; }
+.qo-row .name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.qo-row .folder { margin-left: 8px; font-size: 11px; color: rgba(255, 255, 255, 0.6); }
+.qo-row .line { font-size: 11px; color: rgba(255, 255, 255, 0.6); flex: none; }
+.qo-row b { font-weight: 700; }
+.qo-row.create .title { color: rgba(255, 255, 255, 0.6); }
+.qo-row:hover { background: rgba(25, 170, 216, 0.2); }
+.qo-row.sel { background: rgba(25, 170, 216, 0.9); color: rgba(0, 0, 0, 0.9); }
+.qo-row.sel .folder, .qo-row.sel .line, .qo-row.sel.create .title { color: rgba(0, 0, 0, 0.6); }
