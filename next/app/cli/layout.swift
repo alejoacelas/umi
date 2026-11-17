@@ -211,7 +211,9 @@ func notifyCommand(_ argv: [String]) {
     let args = parse(argv, ArgSpec(valued: ["--pane"]))
     let w = args.words
     guard let title = w.first else { fail("notify TITLE [BODY]") }
-    show(ui("notify", ["title": title, "body": w.dropFirst().joined(separator: " ")])) { _ in "" }
+    var req: [String: Any] = ["title": title, "body": w.dropFirst().joined(separator: " ")]
+    if let pane = args.value("--pane") { req["pane"] = pane }
+    show(ui("notify", req)) { _ in "" }
 }
 
 func goCommand(_ argv: [String]) {

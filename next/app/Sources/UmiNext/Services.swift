@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import Foundation
+import UserNotifications
 
 /// File and search services for the web layer (web/fs.js is the page's side).
 ///
@@ -53,6 +54,7 @@ final class WebServices {
         case "sendText": async(id) { try Self.sendText(args) }
         case "readData": async(id) { try Self.readData(args) }
         case "openURL": reply(id, Result { try Self.openURL(args) })
+        case "notify": notify(id, args)
         case "menu":
             let items = args["items"] as? [[String: Any]] ?? []
             // Popped up after this message is handled: the menu runs its own event loop.
@@ -358,6 +360,39 @@ final class WebServices {
         }
         guard NSWorkspace.shared.open(url) else { throw Failure(code: "io", message: "can't open \(s)") }
         return ["ok": true]
+    }
+
+    /// {title, body}: a desktop notification (SPEC T-6), as Umi's UmiNotify: asks for permission
+    /// the first time without waiting for the answer; replies {status: delivered | asked | denied}.
+    /// UMI_NEXT_TEST_NOTIFY_LOG (tests) appends the notification as a JSON line there instead.
+    private func notify(_ id: String, _ args: [String: Any]) {
+        let title = args["title"] as? String ?? "", body = args["body"] as? String ?? ""
+        guard !title.isEmpty else { return reply(id, .failure(Failure(code: "badArgs", message: "notify needs a title"))) }
+        if let log = Paths.env["UMI_NEXT_TEST_NOTIFY_LOG"], !log.isEmpty {
+            if !FileManager.default.fileExists(atPath: log) { FileManager.default.createFile(atPath: log, contents: nil) }
+            let line = (try? JSONSerialization.data(withJSONObject: ["title": title, "body": body])) ?? Data()
+            if let h = FileHandle(forWritingAtPath: log) { h.seekToEndOfFile(); h.write(line + Data("\n".utf8)); try? h.close() }
+            return reply(id, .success(["status": "logged"]))
+        }
+        let deliver = {
+            let content = UNMutableNotificationContent()
+            content.title = title
+            if !body.isEmpty { content.body = body }
+            content.sound = .default
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            let status: String
+            switch settings.authorizationStatus {
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { granted, _ in if granted { deliver() } }
+                status = "asked"
+            case .denied: status = "denied"
+            default: deliver(); status = "delivered"
+            }
+            DispatchQueue.main.async { self.reply(id, .success(["status": status])) }
+        }
     }
 
     /// {text}: puts it on the clipboard. Without text: gives the clipboard's text.

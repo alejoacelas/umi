@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """Every `umi-next` command against a running test copy of UmiNext.
 
-  cli_test.py APP [SCRATCH]
+  cli_test.py APP [SCRATCH] [NOTIFY_LOG]
 
 APP is a UmiNext.app started with UMI_NEXT_DEBUG=1 (its CLI is APP/Contents/MacOS/umi-next; the
 debug socket checks what the page did). It types nothing into windows, so it runs with
 UMI_NEXT_OFFSCREEN=1 and no screen. Start the app with UMI_NEXT_FOCUS_ASSUME_ACTIVE=1 for the
 focus-log checks (an offscreen window is never active). It leaves the layout as it found it,
 apart from the sessions it ends. SCRATCH (default: a temp folder) holds the Markdown files.
+NOTIFY_LOG: the app's UMI_NEXT_TEST_NOTIFY_LOG, where `notify` writes instead of notifying.
 """
 import json, os, plistlib, socket, subprocess, sys, tempfile, time, traceback
 
 app = os.path.abspath(sys.argv[1])
 scratch = sys.argv[2] if len(sys.argv) > 2 else tempfile.mkdtemp(prefix="umi-next-cli-")
+notify_log = sys.argv[3] if len(sys.argv) > 3 else None
 os.makedirs(scratch, exist_ok=True)
 CLI = os.path.join(app, "Contents/MacOS/umi-next")
 info = plistlib.load(open(os.path.join(app, "Contents/Info.plist"), "rb"))
@@ -124,8 +126,9 @@ def t_tab_new():
     t = next(t for t in tabs() if t["id"] == r["tab"])
     assert t["name"] == "cli-tab" and t["selected"]
     assert t["panes"][0]["name"] == "catter" and t["panes"][0]["cwd"] == scratch
-    s = next(s for s in ls()["sessions"] if s["id"] == r["session"])
-    assert s["by"] == "cli", s  # started by the CLI: out of the user's session lists
+    # Started by the CLI: out of the user's session lists (the page learns it at the next poll).
+    s = until(lambda: next((s for s in ls()["sessions"] if s["id"] == r["session"] and s["by"] == "cli"), None),
+              what="the session listed as started by the CLI")
     assert debug(f"Umi.model.userStarted(Umi.state.live['{r['session']}'])") in (False, 0, "0", "false"), "picker would list it"
 
 
@@ -233,14 +236,67 @@ def t_tabs():
 def t_sidebar_shortcuts_go_notify():
     assert j("sidebar", "off")["visible"] is False
     assert j("sidebar", "toggle")["visible"] is True
+    j("sidebar", "tabs")  # an earlier check may have left another mode
     assert j("sidebar", "status")["mode"] == "tabs"
     s = j("shortcuts")
     assert any(x["id"] == "splitRight" and x["keys"] == ["cmd+d"] for x in s["shortcuts"])
     # Nothing waits for the user in a fresh test copy.
     g = run("go", "--next", "jump", ok=False)
     assert g.returncode == 0 or "nothing in jump" in g.stderr
-    r = run("notify", "cli test", "body", ok=False)
-    assert r.returncode == 0 or "notify isn't in Umi next yet" in r.stderr, r.stderr
+    # The sidebar's modes (track b).
+    assert j("sidebar", "files")["mode"] == "files"
+    assert debug("Umi.state.layout.sidebarMode") == "files"
+    assert j("sidebar", "search")["mode"] == "search"
+    assert j("sidebar", "tabs")["mode"] == "tabs"
+    assert "unknown mode" in run("sidebar", "sideways", ok=False, code=1).stderr
+    # notify: a desktop notification (logged by the test copy instead); none from a snoozed session.
+    r = j("notify", "cli test", "the body")
+    assert r["title"] == "cli test" and r["status"] in (("logged",) if notify_log else ("logged", "delivered", "asked", "denied")), r
+    if notify_log:
+        last = json.loads(open(notify_log).read().strip().splitlines()[-1])
+        assert last == {"title": "cli test", "body": "the body"}, last
+    debug(f"Umi.app.update(() => Umi.model.snooze('{made['cat']}')); 1")
+    try:
+        r = j("notify", "--pane", made["cat"], "from a snoozed session")
+        assert r.get("suppressed") == "snoozed", r
+        if notify_log:
+            assert "snoozed session" not in open(notify_log).read()
+    finally:
+        debug(f"Umi.app.update(() => {{ delete Umi.state.layout.meta.sessions['{made['cat']}'].snooze; }}); 1")
+    assert "notify TITLE" in run("notify", ok=False, code=1).stderr
+
+
+def t_zoom_strip_back():
+    # The session of the closed tab shows again at the right end of this tab (the strip's show).
+    run("tab", "focus", made["tab"])
+    sh = session_pane(made["sh"])["id"]
+    run("pane", "show", made["cat"], "--focus")
+    cat = until(lambda: session_pane(made["cat"]), what="cat on show")
+    t = next(t for t in tabs() if t["id"] == made["tab"])
+    assert cat["tab"] == made["tab"] and t["panes"][-1]["id"] == cat["id"] and ls()["current_pane"] == cat["id"], t
+    # pane zoom: only that pane shows; again: back.
+    j("pane", "zoom", cat["id"])
+    assert pane(cat["id"])["zoomed"] is True and debug("Umi.model.activeTab().zoomed") == cat["id"]
+    j("pane", "zoom", cat["id"])
+    assert pane(cat["id"])["zoomed"] is False
+    # pane hide is ⌘W: the session goes on the tab's strip; pane show brings it back from there.
+    j("pane", "hide", cat["id"])
+    t = next(t for t in tabs() if t["id"] == made["tab"])
+    assert made["cat"] in t["hidden"] and session_pane(made["cat"]) is None, t
+    until(lambda: debug(f"[...document.querySelectorAll('#strip .chip.hidden')].some((c) => c.dataset.session === '{made['cat']}')") in (True, 1, "1", "true"), what="the session's hidden chip")
+    run("pane", "focus", sh)
+    j("pane", "show", made["cat"])
+    cat = until(lambda: session_pane(made["cat"]), what="cat back from the strip")
+    t = next(t for t in tabs() if t["id"] == made["tab"])
+    assert made["cat"] not in t["hidden"] and t["panes"][-1]["id"] == cat["id"], t
+    assert ls()["current_pane"] == sh, "pane show without --focus took the focus"
+    # go --back: back to the session a walk (go --next) started from.
+    debug(f"Umi.state.ui.walkFrom = '{made['cat']}'; 1")
+    run("pane", "focus", sh)
+    r = j("go", "--back")
+    assert ls()["current_pane"] == cat["id"] and r["pane"] == cat["id"], r
+    assert debug("JSON.stringify(Umi.state.ui.walkFrom ?? null)") == "null"
+    made["cat_pane"] = cat["id"]
 
 
 def t_edit():
@@ -358,7 +414,8 @@ def t_exit():
 for name, fn in [("help", t_help), ("ls", t_ls), ("tab new", t_tab_new), ("split", t_split),
                  ("send, read, wait", t_send_read_wait), ("keys", t_keys), ("caller defaults", t_caller),
                  ("pane commands", t_pane_ops), ("tab commands", t_tabs),
-                 ("sidebar, shortcuts, go, notify", t_sidebar_shortcuts_go_notify), ("edit, editor", t_edit),
+                 ("sidebar, shortcuts, go, notify", t_sidebar_shortcuts_go_notify),
+                 ("pane zoom, strip, go --back", t_zoom_strip_back), ("edit, editor", t_edit),
                  ("comments", t_comments), ("focus log", t_focus_log), ("pane exit", t_exit)]:
     check(name, fn)
 

@@ -241,7 +241,8 @@ Umi.cli = (() => {
   // ⌘W: stops showing the pane; its session keeps running.
   H['pane.close'] = ({ pane }, caller) => {
     const r = resolvePane(pane, caller);
-    Umi.app.update(() => M.removePane(r.pane), { focus: r.pane === M.activeTab().focused });
+    // As ⌘W does: the session goes to the tab's hidden-pane strip, and ⇧⌘T can bring the pane back.
+    Umi.app.update(() => { Umi.arrange.noteClosePane(r.pane); M.hide(r.pane); }, { focus: r.pane === M.activeTab().focused });
     return { panes: [r.pane], session: r.session };
   };
   // Hiding is ⌘W in Next: the session keeps running and the tab's strip lists it (track c).
@@ -337,10 +338,15 @@ Umi.cli = (() => {
     fail(`sidebar: unknown mode "${mode}" (on off toggle status tabs files search)`);
   };
 
-  H.notify = async ({ title, body }) => {
-    try { await Umi.bridge.request('notify', { title, body: body || '' }); }
-    catch (e) { fail(e.code === 'unknownOp' || /unknown/i.test(e.message) ? 'notify isn\'t in Umi next yet (PARITY track c: bridge op notify)' : e.message); }
-    return { title };
+  // A desktop notification (T-6). DESIGN's snooze rules: a snoozed session, or one on the
+  // docket, fires no alert (exit 0, `suppressed` says why).
+  H.notify = async ({ title, body, pane }, caller) => {
+    let sid = null;
+    if (pane || caller?.session) { try { sid = resolvePane(pane, caller, { needPane: false }).session; } catch (e) { if (pane) throw e; } }
+    if (sid && M.isSnoozed(sid)) return { title, suppressed: 'snoozed', session: sid };
+    if (sid && S.live[sid]?.docket) return { title, suppressed: 'docket', session: sid };
+    const r = await Umi.bridge.request('notify', { title, body: body || '' });
+    return { title, status: r.status, ...(sid ? { session: sid } : {}) };
   };
 
   H.go = ({ next, back }) => {
