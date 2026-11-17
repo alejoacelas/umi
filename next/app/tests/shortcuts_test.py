@@ -49,7 +49,7 @@ def ui():
 
 CODES = {"t": 17, "d": 2, "w": 13, "b": 11, "[": 33, "]": 30, "1": 18, "2": 19, "3": 20, "9": 25, "k": 40, "x": 7,
          "left": 123, "right": 124, "down": 125, "up": 126, "space": 49, "escape": 53, "r": 15, "enter": 36, "tab": 48, "=": 24,
-         "f": 3, "g": 5, "i": 34, "a": 0, "p": 35, "j": 38, "/": 44, "-": 27, "0": 29, ".": 47, ",": 43}
+         "f": 3, "g": 5, "i": 34, "a": 0, "p": 35, "j": 38, "/": 44, "-": 27, "0": 29, ".": 47, ",": 43, "v": 9}
 
 
 LETTERS = dict(zip("asdfhgzxcvbqweryt", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17]))
@@ -343,6 +343,21 @@ check("⇧⌘T reopens it with its sessions", ui()["tabs"] == n and
       J("Umi.model.paneIds(Umi.model.activeTab().root).map((id) => Umi.model.sessionOf(id))") == sids, ui())
 press("1", "cmd")
 
+# ⌘W hides one pane of a split; ⇧⌘T brings that pane back in its old place and size (L-20).
+focus_terminal()
+if ui()["panes"] < 2:
+    new_shell_split()
+shape = "JSON.stringify((function f(n) { return n.type === 'pane' ? Umi.model.sessionOf(n.id) : [n.dir, Math.round(n.ratio * 1000), f(n.a), f(n.b)]; })(Umi.model.activeTab().root))"
+before = J(shape)
+gone = J("Umi.model.sessionOf(Umi.model.activeTab().focused)")
+np = ui()["panes"]
+press("w", "cmd")
+check("⌘W hides the pane", ui()["panes"] == np - 1 and J(f"!Umi.model.paneOfSession({json.dumps(gone)})"), ui())
+press("t", "cmd", "shift")
+time.sleep(0.8)
+check("⇧⌘T brings that pane back in its place and size, focused", J(shape) == before
+      and J("Umi.model.sessionOf(Umi.model.activeTab().focused)") == gone, (J(shape), before))
+
 
 # ⌘= ⌘- ⌘0 zoom the page and the terminals' text; ⌥⇧> ⌥⇧< the font size.
 def cols():
@@ -401,6 +416,15 @@ type_text("echo " + mark + "\r")
 time.sleep(0.8)
 got = [mark in D({"cmd": "screen", "pane": p}).get("text", "") for p in panes]
 check("typing reaches every terminal of the synced tab", len(panes) > 1 and all(got), got)
+# ⌘V pastes into every synced terminal (native sends the paste to each).
+mark3 = tag("sp")
+ev(f"Umi.bridge.request('clipboard', {{text: {json.dumps('echo ' + mark3)}}}); 1")
+time.sleep(0.3)
+press("v", "cmd")
+press("enter")
+time.sleep(0.8)
+got = [D({"cmd": "screen", "pane": p}).get("text", "").count(mark3) for p in panes]
+check("⌘V pastes into every terminal of the synced tab (the command and its output)", len(panes) > 1 and all(n >= 2 for n in got), got)
 press("i", "cmd", "opt", "shift")
 check("⌥⇧⌘I stops syncing", not J("Umi.arrange.isSynced(Umi.model.activeTab())"))
 mark2 = tag("sz")
@@ -460,6 +484,22 @@ ev("""(() => { const e = document.querySelector('#sidebar-edge'), r = e.getBound
 time.sleep(0.3)
 check("the sidebar stops at 180", J("Umi.state.layout.sidebarWidth") == 180)
 ev("Umi.app.update(() => { delete Umi.state.layout.sidebarWidth; document.documentElement.style.removeProperty('--sidebar-width'); }); 1")
+
+# Dragging a tab's row in the sidebar (a real mouse drag) moves the tab where it's dropped (M-4).
+if not debug_events:
+    rows = J("[...document.querySelectorAll('#tabs .tab')].filter((r) => { const t = Umi.state.layout.tabs.find((x) => x.id === r.dataset.tab); return t && !t.pinned && !t.archived; }).map((r) => { const b = r.getBoundingClientRect(); return {id: r.dataset.tab, x: b.left + b.width / 2, top: b.top, bottom: b.bottom}; })")
+    if len(rows) >= 2:
+        o = D({"cmd": "state"})["contentOriginGlobal"]
+        a, b = rows[0], rows[1]
+        in_front()
+        subprocess.run([click_bin, "drag", str(o["x"] + a["x"]), str(o["y"] + (a["top"] + a["bottom"]) / 2),
+                        str(o["x"] + b["x"]), str(o["y"] + b["bottom"] - 4)], check=True)
+        time.sleep(0.6)
+        order = J("Umi.state.layout.tabs.map((t) => t.id)")
+        check("dragging a tab's row below the next one moves it there", order.index(a["id"]) == order.index(b["id"]) + 1, (a["id"], b["id"], order))
+        ev(f"Umi.app.update(() => Umi.arrange.placeTab(Umi.state.layout.tabs.find((t) => t.id === {json.dumps(a['id'])}), Umi.state.layout.tabs.find((t) => t.id === {json.dumps(b['id'])}), false)); 1")
+    else:
+        check("dragging a tab's row: two unpinned tabs to drag between", False, rows)
 
 # ⇧⌘R reloads the page natively.
 n0 = len(D({"cmd": "state"})["reloads"])
