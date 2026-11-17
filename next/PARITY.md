@@ -71,16 +71,16 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 | Changing shortcuts (`umi shortcuts set`) | kept in `shortcuts.json` | none | Departure: edit `web/shortcuts.js`; it reloads live |
 | Hidden-pane strip (H-5) | chips for every pane above the panes; hidden ones dim; click brings back | title-bar strip with a chip per shown pane, click focuses (a7855cae9) | Add chips for the sessions ⌘W hid from the current tab, after the shown ones; clicking one shows it again at the right end, focused. A tab remembers the sessions it hid; Exit or showing the session elsewhere removes its chip. Departure: no pane limit, so nothing else hides panes |
 | Pane limit, make-room, `--until` (H-1, H-3) | 3 per tab, a pane hidden to make room; panes return by condition | none | Departure: none of it (DESIGN "Nothing appears or disappears by itself") |
-| ⌘[ / ⌘] walk (H-6) | walks panes on show then hidden | none | ⌘[ ⌘] step focus through the tab's panes on show. Hidden ones: via the strip only |
-| Tabs: new, select, next/prev (L-11) | ⌘T, ⌘1–9, ⇧⌘[ ⇧⌘], ⌃Tab | ⌘T, ⌘1–9, ⇧⌘[ ⇧⌘] | Add ⌃Tab / ⌃⇧Tab |
-| Tab rename, close (S-4, L-2) | double-click / ⌃⌘R rename in place; close asks when a program runs | rename only at creation; × stops showing the tab | Double-click and ⌃⌘R rename in place (same field as at creation). Close keeps sessions (⌘W rule), so no question |
+| ⌘[ / ⌘] walk (H-6) | walks panes on show then hidden | ⌘[ ⌘] step through the tab's panes on show (2fb42775b) | Hidden ones: via the strip only |
+| Tabs: new, select, next/prev (L-11) | ⌘T, ⌘1–9, ⇧⌘[ ⇧⌘], ⌃Tab | [x] done, ⌃Tab / ⌃⇧Tab included | — |
+| Tab rename, close (S-4, L-2) | double-click / ⌃⌘R rename in place; close asks when a program runs | double-click and ⌃⌘R rename in place; × and ⌥⌘W stop showing the tab | [x] done. Close keeps sessions (⌘W rule), so no question |
 | Tab move, pin, color, groups, search (L-13, S-4, S-13, S-14) | ⌃⇧↑↓, pin, colors, groups, Search tabs, right-click menu | none | ⌃⇧↑↓ move and drag to reorder now. Pin, colors, groups, search, menu: later |
 | Splits (L-1, L-19) | ⌘D / ⇧⌘D, panes share space equally | ⌘D / ⇧⌘D into the picker; dividers drag | Equal sharing within a row on split (L-19); ⇧⌘D ⌘D left/up variants later |
 | Pane focus by direction | ⌥⌘ arrows | ⌥⌘ arrows | [x] done |
 | Zoom (L-3) | maximize/minimize a pane | none | ⇧⌘↩ toggles zoom of the focused pane (layout flag, other panes hidden while zoomed; their sessions keep running) |
-| Pane rename (L-3) | ⌃⇧⌘R in place | palette `r` renames the session | ⌃⇧⌘R opens the same rename |
+| Pane rename (L-3) | ⌃⇧⌘R in place | ⌃⇧⌘R and palette `r` rename the session | [x] done |
 | Pane move (M-1, KM-1..5, ⌃⌘T) | ⌃⌘ arrows move panes within/between tabs; ⌃⌘T to new tab; drag | palette `m` to new tab | ⌃⌘T = move to new tab. ⌃⌘←→ swap with neighbour; ⌃⌘↑↓ to the tab above/below. Drag: later |
-| Swap, resize, equalize (L-3) | CLI | divider drag | Actions for the CLI track: `swapPanes`, `resizePane`, `equalize` |
+| Swap, resize, equalize (L-3) | CLI | divider drag; ⌃⌘= equalizes | Actions for the CLI track: `swapPanes`, `resizePane` |
 | Reopen ⇧⌘T (L-20) | reopens a closed pane/tab/window | none | Departure: not needed: closed panes' sessions stay in the picker and the strip |
 | Attention: jump (L-12) | ⌃⌘J next pane needing you, ⌃⌘K back | palette `w` next waiting | ⌃⌘J = next waiting; ⌃⌘K back to where the walk started |
 | Pane indicator (PI-1..4) | small mark per pane: working, needs you, finished unseen | Review list; none on panes | A mark at each terminal slot's bottom right and on strip chips, from `S.live[sid].agent` |
