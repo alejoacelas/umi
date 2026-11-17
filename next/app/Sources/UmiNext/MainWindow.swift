@@ -8,6 +8,13 @@ final class UmiWindow: NSWindow {
     /// the page or the menu sees it; any other key goes on as usual.
     var shortcutHandler: ((NSEvent) -> Bool)?
 
+    /// ⌘/⌃ keys come here before sendEvent (AppKit tries key equivalents first, and the terminal
+    /// would take its own Ghostty bindings such as ⌘T and ⌘D), so the table is checked here too.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, shortcutHandler?(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, shortcutHandler?(event) == true { return }
         super.sendEvent(event)
