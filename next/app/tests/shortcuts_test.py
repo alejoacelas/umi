@@ -12,6 +12,8 @@ terminal, and that a table entry added to web/shortcuts.js works after the page 
 import json, os, socket, subprocess, sys, time
 
 state, key_bin, hyper_bin = sys.argv[1:4]
+# `click` (built from click.swift) next to `key`: real clicks for the strip checks.
+click_bin = os.path.join(os.path.dirname(os.path.abspath(key_bin)), "click")
 debug_events = "--debug-events" in sys.argv
 here = os.path.dirname(os.path.abspath(__file__))
 fails = []
@@ -45,7 +47,8 @@ def ui():
 
 
 CODES = {"t": 17, "d": 2, "w": 13, "b": 11, "[": 33, "]": 30, "1": 18, "2": 19, "3": 20, "9": 25, "k": 40, "x": 7,
-         "left": 123, "right": 124, "down": 125, "up": 126, "space": 49, "escape": 53, "r": 15, "enter": 36, "tab": 48, "=": 24}
+         "left": 123, "right": 124, "down": 125, "up": 126, "space": 49, "escape": 53, "r": 15, "enter": 36, "tab": 48, "=": 24,
+         "f": 3, "g": 5, "i": 34, "a": 0, "p": 35, "j": 38, "/": 44, "-": 27, "0": 29, ".": 47, ",": 43}
 
 
 LETTERS = dict(zip("asdfhgzxcvbqweryt", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17]))
@@ -57,7 +60,7 @@ def press(k, *mods):
         if k == "escape":
             D({"cmd": "keys", "text": "\x1b"})
         else:
-            D({"cmd": "shortcut", "key": {"space": " ", "enter": "\r"}.get(k, k), "mods": list(mods)})
+            D({"cmd": "shortcut", "key": {"space": " ", "enter": "\r", "tab": "\t"}.get(k, k), "mods": list(mods)})
     else:
         real_key(CODES[k], *mods)
     time.sleep(0.35)
@@ -98,7 +101,7 @@ def focus_terminal():
 
 sys.path.insert(0, here)
 from front import bring_to_front
-if not bring_to_front(D) and not debug_events:
+if not debug_events and not bring_to_front(D):
     sys.exit("FAIL this UmiNext isn't in front with the keys; no real keys sent")
 st = D({"cmd": "state"})
 check("native learned the table", "newTab" in st.get("shortcuts", []) and "palette" in st.get("shortcuts", []), st.get("shortcuts"))
@@ -188,6 +191,219 @@ if not debug_events:
     time.sleep(0.35)
     check("Hyper tap opens the palette", ui()["panel"] == "palette", ui())
     press("escape")
+
+# ---- Track (c): shortcuts page, hidden-pane strip, zoom, tabs, reopen, find, sync, UI zoom ----
+def J(js):
+    return json.loads(ev("JSON.stringify(" + js + ")"))
+
+
+def wait(fn, secs=3.0):
+    end = time.time() + secs
+    while time.time() < end:
+        try:
+            if fn():
+                return True
+        except Exception:
+            pass
+        time.sleep(0.1)
+    return False
+
+
+def type_text(text):
+    """Types into whatever has the keys (`\r` presses Enter)."""
+    if debug_events:
+        D({"cmd": "keys", "text": text})
+    else:
+        for ch in text:
+            if ch == "\r":
+                press("enter")
+            else:
+                real_key(LETTERS[ch])
+    time.sleep(0.3)
+
+
+def new_shell_split():
+    """⌘D and a shell in the picker: the tab gets one more terminal, focused."""
+    press("d", "cmd")
+    ev("""(() => { const M = Umi.model; Umi.app.update(() => M.startSession(M.activeTab().focused, {name: 'sc-split'})); })(); 1""")
+    wait(lambda: J("Umi.model.sessionOf(Umi.model.activeTab().focused) || null"), 5)
+    time.sleep(0.8)
+
+
+def visible_panes():
+    return {p["id"] for p in D({"cmd": "state"})["panes"] if p["visible"]}
+
+
+def tag(prefix):
+    return prefix + "".join("abcdefghij"[int(c)] for c in str(int(time.time() * 1000) % 100000))
+
+
+# ⌘/ opens the shortcuts page drawn from the table; search by keys and by name; Esc closes.
+focus_terminal()
+press("/", "cmd")
+check("⌘/ opens the shortcuts page", J("!!Umi.state.layout.shortcutsPage") and ui()["keys"] == "web", ui())
+labelled = J("Umi.shortcuts.table.filter((e) => e.label).length")
+check("the page lists every shortcut in the table", J("document.querySelectorAll('#shortcuts .sc-row').length") == labelled)
+for q, want in [("cmd shift d", "splitDown"), ("shift cmd d", "splitDown"), ("⇧⌘D", "splitDown"), ("zoom the pane", "toggleZoom")]:
+    ev(f"""(() => {{ const i = document.querySelector('#shortcuts input'); i.value = {json.dumps(q)}; i.dispatchEvent(new Event('input')); }})(); 1""")
+    ids = J("[...document.querySelectorAll('#shortcuts .sc-row')].map((r) => r.dataset.id)")
+    check(f"page search {q!r} finds {want}", want in ids and len(ids) <= 3, ids)
+press("escape")
+check("Esc closes the shortcuts page", not J("!!Umi.state.layout.shortcutsPage") and ui()["keys"] == "terminal", ui())
+press("/", "cmd")
+press("/", "cmd")
+check("⌘/ again closes it", not J("!!Umi.state.layout.shortcutsPage"))
+focus_terminal()
+
+# ⌘W hides a pane: its session gets a dim chip after the shown ones; clicking it shows it again
+# at the right end, focused (through native's title-bar hit test).
+new_shell_split()
+two = ui()
+sid = J("Umi.model.sessionOf(Umi.model.activeTab().focused)")
+press("w", "cmd")
+hidden = J("[...document.querySelectorAll('#strip .chip.hidden')].map((c) => c.dataset.session)")
+check("⌘W puts the session on a hidden chip", hidden == [sid] and ui()["panes"] == two["panes"] - 1, (hidden, sid))
+check("the hidden session keeps running", J(f"Umi.state.live[{json.dumps(sid)}]?.alive !== false"))
+r = J("(() => { const r = document.querySelector('#strip .chip.hidden').getBoundingClientRect(); return {x: r.left + r.width / 2, y: r.top + r.height / 2}; })()")
+if debug_events:
+    # A synthesized click into an inactive window does not reach the page: send the chip its mousedown.
+    ev("document.querySelector('#strip .chip.hidden').dispatchEvent(new MouseEvent('mousedown', {bubbles: true})); 1")
+else:
+    in_front()
+    subprocess.run([click_bin, str(r["x"] + D({"cmd": "state"})["contentOriginGlobal"]["x"]),
+                    str(r["y"] + D({"cmd": "state"})["contentOriginGlobal"]["y"])], check=True)
+time.sleep(0.6)
+check("clicking the hidden chip shows it again, focused at the right end",
+      J("Umi.model.sessionOf(Umi.model.activeTab().focused)") == sid
+      and J("Umi.model.paneIds(Umi.model.activeTab().root).slice(-1)[0] === Umi.model.activeTab().focused")
+      and not J("document.querySelectorAll('#strip .chip.hidden').length"), ui())
+
+# ⇧⌘↩ zooms the focused pane: the other terminals leave the screen; again: back.
+focus_terminal()
+before = visible_panes()
+press("enter", "cmd", "shift")
+time.sleep(0.4)
+check("⇧⌘↩ zooms the pane", J("Umi.model.activeTab().zoomed || null") == ui()["focused"] and len(visible_panes()) == 1, visible_panes())
+press("enter", "cmd", "shift")
+time.sleep(0.4)
+check("⇧⌘↩ again unzooms", not J("Umi.model.activeTab().zoomed || null") and visible_panes() == before)
+
+# ⌃⌘← / → move the pane within the tab; ⌃⌘T to a new tab; ⌃⌘↑ to the tab above.
+order = J("Umi.model.paneIds(Umi.model.activeTab().root)")
+press("left", "ctrl", "cmd")
+check("⌃⌘← moves the pane left", J("Umi.model.paneIds(Umi.model.activeTab().root)") == order[::-1], J("Umi.model.paneIds(Umi.model.activeTab().root)"))
+press("right", "ctrl", "cmd")
+check("⌃⌘→ moves it back", J("Umi.model.paneIds(Umi.model.activeTab().root)") == order)
+n = ui()["tabs"]
+press("t", "ctrl", "cmd")
+check("⌃⌘T moves the pane to a new tab", ui()["tabs"] == n + 1 and ui()["panes"] == 1, ui())
+press("up", "ctrl", "cmd")
+check("⌃⌘↑ moves it to the tab above (the empty tab closes)", ui()["tabs"] == n and ui()["panes"] == 2, ui())
+
+# Tabs: ⌃⌘P pins (pinned tabs first), ⌃⇧↑↓ move within the group, ⌃⌘A archives.
+focus_terminal()
+press("t", "cmd"); press("escape"); focus_terminal()
+press("t", "cmd"); press("escape"); focus_terminal()
+last = J("Umi.state.layout.activeTab")
+press("p", "ctrl", "cmd")
+check("⌃⌘P pins the tab: it goes first", J("Umi.state.layout.tabs[0].id") == last and J("!!Umi.state.layout.tabs[0].pinned"))
+press("down", "ctrl", "shift")
+check("⌃⇧↓ doesn't take a pinned tab past the unpinned ones", J("Umi.state.layout.tabs[0].id") == last)
+press("p", "ctrl", "cmd")
+check("⌃⌘P again unpins (top of the others)", J("Umi.state.layout.tabs[0].id") == last and not J("!!Umi.state.layout.tabs[0].pinned"))
+press("down", "ctrl", "shift")
+check("⌃⇧↓ moves the tab down", J("Umi.state.layout.tabs[1].id") == last)
+press("up", "ctrl", "shift")
+check("⌃⇧↑ moves it up", J("Umi.state.layout.tabs[0].id") == last)
+press("a", "ctrl", "cmd")
+check("⌃⌘A archives the tab and selects another",
+      J(f"!!Umi.state.layout.tabs.find((t) => t.id === {json.dumps(last)}).archived")
+      and J("Umi.state.layout.activeTab") != last and "Archived · 1" in (J("document.querySelector('.archive-row')?.textContent || ''")))
+press("1", "cmd")
+check("⌘1 skips the archived tab", J("Umi.state.layout.activeTab") != last)
+ev("Umi.app.run('showArchived'); 1")
+check("Show archived selects it, still archived", J("Umi.state.layout.activeTab") == last and J("Umi.model.activeTab().archived > 0"))
+press("a", "ctrl", "cmd")
+check("⌃⌘A on an archived tab brings it back", not J("!!Umi.model.activeTab().archived") and not J("!!document.querySelector('.archive-row')"))
+
+# ⌥⌘W closes the tab (sessions keep running); ⇧⌘T reopens it with its sessions.
+press("9", "cmd")
+focus_terminal()
+sids = J("Umi.model.paneIds(Umi.model.activeTab().root).map((id) => Umi.model.sessionOf(id))")
+n = ui()["tabs"]
+press("w", "cmd", "opt")
+check("⌥⌘W closes the tab", ui()["tabs"] == n - 1)
+press("t", "cmd", "shift")
+time.sleep(0.8)
+check("⇧⌘T reopens it with its sessions", ui()["tabs"] == n and
+      J("Umi.model.paneIds(Umi.model.activeTab().root).map((id) => Umi.model.sessionOf(id))") == sids, ui())
+press("1", "cmd")
+
+
+# ⌘= ⌘- ⌘0 zoom the page and the terminals' text; ⌥⇧> ⌥⇧< the font size.
+def cols():
+    f = ui()["focused"]
+    return next(p["grid"]["cols"] for p in D({"cmd": "state"})["panes"] if p["id"] == f)
+
+
+focus_terminal()
+c0 = cols()
+press("=", "cmd")
+time.sleep(0.6)
+check("⌘= zooms in (110%, terminals' text too)", J("Umi.state.layout.zoom.ui") == 1.1 and cols() < c0, (J("Umi.state.layout.zoom"), cols(), c0))
+press("-", "cmd")
+press("-", "cmd")
+time.sleep(0.6)
+check("⌘- zooms out (90%)", J("Umi.state.layout.zoom.ui") == 0.9 and cols() > c0, cols())
+press("0", "cmd")
+time.sleep(0.6)
+check("⌘0 back to 100%", J("Umi.state.layout.zoom.ui") == 1 and cols() == c0, cols())
+press(".", "opt", "shift")
+time.sleep(0.6)
+check("⌥⇧> one point bigger", J("Umi.state.layout.zoom.font") == 1 and cols() < c0, cols())
+press(",", "opt", "shift")
+time.sleep(0.6)
+check("⌥⇧< one point smaller", J("Umi.state.layout.zoom.font") == 0 and cols() == c0, cols())
+
+# ⌘F finds in the terminal (Ghostty's search): count, ⌘G next, Esc closes.
+focus_terminal()
+word = tag("fq")
+type_text("echo " + word + " " + word + "\r")
+time.sleep(0.6)
+press("f", "cmd")
+check("⌘F opens the find bar with the keys", J("!!Umi.state.ui.find") and ui()["keys"] == "web" and not J("document.querySelector('#findbar').hidden"))
+type_text(word)
+wait(lambda: (J("Umi.state.ui.find.total") or 0) >= 3, 4)
+f = J("Umi.state.ui.find")
+check("the find bar counts the matches (the command line twice and the output)", (f.get("total") or 0) >= 3, f)
+check("the count shows in the bar", " of " in J("document.querySelector('#findbar .count').textContent"))
+sel0 = J("Umi.state.ui.find.selected")
+press("g", "cmd")
+wait(lambda: J("Umi.state.ui.find.selected") != sel0, 2)
+check("⌘G selects the next match", J("Umi.state.ui.find.selected") != sel0, (sel0, J("Umi.state.ui.find")))
+press("escape")
+check("Esc closes the find bar; the terminal has the keys", not J("!!Umi.state.ui.find") and ui()["keys"] == "terminal", ui())
+
+# ⌥⌘I synchronizes input across the tab's terminals; ⌥⇧⌘I stops.
+focus_terminal()
+if ui()["panes"] < 2:
+    new_shell_split()
+panes = J("Umi.model.paneIds(Umi.model.activeTab().root)")
+press("i", "cmd", "opt")
+check("⌥⌘I syncs the tab (link mark in its row)",
+      J("Umi.arrange.isSynced(Umi.model.activeTab())") and J("!!document.querySelector('.tab.active .mark.sync')"))
+mark = tag("sy")
+type_text("echo " + mark + "\r")
+time.sleep(0.8)
+got = [mark in D({"cmd": "screen", "pane": p}).get("text", "") for p in panes]
+check("typing reaches every terminal of the synced tab", len(panes) > 1 and all(got), got)
+press("i", "cmd", "opt", "shift")
+check("⌥⇧⌘I stops syncing", not J("Umi.arrange.isSynced(Umi.model.activeTab())"))
+mark2 = tag("sz")
+type_text("echo " + mark2 + "\r")
+time.sleep(0.8)
+got = [mark2 in D({"cmd": "screen", "pane": p}).get("text", "") for p in panes]
+check("after stopping, typing reaches only the focused terminal", sum(got) == 1, got)
 
 # ⇧⌘R reloads the page natively.
 n0 = len(D({"cmd": "state"})["reloads"])
