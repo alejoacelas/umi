@@ -365,6 +365,41 @@ time.sleep(0.6)
 check("a file outside git has no marks", not J(f"{V}.state().gutterMarks"))
 close_all()
 
+# ---- JSON tree and CSV / TSV table (E-1) ----
+open(scratch + "/data.json", "w").write('{"zeta": 1, "alpha": [true, null, "s"], "deep": {"a": {"b": {"c": {"d": 1}}}}, "empty": {}}\n')
+open_file(scratch + "/data.json")
+FD = f"{V}.frame.contentDocument"
+wait(f"{V}.mode === 'rendered' && {FD}.querySelector('.umi-json')")
+check("JSON opens as a tree (Rendered)", J(f"{V}.mode") == "rendered" and J(f"!!{FD}.querySelector('.umi-json details')"), vs())
+check("its keys keep the file's order", J(f"[...{FD}.querySelector('.umi-json > details > ul').children].map((li) => li.querySelector('.k').textContent)") == ["zeta", "alpha", "deep", "empty"],
+      J(f"[...{FD}.querySelectorAll('.umi-json .k')].map((k) => k.textContent)"))
+check("objects and arrays fold: open to depth 3, deeper ones closed with a count",
+      J(f"[...{FD}.querySelectorAll('.umi-json details')].map((d) => d.open)") == [True, True, True, True, False, False]
+      and "1 key" in J(f"[...{FD}.querySelectorAll('.umi-json details')].pop().querySelector('summary').textContent"),
+      J(f"[...{FD}.querySelectorAll('.umi-json details')].map((d) => d.open)"))
+check("the header has Rendered / Raw", J(f"!!{V}.root.querySelector('.fv-mode')"))
+key("e", "cmd")
+check("⌘E shows its source", J(f"{V}.mode") == "raw")
+ev(f"{V}.cm.dispatch({{changes: {{from: 0, to: 1, insert: '['}}}}); {V}.setMode('rendered'); 1")
+wait(f"{FD}.querySelector('.umi-data-err')")
+check("broken JSON says why instead of a tree", "Can't show a tree" in J(f"{FD}.querySelector('.umi-data-err')?.textContent || ''"))
+close_all()
+open(scratch + "/table.csv", "w").write('name,count,note\nb,10,"x, ""y"""\na,2.5,\nc,,z\n')
+open_file(scratch + "/table.csv")
+wait(f"{V}.mode === 'rendered' && {FD}.querySelector('table.umi-grid')")
+rows = J(f"[...{FD}.querySelectorAll('table.umi-grid tr')].map((r) => [...r.children].map((c) => c.textContent))")
+check("CSV opens as a table with row numbers and quoted cells", rows == [["", "name", "count", "note"], ["1", "b", "10", 'x, "y"'], ["2", "a", "2.5", ""], ["3", "c", "", "z"]], rows)
+check("its header stays in view and numbers align right",
+      J(f"getComputedStyle({FD}.querySelector('table.umi-grid th')).position") == "sticky"
+      and J(f"[...{FD}.querySelectorAll('table.umi-grid tbody tr:first-child td')].map((c) => c.classList.contains('num'))") == [False, False, True, False])
+check("the count above it", "3 rows × 3 columns" in J(f"{FD}.body.textContent"))
+close_all()
+open(scratch + "/t.tsv", "w").write("a\tb\n1\t2\n")
+open_file(scratch + "/t.tsv")
+wait(f"{FD}.querySelector('table.umi-grid')")
+check("TSV opens as a table", J(f"[...{FD}.querySelectorAll('table.umi-grid td:not(.rn)')].map((c) => c.textContent)") == ["1", "2"])
+close_all()
+
 close_all()
 print(f"\n{len(fails)} failed" if fails else "\nall passed")
 sys.exit(1 if fails else 0)

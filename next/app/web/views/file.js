@@ -129,7 +129,9 @@ Umi.views.file = (() => {
       this.id = node.id;
       this.path = node.path;
       this.markdown = isMarkdown(node.path);
-      this.mode = this.markdown ? (node.mode === 'raw' ? 'raw' : 'rendered') : 'raw';
+      // Files with a rendered view: Markdown, and JSON / CSV / TSV (datapreview.js).
+      this.preview = this.markdown || UmiData.handles(node.path);
+      this.mode = this.preview ? (node.mode === 'raw' ? 'raw' : 'rendered') : 'raw';
       this.text = '';
       this.disk = null;          // {text, version} as last read or written
       this.conflict = null;      // the disk's newer {text, version} while there are unsaved edits
@@ -159,7 +161,7 @@ Umi.views.file = (() => {
       name.title = this.path;
       name.append(this.dot, this.nameText);
       const right = el('div', 'fv-edge fv-right');
-      if (this.markdown) {
+      if (this.preview) {
         const toggle = this.toggle = el('div', 'fv-mode');
         toggle.title = 'Toggle rendered / raw (⌘E or ⇧⌘M)';
         for (const [m, label] of [['rendered', 'Rendered'], ['raw', 'Raw']]) {
@@ -177,7 +179,7 @@ Umi.views.file = (() => {
       close.title = 'Close (⌘W)';
       close.addEventListener('click', () => this.close());
       right.append(more, close);
-      if (this.markdown) left.classList.add('wide'), right.classList.add('wide');
+      if (this.preview) left.classList.add('wide'), right.classList.add('wide');
       head.append(left, name, right);
       head.addEventListener('contextmenu', (e) => { e.preventDefault(); this.menu(e); });
       this.bars = el('div', 'fv-bars');
@@ -185,7 +187,7 @@ Umi.views.file = (() => {
       this.source = el('div', 'fv-source');
       this.message = el('div', 'fv-message');
       this.body.append(this.source, this.message);
-      if (this.markdown) {
+      if (this.preview) {
         const f = this.frame = document.createElement('iframe');
         f.className = 'fv-preview';
         // Scripts may run only from this page (the parent): the page's CSP allows none of its own.
@@ -524,6 +526,7 @@ Umi.views.file = (() => {
       if (!this.frameReady || this.mode !== 'rendered' || !this.disk) return;
       if (this.composing) { this.previewStale = true; return; }
       const doc = this.frame.contentDocument, win = this.frame.contentWindow;
+      if (!this.markdown) return this.renderData(doc, win);
       const threads = UmiComments.threads(this.text);
       const resolved = new Set(threads.filter((t) => t.status === 'resolved').map((t) => t.id));
       const y = win.scrollY;
@@ -547,6 +550,20 @@ Umi.views.file = (() => {
       }, (msg) => this.marginMessage(msg));
     }
 
+    // JSON tree, CSV / TSV table (E-1): no comments; find (⌘F) and links as in Markdown.
+    renderData(doc, win) {
+      const y = win.scrollY;
+      Umi.markdown.fill(doc, UmiData.html(this.path, this.text));
+      this.renderedText = this.text;
+      this.previewStale = false;
+      this.page = Umi.markdown.enhance(doc, win, {
+        dir: dirOf(this.path), openFile: () => {}, openURL: (url) => Umi.fs.openURL(url),
+        copy: (text) => Umi.bridge.request('clipboard', { text }), run: () => {}, keydown: () => {},
+        focusBack: () => this.focus(), relayout: () => {},
+      });
+      win.scrollTo(0, y);
+    }
+
     // MD-2: the command goes to the input of the tab's terminal, which takes focus; not run.
     runInTerminal(text) {
       const tab = M.activeTab();
@@ -557,7 +574,7 @@ Umi.views.file = (() => {
     }
 
     setMode(mode, { focus = true } = {}) {
-      if (!this.markdown || mode === this.mode) return;
+      if (!this.preview || mode === this.mode) return;
       this.mode = mode;
       const n = this.node();
       if (n) n.mode = mode;
@@ -586,7 +603,7 @@ Umi.views.file = (() => {
       if (this.confirmClose && e.key === 'Escape') { this.confirmClose = false; this.paint(); this.focus(); }
       else if (k === 'KeyS' && only(true, false, false)) this.save();
       else if (k === 'KeyS' && only(true, true, false)) this.startSaveAs();
-      else if (this.markdown && ((k === 'KeyM' && only(true, true, false)) || (k === 'KeyE' && only(true, false, false)))) this.setMode(this.mode === 'raw' ? 'rendered' : 'raw');
+      else if (this.preview && ((k === 'KeyM' && only(true, true, false)) || (k === 'KeyE' && only(true, false, false)))) this.setMode(this.mode === 'raw' ? 'rendered' : 'raw');
       else if (this.markdown && k === 'KeyM' && only(true, false, true)) this.startComment();
       else if (this.mode === 'rendered' && this.page && k === 'KeyF' && only(true, false, false)) {
         const sel = this.frame.contentWindow.getSelection().toString().split('\n')[0];
@@ -783,7 +800,7 @@ Umi.views.file = (() => {
     // A pending go-to (openFile on a file already open).
     for (const [id, node] of all) {
       const v = views.get(id);
-      if (v.markdown && node.mode && node.mode !== v.mode) v.setMode(node.mode, { focus: false });
+      if (v.preview && node.mode && node.mode !== v.mode) v.setMode(node.mode, { focus: false });
     }
     for (const [id, node] of all) if (node.goto && views.get(id).cm) views.get(id).goto(node.goto.line, node.goto.col);
   }

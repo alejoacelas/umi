@@ -368,7 +368,9 @@ Umi.cli = (() => {
   // ---- editor (track a's file panes: view 'file', {path, mode: 'rendered'|'raw'}) ----
   // The CLI says preview and source, as Umi's does.
   const TO_PANE = { preview: 'rendered', source: 'raw' };
-  function cliMode(node) { return node.mode === 'raw' ? 'source' : 'preview'; }
+  // A file with no rendered view (not Markdown, JSON, CSV or TSV) is always in source.
+  const hasPreview = (path) => /\.(md|markdown|mdown|mkd|mdx)$/i.test(path) || UmiData.handles(path);
+  function cliMode(node) { return node.mode === 'raw' || !hasPreview(node.path) ? 'source' : 'preview'; }
   const filePanes = (tab) => M.panesOf(tab.root).filter((n) => n.view === 'file');
   const fileAnywhere = (path) => {
     for (const t of S.layout.tabs) { const n = filePanes(t).find((x) => x.path === path); if (n) return { tab: t, node: n }; }
