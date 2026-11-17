@@ -57,7 +57,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(appItem)
 
         let editItem = NSMenuItem()
+        // The standard items, sent to the first responder: the web view (its fields, CodeMirror)
+        // does them; a terminal answers Copy, Paste and Select All, and the items it can't do are
+        // disabled there, so ⌘Z, ⇧⌘Z and ⌘X go on to the terminal as keys.
         let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z").keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")

@@ -2,7 +2,7 @@
 """File panes by real key events (through the HID tap, `key` built from key.swift; the caller
 needs Accessibility), for keys the debug socket can't send as a keyboard does: ⌥⌘ combinations
 (none reach the page that way), Escape in CodeMirror's panels (it reads keyCode), plus typing,
-⌘S, ⌘E, ⇧⌘M and ⌘W. Run under `lockf -k ~/umi-screen.lock` against a UmiNext started with
+⌘S, ⌘E, ⇧⌘M, ⌘W, and the Edit menu's keys (⌘X ⌘C ⌘V ⌘A ⌘Z ⇧⌘Z) in the source and in a field. Run under `lockf -k ~/umi-screen.lock` against a UmiNext started with
 UMI_NEXT_DEBUG=1 on screen. Before every key it checks this UmiNext is frontmost, else it stops.
 
   file_keys_test.py STATE_DIR KEY_BIN SCRATCH_DIR
@@ -14,7 +14,8 @@ from front import bring_to_front  # noqa: E402
 
 state, key_bin, scratch = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
 fails = []
-CODES = {"s": 1, "e": 14, "m": 46, "w": 13, "g": 5, "a": 0, "r": 15, "z": 6, "escape": 53, "x": 7, "v": 9, "c": 8}
+CODES = {"s": 1, "e": 14, "m": 46, "w": 13, "g": 5, "a": 0, "r": 15, "z": 6, "escape": 53, "x": 7, "v": 9, "c": 8,
+         "end": 119}
 
 
 def D(cmd):
@@ -97,6 +98,50 @@ key("escape")
 check("Escape keeps the pane", not J(f"{V}.state().confirmClose") and J(f"{V}.path") == doc)
 key("z", "cmd")
 check("⌘Z undoes in the source", not J(f"{V}.state().dirty"), J(f"{V}.text")[:20])
+
+
+def clipboard():
+    D({"cmd": "eval", "js": "window.__clip = null; Umi.bridge.request('clipboard', {}).then((r) => { window.__clip = r.text; }); 1"})
+    time.sleep(0.3)
+    return J("window.__clip")
+
+
+# The Edit menu: ⌘X cuts, ⌘V pastes, ⌘Z / ⇧⌘Z in the source (CodeMirror) and in a plain field.
+D({"cmd": "eval", "js": f"{V}.focus(true); 1"})
+pos = J(f"{V}.text.indexOf('these ')")
+D({"cmd": "eval", "js": f"{V}.cm.dispatch({{selection: {{anchor: {pos}, head: {pos + 6}}}}}); 1"})
+key("x", "cmd")
+time.sleep(0.6)
+check("⌘X cuts the selection in the source", "these " not in J(f"{V}.text") and clipboard() == "these ", (J(f"{V}.text"), clipboard()))
+D({"cmd": "eval", "js": f"{V}.cm.dispatch({{selection: {{anchor: {V}.cm.state.doc.length}}}}); 1"})
+key("v", "cmd")
+time.sleep(0.6)
+check("⌘V pastes it", J(f"{V}.text").endswith("these "), J(f"{V}.text")[-20:])
+key("z", "cmd")
+time.sleep(0.6)
+key("z", "cmd")
+check("⌘Z twice undoes the paste and the cut", not J(f"{V}.state().dirty"), J(f"{V}.text"))
+key("z", "cmd", "shift")
+check("⇧⌘Z redoes the cut", "these " not in J(f"{V}.text"))
+key("z", "cmd")
+check("⌘Z undoes it again", not J(f"{V}.state().dirty"))
+key("s", "cmd", "shift")
+time.sleep(0.3)
+field = f"{V}.bars.querySelector('.fv-saveas input')"
+check("⇧⌘S opens the Save As field with the keys", J(f"document.activeElement === {field}"))
+key("a", "cmd")
+key("c", "cmd")
+check("⌘A ⌘C in a field copy its text", clipboard() == doc, clipboard())
+key("x", "cmd")
+check("⌘X cuts in a field", J(f"{field}.value") == "", J(f"{field}.value"))
+key("z", "cmd")
+check("⌘Z undoes in a field (the Edit menu's Undo)", J(f"{field}.value") == doc, J(f"{field}.value"))
+key("z", "cmd", "shift")
+check("⇧⌘Z redoes in a field", J(f"{field}.value") == "", J(f"{field}.value"))
+key("v", "cmd")
+check("⌘V pastes in a field", J(f"{field}.value") == doc, J(f"{field}.value"))
+key("escape")
+check("Escape closes Save As", not J(f"!!{field}"))
 key("w", "cmd")
 check("⌘W on a saved file closes it", not J(f"Umi.model.panesOf(Umi.model.activeTab().root).some(p => p.path === {json.dumps(doc)})"))
 
