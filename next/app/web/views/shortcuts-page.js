@@ -83,11 +83,12 @@ Umi.views.shortcutsPage = (() => {
       input = el('input', 'sc-search');
       input.spellcheck = false;
       input.placeholder = 'Search by name or keys (cmd shift p)';
-      input.addEventListener('input', () => { ui.query = input.value; renderList(); });
+      // S.ui.shortcuts, not `ui`: the field outlives a close and reopen, which make a new one.
+      input.addEventListener('input', () => { if (S.ui.shortcuts) S.ui.shortcuts.query = input.value; renderList(); });
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { e.preventDefault(); Umi.app.run('toggleShortcuts'); }
       });
-      box.addEventListener('mousedown', () => { ui.focus = true; });
+      box.addEventListener('mousedown', () => { if (S.ui.shortcuts) S.ui.shortcuts.focus = true; });
       box.append(head, input, el('div', 'sc-list'));
     }
     if (input.value !== ui.query) input.value = ui.query;
