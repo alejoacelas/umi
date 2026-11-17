@@ -20,6 +20,7 @@ Umi.app = (() => {
   function focusWeb() {
     if (S.ui.editingTab) Umi.views.sidebar.focus();
     else if (S.ui.panel) Umi.views.panel.focus();
+    else if (M.focusedPane()?.view === 'file') Umi.views.file.focus(M.focusedPane().id);
     else Umi.views.picker.focus();
   }
 

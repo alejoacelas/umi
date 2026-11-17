@@ -1,0 +1,64 @@
+/* File panes (views/file.js): each view sits in #files over its pane's slot, below the palette.
+   Umi's look (UmiFilePanes.swift, UmiEditor.swift): Warp's header, banners and "File saved." toast. */
+#files { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
+.fileview {
+  position: fixed; display: flex; flex-direction: column; pointer-events: auto; background: var(--bg);
+  --mono: "Hack", "JetBrains Mono", "SF Mono", Menlo, monospace;
+  -webkit-user-select: text; user-select: text;
+}
+.fv-head {
+  flex: none; height: 30px; display: flex; align-items: center; padding: 0 8px; -webkit-user-select: none; user-select: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.fv-edge { width: 64px; flex: none; display: flex; align-items: center; gap: 4px; }
+.fv-edge.wide { width: 190px; }
+.fv-right { justify-content: flex-end; }
+.fv-name { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.fv-title { font: 500 12px -apple-system, sans-serif; color: rgba(255, 255, 255, 0.92); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.fv-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.6); flex: none; display: none; }
+.fileview.dirty .fv-dot { display: block; }
+.fv-mode { display: flex; }
+.fv-seg { font: 11px -apple-system, sans-serif; color: rgba(255, 255, 255, 0.42); background: none; border: none; height: 22px;
+  padding: 0 8px; border-radius: 5px; }
+.fv-seg.on { color: rgba(255, 255, 255, 0.92); background: rgba(255, 255, 255, 0.085); }
+.fv-icon { background: none; border: none; color: rgba(255, 255, 255, 0.42); font: 600 11px -apple-system, sans-serif; width: 20px;
+  height: 20px; border-radius: 4px; padding: 0; }
+.fv-close { font-size: 9px; }
+.fv-icon:hover, .fv-seg:hover { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.92); }
+.fv-bars { flex: none; }
+.fv-bar { display: flex; align-items: center; gap: 12px; padding: 6px 14px; background: rgba(255, 255, 255, 0.06);
+  font: 11px -apple-system, sans-serif; color: rgba(255, 255, 255, 0.6); -webkit-user-select: none; user-select: none; }
+.fv-bar-text { flex: 1; min-width: 0; }
+.fv-bar button { background: none; border: none; color: var(--accent); font: 11px -apple-system, sans-serif; padding: 2px 0; }
+.fv-bar button.fv-primary { font-weight: 600; }
+.fv-bar button:focus-visible { text-decoration: underline; outline: none; }
+.fv-bar.fv-comment { flex-wrap: wrap; }
+.fv-bar.fv-comment .fv-bar-text { flex-basis: 100%; }
+.fv-bar.fv-comment textarea { flex: 1; min-height: 40px; resize: none; font: 12px -apple-system, sans-serif; color: var(--ink);
+  background: #1d1e21; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 6px; padding: 5px 7px; outline: none; }
+.fv-err { color: #e5534b; flex-basis: 100%; }
+.fv-body { flex: 1; min-height: 0; position: relative; }
+.fv-source, .fv-preview, .fv-message { position: absolute; inset: 0; }
+.fv-source[hidden], .fv-preview[hidden], .fv-message[hidden] { display: none; }
+.fv-preview { border: none; width: 100%; height: 100%; background: var(--bg); }
+.fv-message { padding: 24px; color: rgba(255, 255, 255, 0.6); font: 13px -apple-system, sans-serif; }
+.fv-toast { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); display: none; z-index: 5;
+  background: #b4fa72; color: #050505; border: 1px solid #90c85b; border-radius: 4px; padding: 8px 12px; font: 13px -apple-system, sans-serif;
+  pointer-events: none; white-space: nowrap; }
+.fv-toast.on { display: block; }
+/* CodeMirror's find and go-to-line panels float at the top right, as Warp's find bar. */
+.fv-source .cm-panels.cm-panels-top { position: absolute; top: 10px; right: 20px; left: auto; width: min(500px, calc(100% - 40px));
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; background: #1a1a1a; color: var(--ink); z-index: 5; }
+.fv-source .cm-panel.cm-search, .fv-source .cm-panel.cm-gotoLine { font: 12px -apple-system, sans-serif; padding: 6px 10px; }
+.fv-source .cm-panel input[type=text], .fv-source .cm-panel .cm-textfield { background: rgba(255, 255, 255, 0.06); color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; font: 12px -apple-system, sans-serif; padding: 3px 6px; }
+.fv-source .cm-panel button, .fv-source .cm-button { background: rgba(255, 255, 255, 0.08); background-image: none; color: var(--ink);
+  border: none; border-radius: 4px; font: 11px -apple-system, sans-serif; padding: 3px 8px; }
+.fv-source .cm-panel label { color: rgba(255, 255, 255, 0.6); font-size: 11px; }
+.fv-source .cm-panel [name=close] { color: rgba(255, 255, 255, 0.6); font-size: 14px; }
+/* A file's chip in the pane strip: the same dot while unsaved (E-24). */
+.chip.dirty span::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6); margin-right: 5px; vertical-align: 1px; }
+/* Dividers stay above file views, so they can still be dragged. */
+#panes .divider { z-index: 2; }

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Umi next</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="views/file.css">
 </head>
 <body>
   <aside id="sidebar">
@@ -17,15 +18,23 @@
   <div id="work">
     <nav id="strip"></nav>
     <main id="panes"></main>
+    <div id="files"></div>
     <section id="panel" hidden></section>
   </div>
   <script src="bridge.js"></script>
   <script src="status.js"></script>
   <script src="model.js"></script>
   <script src="fs.js"></script>
+  <script src="lib/markdown-it.min.js"></script>
+  <script src="lib/highlight.min.js"></script>
+  <script src="lib/codemirror.js"></script>
+  <script src="comments.js"></script>
+  <script src="markdown.js"></script>
   <script src="views/sidebar.js"></script>
   <script src="views/picker.js"></script>
   <script src="views/panes.js"></script>
+  <script src="views/comments.js"></script>
+  <script src="views/file.js"></script>
   <script src="views/panel.js"></script>
   <script src="shortcuts.js"></script>
   <script src="app.js"></script>

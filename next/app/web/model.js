@@ -339,7 +339,8 @@ Umi.actions = {
   newTab: () => { const t = Umi.model.addTab(); Umi.state.ui.editingTab = t.id; },
   splitRight: () => Umi.model.split('row', 'picker'),
   splitDown: () => Umi.model.split('column', 'picker'),
-  closePane: () => Umi.model.removePane(Umi.model.activeTab().focused),
+  // A file pane with unsaved edits asks first (views/file.js); it has no session to keep.
+  closePane: () => { const id = Umi.model.activeTab().focused; if (!Umi.views.file?.askClose(id)) Umi.model.removePane(id); },
   selectTab: ({ index }) => Umi.model.selectTab(index),
   nextTab: () => Umi.model.stepTab(1),
   prevTab: () => Umi.model.stepTab(-1),

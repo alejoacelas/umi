@@ -47,6 +47,7 @@ Umi.views.panes = (() => {
 
   // A chip's label: the session's given name, else what its terminal's title says, else its folder.
   function chipLabel(node) {
+    if (node.view === 'file') return Umi.views.file.label(node);
     if ((node.view || 'terminal') !== 'terminal') return node.view === 'picker' ? 'New session' : node.view;
     const sid = M.sessionOf(node.id), live = sid && S.live[sid];
     const given = sid && (S.layout.meta?.sessions?.[sid]?.name || live?.name);
@@ -61,7 +62,7 @@ Umi.views.panes = (() => {
     walk(tab.root);
     for (const node of leaves) {
       const chip = document.createElement('div');
-      chip.className = 'chip' + (node.id === tab.focused ? ' focused' : '');
+      chip.className = 'chip' + (node.id === tab.focused ? ' focused' : '') + (node.view === 'file' && Umi.views.file.isDirty(node.id) ? ' dirty' : '');
       chip.innerHTML = termIcon + '<span></span>';
       chip.querySelector('span').textContent = chipLabel(node);
       chip.title = chip.querySelector('span').textContent;
@@ -86,6 +87,7 @@ Umi.views.panes = (() => {
     main.classList.toggle('multi', M.paneIds(tab.root).length > 1);
     main.append(renderNode(tab.root));
     main.querySelectorAll('.slot').forEach((s) => s.classList.toggle('focused', s.dataset.pane === tab.focused));
+    Umi.views.file?.sync(); // file views sit over their slots and outlive this redraw
   }
 
   function dragDivider(e, node, el) {
