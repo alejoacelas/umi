@@ -32,7 +32,12 @@ Umi.views.sidebar = (() => {
         if (e.key !== 'Enter' && e.key !== 'Escape') return;
         e.preventDefault();
         Umi.app.update(() => {
-          if (e.key === 'Enter' && input.value.trim()) tab.name = input.value.trim(); else delete tab.name;
+          if (e.key === 'Enter' && input.value.trim()) {
+            tab.name = input.value.trim();
+            // A new tab's one session takes the tab's name too (DESIGN "Names at creation").
+            const ids = M.paneIds(tab.root), sid = ids.length === 1 && M.sessionOf(ids[0]);
+            if (sid && !S.layout.meta?.sessions?.[sid]?.name) M.rename(sid, tab.name);
+          } else delete tab.name;
           S.ui.editingTab = null;
           S.ui.tabDraft = null;
         });
