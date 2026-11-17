@@ -3,7 +3,7 @@
 // of the way"): the last line of the reply that starts with `Status:` once list marks (`-`, `*`,
 // `+`, `1.`), quote marks and emphasis (`*`, `_`, `` ` ``) are stripped, case ignored.
 //
-//   parseStatus(text) → { kind, detail } | null
+//   parseStatus(text) → { kind, detail, line } | null   (line: the reply's line as written)
 //     kind: 'done' | 'pending' (done, pending verification: X) | 'waiting' (waiting on you: X)
 //           | 'progress' (in progress: X next) | 'other' (a Status: line saying something else)
 //     null: no status line.
@@ -26,12 +26,13 @@
       const m = /^status\s*:\s*(.*)$/i.exec(s);
       if (!m) continue;
       const v = m[1].replace(/[*_`]/g, '').trim();
+      const line = lines[i].trim();
       let r;
-      if ((r = /^done\s*,\s*pending verification\s*:?\s*(.*)$/i.exec(v))) return { kind: 'pending', detail: r[1].trim() };
-      if (/^done\.?$/i.test(v)) return { kind: 'done', detail: '' };
-      if ((r = /^waiting on you\s*:?\s*(.*)$/i.exec(v))) return { kind: 'waiting', detail: r[1].trim() };
-      if ((r = /^in progress\s*:?\s*(.*)$/i.exec(v))) return { kind: 'progress', detail: r[1].trim() };
-      return { kind: 'other', detail: v };
+      if ((r = /^done\s*,\s*pending verification\s*:?\s*(.*)$/i.exec(v))) return { kind: 'pending', detail: r[1].trim(), line };
+      if (/^done\.?$/i.test(v)) return { kind: 'done', detail: '', line };
+      if ((r = /^waiting on you\s*:?\s*(.*)$/i.exec(v))) return { kind: 'waiting', detail: r[1].trim(), line };
+      if ((r = /^in progress\s*:?\s*(.*)$/i.exec(v))) return { kind: 'progress', detail: r[1].trim(), line };
+      return { kind: 'other', detail: v, line };
     }
     return null;
   }

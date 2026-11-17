@@ -15,11 +15,12 @@ Umi.views.panel = (() => {
       ['n', 'New session', () => Umi.actions.splitRight()],
       ['s', 'Switch session', () => Umi.actions.switchSession()],
       ['w', 'Next waiting', () => Umi.actions.nextWaiting()],
-      ['d', 'Open past', () => { Umi.actions.switchSession(); Umi.model.focusedPane().picker.jump = 'past'; }],
+      ['p', 'Open past', () => { Umi.actions.switchSession(); Umi.model.focusedPane().picker.jump = 'past'; }],
     ] },
     { title: 'This session', cmds: [
       ['r', 'Rename', () => ask('rename')],
       ['z', 'Snooze', () => ask('snooze')],
+      ['d', 'Send to docket', () => Umi.actions.docketSession()],
       ['t', 'Restart', () => Umi.actions.restartSession()],
       ['x', 'Exit', () => Umi.actions.exitSession()],
       ['m', 'Move to new tab', () => Umi.actions.moveToNewTab()],

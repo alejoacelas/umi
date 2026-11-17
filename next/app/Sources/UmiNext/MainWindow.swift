@@ -207,6 +207,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             pendingReload?["helloAt"] = Self.now()
             send(stateMessage())
             send(["type": "sessions", "list": sessions.last])
+            if let u = pendingTaskURL { pendingTaskURL = nil; openURL(u) }
         case "layout":
             if let l = msg["layout"] as? [String: Any] { applyLayout(l, closed: msg["closed"] as? [String: String] ?? [:]) }
         case "rects":
@@ -231,6 +232,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             }
         case "refreshSessions":
             sessions.pollSoon()
+        case "docket":
+            if let id = msg["session"] as? String { sessions.setDocketed(id, true, name: msg["name"] as? String) }
+        case "undocket":
+            if let id = msg["session"] as? String { sessions.setDocketed(id, false) }
         case "log":
             NSLog("umi-next web: %@", String(describing: msg["message"] ?? ""))
         default:
@@ -437,13 +442,22 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     /// palette. Seen here, before the terminal, through a local event monitor.
     private func installHyperMonitor() {
         let hyper: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
-        hyperMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] e in
+        hyperMonitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] e in
             guard let self, e.window === self.window else { return e }
             let mods = e.modifierFlags.intersection(hyper)
+            if e.type == .leftMouseDown || e.type == .rightMouseDown {
+                if self.hyperDown { self.hyperSpoiled = true }
+                return e
+            }
             if e.type == .keyDown {
                 if mods == hyper && e.keyCode == 49 {          // Hyper+Space
                     self.hyperSpoiled = true
                     self.openPalette()
+                    return nil
+                }
+                if mods == hyper && e.keyCode == 2 {           // Hyper+D: send the session to the docket
+                    self.hyperSpoiled = true
+                    if self.webReady { self.send(["type": "action", "name": "docketSession"]) }
                     return nil
                 }
                 if self.hyperDown { self.hyperSpoiled = true }
@@ -464,6 +478,54 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         if webReady { send(["type": "action", "name": "togglePalette"]) } else { showBanner("Web layer not ready: palette unavailable.") }
     }
     private(set) var lastHyperAt: Double = 0
+
+    // MARK: Task links
+
+    private var pendingTaskURL: URL?
+    static let taskOrigin = "https://agent-server.tail622085.ts.net/umi/"
+
+    /// `umi-next://open?task=<URL of a task JSON>`: show the task's live session, or resume its agent
+    /// session in ~/best/<folder>. Task URLs must be on agent-server's /umi/ (in debug mode also
+    /// under $UMI_NEXT_DEBUG_TASK_ORIGIN); anything else is refused with a note.
+    func openURL(_ url: URL) {
+        guard webReady else { pendingTaskURL = url; return }
+        guard url.scheme == "umi-next", url.host == "open",
+              let task = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "task" })?.value,
+              let taskURL = URL(string: task) else {
+            return showBanner("Not a task link: \(url.absoluteString)")
+        }
+        var allowed = [Self.taskOrigin]
+        if Paths.debugEnabled, let o = Paths.env["UMI_NEXT_DEBUG_TASK_ORIGIN"], !o.isEmpty { allowed.append(o) }
+        guard allowed.contains(where: { taskURL.absoluteString.hasPrefix($0) }) else {
+            return showBanner("Refused task link: \(taskURL.absoluteString) is not on \(Self.taskOrigin)")
+        }
+        URLSession.shared.dataTask(with: URLRequest(url: taskURL, timeoutInterval: 15)) { [weak self] data, resp, err in
+            guard let self else { return }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard err == nil, code == 200, let data, let t = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                DispatchQueue.main.async { self.showBanner("Task link failed: \(err?.localizedDescription ?? "HTTP \(code)") (\(taskURL.absoluteString))") }
+                return
+            }
+            let live = SessionBackend.liveSessionIDs() ?? []
+            DispatchQueue.main.async { self.openTask(t, live: live) }
+        }.resume()
+    }
+
+    private func openTask(_ t: [String: Any], live: Set<String>) {
+        let title = t["title"] as? String ?? "task"
+        if let sid = t["next_session"] as? String, live.contains(sid) {
+            sessions.setDocketed(sid, false)
+            send(["type": "action", "name": "openTask", "session": sid, "title": title])
+            return
+        }
+        guard let folder = t["folder"] as? String, let agentSession = t["session"] as? String else {
+            return showBanner("Task \(title): no live session and nothing to resume (needs folder and session)")
+        }
+        let cwd = NSHomeDirectory() + "/best/" + folder
+        guard FileManager.default.fileExists(atPath: cwd) else { return showBanner("Task \(title): no folder \(cwd)") }
+        let agent = t["agent"] as? String ?? "claude"
+        send(["type": "action", "name": "openTask", "title": title, "resume": ["agent": agent, "id": agentSession, "cwd": cwd]])
+    }
 
     // MARK: Window
 

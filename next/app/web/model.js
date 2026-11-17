@@ -106,6 +106,8 @@ Umi.model = (() => {
     for (let n = 1; ; n++) if (!used.has(`${b} ${n}`)) return `${b} ${n}`;
   }
   const isSnoozed = (sid) => { const z = S.layout.meta?.sessions?.[sid]?.snooze; return z && !z.done; };
+  // On the docket (native keeps the mark: <state>/docket.json): {state: pending|on|failed, error?}.
+  const docketOf = (sid) => S.live[sid]?.docket || null;
 
   // What waits for Alejo, grouped by project, the current project first (DESIGN "Review"):
   // agent sessions waiting for input, and finished snoozes.
@@ -113,7 +115,13 @@ Umi.model = (() => {
     const cur = currentProject();
     const groups = {};
     for (const s of Object.values(S.live)) {
-      if (!s.alive || isSnoozed(s.id)) continue;
+      if (!s.alive && !s.docket) continue;
+      if (isSnoozed(s.id)) continue;
+      // Docketed sessions never show here, except when the docket hook failed (no silent loss).
+      if (s.docket) {
+        if (s.docket.state === 'failed') (groups[s.project] = groups[s.project] || []).push({ ...s, docketFailed: true });
+        continue;
+      }
       const z = S.layout.meta?.sessions?.[s.id]?.snooze;
       // A finished snooze shows even if it says done: snoozing asked to be told.
       if (standing(s) !== 'needs' && !(z && z.done)) continue;
@@ -189,6 +197,7 @@ Umi.model = (() => {
     focusPane(fresh.id);
     const m = S.layout.meta?.sessions?.[sid];
     if (m && m.snooze) delete m.snooze; // looked at
+    undocket(sid);
   }
 
   // Shows a session wherever is best: its pane if on screen, else a split of the focused pane.
@@ -258,6 +267,23 @@ Umi.model = (() => {
     if (p) removePane(p);
   }
 
+  // Sends a session to the docket: its pane stops showing it (like ⌘W) and native marks it.
+  function docket(sid) {
+    if (!sid) return;
+    const m = S.layout.meta?.sessions?.[sid];
+    if (m) delete m.snooze;
+    Umi.bridge.post({ type: 'docket', session: sid, name: sessionName(sid) });
+    if (S.live[sid]) S.live[sid].docket = { state: 'pending' };
+    const p = paneOfSession(sid);
+    if (p) removePane(p);
+  }
+
+  function undocket(sid) {
+    if (!docketOf(sid)) return;
+    Umi.bridge.post({ type: 'undocket', session: sid });
+    delete S.live[sid].docket;
+  }
+
   function rename(sid, name) { if (name) meta(sid).name = name; else delete meta(sid).name; }
 
   function openPanel(name, data = {}) { S.ui.panel = { name, ...data }; }
@@ -299,7 +325,7 @@ Umi.model = (() => {
     newPane, panesOf, paneIds, findPane, activeTab, focusedPane, sessionOf, paneOfSession,
     folderOf, projectOf, currentProject, standing, sessionName, defaultName, isSnoozed, review,
     addTab, split, removePane, openSession, showSession, startSession, focusPane,
-    selectTab, stepTab, focusDir, moveToNewTab, snooze, rename, openPanel, closePanel,
+    selectTab, stepTab, focusDir, moveToNewTab, snooze, rename, docket, undocket, docketOf, openPanel, closePanel,
     load, paneInfo, sessions,
   };
 })();
@@ -356,5 +382,24 @@ Umi.actions = {
     Umi.state.closed[p.id] = 'detach';
   },
   moveToNewTab: () => Umi.model.moveToNewTab(),
+  docketSession: () => Umi.model.docket(Umi.model.sessionOf(Umi.model.activeTab().focused)),
+  // From a umi-next://open?task=… link (native fetched and checked the task): show its live
+  // session, or resume its agent session, in a tab named after the task.
+  openTask: ({ session, title, resume }) => {
+    const M = Umi.model, S = Umi.state, cmds = S.commands || {};
+    if (session) {
+      const shown = M.paneOfSession(session);
+      if (shown) { M.focusPane(shown); M.undocket(session); return; }
+      const t = M.addTab(M.newPane({ session, attach: session, cwd: S.live[session]?.folder }));
+      t.name = title;
+      M.undocket(session);
+      return;
+    }
+    if (resume) {
+      const cmd = resume.agent === 'codex' ? `${cmds.codex || 'codex'} resume ${resume.id}` : `${cmds.claude || 'claude'} --resume ${resume.id}`;
+      const t = M.addTab(M.newPane({ cwd: resume.cwd, start: { cmd, name: title, cwd: resume.cwd } }));
+      t.name = title;
+    }
+  },
   reloadWeb: () => Umi.bridge.post({ type: 'reload' }),
 };

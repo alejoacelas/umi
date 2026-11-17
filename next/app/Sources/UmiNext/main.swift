@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runtime = GhosttyRuntime(configFiles: Paths.terminalConfigFiles)
         main = MainWindowController(runtime: runtime)
         main.show()
+        earlyURLs.forEach { main.openURL($0) }
+        earlyURLs = []
         if Paths.debugEnabled { debug = DebugServer(controller: main) }
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -63,6 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func reloadWeb(_ sender: Any?) { main.reloadWeb() }
+
+    private var earlyURLs: [URL] = []
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let main else { earlyURLs += urls; return }
+        for u in urls { main.openURL(u) }
+    }
 }
 
 let app = NSApplication.shared

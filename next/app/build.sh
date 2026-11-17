@@ -78,6 +78,11 @@ cat > "$app.tmp/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>UmiNextSourceDir</key><string>$here</string>
+  <key>CFBundleURLTypes</key>
+  <array><dict>
+    <key>CFBundleURLName</key><string>dev.umi.next.task</string>
+    <key>CFBundleURLSchemes</key><array><string>umi-next</string></array>
+  </dict></array>
 </dict>
 </plist>
 PLIST

@@ -20,6 +20,15 @@ final class SessionMonitor {
     /// Sessions shown in a pane (asked on the main thread each poll).
     var shownSessions: () -> Set<String> = { [] }
     private(set) var last: [[String: Any]] = []
+    let docket = Docket()
+
+    /// Sends a session to the docket (or takes it off); both on the monitor's queue.
+    func setDocketed(_ sid: String, _ on: Bool, name: String? = nil) {
+        queue.async { [self] in
+            if on { docket.mark(sid, name: name) } else { docket.clear(sid) }
+            poll()
+        }
+    }
 
     static var agentsDir: String { Paths.stateDir + "/agents" }
 
@@ -54,7 +63,8 @@ final class SessionMonitor {
         for var s in list {
             guard let id = s["id"] as? String else { continue }
             let alive = s["alive"] as? Bool ?? false
-            if !alive && !shown.contains(id) {
+            let docketPending = docket.marks[id]?["state"] as? String == "pending"
+            if !alive && !shown.contains(id) && !docketPending {
                 // Ended while no pane showed it: forget it in the daemon.
                 SessionBackend.run(SessionBackend.ctlPath, ["rm", id])
                 try? FileManager.default.removeItem(atPath: Self.agentsDir + "/\(id).json")
@@ -72,6 +82,10 @@ final class SessionMonitor {
             s["state"] = agent?["state"] as? String ?? (shellBusy ? "busy" : "waiting")
             s["kind"] = (agent?["agent"] as? String) ?? (shell ? "shell" : "command")
             out.append(s)
+        }
+        docket.check(out)
+        for i in out.indices {
+            if let id = out[i]["id"] as? String, let m = docket.marks[id] { out[i]["docket"] = m }
         }
         last = out
         DispatchQueue.main.async { self.onUpdate?(out) }
