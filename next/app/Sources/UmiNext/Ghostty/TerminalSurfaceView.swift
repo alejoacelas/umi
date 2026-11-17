@@ -55,6 +55,8 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
             cfg.env_var_count = buf.count
             return ghostty_surface_new(runtime.app, &cfg)
         }
+        // libghostty starts a surface focused; it isn't until it becomes first responder.
+        if let surface { ghostty_surface_set_focus(surface, false) }
         updateTrackingAreas()
     }
 

@@ -293,6 +293,12 @@ window.umiNative = {
 
 $('#new-tab').addEventListener('click', () => run('newTab'));
 
+// A click anywhere in the chrome hands the keys back to the focused terminal (text fields keep them).
+window.addEventListener('mouseup', (e) => {
+  if (!layout || e.target.closest('input, textarea, [contenteditable]')) return;
+  post({ type: 'focus', pane: activeTab().focused });
+});
+
 // Show the ⌘-number hints while ⌘ is held (only seen when the web view has the keys).
 let cmdTimer = null;
 window.addEventListener('keydown', (e) => {
