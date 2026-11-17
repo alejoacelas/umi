@@ -290,15 +290,18 @@ check("⇧⌘↩ again unzooms", not J("Umi.model.activeTab().zoomed || null") a
 
 # ⌃⌘← / → move the pane within the tab; ⌃⌘T to a new tab; ⌃⌘↑ to the tab above.
 order = J("Umi.model.paneIds(Umi.model.activeTab().root)")
+i = order.index(ui()["focused"])
+want = order[:]
+want[i - 1], want[i] = want[i], want[i - 1]
 press("left", "ctrl", "cmd")
-check("⌃⌘← moves the pane left", J("Umi.model.paneIds(Umi.model.activeTab().root)") == order[::-1], J("Umi.model.paneIds(Umi.model.activeTab().root)"))
+check("⌃⌘← moves the pane left", J("Umi.model.paneIds(Umi.model.activeTab().root)") == want, J("Umi.model.paneIds(Umi.model.activeTab().root)"))
 press("right", "ctrl", "cmd")
 check("⌃⌘→ moves it back", J("Umi.model.paneIds(Umi.model.activeTab().root)") == order)
-n = ui()["tabs"]
+n, np = ui()["tabs"], ui()["panes"]
 press("t", "ctrl", "cmd")
 check("⌃⌘T moves the pane to a new tab", ui()["tabs"] == n + 1 and ui()["panes"] == 1, ui())
 press("up", "ctrl", "cmd")
-check("⌃⌘↑ moves it to the tab above (the empty tab closes)", ui()["tabs"] == n and ui()["panes"] == 2, ui())
+check("⌃⌘↑ moves it to the tab above (the empty tab closes)", ui()["tabs"] == n and ui()["panes"] == np, ui())
 
 # Tabs: ⌃⌘P pins (pinned tabs first), ⌃⇧↑↓ move within the group, ⌃⌘A archives.
 focus_terminal()
