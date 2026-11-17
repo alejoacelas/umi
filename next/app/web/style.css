@@ -420,3 +420,20 @@ body[data-sidebar-mode="search"] #review, body[data-sidebar-mode="search"] #tabs
 .qo-row:hover { background: rgba(25, 170, 216, 0.2); }
 .qo-row.sel { background: rgba(25, 170, 216, 0.9); color: rgba(0, 0, 0, 0.9); }
 .qo-row.sel .folder, .qo-row.sel .line, .qo-row.sel.create .title { color: rgba(0, 0, 0, 0.6); }
+
+
+/* The pane indicator (SPEC PI-2): a mark at each pane's bottom right (8 px in, 10 px up, in the
+   terminal's padding) and before its chip's icon. Native cuts the terminal under it out. */
+.slot { position: relative; }
+.slot .pane-mark { position: absolute; right: 8px; bottom: 10px; transform: translate(50%, 50%); border-radius: 50%; pointer-events: none; z-index: 2; }
+.chip .pane-mark { display: inline-block; border-radius: 50%; flex: none; }
+
+/* The sidebar's edge drags its width (S-8: 180–600 px). */
+#sidebar { position: relative; }
+#sidebar-edge { position: absolute; top: 0; bottom: 0; right: -3px; width: 6px; cursor: col-resize; z-index: 3; }
+body.resizing-sidebar, body.resizing-sidebar * { cursor: col-resize !important; }
+
+/* A tab switch fades the panes in (L-11, about 140 ms; none with Reduce Motion). */
+@keyframes umi-tab-in { from { opacity: 0; } to { opacity: 1; } }
+#panes.fade-in { animation: umi-tab-in 140ms ease-out; }
+@media (prefers-reduced-motion: reduce) { #panes.fade-in { animation: none; } }

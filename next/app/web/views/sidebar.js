@@ -192,5 +192,28 @@ Umi.views.sidebar = (() => {
   }
 
   document.querySelector('#new-tab').addEventListener('click', () => Umi.app.run('newTab'));
+
+  // S-8: dragging the sidebar's edge sets its width, 180–600 px, kept in the layout.
+  const edge = document.createElement('div');
+  edge.id = 'sidebar-edge';
+  document.querySelector('#sidebar').append(edge);
+  edge.addEventListener('mousedown', (down) => {
+    down.preventDefault();
+    const start = document.querySelector('#sidebar').getBoundingClientRect().width;
+    document.body.classList.add('resizing-sidebar');
+    const move = (e) => {
+      S.layout.sidebarWidth = Math.round(Math.min(600, Math.max(180, start + e.clientX - down.clientX)));
+      document.documentElement.style.setProperty('--sidebar-width', S.layout.sidebarWidth + 'px');
+      Umi.app.report(false);
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      document.body.classList.remove('resizing-sidebar');
+      Umi.app.update(() => {});
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  });
   return { render, focus };
 })();

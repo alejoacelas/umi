@@ -174,6 +174,7 @@ final class DebugServer {
             "layout": c.layout ?? NSNull(), "sessionMode": SessionBackend.mode,
             "active": NSApp.isActive && c.window.isKeyWindow, "pid": Int(getpid()),
             "shortcuts": c.shortcuts.entries.map(\.id), "shortcutsHandled": c.shortcutsHandled,
+            "badge": NSApp.dockTile.badgeLabel ?? NSNull(),
         ]
     }
 

@@ -328,6 +328,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             sessions.past(project: project) { [weak self] list in
                 self?.send(["type": "pastSessions", "project": project, "list": list])
             }
+        case "badge":
+            // The Dock badge: Review items of the current project (web/views/marks.js).
+            let n = msg["count"] as? Int ?? 0
+            NSApp.dockTile.badgeLabel = n > 0 ? String(n) : nil
         case "refreshSessions":
             sessions.pollSoon()
         case "docket":
@@ -516,6 +520,15 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             pendingReload = nil
         }
         if let f = msg["focus"] as? String { focusPane(f) }
+        // L-11: a tab switch fades the terminals in from the window's background (140 ms, none with
+        // Reduce Motion); typing and clicks go on meanwhile.
+        if msg["fade"] as? Bool == true, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            terminalLayer.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.14
+                terminalLayer.animator().alphaValue = 1
+            }
+        }
     }
 
     /// A native context menu for the web layer (the explorer's right-click menu, as Umi's is native).

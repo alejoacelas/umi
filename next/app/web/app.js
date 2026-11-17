@@ -7,6 +7,7 @@ Umi.app = (() => {
   function render() {
     Umi.views.sidebar.render();
     Umi.views.panes.render();
+    Umi.views.marks.render();
     Umi.views.panel.render();
     Umi.views.shortcutsPage.render();
     Umi.views.find.render();
@@ -32,6 +33,7 @@ Umi.app = (() => {
     else Umi.views.picker.focus();
   }
 
+  let lastTab = null;
   // Sends the slots of the terminals now on screen. With `focus`, the keys go where they should.
   function report(focus) {
     const msg = {
@@ -39,13 +41,16 @@ Umi.app = (() => {
       rects: Umi.views.panes.terminalRects(),
       passThrough: Umi.views.panes.passThroughRects(),
       // Web chrome lying over a terminal (the find bar): native cuts it out of the terminal's view.
-      holes: [Umi.views.find.holeRect()].filter(Boolean),
+      holes: [Umi.views.find.holeRect(), ...Umi.views.marks.holeRects()].filter(Boolean),
+      // A tab switch fades the terminals in from the window's background (L-11).
+      fade: lastTab !== null && lastTab !== S.layout.activeTab,
       chrome: Umi.views.panes.chromeRects(),
       cover: Umi.views.panel.coverRect(),
       // The terminal native brightens (SPEC PI-3): the focused one, when the tab shows several.
       tint: M.paneIds(M.activeTab().root).length > 1 && !M.activeTab().zoomed ? M.activeTab().focused : null,
       viewport: { w: window.innerWidth, h: window.innerHeight },
     };
+    lastTab = S.layout.activeTab;
     const web = webWantsKeys();
     S.ui.keys = web ? 'web' : 'terminal';
     if (focus && !web) msg.focus = M.focusedPane().id;
@@ -104,6 +109,8 @@ Umi.bridge.on('sessions', (msg) => {
   if (Umi.model.sessions(msg.list)) Umi.app.save();
   Umi.views.sidebar.render();
   Umi.views.panes.renderStrip(Umi.model.activeTab());
+  Umi.views.marks.render();
+  Umi.app.report(false);
   if (Umi.state.ui.editingTab) Umi.views.sidebar.focus();
   Umi.views.panes.refreshPickers();
 });

@@ -58,7 +58,9 @@ Umi.views.panes = (() => {
   // A hidden session's chip label: its given name, else its folder.
   function hiddenLabel(sid) {
     const live = S.live[sid];
-    return S.layout.meta?.sessions?.[sid]?.name || live?.name || shortPath(live?.folder) || sid;
+    // Before the daemon's list has it (just started), what its last pane reported.
+    const info = Object.values(S.panes).find((p) => p.session === sid) || {};
+    return S.layout.meta?.sessions?.[sid]?.name || live?.name || shortPath(live?.folder || info.title || info.pwd) || 'Terminal';
   }
 
   // SPEC H-5: a chip per pane on show, in layout order (the focused one filled), then one per
@@ -98,11 +100,14 @@ Umi.views.panes = (() => {
     });
   }
 
+  let lastTab = null;
   function render() {
     renderStrip(M.activeTab());
     const main = document.querySelector('#panes');
     main.textContent = '';
     const tab = M.activeTab();
+    if (lastTab && lastTab !== tab.id) { main.classList.remove('fade-in'); void main.offsetWidth; main.classList.add('fade-in'); }
+    lastTab = tab.id;
     // A zoomed tab shows only its zoomed pane; the others' sessions keep running (native hides
     // terminals that get no slot).
     const zoomed = tab.zoomed && M.panesOf(tab.root).find((p) => p.id === tab.zoomed);

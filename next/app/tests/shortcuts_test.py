@@ -409,6 +409,58 @@ time.sleep(0.8)
 got = [mark2 in D({"cmd": "screen", "pane": p}).get("text", "") for p in panes]
 check("after stopping, typing reaches only the focused terminal", sum(got) == 1, got)
 
+# The pane indicator, the Dock badge and ⌃⌘J / ⌃⌘K, from a fake agent's hook file.
+focus_terminal()
+if ui()["panes"] < 2:
+    new_shell_split()
+here_sid = J("Umi.model.sessionOf(Umi.model.activeTab().focused)")
+other_pane = J("Umi.model.paneIds(Umi.model.activeTab().root).find((id) => id !== Umi.model.activeTab().focused)")
+other = J(f"Umi.model.sessionOf({json.dumps(other_pane)})")
+agent_file = f"{state}/agents/{other}.json"
+
+
+def fake_agent(event):
+    with open(agent_file, "w") as f:
+        json.dump({"agent": "claude", "event": event, "ts": time.time(), "input": {}}, f)
+
+
+try:
+    fake_agent("PermissionRequest")
+    wait(lambda: J(f"Umi.views.marks.stateOf({json.dumps(other)})") == "needs", 5)
+    check("a pane needing you shows the amber mark at its bottom right",
+          J(f"document.querySelector('#panes .slot[data-pane=\"{other_pane}\"] .pane-mark')?.dataset.state || null") == "needs")
+    check("its strip chip shows the mark too", J(f"!!document.querySelector('#strip .chip[data-pane=\"{other_pane}\"] .pane-mark')"))
+    check("the Dock badge counts it", wait(lambda: D({"cmd": "state"}).get("badge") == "1", 3), D({"cmd": "state"}).get("badge"))
+    press("j", "ctrl", "cmd")
+    check("⌃⌘J goes to the session waiting for you", J("Umi.model.sessionOf(Umi.model.activeTab().focused)") == other)
+    press("k", "ctrl", "cmd")
+    check("⌃⌘K goes back to where the walk started", J("Umi.model.sessionOf(Umi.model.activeTab().focused)") == here_sid)
+    fake_agent("UserPromptSubmit")
+    wait(lambda: J(f"Umi.views.marks.stateOf({json.dumps(other)})") == "working", 5)
+    check("a working pane shows the working mark",
+          J(f"document.querySelector('#panes .slot[data-pane=\"{other_pane}\"] .pane-mark')?.dataset.state || null") == "working")
+    check("the badge clears", wait(lambda: D({"cmd": "state"}).get("badge") in (None, ""), 3), D({"cmd": "state"}).get("badge"))
+finally:
+    os.remove(agent_file)
+
+# Dragging the sidebar's edge sets its width (180–600); the terminals move with it.
+x0 = min(p["frame"]["x"] for p in D({"cmd": "state"})["panes"] if p["visible"])
+ev("""(() => { const e = document.querySelector('#sidebar-edge'), r = e.getBoundingClientRect(), x = r.left + 3, y = 200;
+  e.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, clientX: x, clientY: y}));
+  window.dispatchEvent(new MouseEvent('mousemove', {clientX: x + 80, clientY: y}));
+  window.dispatchEvent(new MouseEvent('mouseup', {clientX: x + 80, clientY: y})); })(); 1""")
+time.sleep(0.5)
+w = J("Umi.state.layout.sidebarWidth")
+x1 = min(p["frame"]["x"] for p in D({"cmd": "state"})["panes"] if p["visible"])
+check("dragging the sidebar's edge widens it and moves the terminals", w and abs((x1 - x0) - 80) < 2, (w, x0, x1))
+ev("""(() => { const e = document.querySelector('#sidebar-edge'), r = e.getBoundingClientRect(), x = r.left + 3, y = 200;
+  e.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, clientX: x, clientY: y}));
+  window.dispatchEvent(new MouseEvent('mousemove', {clientX: x - 2000, clientY: y}));
+  window.dispatchEvent(new MouseEvent('mouseup', {clientX: x - 2000, clientY: y})); })(); 1""")
+time.sleep(0.3)
+check("the sidebar stops at 180", J("Umi.state.layout.sidebarWidth") == 180)
+ev("Umi.app.update(() => { delete Umi.state.layout.sidebarWidth; document.documentElement.style.removeProperty('--sidebar-width'); }); 1")
+
 # ⇧⌘R reloads the page natively.
 n0 = len(D({"cmd": "state"})["reloads"])
 press("r", "cmd", "shift")
