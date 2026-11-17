@@ -118,3 +118,23 @@ was. A failing hook puts the session in Review with the hook's message.
 
 The item's `umi-next://open?task=…` link reattaches the daemon session while it lives, and
 resumes the agent session once it doesn't.
+
+## Parity with Umi
+
+Alejo, 2026-11-17: umi-next reaches Umi's features, editor and Markdown preview with comments
+included, built in the web layer; native code only for terminals and what a page can't do.
+`next/PARITY.md` is the plan, area by area.
+
+- **Hidden-pane strip**: lists the sessions ⌘W hid from the current tab; clicking one shows it
+  again.
+- **Shortcuts belong to the page.** `web/shortcuts.js` is the one table of global shortcuts; the
+  page sends it to native on every load, native takes only the keys it lists and passes every
+  other key on to the terminal or page. A new or changed shortcut is a saved file, not a rebuild,
+  and the shortcuts page draws from the same table. Reload and quit run natively, so they work
+  while the page is broken.
+- **Services for the page**: `web/fs.js` reads, writes (atomic, refused when the file changed
+  since it was read), lists folders (git-ignore aware), watches paths, lists files for quick open
+  and searches with ripgrep, rooted at the focused pane's project. New native services go
+  through the same `Umi.bridge.request`.
+- **`umi-next` CLI** mirrors the `umi` commands that drive the UI (edit, split, tabs, panes,
+  Markdown comments), so agents and skills move over by changing the command name.
