@@ -5,13 +5,34 @@
 # terminfo) in this checkout, built per AGENTS.md, or GHOSTTY_KIT / GHOSTTY_SHARE pointing at a
 # checkout's copies (e.g. the main checkout's app/macos/GhosttyKit.xcframework).
 #
+# Signs with Umi's stable local identity (app/dist/signing.sh: "Switcher Local Code Signing", or
+# UMI_SIGN_IDENTITY), so macOS keeps the privacy permissions given to the app across builds; the
+# build fails when the identity is missing. --adhoc signs ad hoc instead, on purpose only (a test
+# Mac without the identity; macOS then asks again for permissions after every build).
+#
 #   next/app/build.sh            # release build
 #   next/app/build.sh --debug    # debug build
+#   next/app/build.sh --adhoc    # ad-hoc signature (testing only)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 config=release
-[[ "${1:-}" == "--debug" ]] && config=debug
+adhoc=0
+for a in "$@"; do
+  case "$a" in
+    --debug) config=debug ;;
+    --adhoc) adhoc=1 ;;
+    *) echo "build.sh: unknown option $a" >&2; exit 2 ;;
+  esac
+done
+source "$repo/app/dist/signing.sh"
+if [[ $adhoc == 1 ]]; then
+  echo "build.sh: signing ad hoc (--adhoc): macOS will ask again for any permission after each build" >&2
+  sign_identity=-
+else
+  umi_require_sign_identity || { echo "build.sh: can't sign UmiNext.app (use --adhoc only for a test build)" >&2; exit 1; }
+  sign_identity="$umi_sign_identity"
+fi
 
 kit="${GHOSTTY_KIT:-$repo/app/macos/GhosttyKit.xcframework}"
 share="${GHOSTTY_SHARE:-$repo/app/zig-out/share}"
@@ -60,7 +81,8 @@ cat > "$app.tmp/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$app.tmp" >/dev/null
+for tool in daemon attach ctl; do codesign --force --sign "$sign_identity" "$app.tmp/Contents/MacOS/umi-next-$tool" >/dev/null 2>&1; done
+codesign --force --sign "$sign_identity" "$app.tmp" >/dev/null 2>&1
 rm -rf "$app"
 mv "$app.tmp" "$app"
 echo "$app"
