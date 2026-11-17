@@ -102,45 +102,72 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 ## Track (d): `umi-next` CLI
 
 Mirrors the `umi` commands that drive the UI. Same flags, `--json` shapes and exit codes as
-CLI.md, so agents and the `umi:umi-comments` skill work by swapping the binary name.
+CLI.md, so agents and the `umi:umi-comments` skill work by swapping the binary name. `umi-next
+help` lists them. Checks: `next/app/tests/cli_test.py`.
 
-What it needs:
+How it works:
 
-- **A UI control socket.** The UI has only the debug socket (`UMI_NEXT_DEBUG=1`). Add
-  `<state>/ui.sock` in Swift, framed as the daemon's `J` messages (next/daemon/PROTOCOL.md). Swift
-  passes each request to the page (`umiNative.receive({type: 'cli', id, req})`) and the page
-  answers with `Umi.bridge.post({type: 'cliReply', id, …})`, because the layout lives in the page.
-  The page's handler (`web/cli.js`) maps commands to `Umi.actions`, so the CLI and keys share code.
-- **The calling session.** Sessions have `UMI_NEXT_SESSION_ID`; the CLI defaults PANE to the pane
-  showing that session (Next's pane ids change when a session moves; session ids don't). Selectors
-  accept a session id, a session name or `.`.
-- **Session I/O goes to the daemon**, not the UI: `send`, `keys`, `read`, `wait` use the daemon
-  socket as `umi-next-ctl` does, so they work while the UI is down.
-- **Comments without the app**: `comments ls|add|reply|edit|resolve|reopen|delete` work on the file
-  alone. Run the same `web/comments.js` in JavaScriptCore from the CLI, so the page and the CLI
-  share one parser. `comments wait` needs the UI (blocks on the socket until Done).
+- **The binary** is `Contents/MacOS/umi-next` (source `next/app/cli/`, built by `build.sh`);
+  `install.sh` links `~/.local/bin/umi-next` to it, as Umi links `umi`. Sessions get
+  `UMI_NEXT_CLI` (this app's copy). It never talks to Umi: its state folder is
+  `UMI_NEXT_STATE_DIR`, else the state folder of the app it ships in (a test copy's CLI drives
+  that copy).
+- **The UI control socket** `<state>/ui.sock` (`Sources/UmiNext/ControlServer.swift`), framed as
+  the daemon's `J` messages: one request `{cmd, args, caller}` per connection, reply
+  `{ok, result|error}`. Swift hands each request to the page (`{type: 'cli', id, req}`); `web/cli.js`
+  answers (`cliReply`) through `Umi.app.update` and `Umi.actions`, so the CLI and keys share code.
+  Requests wait up to 5 s for the page after a launch or reload; a reload fails the requests the
+  old page was answering ("try again"), except `comments wait`, which goes to the new page.
+- **The calling session.** Sessions have `UMI_NEXT_SESSION_ID`; PANE and TAB default to the pane
+  showing that session and its tab (pane ids change when a session moves; session ids don't), else
+  the focused ones. A PANE is a pane id or prefix, a session id or prefix, a session name, or `.`.
+- **Sessions the CLI starts are `by: cli`** (`start.by`), so they stay out of the picker, Review
+  and "next waiting" (DESIGN "Sessions the user started").
+- **Session I/O goes to the daemon**: `send`, `keys`, `read`, `wait` work while the UI is down.
+- **Comments without the app** run `web/comments.js` (`UmiComments`) in JavaScriptCore, plus the
+  CLI's lookup of `--on TEXT --nth N`; files written by `umi comments` and `umi-next comments`
+  are byte-identical. `comments wait` needs the UI.
+- **Focus log**: Next writes Umi's format to `<state>/logs/focus/YYYY-MM-DD.jsonl` (default
+  `~/Library/Application Support/Umi-next/logs/focus/`; `Sources/UmiNext/FocusLog.swift`), and
+  `umi-next focus-log [--by session]` reads it with Umi's own grouping code, so the `day` skill can
+  read Next's as it reads Umi's.
+
+What other tracks call or provide (the CLI uses each once it exists, and says what's missing
+until then):
+
+- Track a: `Umi.actions.openFile({path, pane, mode})` (`edit`); file panes `{view: 'file', path,
+  mode}`; `Umi.editor.isDirty(paneId)` and `Umi.editor.discard(paneId)` (`editor ls|close`);
+  the editor's Done calls `Umi.cli.commentsDone(path)` (`comments wait`).
+- Track b: `Umi.actions.sidebarMode({mode})` and `layout.sidebarMode` (`sidebar tabs|files|search`).
+- Track c: `Umi.actions.toggleZoom({pane})`, `Umi.actions.walkBack()` (⌃⌘K),
+  `Umi.actions.showHidden({session, focus})` and `tab.hidden: [session]` (the strip), bridge op
+  `notify {title, body}`.
 
 | Command (CLI.md) | Next |
 |---|---|
-| `edit FILE… [--source\|--preview] [--pane P\|--tab T]`, `open` | opens file panes (track a); focus stays put; URLs refused until web panes |
-| `editor ls`, `editor close [--force]`, `editor mode` | track a's file panes |
-| `comments …` (all of them), `comments wait FILE [--timeout]` | as above; 124 on timeout |
-| `ls [--json]` | tabs, panes, each pane's session; `hidden` lists the strip's sessions |
-| `tab new\|focus\|close\|rename\|next\|prev\|move --up/--down` | tab actions; `tab new` takes a name (names at creation) |
-| `split [right\|down] [--cwd] [--cmd] [--name] [--no-focus]` | Departure: without `--cmd`, the split shows the picker as ⌘D does |
-| `pane focus\|close\|rename\|zoom\|swap\|resize\|move --new-tab` | `pane close` stops showing (⌘W rule); `pane exit` ends the session (new) |
-| `pane hide`, `pane show [--focus]` | strip actions. Departure: no `--until` |
-| `send`, `keys`, `read`, `wait --pattern\|--idle` | daemon-side |
-| `sidebar on\|off\|toggle\|tabs\|files\|search` | track b's modes |
-| `notify TITLE [BODY]` | track c's `notify` op |
-| `go --next jump`, `go --back` | next waiting / back (track c) |
-| `shortcuts [ls]` | prints `Umi.shortcuts.table` |
-| `help --json` | yes: the palette may list CLI commands later |
+| `ls [--json]` | [x] tabs, panes, each pane's session; `sessions` lists every live session with `by` and the pane showing it; `hidden` per tab once track c keeps it. Departure: no `--where` |
+| `tab new [NAME] [--cwd] [--cmd] [--name] [--no-focus]` | [x] a new session (a shell without `--cmd`); NAME names the tab |
+| `tab focus\|close\|rename\|next\|prev\|move --up/--down` | [x] `close` stops showing the tab's panes (sessions keep running) |
+| `split [right\|down\|left\|up] [--pane] [--cwd] [--cmd] [--name] [--ratio] [--no-focus]` | [x] prints the pane; JSON adds `session`. Departure: without `--cmd`, the split shows the picker as ⌘D does |
+| `pane focus\|close\|info\|rename\|swap\|resize\|move --new-tab` | [x] `close` stops showing (⌘W rule); `focus` on a session no pane shows opens it beside the focused pane; `rename` renames the session; `resize` moves the divider by cells |
+| `pane exit` (new) | [x] ends the session, as the palette's Exit |
+| `pane hide`, `pane show [--focus]` | [x] `hide` = ⌘W; `show` puts a session at the right end of the tab, focus stays unless `--focus`. Departure: no `--until` |
+| `pane zoom` | waits for track c's `toggleZoom` |
+| `send [--enter]`, `keys`, `read [--lines]`, `wait --pattern\|--idle [--timeout]` | [x] daemon-side; several lines go as a bracketed paste when the program asked for it; keys follow the session's cursor-key and kitty modes. Departures: no `read --scrollback` (the daemon keeps the screen only); `wait --pattern` matches the screen minus the line echoing the last `send` (no shell marks); no `wait --attr` |
+| `sidebar on\|off\|toggle\|status` | [x]; `tabs\|files\|search` wait for track b |
+| `notify TITLE [BODY]` | waits for track c's `notify` op |
+| `go --next jump` | [x] next waiting; `go --back` waits for track c |
+| `shortcuts [ls]` | [x] prints `Umi.shortcuts.table`. Departure: `shortcuts set` → edit `web/shortcuts.js` |
+| `edit FILE…`, `open`, `editor ls\|close\|mode` | wired to track a's `openFile`; focus stays put; URLs refused until web panes |
+| `comments [ls]\|add\|reply\|edit\|resolve\|reopen\|delete` | [x] on the file, without the app |
+| `comments wait FILE [--timeout]` | [x] answered by `Umi.cli.commentsDone(path)` (track a's Done button), survives a page reload; 124 on timeout |
+| `focus-log [--since] [--until] [--pane] [--by]` | [x] Next's own focus log |
+| `help [--json]` | [x] |
 
-Not mirrored: `window …` (one window), `drawer …`, `tab archive|pin|color`, `pane set|get`
-attributes and queries, `list`/`slot`/`command`, `events`, `log`, `focus-log`, `layout`,
+Not mirrored: `window …` (one window), `drawer …`, `tab archive|pin|color|equalize`, `pane
+set|get|until` attributes and queries, `list`/`slot`/`command`, `events`, `log`, `layout`,
 `reopen`, `screenshot`, `worktree`, `link` (the `umi-next://` handler covers it), `hook` (the
-`umi-next-hook` script covers it), `update`, `plugins`, `doctor`.
+`umi-next-hook` script covers it), `update`, `plugins`, `doctor`. They exit 1 saying so.
 
 ## Not planned / later
 
@@ -149,6 +176,6 @@ attributes and queries, `list`/`slot`/`command`, `events`, `log`, `focus-log`, `
   config (Q-1..Q-8).
 - Multiple windows, tab moves between windows (M-2, M-5, M-6).
 - Launch configurations (L-21), synchronized input (L-32), the terminal's right-click menu (L-31).
-- Attributes, events, activity log and focus log (D-1..D-8); the `day` skill reads Umi's focus log.
+- Attributes, events and the activity log (D-1..D-8). The focus log is in (track d).
 - Warp's terminal look (S-9..S-12) beyond what Ghostty's zsh integration already gives.
 - Docs tab and default-app registration (E-10, `editor default`), web panes (E-12).
