@@ -13,9 +13,13 @@ done
 dir="$UMI_NEXT_STATE_DIR/agents"
 mkdir -p "$dir"
 tmp="$dir/.$UMI_NEXT_SESSION_ID.$$"
+input=$(cat)
+# Claude's idle reminder (a minute after a turn ends) changes nothing: keep the Stop and its reply.
+case "$event:$input" in
+  Notification:*'"notification_type":"idle_prompt"'*|Notification:*'"notification_type": "idle_prompt"'*) exit 0 ;;
+esac
 {
   printf '{"event":"%s","agent":"%s","ts":%s,"input":' "$event" "$agent" "$(date +%s)"
-  input=$(cat)
   [ -n "$input" ] && printf '%s' "$input" || printf 'null'
   printf '}\n'
 } > "$tmp" && mv -f "$tmp" "$dir/$UMI_NEXT_SESSION_ID.json"
