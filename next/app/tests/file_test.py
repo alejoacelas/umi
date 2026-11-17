@@ -8,7 +8,7 @@ Start the app with UMI_NEXT_TEST_OPEN_LOG=FILE so web links are logged instead o
 
 SCRATCH_DIR is emptied and filled with the documents it opens.
 """
-import json, os, shutil, socket, struct, sys, time, zlib
+import json, os, shutil, socket, struct, subprocess, sys, time, zlib
 
 state, scratch, open_log = sys.argv[1], os.path.abspath(sys.argv[2]), sys.argv[3]
 fails = []
@@ -334,6 +334,36 @@ open_file(scratch + "/adir")
 check("a folder is refused with a message", "is a folder" in (vs() or {}).get("error", "") if vs() else False, vs())
 open_file(scratch + "/bin.dat")
 check("a binary file is refused with a message", "UTF-8" in (vs() or {}).get("error", ""), vs())
+
+# ---- Git marks in the gutter (E-21) ----
+repo = scratch + "/repo"
+os.makedirs(repo)
+g = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+g("init", "-q")
+open(repo + "/code.txt", "w").write("one\ntwo\nthree\nfour\nfive\n")
+g("add", "code.txt")
+g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+open(repo + "/code.txt", "w").write("one\nTWO\nthree\nnew\nfour\n")
+open_file(repo + "/code.txt")
+wait(f"{V}.state().marks && Object.keys({V}.state().marks).length")
+check("lines changed since the commit are marked: changed, added, removed",
+      J(f"{V}.state().marks") == {"1": "changed", "3": "added", "5": "removed"}, J(f"{V}.state().marks"))
+check("the gutter draws them at its left edge", sorted(J(f"{V}.state().gutterMarks") or []) == ["added", "changed", "removed"]
+      and J(f"(() => {{ const m = {V}.cm.dom.querySelector('.cm-git-mark'), g = {V}.cm.dom.querySelector('.cm-gutters'); return Math.round(m.getBoundingClientRect().left - g.getBoundingClientRect().left); }})()") == 0,
+      J(f"{V}.state().gutterMarks"))
+ev(f"{V}.cm.dispatch({{changes: {{from: 0, to: 3, insert: 'ONE'}}}}); 1")
+wait(f"{V}.state().marks['0'] === 'changed'")
+check("an edit is marked as it is typed", J(f"{V}.state().marks['0']") == "changed")
+ev(f"{V}.cm.dispatch({{changes: {{from: 0, to: {V}.cm.state.doc.length, insert: 'one\\ntwo\\nthree\\nfour\\nfive\\n'}}}}); 1")
+wait(f"Object.keys({V}.state().marks).length === 0")
+check("text back as committed: no marks", J(f"{V}.state().marks") == {})
+ev(f"{V}.discarded = true; 1")
+close_all()
+open(scratch + "/untracked.txt", "w").write("a\n")
+open_file(scratch + "/untracked.txt")
+time.sleep(0.6)
+check("a file outside git has no marks", not J(f"{V}.state().gutterMarks"))
+close_all()
 
 close_all()
 print(f"\n{len(fails)} failed" if fails else "\nall passed")

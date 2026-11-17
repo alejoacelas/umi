@@ -84,6 +84,45 @@ Umi.views.file = (() => {
     return (look = [theme, syntaxHighlighting(highlight)]);
   }
 
+  // ---- The git gutter: a 3 px bar at the gutter's left edge, Warp's green / yellow / red ----
+  let setGitMarks = null, gitGutterExt = null;
+  function gitGutter() {
+    if (gitGutterExt) return gitGutterExt;
+    const { gutter, GutterMarker, EditorView } = CM.view, { StateField, StateEffect, RangeSet } = CM.state;
+    class Mark extends GutterMarker {
+      constructor(kind) { super(); this.kind = kind; }
+      eq(o) { return o.kind === this.kind; }
+      toDOM() { const d = document.createElement('div'); d.className = 'cm-git-mark ' + this.kind; d.dataset.kind = this.kind; return d; }
+    }
+    const kinds = { added: new Mark('added'), changed: new Mark('changed'), removed: new Mark('removed') };
+    setGitMarks = StateEffect.define();
+    const field = StateField.define({
+      create: () => RangeSet.empty,
+      update(set, tr) {
+        set = set.map(tr.changes);
+        for (const e of tr.effects) {
+          if (!e.is(setGitMarks)) continue;
+          const doc = tr.state.doc, ranges = [];
+          for (const line of Object.keys(e.value).map(Number).sort((x, y) => x - y)) {
+            if (line < doc.lines) ranges.push(kinds[e.value[line]].range(doc.line(line + 1).from));
+          }
+          set = RangeSet.of(ranges);
+        }
+        return set;
+      },
+    });
+    const theme = EditorView.theme({
+      '.cm-git-gutter': { width: '3px', minWidth: '3px' },
+      '.cm-git-gutter .cm-gutterElement': { padding: '0', position: 'relative' },
+      '.cm-git-mark': { position: 'absolute', left: '0', top: '0', width: '3px', height: '100%' },
+      '.cm-git-mark.added': { backgroundColor: '#b4fa72' },
+      '.cm-git-mark.changed': { backgroundColor: '#fefdc2' },
+      '.cm-git-mark.removed': { backgroundColor: '#ff8272', height: '4px' },
+    });
+    gitGutterExt = [field, gutter({ class: 'cm-git-gutter', markers: (v) => v.state.field(field) }), theme];
+    return gitGutterExt;
+  }
+
   // ---- One file pane ----
   class FileView {
     constructor(node) {
@@ -198,6 +237,7 @@ Umi.views.file = (() => {
       }
       const wasMissing = this.missing;
       this.missing = false;
+      if (this.cm) this.reloadMarksBase();
       if (this.disk && r.version === this.disk.version) { if (wasMissing) this.paint(); return; }
       if (!this.dirty || r.text === this.text) {
         this.disk = { text: r.text, version: r.version };
@@ -218,7 +258,7 @@ Umi.views.file = (() => {
       const { search, searchKeymap, highlightSelectionMatches, gotoLine } = CM.search;
       const lang = languageOf(this.path);
       const exts = [
-        lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(), history(), drawSelection(), dropCursor(),
+        gitGutter(), lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(), history(), drawSelection(), dropCursor(),
         EditorState.allowMultipleSelections.of(true), indentOnInput(), bracketMatching(), rectangularSelection(), crosshairCursor(),
         highlightActiveLine(), highlightSelectionMatches(), search({ top: true }),
         keymap.of([
@@ -234,9 +274,32 @@ Umi.views.file = (() => {
           this.previewStale = true;
           this.changed();
         }),
+        EditorView.updateListener.of((u) => { if (u.docChanged) this.scheduleMarks(); }),
       ];
       if (lang && CM.languages[lang]) exts.push(CM.languages[lang]());
       this.cm = new EditorView({ state: EditorState.create({ doc: this.text, extensions: exts }), parent: this.source });
+      this.reloadMarksBase();
+    }
+
+    // ---- Git marks (E-21): the gutter's left edge shows lines added, changed or removed since
+    // the last commit. The committed text is read again on open, save, a change on disk and focus.
+    async reloadMarksBase() {
+      this.marksRead = Date.now();
+      let base = null;
+      try { base = (await Umi.fs.gitHead(this.path)).text; } catch (e) { base = null; }
+      this.marksBase = base;
+      this.scheduleMarks(true);
+    }
+
+    scheduleMarks(now = false) {
+      clearTimeout(this.marksTimer);
+      if (this.marksBase === undefined || !this.cm) return;
+      this.marksTimer = setTimeout(() => {
+        if (!this.cm) return;
+        const marks = this.marksBase == null ? {} : UmiGitMarks.marks(this.marksBase, this.cm.state.doc.toString());
+        this.marks = marks;
+        this.cm.dispatch({ effects: setGitMarks.of(marks) });
+      }, now ? 0 : 300);
     }
 
     // Replaces the text with `text`, changing only what differs, so the caret and undo stay.
@@ -285,6 +348,7 @@ Umi.views.file = (() => {
         this.missing = false;
         this.error = null;
         this.changed();
+        this.reloadMarksBase();
         this.showToast('File saved.');
         return true;
       } catch (e) {
@@ -582,6 +646,8 @@ Umi.views.file = (() => {
       if (!force && a && a !== document.body && a !== this.frame && this.root.contains(a) && a.offsetParent !== null
         && !(this.mode === 'rendered' && this.source.contains(a))) return;
       if (this.confirmClose) { this.bars.querySelector('.fv-primary')?.focus(); return; }
+      // A commit made elsewhere changes the marks without touching the file.
+      if (this.cm && Date.now() - (this.marksRead || 0) > 2000) this.reloadMarksBase();
       if (this.mode === 'rendered' && this.frame) { this.frame.focus(); this.frame.contentWindow?.focus(); }
       else if (this.cm) this.cm.focus();
       else this.root.focus();
@@ -674,6 +740,7 @@ Umi.views.file = (() => {
 
     destroy() {
       clearTimeout(this.draftTimer);
+      clearTimeout(this.marksTimer);
       this.keepDraft();
       this.watcher?.close();
       this.cm?.destroy();
@@ -686,7 +753,9 @@ Umi.views.file = (() => {
         bars: [...this.bars.querySelectorAll('.fv-bar-text')].map((b) => b.textContent),
         toast: this.toast.classList.contains('on') ? this.toast.textContent : '', selected: this.selected,
         focused: this.root.contains(document.activeElement) || document.activeElement === this.frame,
-        caret: this.cm ? this.cm.state.selection.main.head : null };
+        caret: this.cm ? this.cm.state.selection.main.head : null,
+        marks: this.marks || null,
+        gutterMarks: this.cm ? [...this.cm.dom.querySelectorAll('.cm-git-gutter .cm-git-mark')].map((m) => m.dataset.kind) : null };
     }
   }
 
