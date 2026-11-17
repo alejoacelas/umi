@@ -15,7 +15,14 @@ final class UmiWindow: NSWindow {
         return super.performKeyEquivalent(with: event)
     }
 
+    /// The user typed or clicked (the focus log's activity).
+    var onUserInput: (() -> Void)?
+
     override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel: onUserInput?()
+        default: break
+        }
         if event.type == .keyDown, shortcutHandler?(event) == true { return }
         super.sendEvent(event)
     }
@@ -78,6 +85,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     private(set) var shortcutsHandled = 0
     private(set) lazy var services = WebServices { [weak self] in self?.send($0) }
     let control = ControlServer()
+    let focusLog = FocusLog()
 
     /// paneID → terminal. Terminals live here whatever the web layer does.
     private(set) var surfaces: [String: TerminalSurfaceView] = [:]
@@ -176,6 +184,41 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         installHyperMonitor()
         watcher = FileWatcher(path: Paths.webDir) { [weak self] in self?.webFilesChanged() }
         control.sendToPage = { [weak self] in self?.send($0) }
+        control.native["native.focusOpen"] = { [weak self] _ in
+            ["ok": true, "result": ["stretch": (self?.focusLog.openStretch()).map { $0 as Any } ?? NSNull()]]
+        }
+        focusLog.current = { [weak self] in self?.focusShows() }
+        focusLog.appCounts = { [weak self] in NSApp.isActive && self?.window.isKeyWindow == true }
+        window.onUserInput = { [weak self] in self?.focusLog.userActed() }
+        focusLog.start()
+    }
+
+    /// What the focused pane of the active tab shows, for the focus log (Umi's stretch fields).
+    private func focusShows() -> (pane: String, shows: [String: Any])? {
+        guard let layout, let tabs = layout["tabs"] as? [[String: Any]], !tabs.isEmpty else { return nil }
+        let tab = tabs.first { $0["id"] as? String == layout["activeTab"] as? String } ?? tabs[0]
+        guard let id = tab["focused"] as? String,
+              let node = Self.panes(in: tab["root"]).first(where: { $0["id"] as? String == id }) else { return nil }
+        let info = paneInfo[id] ?? [:]
+        let kind = node["view"] as? String ?? "terminal"
+        var shows: [String: Any] = [
+            "title": info["title"] as? String ?? "", "kind": kind,
+            "cwd": info["pwd"] as? String ?? node["cwd"] as? String ?? "", "attributes": [String: Any](),
+            "tab": tab["id"] as? String ?? "", "window": "main",
+        ]
+        if kind == "file", let path = node["path"] as? String { shows["file"] = path; shows["title"] = (path as NSString).lastPathComponent }
+        if let sid = info["session"] as? String ?? node["session"] as? String {
+            shows["session"] = sid
+            let s = sessions.last.first { $0["id"] as? String == sid }
+            let name = ((layout["meta"] as? [String: Any])?["sessions"] as? [String: Any]).flatMap { ($0[sid] as? [String: Any])?["name"] as? String }
+                ?? s?["name"] as? String ?? ""
+            if let agent = s?["agent"] as? [String: Any] {
+                var a: [String: Any] = ["kind": agent["agent"] ?? "claude", "title": name]
+                if let sess = agent["agentSession"] { a["session"] = sess }
+                shows["agent"] = a
+            }
+        }
+        return (id, shows)
     }
 
     func show() {
@@ -356,6 +399,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         }
         layout = Self.withSessions(newLayout, paneInfo)
         if save { saveLayout() }
+        focusLog.update()
     }
 
     private func endTerminal(_ id: String, how: String) {
