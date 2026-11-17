@@ -138,6 +138,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         let now = Self.now()
         pendingReload = ["changedAt": now]
         webReady = false
+        webErrors = []
         armWatchdog()
         webView.reloadFromOrigin()
         pendingReload?["reloadCalledAt"] = Self.now()
@@ -149,7 +150,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         helloWatchdog?.cancel()
         let w = DispatchWorkItem { [weak self] in
             guard let self, !self.webReady else { return }
-            self.showBanner("The web layer didn't start (no hello from web/app.js). Terminals keep running; fix the file and save.")
+            let why = self.webErrors.last.map { ": \($0)" } ?? " (no hello from web/app.js)"
+            self.showBanner("The web layer didn't start\(why). Terminals keep running; fix the file and save.")
         }
         helloWatchdog = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
