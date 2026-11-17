@@ -297,6 +297,22 @@ time.sleep(0.5)
 check("Don't Save closes and drops the draft", not J(f"Umi.model.panesOf(Umi.model.activeTab().root).some(p => p.path === {json.dumps(code)})")
       and J("JSON.stringify(Umi.state.layout.meta.drafts || {})") == "{}" and open(code).read() == "recreated\n")
 
+# ⇧⌘S: Save As; the pane then shows the new file, the old one is left as it was.
+open_file(code)
+ev(f"{V}.focus(); 1")
+typ("S")
+key("S", "cmd", "shift")
+check("⇧⌘S asks for a name", J("!!document.querySelector('.fv-saveas input')"))
+copy = scratch + "/copy.swift"
+ev(f"{V}.submitSaveAs({json.dumps(copy)}); 1")
+time.sleep(0.8)
+check("Save As writes the new file and the pane shows it", os.path.exists(copy) and open(copy).read().startswith("S")
+      and vs()["path"] == copy and not vs()["dirty"] and open(code).read() == "recreated\n", vs())
+ev(f"{V}.startSaveAs(); {V}.submitSaveAs({json.dumps(plan)}); 1")
+time.sleep(0.5)
+check("Save As never replaces an existing file", "already exists" in J("document.querySelector('.fv-saveas .fv-err')?.textContent || ''"))
+ev(f"{V}.saveAs = null; {V}.paint(); 1")
+
 # A comment from the source while there are unsaved edits: the file gets the comment, the edits stay unsaved.
 open_file(plan, mode="raw")
 ev(f"{V}.cm.dispatch({{changes: {{from: 0, insert: 'Intro.\\n\\n'}}}}); 1")

@@ -390,6 +390,44 @@ Umi.views.file = (() => {
       setTimeout(() => this.bars.querySelector('textarea')?.focus(), 0);
     }
 
+    // ⇧⌘S (E-23): saves under a name the user gives; the pane then shows that file. A file that
+    // exists isn't replaced; another pane showing it takes the text and the focus, this one closes,
+    // unless that pane has unsaved edits (then Save As says so and does nothing).
+    startSaveAs() {
+      if (!this.disk && this.error) return;
+      this.saveAs = { error: null };
+      this.paint();
+      setTimeout(() => { const i = this.bars.querySelector('.fv-saveas input'); if (i) { i.focus(); i.setSelectionRange(i.value.lastIndexOf('/') + 1, i.value.length); } }, 0);
+    }
+
+    async submitSaveAs(to) {
+      const path = Umi.fs.resolve(to.trim(), dirOf(this.path));
+      const fail = (m) => { this.saveAs = { error: m }; this.paint(); };
+      if (!to.trim() || path === this.path) return fail('Give another name.');
+      const other = [...views.values()].find((v) => v !== this && v.path === path);
+      if (other && other.dirty) return fail(`${base(path)} is open with unsaved changes; save or close it first.`);
+      try { await Umi.fs.write(path, this.text, { version: null, createDirs: true }); }
+      catch (e) { return fail(e.code === 'conflict' ? `${base(path)} already exists.` : e.message); }
+      this.saveAs = null;
+      this.discarded = true; // its draft (if any) belongs to the old name
+      if (other) {
+        await other.refresh();
+        other.showToast('File saved.');
+        Umi.app.update(() => { M.removePane(this.id); M.focusPane(other.id); });
+        return;
+      }
+      const keep = this.dirty ? null : true;
+      Umi.app.update(() => {
+        const n = this.node();
+        if (!n) return;
+        const fresh = M.newPane({ view: 'file', path, mode: this.mode });
+        const found = M.findPane(this.id);
+        found.tab.root = (function map(x) { return x.type === 'pane' ? (x.id === n.id ? fresh : x) : { ...x, a: map(x.a), b: map(x.b) }; })(found.tab.root);
+        if (found.tab.focused === n.id) found.tab.focused = fresh.id;
+      });
+      if (keep) for (const v of views.values()) if (v.path === path) v.showToast('File saved.');
+    }
+
     async submitAsk(body) {
       const ask = this.ask;
       if (!ask || !body.trim()) return;
@@ -483,6 +521,7 @@ Umi.views.file = (() => {
       let done = true;
       if (this.confirmClose && e.key === 'Escape') { this.confirmClose = false; this.paint(); this.focus(); }
       else if (k === 'KeyS' && only(true, false, false)) this.save();
+      else if (k === 'KeyS' && only(true, true, false)) this.startSaveAs();
       else if (this.markdown && ((k === 'KeyM' && only(true, true, false)) || (k === 'KeyE' && only(true, false, false)))) this.setMode(this.mode === 'raw' ? 'rendered' : 'raw');
       else if (this.markdown && k === 'KeyM' && only(true, false, true)) this.startComment();
       else if (this.mode === 'rendered' && this.page && k === 'KeyF' && only(true, false, false)) {
@@ -583,6 +622,23 @@ Umi.views.file = (() => {
       ], 'fv-conflict');
       else if (this.missing && this.disk && this.disk.version) bar('This file was deleted. Save to write it again.', []);
       if (this.error && this.disk) bar(this.error, [['Dismiss', () => { this.error = null; this.paint(); }]]);
+      if (this.saveAs) {
+        const b = el('div', 'fv-bar fv-saveas');
+        b.append(el('span', '', 'Save as'));
+        const i = el('input');
+        i.value = this.path;
+        i.spellcheck = false;
+        i.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); this.submitSaveAs(i.value); }
+          else if (e.key === 'Escape') { e.preventDefault(); this.saveAs = null; this.paint(); this.focus(true); }
+          e.stopPropagation();
+        });
+        const ok = el('button', 'fv-primary', 'Save');
+        ok.addEventListener('click', () => this.submitSaveAs(i.value));
+        b.append(i, ok);
+        if (this.saveAs.error) b.append(el('span', 'fv-err', this.saveAs.error));
+        this.bars.append(b);
+      }
       if (this.ask) {
         const b = el('div', 'fv-bar fv-comment');
         const q = this.ask.quote.length > 120 ? this.ask.quote.slice(0, 117) + '…' : this.ask.quote;
