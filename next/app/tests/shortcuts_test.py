@@ -45,7 +45,7 @@ def ui():
 
 
 CODES = {"t": 17, "d": 2, "w": 13, "b": 11, "[": 33, "]": 30, "1": 18, "2": 19, "3": 20, "9": 25, "k": 40, "x": 7,
-         "left": 123, "right": 124, "down": 125, "up": 126, "space": 49, "escape": 53, "r": 15, "enter": 36}
+         "left": 123, "right": 124, "down": 125, "up": 126, "space": 49, "escape": 53, "r": 15, "enter": 36, "tab": 48, "=": 24}
 
 
 LETTERS = dict(zip("asdfhgzxcvbqweryt", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17]))
@@ -131,6 +131,11 @@ check("⇧⌘[ previous tab", ui()["tab"] == 0)
 press("9", "cmd")
 check("⌘9 last tab", ui()["tab"] == ui()["tabs"] - 1)
 press("1", "cmd")
+press("tab", "ctrl")
+check("⌃Tab next tab", ui()["tab"] == 1, ui())
+press("tab", "ctrl", "shift")
+check("⌃⇧Tab previous tab", ui()["tab"] == 0, ui())
+press("1", "cmd")
 focus_terminal()
 
 b = ui()
@@ -142,6 +147,10 @@ press("left", "cmd", "opt")
 check("⌥⌘← focus left", ui()["focused"] != picker, ui())
 press("right", "cmd", "opt")
 check("⌥⌘→ focus right", ui()["focused"] == picker, ui())
+press("[", "cmd")
+check("⌘[ previous pane", ui()["focused"] != picker, ui())
+press("]", "cmd")
+check("⌘] next pane", ui()["focused"] == picker, ui())
 press("w", "cmd")
 check("⌘W hides the pane", ui()["panes"] == b["panes"], ui())
 focus_terminal()
