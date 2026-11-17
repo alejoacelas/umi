@@ -159,6 +159,65 @@ Umi.model = (() => {
     return t;
   }
 
+  // ---- sharing space (SPEC L-19, as Warp) ----
+  // A run is a chain of splits in one direction: the panes (or cross-direction subtrees) of one row
+  // or column. Splitting along a row gives the new pane 1/(N+1) of it and keeps the others'
+  // proportions; closing a pane shares its space among the rest in proportion to their sizes.
+  const firstLeaf = (n) => (n.type === 'pane' ? n.id : firstLeaf(n.a));
+  function runMembers(n, dir, f = 1) {
+    if (n.type !== 'split' || n.dir !== dir) return [{ node: n, f }];
+    return [...runMembers(n.a, dir, f * n.ratio), ...runMembers(n.b, dir, f * (1 - n.ratio))];
+  }
+  function setRun(n, dir, fr) {
+    if (n.type !== 'split' || n.dir !== dir) return;
+    const k = runMembers(n.a, dir).length;
+    const fa = fr.slice(0, k).reduce((x, y) => x + y, 0), fb = fr.slice(k).reduce((x, y) => x + y, 0);
+    n.ratio = fa + fb > 0 ? fa / (fa + fb) : 0.5;
+    setRun(n.a, dir, fr.slice(0, k));
+    setRun(n.b, dir, fr.slice(k));
+  }
+  function pathTo(n, leafId, path = []) {
+    path.push(n);
+    if (n.type === 'pane') return n.id === leafId ? path : null;
+    return pathTo(n.a, leafId, [...path]) || pathTo(n.b, leafId, [...path]);
+  }
+  // The top of the run holding path[i] (path: root … node), with its depth.
+  function runTop(path, i, dir) {
+    let d = i;
+    while (d > 0 && path[d - 1].type === 'split' && path[d - 1].dir === dir) d--;
+    return d;
+  }
+  // After a split (old | new): the new pane gets 1/(N+1) of its run; the others keep their proportions.
+  function shareSplit(tab, newId) {
+    const path = pathTo(tab.root, newId);
+    if (!path || path.length < 2) return;
+    const sp = path[path.length - 2], dir = sp.dir;
+    const top = path[runTop(path, path.length - 2, dir)];
+    const members = runMembers(top, dir);
+    const n = members.length - 1; // members before the split
+    // The old pane held both halves of the new split: it keeps its whole share, scaled like the rest.
+    const fr = members.map((m) => (m.node === sp.b ? 1 / (n + 1) : (m.node === sp.a ? 2 * m.f : m.f) * (n / (n + 1))));
+    setRun(top, dir, fr);
+  }
+  // Removes pane `id` from `tab`'s tree, its run's other members sharing its space in proportion.
+  function removeShared(tab, id) {
+    const path = pathTo(tab.root, id);
+    if (!path || path.length < 2) return removeFromTree(tab.root, id);
+    const parent = path[path.length - 2], dir = parent.dir;
+    const d = runTop(path, path.length - 2, dir);
+    const before = runMembers(path[d], dir).filter((m) => m.node.id !== id);
+    const total = before.reduce((x, m) => x + m.f, 0) || 1;
+    const share = new Map(before.map((m) => [firstLeaf(m.node), m.f / total]));
+    const root = removeFromTree(tab.root, id);
+    if (!root || !before.length) return root;
+    const after = pathTo(root, firstLeaf(before[0].node));
+    const top = after && after[d];
+    if (top && top.type === 'split' && top.dir === dir) {
+      setRun(top, dir, runMembers(top, dir).map((m) => share.get(firstLeaf(m.node)) ?? 1 / before.length));
+    }
+    return root;
+  }
+
   // Splits the focused pane; the new pane shows `view` ('picker' for ⌘D).
   function split(dir, view = 'terminal', extra = {}) {
     const tab = activeTab();
@@ -166,6 +225,7 @@ Umi.model = (() => {
     const p = newPane({ view, cwd: folderOf(tab.focused), ...extra });
     if (view === 'picker') p.picker = { kind: 'claude', name: '', sel: 0, project: projectOf(tab.focused) };
     tab.root = mapPane(tab.root, tab.focused, (old) => ({ type: 'split', dir, ratio: 0.5, a: old, b: p }));
+    shareSplit(tab, p.id);
     tab.focused = p.id;
     return p;
   }
@@ -178,7 +238,7 @@ Umi.model = (() => {
     const folder = folderOf(id), project = projectOf(id);
     S.closed[id] = 'detach';
     if (tab.zoomed === id) delete tab.zoomed;
-    const root = removeFromTree(tab.root, id);
+    const root = removeShared(tab, id);
     if (root) {
       tab.root = root;
       if (tab.focused === id) tab.focused = paneIds(root)[0];

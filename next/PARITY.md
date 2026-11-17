@@ -86,7 +86,7 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 | Tabs: new, select, next/prev (L-11) | ⌘T, ⌘1–9, ⇧⌘[ ⇧⌘], ⌃Tab | [x] done, ⌃Tab / ⌃⇧Tab included | — |
 | Tab rename, close (S-4, L-2) | double-click / ⌃⌘R rename in place; close asks when a program runs | double-click and ⌃⌘R rename in place; × and ⌥⌘W stop showing the tab | [x] done. Close keeps sessions (⌘W rule), so no question |
 | Tab move, pin, color, groups, search (L-13, S-4, S-13, S-14) | ⌃⇧↑↓, pin, colors, groups, Search tabs, right-click menu | [x] ⌃⇧↑↓ and dragging a row move a tab within its group; ⌃⌘P pins (pinned first, Warp's order); a new tab opens below the pinned ones | Colors, groups, search, menu: later |
-| Splits (L-1, L-19) | ⌘D / ⇧⌘D, panes share space equally | ⌘D / ⇧⌘D into the picker; dividers drag | Equal sharing within a row on split (L-19); ⇧⌘D ⌘D left/up variants later |
+| Splits (L-1, L-19) | ⌘D / ⇧⌘D, panes share space equally | ⌘D / ⇧⌘D into the picker; dividers drag | [x] Equal sharing (L-19): a split along a row gives the new pane 1/(N+1) and keeps the others' proportions; a close shares the space in proportion. ⇧⌘D ⌘D left/up variants later |
 | Pane focus by direction | ⌥⌘ arrows | ⌥⌘ arrows | [x] done |
 | Zoom (L-3) | maximize/minimize a pane | [x] ⇧⌘↩ toggles `tab.zoomed`: only that pane shows, the others' sessions keep running; focusing another pane, a split or a close unzooms | — |
 | Pane rename (L-3) | ⌃⇧⌘R in place | ⌃⇧⌘R and palette `r` rename the session | [x] done |
