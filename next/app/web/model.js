@@ -48,6 +48,8 @@ Umi.model = (() => {
     return null;
   }
   const activeTab = () => S.layout.tabs.find((t) => t.id === S.layout.activeTab) || S.layout.tabs[0];
+  // The tabs in the sidebar's list (pinned first), without the archived ones (SPEC AR-3).
+  const listedTabs = () => S.layout.tabs.filter((t) => !t.archived);
   const focusedPane = () => findPane(activeTab().focused)?.node;
   const sessionOf = (paneId) => S.panes[paneId]?.session || findPane(paneId)?.node.session;
   const paneOfSession = (sid) => Object.keys(S.panes).find((p) => S.panes[p].session === sid && findPane(p));
@@ -147,10 +149,12 @@ Umi.model = (() => {
   }
 
   // ---- layout operations ----
+  // A new tab goes right after the current one, below the pinned tabs (SPEC S-7).
   function addTab(pane) {
     const cur = activeTab();
     const t = newTab(pane || newPane({ cwd: cur && folderOf(cur.focused) }));
-    S.layout.tabs.splice(S.layout.tabs.indexOf(cur) + 1, 0, t);
+    const pinned = S.layout.tabs.filter((x) => x.pinned).length;
+    S.layout.tabs.splice(cur && !cur.archived ? Math.max(S.layout.tabs.indexOf(cur) + 1, pinned) : pinned, 0, t);
     S.layout.activeTab = t.id;
     return t;
   }
@@ -158,6 +162,7 @@ Umi.model = (() => {
   // Splits the focused pane; the new pane shows `view` ('picker' for ⌘D).
   function split(dir, view = 'terminal', extra = {}) {
     const tab = activeTab();
+    delete tab.zoomed;
     const p = newPane({ view, cwd: folderOf(tab.focused), ...extra });
     if (view === 'picker') p.picker = { kind: 'claude', name: '', sel: 0, project: projectOf(tab.focused) };
     tab.root = mapPane(tab.root, tab.focused, (old) => ({ type: 'split', dir, ratio: 0.5, a: old, b: p }));
@@ -172,6 +177,7 @@ Umi.model = (() => {
     const { tab } = found;
     const folder = folderOf(id), project = projectOf(id);
     S.closed[id] = 'detach';
+    if (tab.zoomed === id) delete tab.zoomed;
     const root = removeFromTree(tab.root, id);
     if (root) {
       tab.root = root;
@@ -191,6 +197,7 @@ Umi.model = (() => {
     if (shown === paneId) return focusPane(paneId);
     const found = findPane(paneId);
     if (!found) return;
+    unhide(sid);
     // A pane is keyed to its terminal: give the target a fresh id so native starts a new view.
     const fresh = newPane({ session: sid, attach: sid, cwd: S.live[sid]?.folder });
     found.tab.root = mapPane(found.tab.root, paneId, () => fresh);
@@ -221,21 +228,71 @@ Umi.model = (() => {
     found.tab.focused = fresh.id;
   }
 
+  // Focusing another pane of a zoomed tab unzooms it (Ghostty's and Warp's rule).
   function focusPane(id) {
     const found = findPane(id);
     if (!found) return;
     S.layout.activeTab = found.tab.id;
     found.tab.focused = id;
+    if (found.tab.zoomed && found.tab.zoomed !== id) delete found.tab.zoomed;
   }
 
+  // ⌘1–⌘8, ⌘9 (last), ⇧⌘[ ⇧⌘] and ⌃Tab go through the listed tabs, skipping archived ones (AR-3).
   function selectTab(index) {
-    const t = index === 9 ? S.layout.tabs[S.layout.tabs.length - 1] : S.layout.tabs[index - 1];
+    const list = listedTabs();
+    const t = index === 9 ? list[list.length - 1] : list[index - 1];
     if (t) S.layout.activeTab = t.id;
   }
 
   function stepTab(d) {
-    const n = S.layout.tabs.length;
-    S.layout.activeTab = S.layout.tabs[(S.layout.tabs.indexOf(activeTab()) + d + n) % n].id;
+    const list = listedTabs(), n = list.length;
+    if (!n) return;
+    const i = list.indexOf(activeTab());
+    // From an archived tab, ⇧⌘] goes to the first listed tab and ⇧⌘[ to the last.
+    S.layout.activeTab = list[i < 0 ? (d > 0 ? 0 : n - 1) : (i + d + n) % n].id;
+  }
+
+  // ---- the hidden-pane strip (SPEC H-5; DESIGN "Hidden-pane strip") ----
+  // A tab remembers the sessions ⌘W hid from it (`tab.hidden`, session ids, in the order hidden).
+  // Exit, or the session showing anywhere, takes it off the list.
+  function hide(paneId) {
+    const found = findPane(paneId);
+    if (!found) return;
+    const sid = found.node.view === 'terminal' ? sessionOf(paneId) : null;
+    if (sid) {
+      found.tab.hidden = (found.tab.hidden || []).filter((x) => x !== sid);
+      found.tab.hidden.push(sid);
+    }
+    removePane(paneId);
+  }
+  function unhide(sid) {
+    for (const t of S.layout.tabs) {
+      if (!t.hidden) continue;
+      t.hidden = t.hidden.filter((x) => x !== sid);
+      if (!t.hidden.length) delete t.hidden;
+    }
+  }
+  // The sessions a tab's strip shows as hidden: still running, not on the docket, on show nowhere.
+  const hiddenOf = (tab) => (tab.hidden || []).filter((sid) => S.live[sid]?.alive !== false && !S.live[sid]?.docket && !paneOfSession(sid));
+  // The number of panes in the top row of `node`, for an equal share on joining it.
+  const rowWeight = (n) => (n.type === 'split' && n.dir === 'row' ? rowWeight(n.a) + rowWeight(n.b) : 1);
+  // Adds `pane` at the right end of the tab, as a member of its top row with an equal share.
+  function appendPane(tab, pane) {
+    delete tab.zoomed;
+    const w = rowWeight(tab.root);
+    tab.root = { type: 'split', dir: 'row', ratio: w / (w + 1), a: tab.root, b: pane };
+    tab.focused = pane.id;
+    S.layout.activeTab = tab.id;
+  }
+  // Shows hidden session `sid` again at the right end of the current tab, focused.
+  function showHidden(sid, tab = activeTab()) {
+    const shown = paneOfSession(sid);
+    unhide(sid);
+    if (shown) return focusPane(shown);
+    if (!S.live[sid] || S.live[sid].alive === false) return;
+    appendPane(tab, newPane({ session: sid, attach: sid, cwd: S.live[sid]?.folder }));
+    const m = S.layout.meta?.sessions?.[sid];
+    if (m && m.snooze) delete m.snooze;
   }
 
   function focusDir(dir, rects) {
@@ -297,6 +354,7 @@ Umi.model = (() => {
     S.home = msg.home || '';
     S.sessionMode = msg.sessionMode || 'daemon';
     S.commands = msg.commands || {};
+    S.fontBase = msg.fontBase || 13;
     S.panes = msg.panes || {};
     const l = msg.layout;
     S.layout = l && l.tabs && l.tabs.length ? l : { version: 1, tabs: [newTab(newPane({ cwd: S.home }))], sidebar: true };
@@ -319,13 +377,20 @@ Umi.model = (() => {
     const live = {};
     for (const s of list) live[s.id] = s;
     S.live = live;
-    const before = JSON.stringify(S.layout.meta || {});
+    const before = JSON.stringify([S.layout.meta || {}, S.layout.tabs.map((t) => t.hidden)]);
     updateSnoozes();
-    return JSON.stringify(S.layout.meta || {}) !== before;
+    // An ended session leaves the strips that listed it.
+    for (const t of S.layout.tabs) {
+      if (!t.hidden) continue;
+      t.hidden = t.hidden.filter((sid) => live[sid] && live[sid].alive !== false);
+      if (!t.hidden.length) delete t.hidden;
+    }
+    return JSON.stringify([S.layout.meta || {}, S.layout.tabs.map((t) => t.hidden)]) !== before;
   }
 
   return {
-    newPane, panesOf, paneIds, findPane, activeTab, focusedPane, sessionOf, paneOfSession,
+    newPane, newTab, panesOf, paneIds, findPane, activeTab, listedTabs, focusedPane, sessionOf, paneOfSession,
+    mapPane, removeFromTree, hide, unhide, hiddenOf, appendPane, showHidden, rowWeight,
     folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, review,
     addTab, split, removePane, openSession, showSession, startSession, focusPane,
     selectTab, stepTab, focusDir, moveToNewTab, snooze, rename, docket, undocket, docketOf, openPanel, closePanel,
@@ -339,8 +404,10 @@ Umi.actions = {
   newTab: () => { const t = Umi.model.addTab(); Umi.state.ui.editingTab = t.id; },
   splitRight: () => Umi.model.split('row', 'picker'),
   splitDown: () => Umi.model.split('column', 'picker'),
-  // A file pane with unsaved edits asks first (views/file.js); it has no session to keep.
-  closePane: () => { const id = Umi.model.activeTab().focused; if (!Umi.views.file?.askClose(id)) Umi.model.removePane(id); },
+  // ⌘W: the pane stops showing; its session keeps running and gets a chip in the strip. A file pane
+  // with unsaved edits asks first (views/file.js); it has no session to keep.
+  closePane: () => { const id = Umi.model.activeTab().focused; if (!Umi.views.file?.askClose(id)) Umi.model.hide(id); },
+  showHidden: ({ session }) => Umi.model.showHidden(session),
   selectTab: ({ index }) => Umi.model.selectTab(index),
   nextTab: () => Umi.model.stepTab(1),
   prevTab: () => Umi.model.stepTab(-1),

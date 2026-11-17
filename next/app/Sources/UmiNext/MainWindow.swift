@@ -295,7 +295,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             services.reset()
             pendingReload?["helloAt"] = Self.now()
             send(stateMessage())
-            send(["type": "sessions", "list": sessions.last])
+            // Only a polled list: an empty one before the first poll would read as "every session ended".
+            if sessions.polled { send(["type": "sessions", "list": sessions.last]) }
             if let u = pendingTaskURL { pendingTaskURL = nil; openURL(u) }
             control.pageReady()
         case "cliReply":

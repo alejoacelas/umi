@@ -33,7 +33,7 @@ Umi.app = (() => {
       chrome: Umi.views.panes.chromeRects(),
       cover: Umi.views.panel.coverRect(),
       // The terminal native brightens (SPEC PI-3): the focused one, when the tab shows several.
-      tint: M.paneIds(M.activeTab().root).length > 1 ? M.activeTab().focused : null,
+      tint: M.paneIds(M.activeTab().root).length > 1 && !M.activeTab().zoomed ? M.activeTab().focused : null,
       viewport: { w: window.innerWidth, h: window.innerHeight },
     };
     const web = webWantsKeys();

@@ -246,3 +246,9 @@ body.cmd-held .tab .key { display: block; }
   width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(25,170,216,0.7); border-radius: 3px;
   color: var(--ink); font: 12px -apple-system, sans-serif; padding: 1px 4px; outline: none;
 }
+
+/* Hidden-pane chips (SPEC H-5): the sessions ⌘W hid from this tab, after the panes on show. */
+.chip.hidden { color: rgba(255, 255, 255, 0.42); font-style: italic; }
+.chip.hidden:hover { color: rgba(255, 255, 255, 0.7); }
+/* A zoomed pane's chip (⇧⌘↩) carries a small mark. */
+.chip.zoomed::after { content: '⤢'; font-style: normal; color: var(--dim); margin-left: 2px; }

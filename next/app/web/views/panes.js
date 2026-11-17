@@ -55,20 +55,38 @@ Umi.views.panes = (() => {
     return given || shortPath(S.panes[node.id]?.title) || shortPath(M.folderOf(node.id)) || 'Terminal';
   }
 
+  // A hidden session's chip label: its given name, else its folder.
+  function hiddenLabel(sid) {
+    const live = S.live[sid];
+    return S.layout.meta?.sessions?.[sid]?.name || live?.name || shortPath(live?.folder) || sid;
+  }
+
+  // SPEC H-5: a chip per pane on show, in layout order (the focused one filled), then one per
+  // session ⌘W hid from this tab, dim and in italics. Clicking a hidden one shows it again at the
+  // right end, focused.
   function renderStrip(tab) {
     const strip = document.querySelector('#strip');
     strip.textContent = '';
-    const leaves = [];
-    const walk = (n) => (n.type === 'pane' ? leaves.push(n) : (walk(n.a), walk(n.b)));
-    walk(tab.root);
-    for (const node of leaves) {
-      const chip = document.createElement('div');
-      chip.className = 'chip' + (node.id === tab.focused ? ' focused' : '') + (node.view === 'file' && Umi.views.file.isDirty(node.id) ? ' dirty' : '');
-      chip.innerHTML = (node.view === 'file' ? docIcon : termIcon) + '<span></span>';
-      chip.querySelector('span').textContent = chipLabel(node);
-      chip.title = chip.querySelector('span').textContent;
-      chip.addEventListener('mousedown', () => Umi.app.update(() => M.focusPane(node.id)));
-      strip.append(chip);
+    const chip = (label, cls, icon, onDown) => {
+      const el = document.createElement('div');
+      el.className = 'chip' + cls;
+      el.innerHTML = icon + '<span></span>';
+      el.querySelector('span').textContent = label;
+      el.title = label;
+      el.addEventListener('mousedown', onDown);
+      strip.append(el);
+      return el;
+    };
+    for (const node of M.panesOf(tab.root)) {
+      const cls = (node.id === tab.focused ? ' focused' : '') + (tab.zoomed === node.id ? ' zoomed' : '')
+        + (node.view === 'file' && Umi.views.file.isDirty(node.id) ? ' dirty' : '');
+      const el = chip(chipLabel(node), cls, node.view === 'file' ? docIcon : termIcon, () => Umi.app.update(() => M.focusPane(node.id)));
+      el.dataset.pane = node.id;
+    }
+    for (const sid of M.hiddenOf(tab)) {
+      const el = chip(hiddenLabel(sid), ' hidden', termIcon, () => Umi.app.run('showHidden', { session: sid }));
+      el.dataset.session = sid;
+      el.title = hiddenLabel(sid) + ' (hidden: click to show it again)';
     }
   }
 
@@ -85,8 +103,11 @@ Umi.views.panes = (() => {
     const main = document.querySelector('#panes');
     main.textContent = '';
     const tab = M.activeTab();
-    main.classList.toggle('multi', M.paneIds(tab.root).length > 1);
-    main.append(renderNode(tab.root));
+    // A zoomed tab shows only its zoomed pane; the others' sessions keep running (native hides
+    // terminals that get no slot).
+    const zoomed = tab.zoomed && M.panesOf(tab.root).find((p) => p.id === tab.zoomed);
+    main.classList.toggle('multi', !zoomed && M.paneIds(tab.root).length > 1);
+    main.append(renderNode(zoomed || tab.root));
     main.querySelectorAll('.slot').forEach((s) => s.classList.toggle('focused', s.dataset.pane === tab.focused));
     Umi.views.file?.sync(); // file views sit over their slots and outlive this redraw
   }

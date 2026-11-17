@@ -29,6 +29,8 @@ final class SessionMonitor {
             poll()
         }
     }
+    /// Whether `last` comes from the daemon yet (before the first poll it's empty, not "no sessions").
+    private(set) var polled = false
 
     static var agentsDir: String { Paths.stateDir + "/agents" }
 
@@ -87,8 +89,7 @@ final class SessionMonitor {
         for i in out.indices {
             if let id = out[i]["id"] as? String, let m = docket.marks[id] { out[i]["docket"] = m }
         }
-        last = out
-        DispatchQueue.main.async { self.onUpdate?(out) }
+        DispatchQueue.main.async { self.last = out; self.polled = true; self.onUpdate?(out) }
     }
 
     private func readAgent(_ id: String) -> [String: Any]? {
