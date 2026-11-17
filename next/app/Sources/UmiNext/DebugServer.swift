@@ -134,6 +134,11 @@ final class DebugServer {
                 DispatchQueue.main.asyncAfter(deadline: .now() + interval / 1000, execute: step)
             }
             step()
+        case "activate":
+            // Brings this window to the front with the keys (for tests sending real key events).
+            NSApp.activate(ignoringOtherApps: true)
+            c.window.makeKeyAndOrderFront(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { done(["ok": true, "active": NSApp.isActive, "key": c.window.isKeyWindow]) }
         case "reloadWeb":
             c.reloadWeb()
             done(["ok": true])
@@ -167,6 +172,8 @@ final class DebugServer {
             "panes": panes, "pendingPanes": Array(c.pending.keys).sorted(), "focusedPane": c.focusedPaneID() ?? NSNull(),
             "reloads": c.reloads, "mismatches": mismatches(c),
             "layout": c.layout ?? NSNull(), "sessionMode": SessionBackend.mode,
+            "active": NSApp.isActive && c.window.isKeyWindow, "pid": Int(getpid()),
+            "shortcuts": c.shortcuts.entries.map(\.id), "shortcutsHandled": c.shortcutsHandled,
         ]
     }
 
@@ -200,7 +207,23 @@ final class DebugServer {
         "_": "-", "+": "=", "{": "[", "}": "]", "|": "\\", ":": ";", "\"": "'", "<": ",", ">": ".", "?": "/", "~": "`",
     ]
 
+    private static let arrows: [String: (UInt16, Int)] = [
+        "left": (123, NSLeftArrowFunctionKey), "right": (124, NSRightArrowFunctionKey),
+        "down": (125, NSDownArrowFunctionKey), "up": (126, NSUpArrowFunctionKey),
+    ]
+
     private func postKey(_ s: String, mods: NSEvent.ModifierFlags, window: NSWindow) {
+        if let (code, fn) = Self.arrows[s] {
+            let chars = String(Character(UnicodeScalar(UInt16(fn))!))
+            for type in [NSEvent.EventType.keyDown, .keyUp] {
+                if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: mods.union([.function, .numericPad]),
+                                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                                            characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) {
+                    NSApp.sendEvent(e)
+                }
+            }
+            return
+        }
         guard let ch = s.first else { return }
         var flags = mods
         var base = ch

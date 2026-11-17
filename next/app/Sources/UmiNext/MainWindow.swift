@@ -4,26 +4,60 @@ import WebKit
 /// The window: a WKWebView fills it and draws all chrome; terminal views sit above it in a
 /// layer that only takes clicks where a terminal is, at the rects the web layer reports.
 final class UmiWindow: NSWindow {
-    /// Native shortcut table: ⌘ keys handled before the terminal sees them, as web actions.
+    /// The page's shortcut table (Shortcuts.swift): a key it matches is handled before the terminal,
+    /// the page or the menu sees it; any other key goes on as usual.
     var shortcutHandler: ((NSEvent) -> Bool)?
 
+    /// ⌘/⌃ keys come here before sendEvent (AppKit tries key equivalents first, and the terminal
+    /// would take its own Ghostty bindings such as ⌘T and ⌘D), so the table is checked here too.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, shortcutHandler?(event) == true { return true }
         return super.performKeyEquivalent(with: event)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, shortcutHandler?(event) == true { return }
+        super.sendEvent(event)
     }
 }
 
 /// Holds the terminals. Flipped, so a CSS rect (top-left origin) is its frame as is.
 final class TerminalLayerView: NSView {
     override var isFlipped: Bool { true }
+    /// Areas over terminals whose clicks go to the web layer (the dividers' grab areas), in this
+    /// view's coordinates.
+    var passThrough: [CGRect] = []
+    /// Web chrome in the title bar that takes clicks (the pane strip's chips), in this view's coordinates.
+    var chrome: [CGRect] = []
     override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        if passThrough.contains(where: { $0.contains(local) }) { return nil }
         let hit = super.hitTest(point)
-        return hit === self ? nil : hit
+        return hit === self || hit is FocusTintView ? nil : hit
     }
+}
+
+/// White at 3% over the focused terminal of a tab showing several panes (SPEC PI-3), as Umi does.
+final class FocusTintView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.03).cgColor
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// A strip along the top that drags the window (the web view would take those clicks).
 final class DragStripView: NSView {
+    weak var terminalLayer: TerminalLayerView?
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let layer = terminalLayer {
+            let p = layer.convert(point, from: superview)
+            if layer.chrome.contains(where: { $0.contains(p) }) { return nil }
+        }
+        return super.hitTest(point)
+    }
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 { window?.performZoom(nil) } else { window?.performDrag(with: event) }
     }
@@ -34,11 +68,15 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     let window: UmiWindow
     let webView: WKWebView
     let terminalLayer = TerminalLayerView()
+    private let focusTint = FocusTintView(frame: .zero)
     private let banner = NSTextField(labelWithString: "")
     private var watcher: FileWatcher?
     let sessions = SessionMonitor()
     private var hyperMonitor: Any?
     private var hyperDown = false, hyperSpoiled = false
+    private(set) var shortcuts = ShortcutTable()
+    private(set) var shortcutsHandled = 0
+    private(set) lazy var services = WebServices { [weak self] in self?.send($0) }
 
     /// paneID → terminal. Terminals live here whatever the web layer does.
     private(set) var surfaces: [String: TerminalSurfaceView] = [:]
@@ -108,6 +146,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         }
         let strip = DragStripView(frame: NSRect(x: 0, y: root.bounds.height - 28, width: root.bounds.width, height: 28))
         strip.autoresizingMask = [.width, .minYMargin]
+        strip.terminalLayer = terminalLayer
         root.addSubview(strip)
 
         banner.isHidden = true
@@ -122,6 +161,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
         window.delegate = self
         window.shortcutHandler = { [weak self] in self?.handleShortcut($0) ?? false }
+        loadSavedShortcuts()
 
         if let err = SessionBackend.startDaemon() { showBanner(err) }
         restoreLayout()
@@ -204,6 +244,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             helloWatchdog?.cancel()
             banner.isHidden = true
             webErrors = []
+            services.reset()
             pendingReload?["helloAt"] = Self.now()
             send(stateMessage())
             send(["type": "sessions", "list": sessions.last])
@@ -212,6 +253,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             if let l = msg["layout"] as? [String: Any] { applyLayout(l, closed: msg["closed"] as? [String: String] ?? [:]) }
         case "rects":
             applyRects(msg)
+        case "request":
+            services.handle(msg)
+        case "shortcuts":
+            if let table = msg["table"] as? [[String: Any]] { setShortcuts(table, save: true) }
         case "focus":
             if let id = msg["pane"] as? String { focusPane(id) }
         case "focusWeb":
@@ -367,6 +412,29 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             v.setVisible(false)
             lastRects[id] = nil
         }
+        func rect(_ r: [String: Double]?) -> CGRect? {
+            guard let r, let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
+            return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
+        }
+        // The bottom panel lies over the panes: terminals keep their frames and are clipped where it
+        // covers them, so the web layer's panel shows through and takes the clicks there.
+        let cover = rect(msg["cover"] as? [String: Double])
+        for id in shown { if let v = surfaces[id] { clip(v, by: cover) } }
+        terminalLayer.passThrough = ((msg["passThrough"] as? [[String: Double]]) ?? []).compactMap { rect($0) }
+            + (cover.map { [$0] } ?? [])
+        terminalLayer.chrome = ((msg["chrome"] as? [[String: Double]]) ?? []).compactMap { r in
+            guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
+            return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
+        }
+        if let id = msg["tint"] as? String, var frame = lastRects[id] {
+            if let cover, cover.intersects(frame) { frame.size.height = max(0, cover.minY - frame.minY) }
+            focusTint.frame = frame
+            if focusTint.superview == nil { terminalLayer.addSubview(focusTint) }
+            else if terminalLayer.subviews.last !== focusTint { terminalLayer.addSubview(focusTint, positioned: .above, relativeTo: nil) }
+            focusTint.isHidden = false
+        } else {
+            focusTint.isHidden = true
+        }
         CATransaction.commit()
 
         let t = Self.now()
@@ -388,6 +456,20 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         if let f = msg["focus"] as? String { focusPane(f) }
     }
 
+    /// Hides the part of a terminal under `cover` (a band along the bottom of the work area).
+    private func clip(_ v: TerminalSurfaceView, by cover: CGRect?) {
+        guard let layer = v.layer else { return }
+        let f = v.frame
+        guard let cover, cover.intersects(f) else { layer.mask = nil; return }
+        let visible = max(0, min(f.height, cover.minY - f.minY))
+        let mask = layer.mask ?? CALayer()
+        mask.backgroundColor = NSColor.black.cgColor
+        // The view isn't flipped: layer y runs up from the bottom, so the visible top part starts at
+        // height - visible.
+        mask.frame = CGRect(x: 0, y: f.height - visible, width: f.width, height: visible)
+        layer.mask = mask
+    }
+
     func focusPane(_ id: String) {
         guard let v = surfaces[id], !v.isHidden else { return }
         if window.firstResponder !== v { window.makeFirstResponder(v) }
@@ -399,40 +481,36 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
     // MARK: Shortcuts
 
-    /// keyCode → action, for ⌘ (and ⇧⌘) keys. The web layer implements the actions.
-    private func handleShortcut(_ e: NSEvent) -> Bool {
-        let mods = e.modifierFlags.intersection([.command, .shift, .option, .control])
-        let cmd: NSEvent.ModifierFlags = [.command]
-        let shiftCmd: NSEvent.ModifierFlags = [.command, .shift]
-        let optCmd: NSEvent.ModifierFlags = [.command, .option]
-        var action: [String: Any]?
-        switch (e.keyCode, mods) {
-        case (17, cmd): action = ["name": "newTab"]                     // ⌘T
-        case (2, cmd): action = ["name": "splitRight"]                  // ⌘D
-        case (2, shiftCmd): action = ["name": "splitDown"]              // ⇧⌘D
-        case (13, cmd): action = ["name": "closePane"]                  // ⌘W
-        case (11, cmd): action = ["name": "toggleSidebar"]              // ⌘B
-        case (33, shiftCmd): action = ["name": "prevTab"]               // ⇧⌘[
-        case (30, shiftCmd): action = ["name": "nextTab"]               // ⇧⌘]
-        case (123, optCmd): action = ["name": "focusDir", "dir": "left"]
-        case (124, optCmd): action = ["name": "focusDir", "dir": "right"]
-        case (126, optCmd): action = ["name": "focusDir", "dir": "up"]
-        case (125, optCmd): action = ["name": "focusDir", "dir": "down"]
-        case (15, shiftCmd): reloadWeb(); return true                   // ⇧⌘R reloads the web layer
-        case (12, cmd): NSApp.terminate(nil); return true               // ⌘Q
-        default:
-            // By character, so the keypad's digits count too.
-            if mods == cmd, let c = e.charactersIgnoringModifiers, let n = Int(c), (1...9).contains(n) {
-                action = ["name": "selectTab", "index": n]
-            }
+    private func loadSavedShortcuts() {
+        guard let data = FileManager.default.contents(atPath: ShortcutTable.file),
+              let table = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        setShortcuts(table, save: false)
+    }
+
+    private func setShortcuts(_ table: [[String: Any]], save: Bool) {
+        let bad = shortcuts.load(table)
+        if !bad.isEmpty { showBanner("Shortcut table: can't read the keys of \(bad.joined(separator: ", ")).") }
+        if save, let data = try? JSONSerialization.data(withJSONObject: table, options: [.prettyPrinted]) {
+            try? data.write(to: URL(fileURLWithPath: ShortcutTable.file), options: .atomic)
         }
-        guard var a = action else { return false }
+    }
+
+    /// A key the page's table names: native entries run here, the rest go to the page as
+    /// `{type: "shortcut", id}`.
+    private func handleShortcut(_ e: NSEvent) -> Bool {
+        guard e.window === window, let entry = shortcuts.match(e) else { return false }
+        if entry.terminalOnly && !(window.firstResponder is TerminalSurfaceView) { return false }
+        shortcutsHandled += 1
+        switch entry.native {
+        case "reload": reloadWeb(); return true
+        case "quit": NSApp.terminate(nil); return true
+        default: break
+        }
         guard webReady else {
-            showBanner("Web layer not ready: \(a["name"]!) ignored.")
+            showBanner("Web layer not ready: \(entry.id) ignored.")
             return true
         }
-        a["type"] = "action"
-        send(a)
+        send(["type": "shortcut", "id": entry.id])
         return true
     }
 
@@ -450,16 +528,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
                 return e
             }
             if e.type == .keyDown {
-                if mods == hyper && e.keyCode == 49 {          // Hyper+Space
-                    self.hyperSpoiled = true
-                    self.openPalette()
-                    return nil
-                }
-                if mods == hyper && e.keyCode == 2 {           // Hyper+D: send the session to the docket
-                    self.hyperSpoiled = true
-                    if self.webReady { self.send(["type": "action", "name": "docketSession"]) }
-                    return nil
-                }
+                // Hyper with a key (Hyper+Space opens the palette) is the shortcut table's.
                 if self.hyperDown { self.hyperSpoiled = true }
                 return e
             }

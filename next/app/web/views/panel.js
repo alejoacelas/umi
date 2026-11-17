@@ -1,5 +1,5 @@
-// The bottom panel host and the palette (DESIGN "The palette at the bottom"). The panel takes
-// height from the pane area, because the native terminals sit above the web view. While it's
+// The bottom panel host and the palette (DESIGN "The palette at the bottom"). The panel lies over
+// the bottom of the panes, which keep their size; native clips the terminals it covers. While it's
 // open the web view has the keys.
 //
 // Palette: columns of commands, one letter each, the frequent ones under the left hand; `/`
@@ -155,5 +155,13 @@ Umi.views.panel = (() => {
     else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
 
-  return { render, renderers, focus, COLUMNS };
+  // The panel's rect while it shows, in CSS px (native clips terminals out of it).
+  function coverRect() {
+    const el = document.querySelector('#panel');
+    if (el.hidden) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height };
+  }
+
+  return { render, renderers, focus, coverRect, COLUMNS };
 })();

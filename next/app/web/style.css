@@ -5,9 +5,10 @@
   --sidebar: rgba(255, 255, 255, 0.05);
   --line: rgba(255, 255, 255, 0.10);
   --accent: #19aad8;
-  --gap: 6px;
-  --titlebar: 30px;
-  --sidebar-width: 240px;
+  --divider: #262626;
+  --focus-tint: #0c0c0c;
+  --titlebar: 32px;
+  --sidebar-width: 248px;
 }
 
 * { box-sizing: border-box; }
@@ -69,7 +70,7 @@ body.no-sidebar #sidebar { display: none; }
   padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3.5px;
 }
 
 .tab {
@@ -77,7 +78,7 @@ body.no-sidebar #sidebar { display: none; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 7.5px 8px;
   border-radius: 4px;
   border: 1px solid transparent;
 }
@@ -97,9 +98,14 @@ body.no-sidebar #sidebar { display: none; }
 }
 .tab .text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .tab .line1, .tab .line2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab .line1 { display: flex; align-items: center; gap: 4px; }
+.tab .line1 .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tab .line1 { font-size: 12px; color: var(--ink); }
 .tab .line2 { font-size: 10px; color: var(--dim); }
-.tab .count { color: var(--dim); margin-left: 4px; }
+.tab .count {
+  color: var(--dim); font: 500 10px ui-rounded, -apple-system, sans-serif;
+  padding: 0 4px; border-radius: 3px; background: rgba(255, 255, 255, 0.10);
+}
 .tab .failed { color: #bc362a; margin-right: 3px; }
 .tab .key { color: var(--dim); font-size: 12px; display: none; }
 body.cmd-held .tab .key { display: block; }
@@ -120,15 +126,35 @@ body.cmd-held .tab .key { display: block; }
 .tab:hover .close { display: block; }
 .tab .close:hover { background: rgba(255, 255, 255, 0.1); color: var(--ink); }
 
-/* The work area: panes above, the bottom panel (palette) below, taking height from the panes. */
-#work { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* The work area: the pane strip, the panes, and the bottom panel (palette) over them. */
+#work { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
 
+/* The pane strip (SPEC H-5) in the title bar above the panes: a chip per pane of the tab, in layout
+   order, the focused one filled. Native lets clicks on chips through its drag strip (`chrome`). */
+#strip {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--titlebar);
+  display: flex; align-items: center; gap: 2px; padding: 0 8px; overflow: hidden; z-index: 1;
+}
+.chip {
+  display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; flex: none;
+  border-radius: 6px; color: rgba(255, 255, 255, 0.80); font: 500 12px -apple-system, sans-serif;
+  max-width: 220px;
+}
+.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip svg { flex: none; }
+.chip:hover { background: rgba(255, 255, 255, 0.06); }
+.chip.focused { background: rgba(255, 255, 255, 0.085); color: rgba(255, 255, 255, 0.95); }
+
+/* The panel lies over the bottom of the panes: they keep their size (no reflow). Native clips the
+   terminals it covers (`cover` in the rects message), so it shows through. */
 #panel {
-  flex: none;
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 2;
   max-height: 45%;
   overflow: auto;
   border-top: 1px solid var(--line);
-  background: var(--sidebar);
+  background: #111111;
   padding: 12px 16px;
 }
 #panel[hidden] { display: none; }
@@ -139,7 +165,7 @@ body.cmd-held .tab .key { display: block; }
   min-width: 0;
   min-height: 0;
   display: flex;
-  padding: var(--titlebar) var(--gap) var(--gap) var(--gap);
+  padding-top: var(--titlebar);
 }
 
 .split { display: flex; flex: 1; min-width: 0; min-height: 0; }
@@ -147,23 +173,29 @@ body.cmd-held .tab .key { display: block; }
 .split.column { flex-direction: column; }
 .split > .child { display: flex; min-width: 0; min-height: 0; }
 
-.divider { flex: none; }
-.split.row > .divider { width: var(--gap); cursor: col-resize; }
-.split.column > .divider { height: var(--gap); cursor: row-resize; }
-.divider:hover { background: rgba(255, 255, 255, 0.06); }
+/* Umi's splits (Ghostty's): panes meet at a 1-point line in split-divider-color, with no gap and
+   no margin round the panes. The line's grab area reaches 3 points into each pane; native lets
+   clicks there through to the web layer (`passThrough` in the rects message). */
+.divider { flex: none; position: relative; background: var(--divider); z-index: 1; }
+.divider::before { content: ''; position: absolute; }
+.split.row > .divider { width: 1px; cursor: col-resize; }
+.split.row > .divider::before { top: 0; bottom: 0; left: -3px; right: -3px; }
+.split.column > .divider { height: 1px; cursor: row-resize; }
+.split.column > .divider::before { left: 0; right: 0; top: -3px; bottom: -3px; }
 
 .slot {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  border-radius: 2px;
-  background: #0b0b0b;
+  background: var(--bg);
 }
 .slot:not([data-view="terminal"]) { padding: 16px; color: var(--dim); overflow: auto; }
-.multi .slot:not(.focused) { box-shadow: 0 0 0 1px var(--line); }
+/* SPEC PI-3: in a tab showing more than one pane the focused pane is 3% brighter (native tints
+   terminals the same way). */
+.multi .slot.focused { background: var(--focus-tint); }
 
 /* Picker (a pane drawn by the web layer) */
-.slot.picker { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; color: var(--ink); background: #0b0b0b; }
+.slot.picker { display: flex; flex-direction: column; gap: 10px; padding: 10px 16px; color: var(--ink); }
 .picker-head { display: flex; align-items: center; gap: 10px; }
 .picker-name {
   flex: 1; min-width: 0; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);

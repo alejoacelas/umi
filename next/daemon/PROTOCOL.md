@@ -35,7 +35,7 @@ Every message is a frame: `type` (1 byte), payload length (u32, big endian), pay
 | op | fields | reply |
 |---|---|---|
 | `ping` | | `pid`, `sessions`, `state_dir` |
-| `new` | `cwd`, `cmd` (run as `$SHELL -l -c cmd`; absent: `$SHELL -l`), `cols`, `rows`, `name`, `env` (object; the whole environment) | `id` |
+| `new` | `cwd`, `cmd` (run as `$SHELL -l -c cmd`; absent: `$SHELL -l`), `cols`, `rows`, `name`, `by` (who started it: `user` from the UI, `cli` from `umi-next-ctl new` by default), `env` (object; the whole environment) | `id` |
 | `ls` | | `sessions`: `[{id, name, cwd, command, pid, foreground, alive, exit_status, exit_signal, clients, cols, rows, created}]` |
 | `kill` | `id`, `signal` (default 15) | sends the signal to the session's process group |
 | `rm` | `id`, `force` | forgets an exited session; `force` SIGKILLs a live one first |

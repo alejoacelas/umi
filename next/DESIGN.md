@@ -31,6 +31,11 @@ size. Opening a session already on screen moves it.
   running and stays under its project in the picker (Alejo, 2026-11-17: "cmd + w maps to stop
   showing the pane instead of to 'kill the process'"). Ending a session is only ever an explicit Exit
   in the palette. A session whose program ends by itself (`exit` in a shell) leaves its pane.
+- **Sessions the user started** are the ones the session lists show (the picker, Review, "next
+  waiting"): those started from the picker, a new tab, a resume or a restart. Sessions agents or
+  scripts start with `umi-next-ctl new` run as usual but stay out of those lists (Alejo,
+  2026-11-17). The daemon records who started each session (`by`); one without a record counts as
+  the user's.
 - **Project**: the main folder of the git repository a session runs in, so worktrees count as their
   repository. Outside a repository, the session's folder.
 
@@ -66,6 +71,8 @@ browser; one list ordered by what needs Alejo is fewer steps.
 Replaces the manager pane. A tap of Hyper alone (all four modifiers down and up with no key between)
 opens it; Hyper+Space also does, in case the Hyper tool turns a lone tap into another key. It slides
 up from the window's bottom edge, where the drawer was, like agent-emacs's menu (⌘E there).
+It lies over the bottom of the panes: they keep their size and place, so no terminal reflows while
+it is open.
 
 - Columns of commands, each on one letter, the frequent ones under the left hand: Sessions (new,
   switch, next waiting, open past), This session (rename, snooze, restart, exit, move), Review,
@@ -111,3 +118,23 @@ was. A failing hook puts the session in Review with the hook's message.
 
 The item's `umi-next://open?task=…` link reattaches the daemon session while it lives, and
 resumes the agent session once it doesn't.
+
+## Parity with Umi
+
+Alejo, 2026-11-17: umi-next reaches Umi's features, editor and Markdown preview with comments
+included, built in the web layer; native code only for terminals and what a page can't do.
+`next/PARITY.md` is the plan, area by area.
+
+- **Hidden-pane strip**: lists the sessions ⌘W hid from the current tab; clicking one shows it
+  again.
+- **Shortcuts belong to the page.** `web/shortcuts.js` is the one table of global shortcuts; the
+  page sends it to native on every load, native takes only the keys it lists and passes every
+  other key on to the terminal or page. A new or changed shortcut is a saved file, not a rebuild,
+  and the shortcuts page draws from the same table. Reload and quit run natively, so they work
+  while the page is broken.
+- **Services for the page**: `web/fs.js` reads, writes (atomic, refused when the file changed
+  since it was read), lists folders (git-ignore aware), watches paths, lists files for quick open
+  and searches with ripgrep, rooted at the focused pane's project. New native services go
+  through the same `Umi.bridge.request`.
+- **`umi-next` CLI** mirrors the `umi` commands that drive the UI (edit, split, tabs, panes,
+  Markdown comments), so agents and skills move over by changing the command name.

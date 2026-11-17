@@ -5,7 +5,8 @@ import UmiC
 
 let usage = """
 usage: umi-next-ctl <command>
-  new [--cwd DIR] [--cmd CMD] [--cols N --rows N] [--name NAME]   start a session, print its id
+  new [--cwd DIR] [--cmd CMD] [--cols N --rows N] [--name NAME] [--by WHO]   start a session, print its id
+                           (WHO: who started it, default cli; the UI passes user)
   ls                       sessions as JSON
   kill <id> [--signal N]   signal the session's process group (default TERM)
   rm <id> [--force]        forget an exited session (--force kills a live one)
@@ -83,6 +84,7 @@ case "new":
     if let c = parseSize(option("--cols")) { req["cols"] = c }
     if let r = parseSize(option("--rows")) { req["rows"] = r }
     if let n = option("--name") { req["name"] = n }
+    req["by"] = option("--by") ?? "cli"
     if !args.isEmpty { die("unexpected arguments: \(args)") }
     ensureDaemon()
     print(request(req)["id"] as! String)

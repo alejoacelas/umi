@@ -58,7 +58,9 @@ enum SessionBackend {
         if let existing, live?.contains(existing) == true {
             return Launch(sessionID: existing, command: shellQuote([attachPath, existing]), workingDirectory: cwd)
         }
-        var args = ["new", "--cwd", cwd ?? NSHomeDirectory()]
+        // Sessions the UI starts are the user's (picker, new tab, resume, restart): the session
+        // lists show only these, not those agents or scripts start with `umi-next-ctl new`.
+        var args = ["new", "--by", "user", "--cwd", cwd ?? NSHomeDirectory()]
         if let name, !name.isEmpty { args += ["--name", name] }
         if let cmd { args += ["--cmd", cmd] }
         let r = run(ctlPath, args, extraEnv: shellIntegrationEnv().merging(hookEnv()) { a, _ in a })

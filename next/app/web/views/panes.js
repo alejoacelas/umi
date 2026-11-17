@@ -42,7 +42,44 @@ Umi.views.panes = (() => {
     return el;
   }
 
+  const termIcon = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M4.5 6l2 1.75-2 1.75M8 10h3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const shortPath = (p) => (p && S.home && (p === S.home || p.startsWith(S.home + '/')) ? '~' + p.slice(S.home.length) : p || '');
+
+  // A chip's label: the session's given name, else what its terminal's title says, else its folder.
+  function chipLabel(node) {
+    if ((node.view || 'terminal') !== 'terminal') return node.view === 'picker' ? 'New session' : node.view;
+    const sid = M.sessionOf(node.id), live = sid && S.live[sid];
+    const given = sid && (S.layout.meta?.sessions?.[sid]?.name || live?.name);
+    return given || shortPath(S.panes[node.id]?.title) || shortPath(M.folderOf(node.id)) || 'Terminal';
+  }
+
+  function renderStrip(tab) {
+    const strip = document.querySelector('#strip');
+    strip.textContent = '';
+    const leaves = [];
+    const walk = (n) => (n.type === 'pane' ? leaves.push(n) : (walk(n.a), walk(n.b)));
+    walk(tab.root);
+    for (const node of leaves) {
+      const chip = document.createElement('div');
+      chip.className = 'chip' + (node.id === tab.focused ? ' focused' : '');
+      chip.innerHTML = termIcon + '<span></span>';
+      chip.querySelector('span').textContent = chipLabel(node);
+      chip.title = chip.querySelector('span').textContent;
+      chip.addEventListener('mousedown', () => Umi.app.update(() => M.focusPane(node.id)));
+      strip.append(chip);
+    }
+  }
+
+  // Rects of the strip's chips, which take clicks in the title bar.
+  function chromeRects() {
+    return [...document.querySelectorAll('#strip .chip')].map((c) => {
+      const r = c.getBoundingClientRect();
+      return { x: r.left, y: r.top, w: r.width, h: r.height };
+    });
+  }
+
   function render() {
+    renderStrip(M.activeTab());
     const main = document.querySelector('#panes');
     main.textContent = '';
     const tab = M.activeTab();
@@ -89,6 +126,15 @@ Umi.views.panes = (() => {
     return out;
   }
 
+  // Where clicks over a terminal belong to the web layer: each divider's grab area (its ::before).
+  function passThroughRects() {
+    return [...document.querySelectorAll('#panes .divider')].map((d) => {
+      const r = d.getBoundingClientRect(), row = d.parentElement.classList.contains('row');
+      return row ? { x: r.left - 3, y: r.top, w: r.width + 6, h: r.height }
+                 : { x: r.left, y: r.top - 3, w: r.width, h: r.height + 6 };
+    });
+  }
+
   // Redraws the pickers' lists in place (new session data) without touching their name fields.
   function refreshPickers() {
     document.querySelectorAll('#panes .slot[data-view="picker"]').forEach((el) => {
@@ -97,5 +143,5 @@ Umi.views.panes = (() => {
     });
   }
 
-  return { render, renderers, slotRects, terminalRects, refreshPickers };
+  return { render, renderStrip, renderers, slotRects, terminalRects, passThroughRects, chromeRects, refreshPickers };
 })();

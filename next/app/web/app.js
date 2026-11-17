@@ -28,6 +28,11 @@ Umi.app = (() => {
     const msg = {
       type: 'rects',
       rects: Umi.views.panes.terminalRects(),
+      passThrough: Umi.views.panes.passThroughRects(),
+      chrome: Umi.views.panes.chromeRects(),
+      cover: Umi.views.panel.coverRect(),
+      // The terminal native brightens (SPEC PI-3): the focused one, when the tab shows several.
+      tint: M.paneIds(M.activeTab().root).length > 1 ? M.activeTab().focused : null,
       viewport: { w: window.innerWidth, h: window.innerHeight },
     };
     const web = webWantsKeys();
@@ -60,7 +65,7 @@ Umi.app = (() => {
 })();
 
 Umi.bridge.on('state', (msg) => Umi.app.update(() => Umi.model.load(msg)));
-Umi.bridge.on('pane', (msg) => { Umi.model.paneInfo(msg.id, msg.info); Umi.views.sidebar.render(); if (Umi.state.ui.editingTab) Umi.views.sidebar.focus(); });
+Umi.bridge.on('pane', (msg) => { Umi.model.paneInfo(msg.id, msg.info); Umi.views.sidebar.render(); Umi.views.panes.renderStrip(Umi.model.activeTab()); Umi.app.report(false); if (Umi.state.ui.editingTab) Umi.views.sidebar.focus(); });
 Umi.bridge.on('focused', (msg) => {
   const found = Umi.model.findPane(msg.pane);
   if (!found) return;
@@ -77,6 +82,7 @@ Umi.bridge.on('sessions', (msg) => {
   if (!Umi.state.layout) return;
   if (Umi.model.sessions(msg.list)) Umi.app.save();
   Umi.views.sidebar.render();
+  Umi.views.panes.renderStrip(Umi.model.activeTab());
   if (Umi.state.ui.editingTab) Umi.views.sidebar.focus();
   Umi.views.panes.refreshPickers();
 });
@@ -105,3 +111,5 @@ window.addEventListener('keyup', (e) => {
 });
 
 Umi.bridge.post({ type: 'hello' });
+Umi.shortcuts.send();
+

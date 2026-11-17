@@ -15,7 +15,7 @@ Umi.views.sidebar = (() => {
     const el = document.createElement('div');
     el.className = 'tab' + (tab.id === S.layout.activeTab ? ' active' : '');
     el.innerHTML = `
-      <div class="icon">&gt;_</div>
+      <div class="icon"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M4.5 6l2 1.75-2 1.75M8 10h3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div class="text"><div class="line1"></div><div class="line2"></div></div>
       <div class="key"></div>
       <button class="close" title="Stop showing this tab (its sessions keep running)">×</button>`;
@@ -44,11 +44,15 @@ Umi.views.sidebar = (() => {
       });
       line1.append(input);
     } else {
-      line1.textContent = tab.name || base(folder) || 'Terminal';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = tab.name || base(folder) || 'Terminal';
+      line1.append(name);
       if (count > 1) {
         const c = document.createElement('span');
         c.className = 'count';
-        c.textContent = `· ${count}`;
+        c.textContent = String(count);
+        c.title = `${count} panes`;
         line1.append(c);
       }
     }
@@ -60,11 +64,15 @@ Umi.views.sidebar = (() => {
       line2.append(f);
     }
     const sid = M.sessionOf(tab.focused);
-    line2.append(document.createTextNode(info.title || (sid && S.live[sid]?.foreground) || shortPath(folder)));
+    line2.append(document.createTextNode(shortPath(info.title) || (sid && S.live[sid]?.foreground) || shortPath(folder)));
     el.querySelector('.key').textContent = i < 8 ? `⌘${i + 1}` : i === S.layout.tabs.length - 1 ? '⌘9' : '';
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('.close, input')) return;
       Umi.app.update(() => { S.layout.activeTab = tab.id; });
+    });
+    el.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.close, input')) return;
+      Umi.app.update(() => { S.layout.activeTab = tab.id; Umi.actions.renameTab(); });
     });
     el.querySelector('.close').addEventListener('click', () => {
       Umi.app.update(() => M.paneIds(tab.root).forEach((id) => M.removePane(id)));

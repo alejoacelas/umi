@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds next/app/build/UmiNext.app (bundle id dev.umi.next).
+# Builds next/app/build/UmiNext.app (bundle id dev.umi.next, or a test copy's with --test).
 #
 # Needs libghostty: app/macos/GhosttyKit.xcframework and app/zig-out/share (shell integration,
 # terminfo) in this checkout, built per AGENTS.md, or GHOSTTY_KIT / GHOSTTY_SHARE pointing at a
@@ -13,18 +13,28 @@
 #   next/app/build.sh            # release build
 #   next/app/build.sh --debug    # debug build
 #   next/app/build.sh --adhoc    # ad-hoc signature (testing only)
+#   next/app/build.sh --test NAME   # test copy: bundle id dev.umi.next.test.NAME, its own default
+#                                   # state dir (Umi-next-test-NAME), so agents' copies can't quit,
+#                                   # replace or share state with each other or the real UmiNext
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 config=release
 adhoc=0
-for a in "$@"; do
-  case "$a" in
+test_name=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --debug) config=debug ;;
     --adhoc) adhoc=1 ;;
-    *) echo "build.sh: unknown option $a" >&2; exit 2 ;;
+    --test) [[ "${2:-}" =~ ^[a-z0-9-]+$ ]] || { echo "build.sh: --test needs a name of a-z, 0-9, -" >&2; exit 2; }
+            test_name="$2"; shift ;;
+    *) echo "build.sh: unknown option $1" >&2; exit 2 ;;
   esac
+  shift
 done
+bundle_id="dev.umi.next${test_name:+.test.$test_name}"
+bundle_name="Umi next${test_name:+ ($test_name)}"
+state_name="Umi-next${test_name:+-test-$test_name}"
 source "$repo/app/dist/signing.sh"
 if [[ $adhoc == 1 ]]; then
   echo "build.sh: signing ad hoc (--adhoc): macOS will ask again for any permission after each build" >&2
@@ -68,8 +78,9 @@ cat > "$app.tmp/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleIdentifier</key><string>dev.umi.next</string>
-  <key>CFBundleName</key><string>Umi next</string>
+  <key>CFBundleIdentifier</key><string>$bundle_id</string>
+  <key>CFBundleName</key><string>$bundle_name</string>
+  <key>UmiNextStateName</key><string>$state_name</string>
   <key>CFBundleExecutable</key><string>UmiNext</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.0.1</string>

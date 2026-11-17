@@ -7,8 +7,8 @@
 // - ⌘W stops showing a pane; the session keeps running. Only Exit (palette) ends a session. A
 //   session whose program ends by itself leaves its pane.
 // - A pane shows a `view`: 'terminal' (a native Ghostty view) or 'picker' (drawn here; ⌘D).
-// - The palette is the bottom panel; it takes height from the panes (terminals sit above the web
-//   view), and the web view has the keys while it's open.
+// - The palette is the bottom panel; it lies over the bottom of the panes, which keep their size
+//   (native clips the terminals it covers), and the web view has the keys while it's open.
 'use strict';
 window.Umi = window.Umi || {};
 
@@ -105,6 +105,9 @@ Umi.model = (() => {
     const used = new Set(Object.keys(S.live).map(sessionName));
     for (let n = 1; ; n++) if (!used.has(`${b} ${n}`)) return `${b} ${n}`;
   }
+  // Sessions the user started (picker, new tab, resume, restart); a session with no record (an
+  // older daemon) counts as his. Session lists leave out those agents and scripts start.
+  const userStarted = (s) => !s.by || s.by === 'user';
   const isSnoozed = (sid) => { const z = S.layout.meta?.sessions?.[sid]?.snooze; return z && !z.done; };
   // On the docket (native keeps the mark: <state>/docket.json): {state: pending|on|failed, error?}.
   const docketOf = (sid) => S.live[sid]?.docket || null;
@@ -115,7 +118,7 @@ Umi.model = (() => {
     const cur = currentProject();
     const groups = {};
     for (const s of Object.values(S.live)) {
-      if (!s.alive && !s.docket) continue;
+      if ((!s.alive && !s.docket) || !userStarted(s)) continue;
       if (isSnoozed(s.id)) continue;
       // Docketed sessions never show here, except when the docket hook failed (no silent loss).
       if (s.docket) {
@@ -323,7 +326,7 @@ Umi.model = (() => {
 
   return {
     newPane, panesOf, paneIds, findPane, activeTab, focusedPane, sessionOf, paneOfSession,
-    folderOf, projectOf, currentProject, standing, sessionName, defaultName, isSnoozed, review,
+    folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, review,
     addTab, split, removePane, openSession, showSession, startSession, focusPane,
     selectTab, stepTab, focusDir, moveToNewTab, snooze, rename, docket, undocket, docketOf, openPanel, closePanel,
     load, paneInfo, sessions,
@@ -382,6 +385,31 @@ Umi.actions = {
     Umi.state.closed[p.id] = 'detach';
   },
   moveToNewTab: () => Umi.model.moveToNewTab(),
+  // ⌘[ / ⌘]: the previous or next pane of the tab, in layout order, wrapping (SPEC H-6, without
+  // hidden panes).
+  stepPane: ({ d }) => {
+    const M = Umi.model, tab = M.activeTab(), ids = M.paneIds(tab.root);
+    M.focusPane(ids[(ids.indexOf(tab.focused) + d + ids.length) % ids.length]);
+  },
+  // ⌥⌘W: stops showing the tab's panes, as its row's × does (sessions keep running).
+  closeTab: () => { const M = Umi.model; M.paneIds(M.activeTab().root).forEach((id) => M.removePane(id)); },
+  // ⌃⌘=: every split gives each pane the same share along its direction (Ghostty's equalize).
+  equalize: () => {
+    const weight = (n, dir) => (n.type === 'pane' ? 1
+      : n.dir === dir ? weight(n.a, dir) + weight(n.b, dir) : Math.max(weight(n.a, dir), weight(n.b, dir)));
+    (function walk(n) {
+      if (n.type === 'pane') return;
+      const a = weight(n.a, n.dir), b = weight(n.b, n.dir);
+      n.ratio = a / (a + b);
+      walk(n.a); walk(n.b);
+    })(Umi.model.activeTab().root);
+  },
+  // ⌃⌘R renames the tab in its row; ⌃⇧⌘R renames the focused session (the palette's Rename).
+  renameTab: () => { const t = Umi.model.activeTab(); Umi.state.ui.editingTab = t.id; Umi.state.ui.tabDraft = t.name || ''; },
+  renameSession: () => {
+    const sid = Umi.model.sessionOf(Umi.model.activeTab().focused);
+    if (sid) Umi.model.openPanel('palette', { mode: 'rename', sid });
+  },
   docketSession: () => Umi.model.docket(Umi.model.sessionOf(Umi.model.activeTab().focused)),
   // From a umi-next://open?task=… link (native fetched and checked the task): show its live
   // session, or resume its agent session, in a tab named after the task.
