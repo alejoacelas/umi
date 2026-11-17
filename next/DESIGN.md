@@ -95,3 +95,19 @@ up from the window's bottom edge, where the drawer was, like agent-emacs's menu 
   project first: sessions waiting for input, finished snoozes. "Next waiting" walks it in that order.
 - agent-emacs's snooze fades a session and silences its alert; grouping by project and scoping alerts
   to the current project is the addition.
+
+## Snooze to docket
+
+Alejo, 2026-11-17: a session sent to the docket shows only on the morning docket, never in the
+session list. Hyper+D (or `d` in the palette) stops showing it and marks it docketed: it stays out
+of Review and the sidebar however it ends; the picker lists it under "On the docket".
+
+When its turn ends, UmiNext runs `~/.config/umi-next/docket-hook` (dotfiles
+`umi-next/docket-session`) with the session as JSON on stdin. The hook drafts a queued
+`desk/requested/` item from the end of the transcript with `claude -p`, makes a link with
+`umi-link --app next`, and commits it to desk. Drafting from outside, not by typing `/queue` into
+the session, works while a dialog blocks the input box and leaves the session's last reply as it
+was. A failing hook puts the session in Review with the hook's message.
+
+The item's `umi-next://open?task=…` link reattaches the daemon session while it lives, and
+resumes the agent session once it doesn't.
