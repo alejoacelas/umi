@@ -111,3 +111,5 @@ window.addEventListener('keyup', (e) => {
 });
 
 Umi.bridge.post({ type: 'hello' });
+Umi.shortcuts.send();
+

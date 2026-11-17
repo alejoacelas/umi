@@ -4,12 +4,13 @@ import WebKit
 /// The window: a WKWebView fills it and draws all chrome; terminal views sit above it in a
 /// layer that only takes clicks where a terminal is, at the rects the web layer reports.
 final class UmiWindow: NSWindow {
-    /// Native shortcut table: ⌘ keys handled before the terminal sees them, as web actions.
+    /// The page's shortcut table (Shortcuts.swift): a key it matches is handled before the terminal,
+    /// the page or the menu sees it; any other key goes on as usual.
     var shortcutHandler: ((NSEvent) -> Bool)?
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.type == .keyDown, shortcutHandler?(event) == true { return true }
-        return super.performKeyEquivalent(with: event)
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, shortcutHandler?(event) == true { return }
+        super.sendEvent(event)
     }
 }
 
@@ -66,6 +67,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     let sessions = SessionMonitor()
     private var hyperMonitor: Any?
     private var hyperDown = false, hyperSpoiled = false
+    private(set) var shortcuts = ShortcutTable()
+    private(set) var shortcutsHandled = 0
     private(set) lazy var services = WebServices { [weak self] in self?.send($0) }
 
     /// paneID → terminal. Terminals live here whatever the web layer does.
@@ -151,6 +154,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
         window.delegate = self
         window.shortcutHandler = { [weak self] in self?.handleShortcut($0) ?? false }
+        loadSavedShortcuts()
 
         if let err = SessionBackend.startDaemon() { showBanner(err) }
         restoreLayout()
@@ -243,6 +247,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             applyRects(msg)
         case "request":
             services.handle(msg)
+        case "shortcuts":
+            if let table = msg["table"] as? [[String: Any]] { setShortcuts(table, save: true) }
         case "focus":
             if let id = msg["pane"] as? String { focusPane(id) }
         case "focusWeb":
@@ -463,48 +469,36 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
     // MARK: Shortcuts
 
-    /// keyCode → action, for ⌘ (and ⇧⌘) keys. The web layer implements the actions.
-    private func handleShortcut(_ e: NSEvent) -> Bool {
-        let mods = e.modifierFlags.intersection([.command, .shift, .option, .control])
-        let cmd: NSEvent.ModifierFlags = [.command]
-        let shiftCmd: NSEvent.ModifierFlags = [.command, .shift]
-        let optCmd: NSEvent.ModifierFlags = [.command, .option]
-        var action: [String: Any]?
-        switch (e.keyCode, mods) {
-        case (17, cmd): action = ["name": "newTab"]                     // ⌘T
-        case (2, cmd): action = ["name": "splitRight"]                  // ⌘D
-        case (2, shiftCmd): action = ["name": "splitDown"]              // ⇧⌘D
-        case (13, cmd): action = ["name": "closePane"]                  // ⌘W
-        case (11, cmd): action = ["name": "toggleSidebar"]              // ⌘B
-        case (33, shiftCmd): action = ["name": "prevTab"]               // ⇧⌘[
-        case (30, shiftCmd): action = ["name": "nextTab"]               // ⇧⌘]
-        case (123, optCmd): action = ["name": "focusDir", "dir": "left"]
-        case (124, optCmd): action = ["name": "focusDir", "dir": "right"]
-        case (126, optCmd): action = ["name": "focusDir", "dir": "up"]
-        case (125, optCmd): action = ["name": "focusDir", "dir": "down"]
-        case (15, shiftCmd): reloadWeb(); return true                   // ⇧⌘R reloads the web layer
-        case (48, [.control]): action = ["name": "nextTab"]             // ⌃Tab
-        case (48, [.control, .shift]): action = ["name": "prevTab"]     // ⌃⇧Tab
-        case (33, cmd): action = ["name": "stepPane", "d": -1]          // ⌘[
-        case (30, cmd): action = ["name": "stepPane", "d": 1]           // ⌘]
-        case (13, optCmd): action = ["name": "closeTab"]                // ⌥⌘W
-        case (24, [.command, .control]): action = ["name": "equalize"]  // ⌃⌘=
-        case (15, [.command, .control]): action = ["name": "renameTab"] // ⌃⌘R
-        case (15, [.command, .control, .shift]): action = ["name": "renameSession"] // ⌃⇧⌘R
-        case (12, cmd): NSApp.terminate(nil); return true               // ⌘Q
-        default:
-            // By character, so the keypad's digits count too.
-            if mods == cmd, let c = e.charactersIgnoringModifiers, let n = Int(c), (1...9).contains(n) {
-                action = ["name": "selectTab", "index": n]
-            }
+    private func loadSavedShortcuts() {
+        guard let data = FileManager.default.contents(atPath: ShortcutTable.file),
+              let table = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        setShortcuts(table, save: false)
+    }
+
+    private func setShortcuts(_ table: [[String: Any]], save: Bool) {
+        let bad = shortcuts.load(table)
+        if !bad.isEmpty { showBanner("Shortcut table: can't read the keys of \(bad.joined(separator: ", ")).") }
+        if save, let data = try? JSONSerialization.data(withJSONObject: table, options: [.prettyPrinted]) {
+            try? data.write(to: URL(fileURLWithPath: ShortcutTable.file), options: .atomic)
         }
-        guard var a = action else { return false }
+    }
+
+    /// A key the page's table names: native entries run here, the rest go to the page as
+    /// `{type: "shortcut", id}`.
+    private func handleShortcut(_ e: NSEvent) -> Bool {
+        guard e.window === window, let entry = shortcuts.match(e) else { return false }
+        if entry.terminalOnly && !(window.firstResponder is TerminalSurfaceView) { return false }
+        shortcutsHandled += 1
+        switch entry.native {
+        case "reload": reloadWeb(); return true
+        case "quit": NSApp.terminate(nil); return true
+        default: break
+        }
         guard webReady else {
-            showBanner("Web layer not ready: \(a["name"]!) ignored.")
+            showBanner("Web layer not ready: \(entry.id) ignored.")
             return true
         }
-        a["type"] = "action"
-        send(a)
+        send(["type": "shortcut", "id": entry.id])
         return true
     }
 
@@ -518,11 +512,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             guard let self, e.window === self.window else { return e }
             let mods = e.modifierFlags.intersection(hyper)
             if e.type == .keyDown {
-                if mods == hyper && e.keyCode == 49 {          // Hyper+Space
-                    self.hyperSpoiled = true
-                    self.openPalette()
-                    return nil
-                }
+                // Hyper with a key (Hyper+Space opens the palette) is the shortcut table's.
                 if self.hyperDown { self.hyperSpoiled = true }
                 return e
             }
