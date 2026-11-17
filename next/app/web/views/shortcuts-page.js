@@ -65,6 +65,21 @@ Umi.views.shortcutsPage = (() => {
     return x;
   }
 
+  // One keycap per modifier and one for the key, as Umi's (UmiKeycaps).
+  function caps(e) {
+    if (e.display) return [...e.display.matchAll(/[⌘⇧⌥⌃]|[^⌘⇧⌥⌃]+/g)].map((m) => m[0]);
+    const f = Umi.shortcuts.format(e.keys);
+    if (f.startsWith('Hyper+')) return ['Hyper', f.slice(6)];
+    return [...f.matchAll(/[⌘⇧⌥⌃]|[^⌘⇧⌥⌃]+/g)].map((m) => m[0]);
+  }
+  function keycaps(symbols) {
+    const k = el('span', 'sc-caps');
+    for (const sym of symbols) k.append(el('kbd', null, sym));
+    return k;
+  }
+
+  // Warp's panel (Umi's UmiShortcutsPanel): the toggle key, how to change shortcuts, the search,
+  // then a section per group with a row per action, its keys stacked when it has several.
   function render() {
     const box = document.querySelector('#shortcuts');
     const open = !!S.layout.shortcutsPage;
@@ -75,21 +90,28 @@ Umi.views.shortcutsPage = (() => {
     if (!input) {
       box.textContent = '';
       const head = el('div', 'sc-head');
-      head.append(el('span', 'sc-title', 'Keyboard shortcuts'));
+      const toggle = Umi.shortcuts.table.find((e) => e.id === 'shortcutsPage');
+      const line = el('div', 'sc-toggle');
+      if (toggle?.keys) line.append(keycaps(caps(toggle)));
+      line.append(el('span', null, 'To toggle this panel'));
       const x = el('button', 'sc-close', '×');
-      x.title = 'Close (⌘/ or Esc)';
+      x.title = 'Close (Esc)';
       x.addEventListener('click', () => Umi.app.run('toggleShortcuts'));
-      head.append(x);
-      input = el('input', 'sc-search');
+      line.append(x);
+      head.append(line, el('div', 'sc-how', 'Change shortcuts by editing web/shortcuts.js; the page reloads with them.'));
+      const search = el('label', 'sc-search');
+      search.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14" stroke-linecap="round"/></svg>';
+      input = el('input');
       input.spellcheck = false;
-      input.placeholder = 'Search by name or keys (cmd shift p)';
+      input.placeholder = 'Search by name or by keys (ex. "cmd d")';
+      search.append(input);
       // S.ui.shortcuts, not `ui`: the field outlives a close and reopen, which make a new one.
       input.addEventListener('input', () => { if (S.ui.shortcuts) S.ui.shortcuts.query = input.value; renderList(); });
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { e.preventDefault(); Umi.app.run('toggleShortcuts'); }
       });
       box.addEventListener('mousedown', () => { if (S.ui.shortcuts) S.ui.shortcuts.focus = true; });
-      box.append(head, input, el('div', 'sc-list'));
+      box.append(head, search, el('div', 'sc-list'));
     }
     if (input.value !== ui.query) input.value = ui.query;
     renderList();
@@ -101,23 +123,27 @@ Umi.views.shortcutsPage = (() => {
     if (!list) return;
     const q = S.ui.shortcuts?.query?.trim() || '';
     list.textContent = '';
+    // group -> label -> entries (an action on two keys, such as Next tab, is one row).
     const groups = new Map();
     for (const e of Umi.shortcuts.table) {
       if (!e.label || !matches(e, q)) continue;
       const g = e.group || 'Other';
-      if (!groups.has(g)) groups.set(g, []);
-      // One row per label and keys (the table has some actions on two keys: keep both).
-      groups.get(g).push(e);
+      if (!groups.has(g)) groups.set(g, new Map());
+      const rows = groups.get(g);
+      if (!rows.has(e.label)) rows.set(e.label, []);
+      rows.get(e.label).push(e);
     }
-    if (!groups.size) { list.append(el('div', 'sc-empty', 'No shortcut matches.')); return; }
-    for (const [g, entries] of groups) {
+    if (!groups.size) { list.append(el('div', 'sc-empty', 'No shortcuts match.')); return; }
+    for (const [g, rows] of groups) {
       list.append(el('div', 'sc-group', g));
-      for (const e of entries) {
+      for (const [label, entries] of rows) {
         const row = el('div', 'sc-row');
-        row.dataset.id = e.id;
-        row.append(el('span', 'sc-label', e.label));
-        const k = el('kbd', null, e.display || Umi.shortcuts.format(e.keys));
-        row.append(k);
+        row.dataset.id = entries[0].id;
+        row.dataset.ids = entries.map((e) => e.id).join(' ');
+        row.append(el('span', 'sc-label', label));
+        const keys = el('span', 'sc-keys');
+        for (const e of entries) if (e.keys || e.display) keys.append(keycaps(caps(e)));
+        row.append(keys);
         list.append(row);
       }
     }

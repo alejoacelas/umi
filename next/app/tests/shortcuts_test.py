@@ -243,8 +243,8 @@ def tag(prefix):
 focus_terminal()
 press("/", "cmd")
 check("⌘/ opens the shortcuts page", J("!!Umi.state.layout.shortcutsPage") and ui()["keys"] == "web", ui())
-labelled = J("Umi.shortcuts.table.filter((e) => e.label).length")
-check("the page lists every shortcut in the table", J("document.querySelectorAll('#shortcuts .sc-row').length") == labelled)
+labelled = J("new Set(Umi.shortcuts.table.filter((e) => e.label).map((e) => (e.group || 'Other') + '/' + e.label)).size")
+check("the page lists every action in the table (one row per action)", J("document.querySelectorAll('#shortcuts .sc-row').length") == labelled)
 for q, want in [("cmd shift d", "splitDown"), ("shift cmd d", "splitDown"), ("⇧⌘D", "splitDown"), ("zoom the pane", "toggleZoom")]:
     ev(f"""(() => {{ const i = document.querySelector('#shortcuts input'); i.value = {json.dumps(q)}; i.dispatchEvent(new Event('input')); }})(); 1""")
     ids = J("[...document.querySelectorAll('#shortcuts .sc-row')].map((r) => r.dataset.id)")

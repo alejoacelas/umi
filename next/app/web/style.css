@@ -262,27 +262,35 @@ body.dragging-tab .tab { cursor: grabbing; }
 .archive-row.open .chev { transform: rotate(90deg); }
 .archive-box { display: flex; flex-direction: column; gap: 3.5px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; }
 
-/* The shortcuts page (⌘/, SPEC L-17): Warp's keybindings panel at the window's right. */
+/* The shortcuts page (⌘/, SPEC L-17): Warp's keybindings panel at the window's right, measured as
+   Umi's (12 px spacing, 16 px section headers on surface_2 with a top line, 14 px rows, keycaps). */
 #shortcuts {
   width: 361px; flex: none; display: flex; flex-direction: column; padding-top: var(--titlebar);
-  background: #0d0d0d; border-left: 1px solid var(--line);
+  background: var(--bg); border-left: 1px solid var(--line);
 }
 #shortcuts[hidden] { display: none; }
-.sc-head { display: flex; align-items: center; padding: 6px 12px 6px 16px; }
-.sc-title { flex: 1; font-size: 13px; font-weight: 600; }
+.sc-head { padding: 12px; display: flex; flex-direction: column; gap: 12px; color: var(--dim); font-size: 14px; }
+.sc-toggle { display: flex; align-items: center; gap: 8px; }
+.sc-toggle > span:not(.sc-caps) { flex: 1; }
 .sc-close { border: none; background: transparent; color: var(--dim); font-size: 15px; border-radius: 4px; padding: 2px 6px; }
 .sc-close:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
 .sc-search {
-  margin: 4px 16px 8px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px; color: var(--ink); font: 12px -apple-system, sans-serif; padding: 6px 8px; outline: none;
+  margin: 0 12px 12px; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--dim);
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px;
 }
-.sc-search:focus { border-color: rgba(25, 170, 216, 0.7); }
-.sc-list { flex: 1; overflow-y: auto; padding: 0 16px 16px; }
-.sc-group { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 4px; }
-.sc-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
-.sc-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-row kbd { font: 11px -apple-system, sans-serif; color: var(--ink); background: rgba(255, 255, 255, 0.08); border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
-.sc-empty { color: var(--dim); padding: 12px 0; }
+.sc-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink); font: 13px -apple-system, sans-serif; }
+.sc-list { flex: 1; overflow-y: auto; padding-bottom: 12px; }
+.sc-group { font-size: 16px; color: var(--ink); padding: 12px; background: #1e1e1e; border-top: 1px solid var(--line); margin: 12px 0 6px; }
+.sc-group:first-child { margin-top: 0; }
+.sc-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px; }
+.sc-label { flex: 1; min-width: 0; color: var(--dim); font-size: 14px; }
+.sc-keys { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.sc-caps { display: inline-flex; gap: 3px; }
+.sc-caps kbd {
+  font: 12px -apple-system, sans-serif; color: var(--dim); background: rgba(255, 255, 255, 0.05); border-radius: 4px;
+  height: 20px; min-width: 8px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center;
+}
+.sc-empty { color: var(--dim); padding: 12px; font-size: 14px; }
 
 /* Find in a terminal: the bar at the pane's top right, cut out of the terminal by native. */
 #findbar {
