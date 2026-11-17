@@ -65,11 +65,17 @@ cd "$here"
 swift build -c "$config" --arch arm64
 bin="$(swift build -c "$config" --arch arm64 --show-bin-path)/UmiNext"
 
+# The umi-next CLI (cli/), with Umi's focus-log grouping compiled in as is.
+mkdir -p "$here/.build/cli"
+swiftc -O -module-cache-path "$here/.build/cli/modules" "$here"/cli/*.swift "$repo/app/macos/UmiCLI/focusgroups.swift" \
+  -framework JavaScriptCore -o "$here/.build/cli/umi-next"
+
 app="$here/build/UmiNext.app"
 rm -rf "$app.tmp"
 mkdir -p "$app.tmp/Contents/MacOS" "$app.tmp/Contents/Resources"
 cp "$bin" "$app.tmp/Contents/MacOS/UmiNext"
 for tool in daemon attach ctl; do cp "$daemon/bin/umi-next-$tool" "$app.tmp/Contents/MacOS/"; done
+cp "$here/.build/cli/umi-next" "$app.tmp/Contents/MacOS/umi-next"
 cp "$here/umi-next-hook" "$app.tmp/Contents/Resources/"
 cp -R "$share/ghostty" "$app.tmp/Contents/Resources/ghostty"
 cp -R "$share/terminfo" "$app.tmp/Contents/Resources/terminfo"
@@ -98,6 +104,7 @@ cat > "$app.tmp/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 for tool in daemon attach ctl; do codesign --force --sign "$sign_identity" "$app.tmp/Contents/MacOS/umi-next-$tool" >/dev/null 2>&1; done
+codesign --force --sign "$sign_identity" "$app.tmp/Contents/MacOS/umi-next" >/dev/null 2>&1
 codesign --force --sign "$sign_identity" "$app.tmp" >/dev/null 2>&1
 rm -rf "$app"
 mv "$app.tmp" "$app"

@@ -10,6 +10,7 @@
 # - Reinstalling quits a running UmiNext first and starts it again; its sessions live in the daemon
 #   and keep running. A daemon already running keeps its old binary until it is stopped
 #   (umi-next-ctl daemon-stop, which refuses while sessions are alive).
+# - Links ~/.local/bin/umi-next to the installed app's CLI.
 #
 # Needs libghostty in the checkout (app/macos/GhosttyKit.xcframework and app/zig-out/share, see
 # AGENTS.md), or GHOSTTY_KIT / GHOSTTY_SHARE pointing at another checkout's copies.
@@ -50,6 +51,9 @@ fi
 # The old copy goes to the Trash, not rm.
 [[ -e "$dest" ]] && trash "$dest"
 cp -R "$built" "$dest"
-echo "installed $dest (web layer: $source_dir/next/app/web)"
+# The CLI on PATH, as Umi links ~/.local/bin/umi.
+mkdir -p "$HOME/.local/bin"
+ln -sf "$dest/Contents/MacOS/umi-next" "$HOME/.local/bin/umi-next"
+echo "installed $dest (web layer: $source_dir/next/app/web; CLI: ~/.local/bin/umi-next)"
 [[ $open_after == 1 ]] && open "$dest"
 exit 0
