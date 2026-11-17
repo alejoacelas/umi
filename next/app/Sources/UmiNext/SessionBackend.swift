@@ -61,7 +61,7 @@ enum SessionBackend {
         var args = ["new", "--cwd", cwd ?? NSHomeDirectory()]
         if let name, !name.isEmpty { args += ["--name", name] }
         if let cmd { args += ["--cmd", cmd] }
-        let r = run(ctlPath, args)
+        let r = run(ctlPath, args, extraEnv: shellIntegrationEnv())
         let id = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
         guard r.status == 0, !id.isEmpty else {
             // No silent fallback: the pane shows the failure and stays open.
@@ -91,14 +91,34 @@ enum SessionBackend {
         DispatchQueue.global().async { _ = run(ctlPath, ["rm", sessionID, "--force"]) }
     }
 
+    /// Ghostty's zsh integration for a new session (the daemon starts the shell, so Ghostty can't
+    /// inject it): it reports the folder (OSC 7), titles, prompts and command ends (OSC 133) to
+    /// the attached terminal, as in Umi. zsh only, like Ghostty's ZDOTDIR injection.
+    static func shellIntegrationEnv() -> [String: String] {
+        let env = ProcessInfo.processInfo.environment
+        let shell = env["SHELL"] ?? "/bin/zsh"
+        guard shell.hasSuffix("/zsh"),
+              let res = Bundle.main.resourceURL?.appendingPathComponent("ghostty").path,
+              FileManager.default.fileExists(atPath: res + "/shell-integration/zsh/.zshenv") else { return [:] }
+        var out = [
+            "GHOSTTY_RESOURCES_DIR": res,
+            "ZDOTDIR": res + "/shell-integration/zsh",
+            "GHOSTTY_SHELL_FEATURES": "cursor:blink,path,title,umi-blocks",
+            "TERM_PROGRAM": "ghostty",
+        ]
+        if let z = env["ZDOTDIR"] { out["GHOSTTY_ZSH_ZDOTDIR"] = z }
+        return out
+    }
+
     @discardableResult
-    static func run(_ path: String, _ args: [String]) -> (status: Int32, out: String, err: String) {
+    static func run(_ path: String, _ args: [String], extraEnv: [String: String] = [:]) -> (status: Int32, out: String, err: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
         var env = ProcessInfo.processInfo.environment
         env["UMI_NEXT_STATE_DIR"] = Paths.stateDir
         env.removeValue(forKey: "UMI_NEXT_DEBUG")
+        env.merge(extraEnv) { _, new in new }
         p.environment = env
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
