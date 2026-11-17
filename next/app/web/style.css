@@ -160,7 +160,6 @@ body.cmd-held .tab .key { display: block; }
   background: #0b0b0b;
 }
 .slot:not([data-view="terminal"]) { padding: 16px; color: var(--dim); overflow: auto; }
-.slot.focused { box-shadow: 0 0 0 1px rgba(25, 170, 216, 0.55); }
 .multi .slot:not(.focused) { box-shadow: 0 0 0 1px var(--line); }
 
 /* Picker (a pane drawn by the web layer) */
