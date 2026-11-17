@@ -25,7 +25,13 @@
 //       maxResults = 5000}, onMatches)              → {cancel(), done}
 //       ripgrep. onMatches([{path (relative to root), line, text, ranges: [[start, end], …]}]) gets
 //       batches as they arrive (ranges are JS string indexes into text). `done` resolves with
-//       {count, files, truncated, cancelled, ms}.
+//       {count, files, truncated, cancelled, ms}. `pcre2: true` with `regex`: Perl-style (lookarounds).
+//   Umi.fs.trash(path)                              → {path, trashed}   moved to the Trash
+//   Umi.fs.rename(path, to)                         → {path}            refused ('exists') if `to` is taken
+//   Umi.fs.reveal(path)                             shows it in Finder
+//   Umi.fs.openDefault(path)                        opens it with its default app
+// Other native services: bridge ops 'clipboard' {text?}, 'sendText' {session, text} (types into a
+// daemon session) and 'menu' {items: [{title, enabled?} | {separator: true}], x, y} → {index|null}.
 'use strict';
 window.Umi = window.Umi || {};
 
@@ -111,5 +117,10 @@ Umi.fs = (() => {
     return out.slice(0, limit);
   }
 
-  return { root, resolve, read, write, list, watch, files, fuzzy, search };
+  const trash = (path) => req('trash', { path: resolve(path) });
+  const rename = (path, to) => req('rename', { path: resolve(path), to: resolve(to) });
+  const reveal = (path) => req('reveal', { path: resolve(path) });
+  const openDefault = (path) => req('openDefault', { path: resolve(path) });
+
+  return { root, resolve, read, write, list, watch, files, fuzzy, search, trash, rename, reveal, openDefault };
 })();
