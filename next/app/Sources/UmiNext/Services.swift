@@ -48,6 +48,8 @@ final class WebServices {
         case "openDefault": reply(id, Result { try Self.openDefault(args) })
         case "clipboard": reply(id, Result { try Self.clipboard(args) })
         case "sendText": async(id) { try Self.sendText(args) }
+        case "readData": async(id) { try Self.readData(args) }
+        case "openURL": reply(id, Result { try Self.openURL(args) })
         case "menu":
             let items = args["items"] as? [[String: Any]] ?? []
             // Popped up after this message is handled: the menu runs its own event loop.
@@ -291,6 +293,39 @@ final class WebServices {
             return ["ok": true, "logged": true]
         }
         guard NSWorkspace.shared.open(URL(fileURLWithPath: p)) else { throw Failure(code: "io", message: "can't open \(p)") }
+        return ["ok": true]
+    }
+
+    /// A file's bytes as base64 with a media type from its extension (images in the Markdown
+    /// preview: the page may only load files from web/ itself). Up to 16 MB.
+    static func readData(_ args: [String: Any]) throws -> Any {
+        let p = try path(args)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: p, isDirectory: &isDir) else { throw Failure(code: "notFound", message: "no file \(p)") }
+        if isDir.boolValue { throw Failure(code: "isDir", message: "\(p) is a folder") }
+        let size = ((try? FileManager.default.attributesOfItem(atPath: p))?[.size] as? NSNumber)?.intValue ?? 0
+        if size > 16 << 20 { throw Failure(code: "tooLarge", message: "\(p) is \(size) bytes (limit \(16 << 20))") }
+        let data = try Data(contentsOf: URL(fileURLWithPath: p))
+        let types = ["png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+                     "svg": "image/svg+xml", "bmp": "image/bmp", "ico": "image/x-icon", "avif": "image/avif",
+                     "heic": "image/heic", "tif": "image/tiff", "tiff": "image/tiff", "pdf": "application/pdf"]
+        let mime = types[(p as NSString).pathExtension.lowercased()] ?? "application/octet-stream"
+        return ["path": p, "mime": mime, "base64": data.base64EncodedString(), "size": data.count]
+    }
+
+    /// Opens a web or mail link in the default app (links in the Markdown preview).
+    /// UMI_NEXT_TEST_OPEN_LOG (tests) appends it to that file instead.
+    static func openURL(_ args: [String: Any]) throws -> Any {
+        guard let s = args["url"] as? String, let url = URL(string: s), let scheme = url.scheme?.lowercased(),
+              ["http", "https", "mailto"].contains(scheme) else {
+            throw Failure(code: "badArgs", message: "url must be http, https or mailto")
+        }
+        if let log = Paths.env["UMI_NEXT_TEST_OPEN_LOG"], !log.isEmpty {
+            if !FileManager.default.fileExists(atPath: log) { FileManager.default.createFile(atPath: log, contents: nil) }
+            if let h = FileHandle(forWritingAtPath: log) { h.seekToEndOfFile(); h.write(Data((s + "\n").utf8)); try? h.close() }
+            return ["ok": true, "logged": true]
+        }
+        guard NSWorkspace.shared.open(url) else { throw Failure(code: "io", message: "can't open \(s)") }
         return ["ok": true]
     }
 

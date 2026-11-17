@@ -30,6 +30,8 @@
 //   Umi.fs.rename(path, to)                         → {path}            refused ('exists') if `to` is taken
 //   Umi.fs.reveal(path)                             shows it in Finder
 //   Umi.fs.openDefault(path)                        opens it with its default app
+//   Umi.fs.readData(path)                           → {path, mime, base64, size}  up to 16 MB (preview images)
+//   Umi.fs.openURL(url)                             opens an http(s)/mailto link in the default app
 // Other native services: bridge ops 'clipboard' {text?}, 'sendText' {session, text} (types into a
 // daemon session) and 'menu' {items: [{title, enabled?} | {separator: true}], x, y} → {index|null}.
 'use strict';
@@ -121,6 +123,8 @@ Umi.fs = (() => {
   const rename = (path, to) => req('rename', { path: resolve(path), to: resolve(to) });
   const reveal = (path) => req('reveal', { path: resolve(path) });
   const openDefault = (path) => req('openDefault', { path: resolve(path) });
+  const readData = (path) => req('readData', { path: resolve(path) });
+  const openURL = (url) => req('openURL', { url });
 
-  return { root, resolve, read, write, list, watch, files, fuzzy, search, trash, rename, reveal, openDefault };
+  return { root, resolve, read, write, list, watch, files, fuzzy, search, trash, rename, reveal, openDefault, readData, openURL };
 })();
