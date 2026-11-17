@@ -120,6 +120,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         window.delegate = self
         window.shortcutHandler = { [weak self] in self?.handleShortcut($0) ?? false }
 
+        if let err = SessionBackend.startDaemon() { showBanner(err) }
         restoreLayout()
         loadWeb()
         watcher = FileWatcher(path: Paths.webDir) { [weak self] in self?.webFilesChanged() }
@@ -286,6 +287,9 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
     private func startTerminal(_ id: String, frame: CGRect) -> TerminalSurfaceView? {
         guard let pane = pending.removeValue(forKey: id) else { return nil }
+        if let want = pane["session"] as? String, liveSessions?.contains(want) != true {
+            liveSessions = SessionBackend.liveSessionIDs()
+        }
         let cwd = (pane["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
         let launch = SessionBackend.launch(existing: pane["session"] as? String, live: liveSessions, cwd: cwd, name: nil)
         let env = ["UMI_NEXT_PANE": id, "UMI_NEXT_SESSION": launch.sessionID, "UMI_NEXT_STATE_DIR": Paths.stateDir]
@@ -421,6 +425,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
     func surfaceClosed(_ view: TerminalSurfaceView, processAlive: Bool) {
         guard surfaces[view.paneID] === view else { return }
+        if let s = paneInfo[view.paneID]?["session"] as? String { SessionBackend.sessionEnded(sessionID: s) }
         if webReady {
             send(["type": "paneExited", "pane": view.paneID])
         } else {

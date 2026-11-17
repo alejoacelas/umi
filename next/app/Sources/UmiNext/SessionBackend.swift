@@ -1,89 +1,117 @@
 import Foundation
 
-/// The one place the UI meets the session daemon (branch `next-daemon`).
+/// The one place the UI meets the session daemon (next/daemon, PROTOCOL.md).
 ///
-/// Each pane's terminal runs `launch(...).command`. With `UMI_NEXT_ATTACH` set to the path of
-/// `umi-next-attach`, panes are daemon sessions: `umi-next-ctl` (next to it, or
-/// `UMI_NEXT_CTL`) lists and creates them, and the terminal runs `umi-next-attach <id>`, so
-/// killing the UI leaves the session running. Without it, a pane runs a plain login shell
-/// (Ghostty's default) under a made-up id; such a session ends with the UI, so on relaunch
-/// every pane gets a fresh shell.
+/// Each pane's terminal runs `umi-next-attach <id>`; `umi-next-ctl` lists, creates and ends
+/// sessions and starts the daemon when needed. The three binaries ship in the app's
+/// Contents/MacOS; `UMI_NEXT_DAEMON_BIN` (a folder holding them) overrides that, e.g. to use
+/// next/daemon/bin from a checkout.
+///
+/// Debug mode only: `UMI_NEXT_PLAIN_SHELL=1` runs a plain login shell in each pane, with no
+/// daemon; those shells end with the UI.
 enum SessionBackend {
     struct Launch {
         let sessionID: String
-        /// nil: Ghostty's default (the user's login shell).
+        /// nil: Ghostty's default (the user's login shell), plain-shell debug mode only.
         let command: String?
         let workingDirectory: String?
     }
 
-    static var attachPath: String? {
-        guard let p = ProcessInfo.processInfo.environment["UMI_NEXT_ATTACH"], !p.isEmpty else { return nil }
-        return p
+    static let plainShell = ProcessInfo.processInfo.environment["UMI_NEXT_PLAIN_SHELL"] == "1"
+    static var mode: String { plainShell ? "plain-shell (debug)" : "daemon" }
+
+    static let binDir: String = {
+        if let d = ProcessInfo.processInfo.environment["UMI_NEXT_DAEMON_BIN"], !d.isEmpty { return d }
+        return Bundle.main.executableURL!.deletingLastPathComponent().path
+    }()
+    static var ctlPath: String { binDir + "/umi-next-ctl" }
+    static var attachPath: String { binDir + "/umi-next-attach" }
+
+    /// Starts the daemon if it isn't running. Returns an error message on failure.
+    static func startDaemon() -> String? {
+        if plainShell { return nil }
+        let r = run(ctlPath, ["daemon-start"])
+        return r.status == 0 ? nil : "umi-next-ctl daemon-start failed: \(r.err.trimmingCharacters(in: .whitespacesAndNewlines))"
     }
 
-    static var ctlPath: String? {
-        if let p = ProcessInfo.processInfo.environment["UMI_NEXT_CTL"], !p.isEmpty { return p }
-        guard let attach = attachPath else { return nil }
-        return (attach as NSString).deletingLastPathComponent + "/umi-next-ctl"
-    }
-
-    static var mode: String { attachPath == nil ? "shell" : "daemon" }
-
-    /// The ids of the sessions the daemon has, or nil without a daemon (shell mode).
-    static func liveSessionIDs() -> Set<String>? {
-        guard attachPath != nil, let ctl = ctlPath else { return nil }
-        guard let out = run(ctl, ["ls"]),
-              let json = try? JSONSerialization.jsonObject(with: Data(out.utf8)) else {
-            NSLog("umi-next: `umi-next-ctl ls` failed; every pane gets a new session")
-            return []
+    /// Every session the daemon has (`umi-next-ctl ls`), or nil when it can't be asked.
+    static func sessions() -> [[String: Any]]? {
+        if plainShell { return [] }
+        let r = run(ctlPath, ["ls"])
+        guard r.status == 0, let list = try? JSONSerialization.jsonObject(with: Data(r.out.utf8)) as? [[String: Any]] else {
+            return nil
         }
-        // Accept a list of sessions ([{"id": …}] or ["id", …]) or {"sessions": [...]}.
-        let list = (json as? [Any]) ?? ((json as? [String: Any])?["sessions"] as? [Any]) ?? []
-        return Set(list.compactMap { ($0 as? String) ?? (($0 as? [String: Any])?["id"] as? String) })
+        return list
     }
 
-    /// The command for a pane: reattach to `existing` when it's in `live`, else a new session.
-    static func launch(existing: String?, live: Set<String>?, cwd: String?, name: String?) -> Launch {
-        guard let attach = attachPath, let ctl = ctlPath else {
+    /// Ids of the live sessions.
+    static func liveSessionIDs() -> Set<String>? {
+        sessions().map { Set($0.filter { $0["alive"] as? Bool ?? false }.compactMap { $0["id"] as? String }) }
+    }
+
+    /// The command for a pane: reattach to `existing` when it's live, else start a new session
+    /// (`cmd` nil: the login shell).
+    static func launch(existing: String?, live: Set<String>?, cwd: String?, name: String?, cmd: String? = nil) -> Launch {
+        if plainShell {
             return Launch(sessionID: "shell-" + UUID().uuidString.prefix(8).lowercased(), command: nil, workingDirectory: cwd)
         }
         if let existing, live?.contains(existing) == true {
-            return Launch(sessionID: existing, command: shellQuote([attach, existing]), workingDirectory: cwd)
+            return Launch(sessionID: existing, command: shellQuote([attachPath, existing]), workingDirectory: cwd)
         }
         var args = ["new"]
         if let cwd { args += ["--cwd", cwd] }
-        if let name { args += ["--name", name] }
-        guard let id = run(ctl, args)?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else {
+        if let name, !name.isEmpty { args += ["--name", name] }
+        if let cmd { args += ["--cmd", cmd] }
+        let r = run(ctlPath, args)
+        let id = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard r.status == 0, !id.isEmpty else {
             // No silent fallback: the pane shows the failure and stays open.
-            let msg = "umi-next: could not create a session (umi-next-ctl new failed)"
+            let msg = "umi-next: could not create a session: \(r.err.trimmingCharacters(in: .whitespacesAndNewlines))"
             return Launch(sessionID: "failed-" + UUID().uuidString.prefix(8).lowercased(),
                           command: shellQuote(["/bin/sh", "-c", "echo \"$0\"; exec sleep 2147483647", msg]),
                           workingDirectory: cwd)
         }
-        return Launch(sessionID: id, command: shellQuote([attach, id]), workingDirectory: cwd)
+        return Launch(sessionID: id, command: shellQuote([attachPath, id]), workingDirectory: cwd)
     }
 
-    /// A pane stopped showing a session: `how` is "detach" (the session keeps running: agents,
-    /// a pane switched to another session) or "close" (the user closed it: end the session).
-    /// The daemon's CLI has no documented way to end a session yet, so for now both only detach
-    /// (the attach process ends with the terminal). In shell mode the shell ends either way.
-    static func paneClosed(sessionID: String, how: String) {}
+    /// A pane stopped showing a session. "detach": the session keeps running (an agent, a pane
+    /// switched to another session). "close": the user closed it, so the session ends.
+    static func paneClosed(sessionID: String, how: String) {
+        if how == "close" { endSession(sessionID: sessionID) }
+    }
 
-    private static func run(_ path: String, _ args: [String]) -> String? {
+    /// The session's program ended (its pane's attach got the exit): forget it in the daemon.
+    static func sessionEnded(sessionID: String) {
+        guard !plainShell else { return }
+        DispatchQueue.global().async { _ = run(ctlPath, ["rm", sessionID]) }
+    }
+
+    /// Ends a session (a closed shell, the palette's Exit): kills it and forgets it.
+    static func endSession(sessionID: String) {
+        guard !plainShell else { return }
+        DispatchQueue.global().async { _ = run(ctlPath, ["rm", sessionID, "--force"]) }
+    }
+
+    @discardableResult
+    static func run(_ path: String, _ args: [String]) -> (status: Int32, out: String, err: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
-        let out = Pipe()
+        var env = ProcessInfo.processInfo.environment
+        env["UMI_NEXT_STATE_DIR"] = Paths.stateDir
+        env.removeValue(forKey: "UMI_NEXT_DEBUG")
+        p.environment = env
+        let out = Pipe(), err = Pipe()
         p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.standardError = err
+        do { try p.run() } catch { return (-1, "", "\(error)") }
+        let o = out.fileHandleForReading.readDataToEndOfFile()
+        let e = err.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return nil }
-        return String(decoding: data, as: UTF8.self)
+        return (p.terminationStatus, String(decoding: o, as: UTF8.self), String(decoding: e, as: UTF8.self))
     }
 
-    private static func shellQuote(_ args: [String]) -> String {
+    static func shellQuote(_ args: [String]) -> String {
         args.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
     }
 }

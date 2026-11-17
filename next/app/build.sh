@@ -26,6 +26,10 @@ if [[ ! -d "$here/vendor/GhosttyKit.xcframework" ]] || \
   cp -R "$kit" "$here/vendor/GhosttyKit.xcframework"
 fi
 
+# The daemon's binaries (built from next/daemon) ship in Contents/MacOS next to the UI.
+daemon="$here/../daemon"
+"$daemon/build.sh" >&2
+
 cd "$here"
 swift build -c "$config" --arch arm64
 bin="$(swift build -c "$config" --arch arm64 --show-bin-path)/UmiNext"
@@ -34,6 +38,7 @@ app="$here/build/UmiNext.app"
 rm -rf "$app.tmp"
 mkdir -p "$app.tmp/Contents/MacOS" "$app.tmp/Contents/Resources"
 cp "$bin" "$app.tmp/Contents/MacOS/UmiNext"
+for tool in daemon attach ctl; do cp "$daemon/bin/umi-next-$tool" "$app.tmp/Contents/MacOS/"; done
 cp -R "$share/ghostty" "$app.tmp/Contents/Resources/ghostty"
 cp -R "$share/terminfo" "$app.tmp/Contents/Resources/terminfo"
 cat > "$app.tmp/Contents/Info.plist" <<PLIST
