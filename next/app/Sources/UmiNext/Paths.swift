@@ -3,10 +3,12 @@ import Foundation
 enum Paths {
     static let env = ProcessInfo.processInfo.environment
 
-    /// `$UMI_NEXT_STATE_DIR`, else ~/Library/Application Support/Umi-next.
+    /// `$UMI_NEXT_STATE_DIR`, else ~/Library/Application Support/<UmiNextStateName> (Umi-next, or
+    /// Umi-next-test-NAME for a `build.sh --test NAME` copy).
     static let stateDir: String = {
+        let name = (Bundle.main.object(forInfoDictionaryKey: "UmiNextStateName") as? String) ?? "Umi-next"
         let dir = env["UMI_NEXT_STATE_DIR"].flatMap { $0.isEmpty ? nil : $0 }
-            ?? (NSHomeDirectory() + "/Library/Application Support/Umi-next")
+            ?? (NSHomeDirectory() + "/Library/Application Support/" + name)
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         return dir
     }()
