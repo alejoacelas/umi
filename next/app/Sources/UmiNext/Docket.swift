@@ -51,6 +51,11 @@ final class Docket {
             let alive = s?["alive"] as? Bool ?? false
             // A turn ended: the session waits (whatever it says), or its program is gone.
             guard !alive || s?["state"] as? String == "waiting" else { continue }
+            // Claude's Stop hook can fire before the reply reaches the transcript: give a fresh
+            // Stop up to 5 s for its reply (and status line) to appear.
+            if alive, let a = s?["agent"] as? [String: Any], a["event"] as? String == "Stop",
+               parseStatus(a["reply"] as? String) == nil,
+               Date().timeIntervalSince1970 - (a["ts"] as? Double ?? 0) < 5 { continue }
             runHook(sid, s ?? [:], mark: m)
         }
     }
