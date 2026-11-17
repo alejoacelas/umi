@@ -345,8 +345,9 @@ Umi.actions = {
     if (!sid) return;
     const s = Umi.state.live[sid] || {};
     const agentSession = s.agent?.agentSession;
-    const cmd = s.kind === 'claude' && agentSession ? `claude --resume ${agentSession}`
-      : s.kind === 'codex' && agentSession ? `codex resume ${agentSession}` : (s.command || null);
+    const cmds = Umi.state.commands || {};
+    const cmd = s.kind === 'claude' && agentSession ? `${cmds.claude || 'claude'} --resume ${agentSession}`
+      : s.kind === 'codex' && agentSession ? `${cmds.codex || 'codex'} resume ${agentSession}` : (s.command || null);
     Umi.bridge.post({ type: 'exitSession', session: sid });
     const found = M.findPane(p.id);
     const fresh = M.newPane({ cwd: M.folderOf(p.id), start: { cmd, name: M.sessionName(sid), cwd: M.folderOf(p.id) } });

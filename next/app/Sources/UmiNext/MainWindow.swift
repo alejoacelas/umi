@@ -245,8 +245,12 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             "panes": paneInfo,
             "focusedPane": focusedPaneID() ?? NSNull(),
             "sessionMode": SessionBackend.mode,
-            // The commands the picker starts (override with UMI_NEXT_CLAUDE_CMD / UMI_NEXT_CODEX_CMD).
-            "commands": ["claude": Paths.env["UMI_NEXT_CLAUDE_CMD"] ?? "claude", "codex": Paths.env["UMI_NEXT_CODEX_CMD"] ?? "codex"],
+            // The commands the picker starts, without permission prompts by Alejo's standing rule
+            // (override with UMI_NEXT_CLAUDE_CMD / UMI_NEXT_CODEX_CMD).
+            "commands": [
+                "claude": Paths.env["UMI_NEXT_CLAUDE_CMD"] ?? "claude --dangerously-skip-permissions",
+                "codex": Paths.env["UMI_NEXT_CODEX_CMD"] ?? "codex --dangerously-bypass-approvals-and-sandbox",
+            ],
             "home": NSHomeDirectory(),
         ]
     }
