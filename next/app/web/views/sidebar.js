@@ -70,6 +70,10 @@ Umi.views.sidebar = (() => {
       if (e.target.closest('.close, input')) return;
       Umi.app.update(() => { S.layout.activeTab = tab.id; });
     });
+    el.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.close, input')) return;
+      Umi.app.update(() => { S.layout.activeTab = tab.id; Umi.actions.renameTab(); });
+    });
     el.querySelector('.close').addEventListener('click', () => {
       Umi.app.update(() => M.paneIds(tab.root).forEach((id) => M.removePane(id)));
     });

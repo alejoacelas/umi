@@ -359,5 +359,30 @@ Umi.actions = {
     Umi.state.closed[p.id] = 'detach';
   },
   moveToNewTab: () => Umi.model.moveToNewTab(),
+  // ⌘[ / ⌘]: the previous or next pane of the tab, in layout order, wrapping (SPEC H-6, without
+  // hidden panes).
+  stepPane: ({ d }) => {
+    const M = Umi.model, tab = M.activeTab(), ids = M.paneIds(tab.root);
+    M.focusPane(ids[(ids.indexOf(tab.focused) + d + ids.length) % ids.length]);
+  },
+  // ⌥⌘W: stops showing the tab's panes, as its row's × does (sessions keep running).
+  closeTab: () => { const M = Umi.model; M.paneIds(M.activeTab().root).forEach((id) => M.removePane(id)); },
+  // ⌃⌘=: every split gives each pane the same share along its direction (Ghostty's equalize).
+  equalize: () => {
+    const weight = (n, dir) => (n.type === 'pane' ? 1
+      : n.dir === dir ? weight(n.a, dir) + weight(n.b, dir) : Math.max(weight(n.a, dir), weight(n.b, dir)));
+    (function walk(n) {
+      if (n.type === 'pane') return;
+      const a = weight(n.a, n.dir), b = weight(n.b, n.dir);
+      n.ratio = a / (a + b);
+      walk(n.a); walk(n.b);
+    })(Umi.model.activeTab().root);
+  },
+  // ⌃⌘R renames the tab in its row; ⌃⇧⌘R renames the focused session (the palette's Rename).
+  renameTab: () => { const t = Umi.model.activeTab(); Umi.state.ui.editingTab = t.id; Umi.state.ui.tabDraft = t.name || ''; },
+  renameSession: () => {
+    const sid = Umi.model.sessionOf(Umi.model.activeTab().focused);
+    if (sid) Umi.model.openPanel('palette', { mode: 'rename', sid });
+  },
   reloadWeb: () => Umi.bridge.post({ type: 'reload' }),
 };

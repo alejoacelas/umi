@@ -479,6 +479,14 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         case (126, optCmd): action = ["name": "focusDir", "dir": "up"]
         case (125, optCmd): action = ["name": "focusDir", "dir": "down"]
         case (15, shiftCmd): reloadWeb(); return true                   // ⇧⌘R reloads the web layer
+        case (48, [.control]): action = ["name": "nextTab"]             // ⌃Tab
+        case (48, [.control, .shift]): action = ["name": "prevTab"]     // ⌃⇧Tab
+        case (33, cmd): action = ["name": "stepPane", "d": -1]          // ⌘[
+        case (30, cmd): action = ["name": "stepPane", "d": 1]           // ⌘]
+        case (13, optCmd): action = ["name": "closeTab"]                // ⌥⌘W
+        case (24, [.command, .control]): action = ["name": "equalize"]  // ⌃⌘=
+        case (15, [.command, .control]): action = ["name": "renameTab"] // ⌃⌘R
+        case (15, [.command, .control, .shift]): action = ["name": "renameSession"] // ⌃⇧⌘R
         case (12, cmd): NSApp.terminate(nil); return true               // ⌘Q
         default:
             // By character, so the keypad's digits count too.
