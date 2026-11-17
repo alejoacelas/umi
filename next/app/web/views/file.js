@@ -618,22 +618,47 @@ Umi.views.file = (() => {
     }
 
     // ---- The pane menu (E-24), through the native menu ----
+    // ⋯ and a right-click on the header: Warp's pane menu for the view. A right-click in the
+    // preview: Copy (with a selection), Copy file path, the splits, then Maximize and Close in a split.
     async menu(e, inPreview = false) {
       const items = [];
       const add = (title, fn, enabled = true) => items.push({ title, enabled, fn });
-      if (inPreview && this.frame.contentWindow.getSelection().toString()) add('Copy', () => this.frame.contentDocument.execCommand('copy'));
-      if (this.mode === 'raw') {
-        add('Copy file path', () => Umi.bridge.request('clipboard', { text: this.path }));
+      const sep = () => { if (items.length && !items[items.length - 1].separator) items.push({ separator: true }); };
+      const found = M.findPane(this.id);
+      const split = !!found && M.paneIds(found.tab.root).length > 1;
+      const zoomed = !!found && found.tab.zoomed === this.id;
+      // Outside a split there is nothing to maximize, so it does nothing (as Warp's, never disabled).
+      const zoom = () => add(zoomed ? 'Minimize pane' : 'Maximize pane', () => {
+        if (!split) return;
+        Umi.app.update(() => { M.focusPane(this.id); Umi.arrange.toggleZoom(); });
+      });
+      const copyPath = () => add('Copy file path', () => Umi.bridge.request('clipboard', { text: this.path }));
+      if (inPreview) {
+        if (this.frame.contentWindow.getSelection().toString()) { add('Copy', () => this.frame.contentDocument.execCommand('copy')); sep(); }
+        copyPath();
+        sep();
+        // Next splits right and down only, each into the picker as ⌘D / ⇧⌘D.
+        add('Split pane right', () => Umi.app.update(() => { M.focusPane(this.id); M.split('row', 'picker'); }));
+        add('Split pane down', () => Umi.app.update(() => { M.focusPane(this.id); M.split('column', 'picker'); }));
+        if (split) { sep(); zoom(); add('Close pane', () => this.close()); }
+      } else if (this.mode === 'raw') {
+        zoom();
+        sep();
+        copyPath();
         add('Reveal in Finder', () => Umi.fs.reveal(this.path));
         if (this.markdown) add('View Markdown preview', () => this.setMode('rendered'));
+        else if (this.preview) add('View preview', () => this.setMode('rendered'));
       } else {
+        zoom();
+        sep();
         add('Refresh file', () => this.refresh());
         add('Open in editor', () => this.setMode('raw'));
-        add('Copy file path', () => Umi.bridge.request('clipboard', { text: this.path }));
+        sep();
+        copyPath();
       }
       const x = e.clientX + (inPreview ? this.frame.getBoundingClientRect().left : 0);
       const y = e.clientY + (inPreview ? this.frame.getBoundingClientRect().top : 0);
-      const r = await Umi.bridge.request('menu', { items: items.map(({ title, enabled }) => ({ title, enabled })), x, y });
+      const r = await Umi.bridge.request('menu', { items: items.map(({ title, enabled, separator }) => (separator ? { separator } : { title, enabled })), x, y });
       if (r && r.index != null) items[r.index].fn();
     }
 

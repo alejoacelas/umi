@@ -335,35 +335,6 @@ check("a folder is refused with a message", "is a folder" in (vs() or {}).get("e
 open_file(scratch + "/bin.dat")
 check("a binary file is refused with a message", "UTF-8" in (vs() or {}).get("error", ""), vs())
 
-# ---- Git marks in the gutter (E-21) ----
-repo = scratch + "/repo"
-os.makedirs(repo)
-g = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
-g("init", "-q")
-open(repo + "/code.txt", "w").write("one\ntwo\nthree\nfour\nfive\n")
-g("add", "code.txt")
-g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
-open(repo + "/code.txt", "w").write("one\nTWO\nthree\nnew\nfour\n")
-open_file(repo + "/code.txt")
-wait(f"{V}.state().marks && Object.keys({V}.state().marks).length")
-check("lines changed since the commit are marked: changed, added, removed",
-      J(f"{V}.state().marks") == {"1": "changed", "3": "added", "5": "removed"}, J(f"{V}.state().marks"))
-check("the gutter draws them at its left edge", sorted(J(f"{V}.state().gutterMarks") or []) == ["added", "changed", "removed"]
-      and J(f"(() => {{ const m = {V}.cm.dom.querySelector('.cm-git-mark'), g = {V}.cm.dom.querySelector('.cm-gutters'); return Math.round(m.getBoundingClientRect().left - g.getBoundingClientRect().left); }})()") == 0,
-      J(f"{V}.state().gutterMarks"))
-ev(f"{V}.cm.dispatch({{changes: {{from: 0, to: 3, insert: 'ONE'}}}}); 1")
-wait(f"{V}.state().marks['0'] === 'changed'")
-check("an edit is marked as it is typed", J(f"{V}.state().marks['0']") == "changed")
-ev(f"{V}.cm.dispatch({{changes: {{from: 0, to: {V}.cm.state.doc.length, insert: 'one\\ntwo\\nthree\\nfour\\nfive\\n'}}}}); 1")
-wait(f"Object.keys({V}.state().marks).length === 0")
-check("text back as committed: no marks", J(f"{V}.state().marks") == {})
-ev(f"{V}.discarded = true; 1")
-close_all()
-open(scratch + "/untracked.txt", "w").write("a\n")
-open_file(scratch + "/untracked.txt")
-time.sleep(0.6)
-check("a file outside git has no marks", not J(f"{V}.state().gutterMarks"))
-close_all()
 
 # ---- JSON tree and CSV / TSV table (E-1) ----
 open(scratch + "/data.json", "w").write('{"zeta": 1, "alpha": [true, null, "s"], "deep": {"a": {"b": {"c": {"d": 1}}}}, "empty": {}}\n')
@@ -399,6 +370,95 @@ open_file(scratch + "/t.tsv")
 wait(f"{FD}.querySelector('table.umi-grid')")
 check("TSV opens as a table", J(f"[...{FD}.querySelectorAll('table.umi-grid td:not(.rn)')].map((c) => c.textContent)") == ["1", "2"])
 close_all()
+
+# ---- Git marks in the gutter (E-21) ----
+repo = scratch + "/repo"
+os.makedirs(repo)
+g = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+g("init", "-q")
+open(repo + "/code.txt", "w").write("one\ntwo\nthree\nfour\nfive\n")
+g("add", "code.txt")
+g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+open(repo + "/code.txt", "w").write("one\nTWO\nthree\nnew\nfour\n")
+open_file(repo + "/code.txt")
+wait(f"{V}.state().marks && Object.keys({V}.state().marks).length")
+check("lines changed since the commit are marked: changed, added, removed",
+      J(f"{V}.state().marks") == {"1": "changed", "3": "added", "5": "removed"}, J(f"{V}.state().marks"))
+check("the gutter draws them at its left edge", sorted(J(f"{V}.state().gutterMarks") or []) == ["added", "changed", "removed"]
+      and J(f"(() => {{ const m = {V}.cm.dom.querySelector('.cm-git-mark'), g = {V}.cm.dom.querySelector('.cm-gutters'); return Math.round(m.getBoundingClientRect().left - g.getBoundingClientRect().left); }})()") == 0,
+      J(f"{V}.state().gutterMarks"))
+ev(f"{V}.cm.dispatch({{changes: {{from: 0, to: 3, insert: 'ONE'}}}}); 1")
+wait(f"{V}.state().marks['0'] === 'changed'")
+check("an edit is marked as it is typed", J(f"{V}.state().marks['0']") == "changed")
+ev(f"{V}.cm.dispatch({{changes: {{from: 0, to: {V}.cm.state.doc.length, insert: 'one\\ntwo\\nthree\\nfour\\nfive\\n'}}}}); 1")
+wait(f"Object.keys({V}.state().marks).length === 0")
+check("text back as committed: no marks", J(f"{V}.state().marks") == {})
+ev(f"{V}.discarded = true; 1")
+close_all()
+open(scratch + "/untracked.txt", "w").write("a\n")
+open_file(scratch + "/untracked.txt")
+time.sleep(0.6)
+check("a file outside git has no marks", not J(f"{V}.state().gutterMarks"))
+close_all()
+
+# ---- The strip chip's file-type icon; ⋯ and the preview's right-click menus (E-24) ----
+def menu(expr, title=None):
+    ev("""window.__menu = null; (() => { const orig = Umi.bridge.request;
+      Umi.bridge.request = function (op, args, onEvent) {
+        if (op !== 'menu') return orig.call(Umi.bridge, op, args, onEvent);
+        Umi.bridge.request = orig;
+        window.__menu = args.items.map((it) => (it.separator ? null : it.title));
+        const i = args.items.findIndex((it) => it.title === %s);
+        return Promise.resolve({index: i < 0 ? null : i});
+      }; })(); %s; 1""" % (json.dumps(title), expr))
+    wait("window.__menu", 3)
+    return J("window.__menu")
+
+
+open_file(plan)
+pid = J("Umi.model.activeTab().focused")
+icon = J(f"document.querySelector('#strip .chip[data-pane=\"{pid}\"] img.file-icon')?.getAttribute('src') || null")
+check("a file pane's chip shows the file's type icon (the explorer's)", icon == J("Umi.icons.file('plan.md')") == "icons/markdown.svg", icon)
+ev(f"Umi.app.run('openFile', {{path: {json.dumps(scratch + '/data.json')}}}); 1")
+time.sleep(0.5)
+jid = J("Umi.model.activeTab().focused")
+check("…a JSON file's its own", J(f"document.querySelector('#strip .chip[data-pane=\"{jid}\"] img.file-icon')?.getAttribute('src')") == "icons/json.svg")
+ev(f"Umi.app.update(() => Umi.model.removePane({json.dumps(jid)})); 1")
+ev(f"Umi.app.update(() => Umi.model.focusPane({json.dumps(pid)})); 1")
+open_file(plan)
+ev(f"{V}.setMode('rendered'); 1")
+time.sleep(0.4)
+m = menu(f"{V}.menu(new MouseEvent('click'))")
+check("⋯ in the preview: Maximize pane, Refresh file, Open in editor, Copy file path",
+      m == ["Maximize pane", None, "Refresh file", "Open in editor", None, "Copy file path"], m)
+menu(f"{V}.menu(new MouseEvent('click'))", "Maximize pane")
+time.sleep(0.3)
+check("Maximize pane zooms the file pane", J("Umi.model.activeTab().zoomed") == pid)
+m = menu(f"{V}.menu(new MouseEvent('click'))", "Minimize pane")
+time.sleep(0.3)
+check("…and says Minimize pane while zoomed, which unzooms", m[0] == "Minimize pane" and not J("!!Umi.model.activeTab().zoomed"), m)
+ev(f"{V}.setMode('raw'); 1")
+m = menu(f"{V}.menu(new MouseEvent('click'))")
+check("⋯ in the source: Maximize pane, Copy file path, Reveal in Finder, View Markdown preview",
+      m == ["Maximize pane", None, "Copy file path", "Reveal in Finder", "View Markdown preview"], m)
+ev(f"{V}.setMode('rendered'); 1")
+time.sleep(0.4)
+m = menu(f"{V}.menu(new MouseEvent('contextmenu'), true)")
+check("the preview's right-click: Copy file path, Split right / down, Maximize, Close",
+      m == ["Copy file path", None, "Split pane right", "Split pane down", None, "Maximize pane", "Close pane"], m)
+n = J("Umi.model.paneIds(Umi.model.activeTab().root).length")
+menu(f"{V}.menu(new MouseEvent('contextmenu'), true)", "Split pane right")
+time.sleep(0.4)
+check("Split pane right splits the file pane into the picker", J("Umi.model.paneIds(Umi.model.activeTab().root).length") == n + 1
+      and J("Umi.model.focusedPane().view") == "picker")
+picker = J("Umi.model.activeTab().focused")
+ev(f"Umi.app.update(() => Umi.model.removePane({json.dumps(picker)})); 1")
+time.sleep(0.5)  # native reports the terminal it focused once the picker left
+ev(f"Umi.app.update(() => Umi.model.focusPane({json.dumps(pid)})); 1")
+wait(f"{V} && {V}.path === {json.dumps(plan)}")
+menu(f"{V}.menu(new MouseEvent('contextmenu'), true)", "Close pane")
+time.sleep(0.4)
+check("Close pane closes it", not J(f"!!Umi.model.findPane({json.dumps(pid)})"))
 
 close_all()
 print(f"\n{len(fails)} failed" if fails else "\nall passed")

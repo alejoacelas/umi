@@ -134,7 +134,7 @@ body.cmd-held .tab .key { display: block; }
   max-width: 220px;
 }
 .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip svg { flex: none; }
+.chip svg, .chip img { flex: none; }
 .chip:hover { background: rgba(255, 255, 255, 0.06); }
 .chip.focused { background: rgba(255, 255, 255, 0.085); color: rgba(255, 255, 255, 0.95); }
 
