@@ -176,6 +176,7 @@ Umi.views.sidebar = (() => {
 
   function render() {
     document.body.classList.toggle('no-sidebar', S.layout.sidebar === false);
+    if (S.layout.sidebarWidth) document.documentElement.style.setProperty('--sidebar-width', S.layout.sidebarWidth + 'px');
     renderReview();
     const list = document.querySelector('#tabs');
     list.textContent = '';
