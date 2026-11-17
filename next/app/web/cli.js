@@ -121,7 +121,6 @@ Umi.cli = (() => {
     if (args.cmd || args.shell) return M.newPane({ cwd: folder, start: startFields(args, folder) });
     return M.newPane({ view: 'picker', cwd: folder, picker: { kind: 'claude', name: args.name || '', sel: 0, project } });
   }
-  const panelFocusRestore = (tab, keep) => { if (keep) tab.focused = keep; };
 
   // A new terminal pane gets its session once native starts it (on its first slot); wait for it.
   function sessionSoon(paneId, ms = 6000) {
@@ -373,31 +372,28 @@ Umi.cli = (() => {
 
   // Opens each file to the right of the pane (the caller's, or the tab's focused pane), each next
   // one to the right of the one before, with track a's openFile; keyboard focus stays put.
-  H.edit = async ({ paths, mode, pane, tab }, caller) => {
+  H.edit = ({ paths, mode, pane, tab }, caller) => {
     if (!Umi.actions.openFile) fail('the editor isn\'t in Umi next yet (PARITY track a: Umi.actions.openFile)');
     const refused = paths.filter((p) => /^[a-z]+:\/\//i.test(p));
     if (refused.length) fail(`web pages don't open in Umi next yet: ${refused.join(' ')}`);
     let beside = tab ? resolveTab(tab, caller).focused : resolvePane(pane, caller).pane;
-    const keepTab = S.layout.activeTab, keepTabObj = M.activeTab(), keepPane = keepTabObj.focused;
     const docs = [];
     for (const path of paths) {
-      let ret;
-      Umi.app.update(() => { ret = Umi.actions.openFile({ path, pane: beside, ...(mode ? { mode: TO_PANE[mode] } : {}) }); });
-      if (ret && typeof ret.then === 'function') await ret;
-      const found = fileAnywhere(path);
-      if (!found) fail(`couldn't open ${path}`);
-      docs.push({ path, pane: found.node.id, mode: cliMode(found.node) });
-      beside = found.node.id;
+      let id;
+      Umi.app.update(() => { id = Umi.actions.openFile({ path, pane: beside, focus: false, ...(mode ? { mode: TO_PANE[mode] } : {}) }); });
+      const node = id && M.findPane(id)?.node;
+      if (!node) fail(`couldn't open ${path}`);
+      docs.push({ path: node.path, pane: id, mode: cliMode(node) });
+      beside = id;
     }
-    Umi.app.update(() => { S.layout.activeTab = keepTab; panelFocusRestore(keepTabObj, keepPane); });
     const t = docs.length ? M.findPane(docs[0].pane).tab.id : null;
     return { documents: docs, pages: [], tab: t, window: WINDOW, hid: [] };
   };
 
+  const isDirty = (id) => !!Umi.views.file?.isDirty?.(id);
   H['editor.ls'] = ({ pane, tab }, caller) => {
     const t = tab ? resolveTab(tab, caller) : pane ? M.findPane(resolvePane(pane, caller).pane).tab : resolveTab(null, caller);
-    const docs = filePanes(t).map((n) => ({ path: n.path, pane: n.id, mode: cliMode(n),
-      dirty: !!(Umi.editor && Umi.editor.isDirty && Umi.editor.isDirty(n.id)), hidden: false }));
+    const docs = filePanes(t).map((n) => ({ path: n.path, pane: n.id, mode: cliMode(n), dirty: isDirty(n.id), hidden: false }));
     const active = docs.find((d) => d.pane === t.focused);
     return { documents: docs, active: active ? active.path : null, tab: t.id };
   };
@@ -412,26 +408,39 @@ Umi.cli = (() => {
     const all = filePanes(t);
     return all.length === 1 ? all[0] : fail(all.length ? 'more than one file is open in the tab: name one' : 'no file is open in the tab');
   }
+  // Refuses unsaved edits without --force; with it, the edits (and their kept draft) go.
   H['editor.close'] = ({ file, force }, caller) => {
     const n = pickFile(file, caller);
-    if (!force && Umi.editor && Umi.editor.isDirty && Umi.editor.isDirty(n.id)) fail(`${n.path} has unsaved changes (--force closes it anyway)`);
-    if (Umi.editor && Umi.editor.discard && force) Umi.editor.discard(n.id);
+    if (isDirty(n.id) && !force) fail(`${n.path} has unsaved changes (--force closes it anyway)`);
     Umi.app.update(() => M.removePane(n.id), { focus: false });
+    // The view keeps a draft as it goes (on removal too): drop it after.
+    if (force && S.layout.meta?.drafts?.[n.path]) { delete S.layout.meta.drafts[n.path]; Umi.app.save(); }
     return { path: n.path, pane: n.id };
   };
   H['editor.mode'] = ({ mode, file }, caller) => {
     const n = pickFile(file, caller);
     if (mode && mode !== 'preview' && mode !== 'source') fail('editor mode: preview or source');
     const want = mode || (cliMode(n) === 'preview' ? 'source' : 'preview');
-    Umi.app.update(() => { n.mode = TO_PANE[want]; }, { focus: false });
+    const v = Umi.views.file?.get?.(n.id);
+    Umi.app.update(() => { if (v) v.setMode(TO_PANE[want]); else n.mode = TO_PANE[want]; }, { focus: false });
     return { path: n.path, pane: n.id, mode: want };
   };
 
-  // Answered when the user presses Done on that file's comments (Umi.cli.commentsDone).
-  H['comments.wait'] = ({ path }, _caller, id) => new Promise((resolve) => { waiters.set(id, { path, resolve }); });
+  // Answered when the user presses Done on that file's comments (the file view's
+  // 'umi:commentsDone'); the file's margin shows how many agents wait.
+  function countWaiting(path) {
+    const n = [...waiters.values()].filter((w) => w.path === path).length;
+    Umi.views.file?.setWaiting?.(path, n);
+  }
+  H['comments.wait'] = ({ path }, _caller, id) => new Promise((resolve) => {
+    waiters.set(id, { path, resolve });
+    countWaiting(path);
+  });
   function commentsDone(path) {
     for (const [id, w] of waiters) if (w.path === path) { waiters.delete(id); w.resolve({ path }); }
+    countWaiting(path);
   }
+  window.addEventListener('umi:commentsDone', (e) => commentsDone(e.detail.path));
 
   // ---- wiring ----
   Umi.bridge.on('cli', async (msg) => {
@@ -444,7 +453,7 @@ Umi.cli = (() => {
     try { reply(true, await h(args, caller, msg.id)); }
     catch (e) { reply(false, e.message || String(e)); }
   });
-  Umi.bridge.on('cliCancel', (msg) => waiters.delete(msg.id));
+  Umi.bridge.on('cliCancel', (msg) => { const w = waiters.get(msg.id); waiters.delete(msg.id); if (w) countWaiting(w.path); });
 
   const waiting = () => [...waiters.values()].map((w) => w.path);
   return { handlers: H, commentsDone, waiting, resolvePane, resolveTab };
