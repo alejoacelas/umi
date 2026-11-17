@@ -125,7 +125,7 @@ Umi.views.quickOpen = (() => {
       const name = it.path.slice(slash + 1), folder = slash > 0 ? it.path.slice(0, slash) : '';
       const icon = document.createElement('span');
       icon.className = 'ficon';
-      icon.append(I.img(name, 16));
+      icon.innerHTML = I.glyph(name);
       row.append(icon, marked(name, it.hits.filter((h) => h > slash).map((h) => h - slash - 1), 'name'));
       if (folder) {
         // Cut at its start: the end of the folder stays next to the name.

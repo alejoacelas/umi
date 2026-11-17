@@ -198,6 +198,67 @@ check("Delete moves to the Trash", until(f"!Umi.views.explorer.debug().rows.find
 typ(ESC)
 check("Esc gives the keys back to the pane", J("[Umi.state.ui.sidebarFocus, Umi.state.ui.keys]") == [None, "terminal"])
 
+# ---- the right-click menu: its items, and what each does (the native menu answers as if chosen) ----
+def menu(path, title=None):
+    """Right-clicks the row of `path`; picks `title`. Returns the menu's titles (None: a separator)."""
+    ev("""window.__menu = null; (() => { const orig = Umi.bridge.request;
+      Umi.bridge.request = function (op, args, onEvent) {
+        if (op !== 'menu') return orig.call(Umi.bridge, op, args, onEvent);
+        Umi.bridge.request = orig;
+        window.__menu = args.items.map((it) => (it.separator ? null : it.title + (it.enabled === false ? ' (off)' : '')));
+        const i = args.items.findIndex((it) => it.title === %s);
+        return Promise.resolve({ index: i < 0 ? null : i });
+      }; })();
+      [...document.querySelectorAll('#explorer .ft-row')].find((r) => r.title === %s)
+        .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 })); 1""" % (json.dumps(title), json.dumps(path)))
+    return until("window.__menu", 3)
+
+
+def screen():
+    pane = J("Umi.model.activeTab().focused")
+    return D({"cmd": "screen", "pane": pane}).get("text", "")
+
+
+def clear_prompt():
+    ev("Umi.bridge.request('sendText', {session: Umi.model.sessionOf(Umi.model.activeTab().focused), text: '\\u0015'}); 1")
+    time.sleep(0.5)
+
+
+key("1", "ctrl")
+if J("Umi.views.modes.mode()") != "files":
+    key("1", "ctrl")
+ev(f"Umi.views.explorer.show({json.dumps(scratch + '/src/a.js')}); 1")
+time.sleep(0.5)
+m = menu(scratch + "/src")
+check("folder menu: Umi's items in Umi's order", m == ["New File", None, "cd to Directory", "Open in New Tab", "Reveal in Finder", "Rename", "Delete",
+                                                    None, "Insert Path in Terminal", None, "Copy Path", "Copy Relative Path"], m)
+m = menu(scratch + "/src/a.js")
+check("file menu: Umi's items", m == ["Open in New Pane", "Open in New Tab", "Open with Default App", "Reveal in Finder", "Rename", "Delete",
+                                      None, "Insert Path in Terminal", None, "Copy Path", "Copy Relative Path"], m)
+m = menu(scratch)
+check("root: no Rename or Delete", m and "Rename" not in m and "Delete" not in m, m)
+menu(scratch + "/src/a.js", "Copy Path")
+time.sleep(0.3)
+check("Copy Path", subprocess.run(["pbpaste"], capture_output=True, text=True).stdout == scratch + "/src/a.js")
+menu(scratch + "/src/a.js", "Copy Relative Path")
+time.sleep(0.3)
+check("Copy Relative Path", subprocess.run(["pbpaste"], capture_output=True, text=True).stdout == "src/a.js")
+menu(scratch + "/src/a.js", "Insert Path in Terminal")
+time.sleep(0.8)
+check("Insert Path in Terminal types the path at the prompt", (scratch + "/src/a.js ") in screen(), screen()[-300:])
+clear_prompt()
+menu(scratch + "/src", "cd to Directory")
+time.sleep(0.8)
+sc = screen()
+check("cd to Directory types `cd FOLDER`, not run, and the terminal gets the keys",
+      ("cd " + scratch + "/src") in sc and J("[Umi.state.ui.sidebarFocus, Umi.state.ui.keys]") == [None, "terminal"], sc[-300:])
+clear_prompt()
+tabs, home_tab = J("[Umi.state.layout.tabs.length, Umi.state.layout.activeTab]")
+menu(scratch + "/docs", "Open in New Tab")
+check("Open in New Tab (folder): a terminal tab there", until(f"Umi.state.layout.tabs.length === {tabs + 1} && Umi.model.focusedPane().cwd === {json.dumps(scratch + '/docs')}", 3))
+ev("Umi.app.update(() => { Umi.state.ui.editingTab = null; Umi.actions.closeTab(); Umi.state.layout.activeTab = %s; }); 1" % json.dumps(home_tab))
+time.sleep(0.5)
+
 # ---- quick open ----
 key("o", "cmd")
 check("⌘O opens quick open", J("Umi.state.ui.panel && Umi.state.ui.panel.name") == "quickOpen")
@@ -238,6 +299,7 @@ typ("needle")
 s = until("!Umi.views.search.debug().searching && Umi.views.search.debug().count && Umi.views.search.debug()", 5)
 check("results grouped by file, ignored left out, dotfiles in", s and s["files"] == 3 and s["count"] == 4, s)
 check("summary line", s and s["message"] == "4 results in 3 files", s and s["message"])
+check("no capped note under the cap", J("getComputedStyle(document.querySelector('#search .sq-capped')).display") == "none")
 check("one row per line (two matches on a line: one row)", s and sum(1 for r in s["rows"] if r.get("path") == "src/a.js") == 2)
 check("leading spaces dropped", s and any(r.get("text") == "let y = 'needle needle';" for r in s["rows"]), s and s["rows"])
 check("matches highlighted", J("document.querySelectorAll('#search mark').length") >= 4)

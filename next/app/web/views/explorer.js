@@ -99,6 +99,23 @@ Umi.views.explorer = (() => {
     if (dirty) { buildRows(); dirty = false; list.set(rows.length); } else list.redraw();
   }
 
+  // A name too long for its row, cut in the middle as Umi's (truncationMode(.middle)):
+  // "BRIEF-com…e-sizes.md".
+  const measure = document.createElement('canvas').getContext('2d');
+  function fit(name, depth, ignored) {
+    // The row's room for the name: the list less the indent, chevron, icon and padding.
+    const room = listEl.clientWidth - (depth * INDENT + 8) - (16 + 4 + 16 + 8) - 8;
+    measure.font = `${ignored ? 'italic 300 ' : ''}14px -apple-system, BlinkMacSystemFont, sans-serif`;
+    if (room <= 0 || measure.measureText(name).width <= room) return name;
+    let lo = 1, hi = name.length - 1, best = name.slice(0, 1) + '…';
+    while (lo <= hi) {
+      const keep = (lo + hi) >> 1, head = Math.ceil(keep / 2), tail = keep - head;
+      const s = name.slice(0, head) + '…' + (tail ? name.slice(-tail) : '');
+      if (measure.measureText(s).width <= room) { best = s; lo = keep + 1; } else hi = keep - 1;
+    }
+    return best;
+  }
+
   function rowEl(i) {
     const r = rows[i];
     if (r.kind === 'new' || (T.edit?.type === 'rename' && T.edit.path === r.n.path)) return editRow(r);
@@ -115,7 +132,7 @@ Umi.views.explorer = (() => {
     if (n.kind === 'dir') icon.innerHTML = I.svg.folder; else icon.append(I.img(n.name, 16));
     const name = document.createElement('span');
     name.className = 'name';
-    name.textContent = n.name;
+    name.textContent = fit(n.name, r.depth, n.ignored);
     el.append(chev, icon, name);
     el.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || e.ctrlKey) return;
@@ -438,5 +455,13 @@ Umi.views.explorer = (() => {
     return { root: T?.root, selected: T?.selected, rows: rows.map((r) => (r.kind === 'new' ? { new: true, depth: r.depth } : { path: r.n.path, depth: r.depth, dir: r.n.kind === 'dir', open: !!r.n.expanded, ignored: !!r.n.ignored })) };
   }
 
-  return { render, hide, focus, debug, startNew, startRename, trash };
+  // Shows `path` with its folders opened and selects it; a folder opens too (the CLI and checks).
+  async function show(path) {
+    if (!T) return;
+    if (path !== T.root) await reveal(path);
+    if (T.nodes.get(path)?.kind === 'dir') setExpanded(path, true, true);
+    select(path);
+  }
+
+  return { render, hide, focus, debug, startNew, startRename, trash, show };
 })();

@@ -60,7 +60,24 @@ Umi.icons = (() => {
     regexToggle: sv('<path d="M5.5 4 2.5 8l3 4M10.5 4l3 4-3 4M9 3.5 7 12.5" stroke-width="1.3"/>'),
     warning: sv('<path d="M8 2.2 14.3 13H1.7z" fill="currentColor" stroke="none"/><path d="M8 6.3v3.2" stroke="#000" stroke-width="1.3"/><circle cx="8" cy="11.2" r=".75" fill="#000" stroke="none"/>'),
     plusCircle: sv('<circle cx="8" cy="8" r="5.6" stroke-width="1.2"/><path d="M8 5.4v5.2M5.4 8h5.2" stroke-width="1.2"/>'),
+    doc: sv('<path d="M4 2.5h5l3 3v8H4z M9 2.5v3h3" stroke-width="1.1"/>'),
+    docText: sv('<path d="M4 2.5h5l3 3v8H4z M9 2.5v3h3 M6 8.5h4M6 10.5h4" stroke-width="1.1"/>'),
+    code: sv('<path d="M5 4.5 1.8 8 5 11.5M11 4.5 14.2 8 11 11.5M9.3 3.5 6.7 12.5" stroke-width="1.2"/>'),
+    braces: sv('<path d="M6 3c-1.5 0-1.8.6-1.8 1.8v1.4c0 1-.5 1.6-1.4 1.8.9.2 1.4.8 1.4 1.8v1.4c0 1.2.3 1.8 1.8 1.8M10 3c1.5 0 1.8.6 1.8 1.8v1.4c0 1 .5 1.6 1.4 1.8-.9.2-1.4.8-1.4 1.8v1.4c0 1.2-.3 1.8-1.8 1.8" stroke-width="1.1"/>'),
+    photo: sv('<rect x="2" y="3.5" width="12" height="9" rx="1.5" stroke-width="1.1"/><path d="m3 11.5 3.2-3.2 2.3 2.3 1.5-1.5 3 2.4" stroke-width="1.1"/><circle cx="10.5" cy="6.3" r="1" stroke-width="1"/>'),
+    globe: sv('<circle cx="8" cy="8" r="5.8" stroke-width="1.1"/><path d="M2.2 8h11.6M8 2.2c1.6 1.6 2.3 3.6 2.3 5.8S9.6 12.2 8 13.8C6.4 12.2 5.7 10.2 5.7 8S6.4 3.8 8 2.2z" stroke-width="1.1"/>'),
   };
 
-  return { iconName, file, img, svg };
+  // Quick open's row icon, as Umi's palette (UmiPaletteFileIcon): a plain glyph by file type.
+  function glyph(path) {
+    const dot = path.lastIndexOf('.'), ext = dot > path.lastIndexOf('/') + 1 ? path.slice(dot + 1).toLowerCase() : '';
+    if (['md', 'markdown', 'txt', 'rst'].includes(ext)) return svg.docText;
+    if (['swift', 'zig', 'rs', 'go', 'c', 'h', 'cpp', 'm', 'py', 'rb', 'js', 'ts', 'tsx', 'jsx', 'java', 'kt', 'sh', 'zsh', 'bash'].includes(ext)) return svg.code;
+    if (['json', 'yaml', 'yml', 'toml', 'xml', 'plist', 'conf', 'ini'].includes(ext)) return svg.braces;
+    if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'icns', 'pdf'].includes(ext)) return svg.photo;
+    if (['html', 'css'].includes(ext)) return svg.globe;
+    return svg.doc;
+  }
+
+  return { iconName, file, img, svg, glyph };
 })();
