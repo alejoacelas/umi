@@ -26,6 +26,7 @@
 //       ripgrep. onMatches([{path (relative to root), line, text, ranges: [[start, end], …]}]) gets
 //       batches as they arrive (ranges are JS string indexes into text). `done` resolves with
 //       {count, files, truncated, cancelled, ms}. `pcre2: true` with `regex`: Perl-style (lookarounds).
+//   Umi.fs.gitRoot(path)                            → {root}            the repository's top folder (a worktree's own), or null
 //   Umi.fs.trash(path)                              → {path, trashed}   moved to the Trash
 //   Umi.fs.rename(path, to)                         → {path}            refused ('exists') if `to` is taken
 //   Umi.fs.reveal(path)                             shows it in Finder
@@ -84,41 +85,53 @@ Umi.fs = (() => {
     return { done, cancel: () => req('cancel', { target: done.id }) };
   }
 
-  // Subsequence match of `query` in `path`, scored: consecutive letters, letters at word starts
-  // (after / . _ - or a case change) and matches in the file name count more; shorter paths win ties.
-  function scoreOne(q, path) {
-    const lower = path.toLowerCase();
-    const nameStart = path.lastIndexOf('/') + 1;
-    let score = 0, last = -2, pi = 0;
-    const hits = [];
-    for (let qi = 0; qi < q.length; qi++) {
-      const c = q[qi];
-      if (c === ' ') continue;
-      const at = lower.indexOf(c, pi);
-      if (at < 0) return null;
-      const prev = path[at - 1];
-      let s = 1;
-      if (at === last + 1) s += 4;
-      if (at === 0 || '/._- '.includes(prev) || (prev && prev === prev.toLowerCase() && path[at] !== path[at].toLowerCase())) s += 3;
-      if (at >= nameStart) s += 2;
-      score += s;
-      hits.push(at);
-      last = at;
-      pi = at + 1;
+  // Umi's palette scorer (UmiFuzzy.score): a greedy left-to-right subsequence match; consecutive
+  // letters score more the longer the run, a gap costs up to 3, the first letter or one after a
+  // separator (/ . _ - space) or at a case change scores more; shorter texts win ties.
+  const SEP = new Set(['/', '.', '_', '-', ' ']);
+  function scoreIn(q, text, offset, hits) {
+    const lower = text.toLowerCase();
+    let score = 0, qi = 0, prev = -2, streak = 0;
+    for (let ti = 0; ti < text.length && qi < q.length; ti++) {
+      if (lower[ti] !== q[qi]) continue;
+      let pts = 1;
+      if (ti === prev + 1) { streak++; pts += 4 + streak; } else { streak = 0; if (prev >= 0) pts -= Math.min(ti - prev - 1, 3); }
+      if (ti === 0) pts += 8;
+      else {
+        const b = text[ti - 1], c = text[ti];
+        if (SEP.has(b) || (c !== c.toLowerCase() && b === b.toLowerCase() && b !== b.toUpperCase())) pts += 6;
+      }
+      score += pts;
+      hits.push(ti + offset);
+      prev = ti;
+      qi++;
     }
-    if (lower.slice(nameStart).startsWith(q)) score += 6;
-    return { path, score: score - path.length * 0.01, hits };
+    if (qi < q.length) return null;
+    return score * 4 - Math.floor(Math.min(text.length, 120) / 8);
+  }
+
+  // A match within the file name counts double (as Umi's quick open); its letters are the hits.
+  function scoreOne(q, path) {
+    const nameStart = path.lastIndexOf('/') + 1;
+    const hits = [];
+    const full = scoreIn(q, path, 0, hits);
+    if (full == null) return null;
+    const nameHits = [];
+    const name = scoreIn(q, path.slice(nameStart), nameStart, nameHits);
+    if (name != null && name * 2 >= full) return { path, score: name * 2, hits: nameHits };
+    return { path, score: full, hits };
   }
 
   function fuzzy(query, list, limit = 50) {
-    const q = query.trim().toLowerCase();
+    const q = query.trim().toLowerCase().replace(/ /g, '');
     if (!q) return list.slice(0, limit).map((path) => ({ path, score: 0, hits: [] }));
     const out = [];
     for (const p of list) { const r = scoreOne(q, p); if (r) out.push(r); }
-    out.sort((a, b) => b.score - a.score);
+    out.sort((a, b) => b.score - a.score || a.path.length - b.path.length);
     return out.slice(0, limit);
   }
 
+  const gitRoot = (path) => req('gitRoot', { path: resolve(path) });
   const trash = (path) => req('trash', { path: resolve(path) });
   const rename = (path, to) => req('rename', { path: resolve(path), to: resolve(to) });
   const reveal = (path) => req('reveal', { path: resolve(path) });
@@ -126,5 +139,5 @@ Umi.fs = (() => {
   const readData = (path) => req('readData', { path: resolve(path) });
   const openURL = (url) => req('openURL', { url });
 
-  return { root, resolve, read, write, list, watch, files, fuzzy, search, trash, rename, reveal, openDefault, readData, openURL };
+  return { root, resolve, read, write, list, watch, files, fuzzy, search, gitRoot, trash, rename, reveal, openDefault, readData, openURL };
 })();

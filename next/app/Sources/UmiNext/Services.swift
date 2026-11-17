@@ -42,6 +42,7 @@ final class WebServices {
         case "listFiles": async(id) { try Self.listFiles(args) }
         case "watch": startWatch(id, args)
         case "search": startSearch(id, args)
+        case "gitRoot": async(id) { let r: Any = try Self.gitRoot(Self.path(args)) ?? NSNull(); return ["root": r] }
         case "trash": async(id) { try Self.trash(args) }
         case "rename": async(id) { try Self.renameItem(args) }
         case "reveal": reply(id, Result { try Self.reveal(args) })
