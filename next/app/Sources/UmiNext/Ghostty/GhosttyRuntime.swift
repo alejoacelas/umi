@@ -124,6 +124,13 @@ final class GhosttyRuntime {
                 NSWorkspace.shared.open(url)
             }
             return true
+        case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
+            // umi-next: libghostty sets wait-after-command for any surface given a command (every
+            // daemon pane runs umi-next-attach), so it would wait for a key. The pane's session
+            // ended: the pane leaves (DESIGN), as with no command.
+            guard let view else { return false }
+            DispatchQueue.main.async { rt?.delegate?.surfaceClosed(view, processAlive: false) }
+            return true
         case GHOSTTY_ACTION_RENDER, GHOSTTY_ACTION_COLOR_CHANGE, GHOSTTY_ACTION_RING_BELL:
             return true
         default:
