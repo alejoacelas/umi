@@ -427,8 +427,11 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             liveSessions = SessionBackend.liveSessionIDs()
         }
         let cwd = (pane["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
-        // A new session the picker asked for: {cmd, name, cwd}.
-        let start = pane["start"] as? [String: Any]
+        // A new session the picker asked for: {cmd, name, cwd}. A pane whose session is gone (the
+        // daemon restarted) resumes the agent it showed, if the page recorded one (`resume`).
+        let existing = pane["session"] as? String
+        let gone = existing.map { liveSessions?.contains($0) != true } ?? false
+        let start = pane["start"] as? [String: Any] ?? (gone ? pane["resume"] as? [String: Any] : nil)
         let startCwd = (start?["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? cwd
         let launch = SessionBackend.launch(existing: pane["session"] as? String, live: liveSessions, cwd: startCwd,
                                            name: start?["name"] as? String, cmd: start?["cmd"] as? String,

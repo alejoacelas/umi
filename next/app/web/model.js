@@ -459,15 +459,24 @@ Umi.model = (() => {
     const live = {};
     for (const s of list) live[s.id] = s;
     S.live = live;
-    const before = JSON.stringify([S.layout.meta || {}, S.layout.tabs.map((t) => t.hidden)]);
+    const marks = () => JSON.stringify([S.layout.meta || {}, S.layout.tabs.map((t) => [t.hidden, panesOf(t.root).map((p) => p.resume)])]);
+    const before = marks();
     updateSnoozes();
+    // Each pane showing a live agent remembers how to resume it (`resume`, saved with the layout), so
+    // a pane whose session is gone after a daemon restart comes back resuming that agent.
+    for (const p of S.layout.tabs.flatMap((t) => panesOf(t.root))) {
+      const s = p.session && live[p.session];
+      if (!s || s.alive === false) continue;
+      const r = resumeOf(p.session);
+      if (r) p.resume = r; else delete p.resume;
+    }
     // An ended session leaves the strips that listed it.
     for (const t of S.layout.tabs) {
       if (!t.hidden) continue;
       t.hidden = t.hidden.filter((sid) => live[sid] && live[sid].alive !== false);
       if (!t.hidden.length) delete t.hidden;
     }
-    return JSON.stringify([S.layout.meta || {}, S.layout.tabs.map((t) => t.hidden)]) !== before;
+    return marks() !== before;
   }
 
   return {

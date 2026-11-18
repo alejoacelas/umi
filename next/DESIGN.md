@@ -33,6 +33,11 @@ size. Opening a session already on screen moves it.
 - **⌥⌘H hides the pane**: the session keeps running, stays under its project in the picker and
   goes on the tab's strip. ⌥⌘W does the same for a whole tab. Exit in the palette ends a session
   and leaves its pane. A session whose program ends by itself (`exit` in a shell) leaves its pane.
+- **A daemon restart ends every session; panes come back resuming their agents.** Each pane
+  showing a Claude or Codex session records its resume command in the layout, so after a restart the
+  pane starts `claude … --resume <id>` / `codex … resume <id>` in the same place (Alejo, 2026-11-18).
+  It resumes the conversation only; an interrupted turn doesn't continue by itself. Panes with other
+  programs get a fresh shell. Sessions no pane showed (the hidden strip, `umi-next-ctl new`) are gone.
 - **Sessions the user started** are the ones the session lists show (the picker, Review, "next
   waiting"): those started from the picker, a new tab, a resume or a restart, and those an agent opens in a
   visible pane with `umi-next split` or `umi-next tab new` (Alejo asks for those; 2026-11-18).
