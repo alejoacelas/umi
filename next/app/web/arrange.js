@@ -77,7 +77,13 @@ Umi.arrange = (() => {
   // A copy of a tree with each terminal pane's session written in.
   function snapshot(node) {
     const c = copy(node);
-    for (const p of M.panesOf(c)) { const sid = M.sessionOf(p.id); if (sid) p.session = sid; }
+    for (const p of M.panesOf(c)) {
+      const sid = M.sessionOf(p.id);
+      if (!sid) continue;
+      p.session = sid;
+      const resume = M.resumeOf(sid);
+      if (resume) p.resume = resume;
+    }
     return c;
   }
   function noteClosePane(paneId) {
@@ -85,7 +91,7 @@ Umi.arrange = (() => {
     if (!found) return;
     if (M.paneIds(found.tab.root).length === 1) return noteCloseTab(found.tab);
     const sid = found.node.view === 'terminal' && M.sessionOf(paneId);
-    if (sid) record({ kind: 'pane', tab: found.tab.id, pane: paneId, session: sid, root: snapshot(found.tab.root) });
+    if (sid) record({ kind: 'pane', tab: found.tab.id, pane: paneId, session: sid, resume: M.resumeOf(sid), root: snapshot(found.tab.root) });
   }
   function noteCloseTab(tab) {
     const root = snapshot(tab.root);
@@ -94,11 +100,15 @@ Umi.arrange = (() => {
   }
   const canShow = (sid) => sid && S.live[sid] && S.live[sid].alive !== false && !M.paneOfSession(sid);
   const attachPane = (sid, cwd) => M.newPane({ session: sid, attach: sid, cwd: S.live[sid]?.folder || cwd });
+  // A closed pane comes back showing its session if it still runs, else as a new session resuming
+  // the agent's transcript (⌘W ended it); a shell that ended can't come back (null).
+  const revive = (sid, resume, cwd) => (canShow(sid) ? attachPane(sid, cwd)
+    : resume && !M.paneOfSession(sid) ? M.newPane({ cwd: resume.cwd || cwd, start: { ...resume } }) : null);
 
   function reopenPane(item) {
-    if (!canShow(item.session)) return false;
+    const fresh = revive(item.session, item.resume);
+    if (!fresh) return false;
     M.unhide(item.session);
-    const fresh = attachPane(item.session);
     const tab = tabs().find((t) => t.id === item.tab);
     if (!tab) { M.addTab(fresh); return true; }
     const now = M.paneIds(tab.root).slice().sort().join(' ');
@@ -121,7 +131,8 @@ Umi.arrange = (() => {
     // Panes whose session still runs and shows nowhere come back; the rest stay closed.
     let root = item.tab.root;
     for (const p of M.panesOf(root)) {
-      root = canShow(p.session) ? M.mapPane(root, p.id, () => attachPane(p.session, p.cwd)) : M.removeFromTree(root, p.id);
+      const fresh = p.session && revive(p.session, p.resume, p.cwd);
+      root = fresh ? M.mapPane(root, p.id, () => fresh) : M.removeFromTree(root, p.id);
       if (!root) return false;
     }
     const t = { ...item.tab, id: 'tab' + Math.random().toString(36).slice(2, 10), root, focused: M.paneIds(root)[0] };
@@ -212,9 +223,10 @@ Umi.arrange = (() => {
 
 Object.assign(Umi.actions, (() => {
   const A = Umi.arrange, M = Umi.model, S = Umi.state;
-  const close = Umi.actions.closePane, nextWaiting = Umi.actions.nextWaiting;
+  const close = Umi.actions.closePane, hide = Umi.actions.hidePane, nextWaiting = Umi.actions.nextWaiting;
   return {
     closePane: () => { A.noteClosePane(M.activeTab().focused); close(); },
+    hidePane: () => { A.noteClosePane(M.activeTab().focused); hide(); },
     // ⌥⌘W or a row's ×: stops showing the tab's panes (sessions keep running); ⇧⌘T brings it back.
     closeTab: ({ tab } = {}) => {
       const t = (tab && S.layout.tabs.find((x) => x.id === tab)) || M.activeTab();

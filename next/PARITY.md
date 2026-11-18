@@ -21,7 +21,7 @@ Next's departures are `next/DESIGN.md`. "Departure:" below marks a deliberate di
   `when: 'terminal'`, so a focused file pane gets them first.
 - Change state only inside `Umi.app.update(fn)` / an `Umi.actions` entry, so it is saved, drawn
   and reported. Anything a key does is also an action the palette and the CLI can run.
-- Keep DESIGN.md's rules: ⌘W stops showing a pane and keeps its session; only Exit ends one;
+- Keep DESIGN.md's rules: ⌘W closes a pane and ends its session; ⌥⌘H hides it and keeps it;
   ⌘D splits into the picker; nothing appears or disappears by itself; names at creation; no blue
   focus ring; Claude/Codex start with skip-permission flags.
 
@@ -83,11 +83,11 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 |---|---|---|---|
 | Shortcuts page ⌘/ (L-17) | 361 px panel at the right, read-only, every Umi shortcut and Ghostty keybinding, searchable by name or keys ("cmd shift p", "⇧⌘P"); Esc closes | [x] done: 361 px at the right, drawn from `Umi.shortcuts.table` by `group` (live with the table), search by name or keys, Esc or ⌘/ closes; ⌘/ is `when: 'terminal'` so an editor keeps it. Panes reflow beside it | Ghostty's own keybindings: later (needs a bridge op listing them) |
 | Changing shortcuts (`umi shortcuts set`) | kept in `shortcuts.json` | none | Departure: edit `web/shortcuts.js`; it reloads live |
-| Hidden-pane strip (H-5) | chips for every pane above the panes; hidden ones dim; click brings back | [x] done: a chip per shown pane, then dim italic chips for the sessions ⌘W hid from this tab (`tab.hidden`); clicking one shows it again at the right end of the top row (equal share), focused. Exit, the docket or showing the session elsewhere removes its chip. Closing a tab's last pane closes the tab (⇧⌘T brings it back) | Departure: no pane limit, so nothing else hides panes |
+| Hidden-pane strip (H-5) | chips for every pane above the panes; hidden ones dim; click brings back | [x] done: a chip per shown pane, then dim italic chips for the sessions ⌥⌘H hid from this tab (`tab.hidden`); clicking one shows it again at the right end of the top row (equal share), focused. Exit, the docket or showing the session elsewhere removes its chip. Closing a tab's last pane closes the tab (⇧⌘T brings it back) | Departure: no pane limit, so nothing else hides panes |
 | Pane limit, make-room, `--until` (H-1, H-3) | 3 per tab, a pane hidden to make room; panes return by condition | none | Departure: none of it (DESIGN "Nothing appears or disappears by itself") |
 | ⌘[ / ⌘] walk (H-6) | walks panes on show then hidden | ⌘[ ⌘] step through the tab's panes on show (2fb42775b) | Hidden ones: via the strip only |
 | Tabs: new, select, next/prev (L-11) | ⌘T, ⌘1–9, ⇧⌘[ ⇧⌘], ⌃Tab | [x] done, ⌃Tab / ⌃⇧Tab included | — |
-| Tab rename, close (S-4, L-2) | double-click / ⌃⌘R rename in place; close asks when a program runs | double-click and ⌃⌘R rename in place; × and ⌥⌘W stop showing the tab | [x] done. Close keeps sessions (⌘W rule), so no question |
+| Tab rename, close (S-4, L-2) | double-click / ⌃⌘R rename in place; close asks when a program runs | double-click and ⌃⌘R rename in place; × and ⌥⌘W stop showing the tab | [x] done. Closing a tab keeps its sessions (⌥⌘W hides, like ⌥⌘H), so no question |
 | Tab move, pin, color, groups, search (L-13, S-4, S-13, S-14) | ⌃⇧↑↓, pin, colors, groups, Search tabs, right-click menu | [x] ⌃⇧↑↓ and dragging a row move a tab within its group; ⌃⌘P pins (pinned first, Warp's order); a new tab opens below the pinned ones | Colors, groups, search, menu: later |
 | Splits (L-1, L-19) | ⌘D / ⇧⌘D, panes share space equally | ⌘D / ⇧⌘D into the picker; dividers drag | [x] Equal sharing (L-19): a split along a row gives the new pane 1/(N+1) and keeps the others' proportions; a close shares the space in proportion. ⇧⌘D ⌘D left/up variants later |
 | Pane focus by direction | ⌥⌘ arrows | ⌥⌘ arrows | [x] done |
@@ -95,7 +95,7 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 | Pane rename (L-3) | ⌃⇧⌘R in place | ⌃⇧⌘R and palette `r` rename the session | [x] done |
 | Pane move (M-1, KM-1..5, ⌃⌘T) | ⌃⌘ arrows move panes within/between tabs; ⌃⌘T to new tab; drag | [x] ⌃⌘T to a new tab; ⌃⌘←→ swap with the neighbour in layout order; ⌃⌘↑↓ to the end of the tab above/below (a tab left empty closes); each step lands at once | KM's held-⌃⌘ preview and drag: later |
 | Swap, resize, equalize (L-3) | CLI | divider drag; ⌃⌘= equalizes | Actions for the CLI track: `swapPanes`, `resizePane` |
-| Reopen ⇧⌘T (L-20) | reopens a closed pane/tab/window | [x] ⇧⌘T brings back the last pane ⌘W hid (in its old place and size when the tab hasn't changed, else at the right end) or the last tab closed (its position, name, pin, sessions) | Departure: no 60 s limit, since closed sessions keep running; items whose sessions ended are skipped |
+| Reopen ⇧⌘T (L-20) | reopens a closed pane/tab/window | [x] ⇧⌘T brings back the last pane closed or hidden (in its old place and size when the tab hasn't changed, else at the right end) or the last tab closed (its position, name, pin, sessions). A pane whose session ⌘W ended comes back resuming the agent's transcript in a new session | Departure: no 60 s limit: hidden sessions keep running, ended agents resume from their transcript; an ended shell can't come back and is skipped |
 | Attention: jump (L-12) | ⌃⌘J next pane needing you, ⌃⌘K back | [x] ⌃⌘J = next waiting (Review order); ⌃⌘K back to the session the walk started from | — |
 | Pane indicator (PI-1..4) | small mark per pane: working, needs you, finished unseen | [x] a mark at each pane's bottom right (cut out of the terminal by native) and before its chip, hidden chips included, from `S.live[sid].agent`, in Umi's quiet palette and sizes. "Finished" lasts until the pane is focused (page memory, not persisted) | The sidebar row's mark: later |
 | Notifications, Dock badge (T-6, `badge`) | desktop notification from panes; Dock badge counts needs-you | [x] Dock badge = Review items of the current project (`badge` message); `umi-next notify` posts a desktop notification (bridge `notify`), none from a snoozed or docketed session | Clicking a notification to focus its pane: later |
@@ -160,9 +160,9 @@ What the CLI uses from the other tracks:
 | `tab new [NAME] [--cwd] [--cmd] [--name] [--no-focus]` | [x] a new session (a shell without `--cmd`); NAME names the tab |
 | `tab focus\|close\|rename\|next\|prev\|move --up/--down` | [x] `close` stops showing the tab's panes (sessions keep running) |
 | `split [right\|down\|left\|up] [--pane] [--cwd] [--cmd] [--name] [--ratio] [--no-focus]` | [x] prints the pane; JSON adds `session`. Departure: without `--cmd`, the split shows the picker as ⌘D does |
-| `pane focus\|close\|info\|rename\|swap\|resize\|move --new-tab` | [x] `close` stops showing (⌘W rule); `focus` on a session no pane shows opens it beside the focused pane; `rename` renames the session; `resize` moves the divider by cells |
+| `pane focus\|close\|info\|rename\|swap\|resize\|move --new-tab` | [x] `close` = ⌘W: closes the pane and ends its session; `focus` on a session no pane shows opens it beside the focused pane; `rename` renames the session; `resize` moves the divider by cells |
 | `pane exit` (new) | [x] ends the session, as the palette's Exit |
-| `pane hide`, `pane show [--focus]` | [x] `hide` (and `pane close`) = ⌘W: the session goes on the tab's strip; `show` brings it back through the strip at the right end of the tab, focus stays unless `--focus`. Departure: no `--until` |
+| `pane hide`, `pane show [--focus]` | [x] `hide` = ⌥⌘H: the session goes on the tab's strip; `show` brings it back through the strip at the right end of the tab, focus stays unless `--focus`. Departure: no `--until` |
 | `pane zoom` | [x] toggles track c's zoom |
 | `send [--enter]`, `keys`, `read [--lines]`, `wait --pattern\|--idle [--timeout]` | [x] daemon-side; several lines go as a bracketed paste when the program asked for it; keys follow the session's cursor-key and kitty modes. Departures: no `read --scrollback` (the daemon keeps the screen only); `wait --pattern` matches the screen minus the line echoing the last `send` (no shell marks); no `wait --attr` |
 | `sidebar on\|off\|toggle\|status\|tabs\|files\|search` | [x] |

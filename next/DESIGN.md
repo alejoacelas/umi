@@ -27,10 +27,12 @@ A session (an agent or a shell) exists in the daemon whether or not a pane shows
 session; a session shows in at most one pane, because two views of one terminal would fight over its
 size. Opening a session already on screen moves it.
 
-- **⌘W stops showing the pane**, for every session, agents and shells alike: the session keeps
-  running and stays under its project in the picker (Alejo, 2026-11-17: "cmd + w maps to stop
-  showing the pane instead of to 'kill the process'"). Ending a session is only ever an explicit Exit
-  in the palette. A session whose program ends by itself (`exit` in a shell) leaves its pane.
+- **⌘W closes the pane and ends its session**, whatever runs there: agents, shells, any program
+  (Alejo, 2026-11-18, reversing the 2026-11-17 rule that ⌘W only stopped showing it). ⇧⌘T brings
+  an agent back by resuming its transcript in a new session; a shell can't come back.
+- **⌥⌘H hides the pane**: the session keeps running, stays under its project in the picker and
+  goes on the tab's strip. ⌥⌘W does the same for a whole tab. Exit in the palette ends a session
+  and leaves its pane. A session whose program ends by itself (`exit` in a shell) leaves its pane.
 - **Sessions the user started** are the ones the session lists show (the picker, Review, "next
   waiting"): those started from the picker, a new tab, a resume or a restart, and those an agent opens in a
   visible pane with `umi-next split` or `umi-next tab new` (Alejo asks for those; 2026-11-18).
@@ -126,7 +128,7 @@ Alejo, 2026-11-17: umi-next reaches Umi's features, editor and Markdown preview 
 included, built in the web layer; native code only for terminals and what a page can't do.
 `next/PARITY.md` is the plan, area by area.
 
-- **Hidden-pane strip**: lists the sessions ⌘W hid from the current tab; clicking one shows it
+- **Hidden-pane strip**: lists the sessions ⌥⌘H hid from the current tab; clicking one shows it
   again.
 - **Shortcuts belong to the page.** `web/shortcuts.js` is the one table of global shortcuts; the
   page sends it to native on every load, native takes only the keys it lists and passes every

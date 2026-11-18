@@ -4,7 +4,9 @@
 //
 // - A session (agent or shell) lives in the daemon; a pane is a view onto at most one session, and
 //   a session shows in at most one pane: opening one already on screen moves it.
-// - ⌘W stops showing a pane; the session keeps running. Only Exit (palette) ends a session. A
+// - ⌘W closes a pane and ends its session, whatever runs there (agent, shell, any program); ⇧⌘T
+//   brings an agent back by resuming its transcript. ⌥⌘H only hides the pane: its session keeps
+//   running and goes on the tab's strip. Exit (palette) ends a session and leaves its pane. A
 //   session whose program ends by itself leaves its pane.
 // - A pane shows a `view`: 'terminal' (a native Ghostty view) or 'picker' (drawn here; ⌘D).
 // - The palette is the bottom panel; it lies over the bottom of the panes, which keep their size
@@ -327,6 +329,24 @@ Umi.model = (() => {
     }
     removePane(paneId);
   }
+  // ⌘W: closes the pane and ends its session, whatever program runs there (Alejo, 2026-11-18).
+  function closeAndEnd(paneId) {
+    const found = findPane(paneId);
+    if (!found) return;
+    const sid = found.node.view === 'terminal' ? sessionOf(paneId) : null;
+    removePane(paneId);
+    if (sid) { unhide(sid); Umi.bridge.post({ type: 'exitSession', session: sid }); }
+  }
+  // How to bring session `sid` back once it has ended: an agent resumes its transcript, under the
+  // same name and folder. Anything else (a shell, another program) can't come back: null.
+  function resumeOf(sid) {
+    const s = S.live[sid];
+    const agentSession = s?.agent?.agentSession;
+    if (!agentSession || (s.kind !== 'claude' && s.kind !== 'codex')) return null;
+    const cmds = S.commands || {};
+    const cmd = s.kind === 'claude' ? `${cmds.claude || 'claude'} --resume ${agentSession}` : `${cmds.codex || 'codex'} resume ${agentSession}`;
+    return { cmd, name: sessionName(sid), cwd: s.folder };
+  }
   function unhide(sid) {
     for (const t of S.layout.tabs) {
       if (!t.hidden) continue;
@@ -452,7 +472,7 @@ Umi.model = (() => {
 
   return {
     newPane, newTab, panesOf, paneIds, findPane, activeTab, listedTabs, focusedPane, sessionOf, paneOfSession,
-    mapPane, removeFromTree, hide, unhide, hiddenOf, appendPane, showHidden, rowWeight,
+    mapPane, removeFromTree, hide, closeAndEnd, resumeOf, unhide, hiddenOf, appendPane, showHidden, rowWeight,
     folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, review,
     addTab, split, removePane, openSession, showSession, startSession, focusPane,
     selectTab, stepTab, focusDir, moveToNewTab, snooze, rename, docket, undocket, docketOf, openPanel, closePanel,
@@ -466,9 +486,11 @@ Umi.actions = {
   newTab: () => { const t = Umi.model.addTab(); Umi.state.ui.editingTab = t.id; },
   splitRight: () => Umi.model.split('row', 'picker'),
   splitDown: () => Umi.model.split('column', 'picker'),
-  // ⌘W: the pane stops showing; its session keeps running and gets a chip in the strip. A file pane
-  // with unsaved edits asks first (views/file.js); it has no session to keep.
-  closePane: () => { const id = Umi.model.activeTab().focused; if (!Umi.views.file?.askClose(id)) Umi.model.hide(id); },
+  // ⌘W: closes the pane and ends its session. A file pane with unsaved edits asks first
+  // (views/file.js).
+  closePane: () => { const id = Umi.model.activeTab().focused; if (!Umi.views.file?.askClose(id)) Umi.model.closeAndEnd(id); },
+  // ⌥⌘H: the pane stops showing; its session keeps running and gets a chip in the strip.
+  hidePane: () => { const id = Umi.model.activeTab().focused; if (!Umi.views.file?.askClose(id)) Umi.model.hide(id); },
   showHidden: ({ session }) => Umi.model.showHidden(session),
   selectTab: ({ index }) => Umi.model.selectTab(index),
   nextTab: () => Umi.model.stepTab(1),

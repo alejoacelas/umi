@@ -145,6 +145,11 @@ def t_split():
     assert ls()["current_pane"] == r2["pane"]
     run("pane", "close", r2["pane"])
     assert pane(r2["pane"]) is None
+    # pane close is ⌘W: it ends the session, a shell's too.
+    r3 = j("split", "right", "--cmd", "/bin/sh", "--name", "doomed", "--no-focus")
+    j("pane", "close", r3["pane"])
+    until(lambda: not any(s["id"] == r3["session"] and s.get("alive", True) for s in ls()["sessions"]),
+          what="pane close ending the session")
     assert "unknown direction" in run("split", "sideways", ok=False, code=1).stderr
 
 
@@ -198,9 +203,9 @@ def t_pane_ops():
     run("pane", "resize", b, "right", "10")
     assert pane(b)["frame"]["width"] > w0 + 20, (w0, pane(b)["frame"])
     run("pane", "swap", a, b)
-    # Close keeps the session; show brings it back; move --new-tab gives it a tab.
-    r = j("pane", "close", a)
-    assert r["session"] == made["cat"] and session_pane(made["cat"]) is None
+    # Hide keeps the session; show brings it back; move --new-tab gives it a tab.
+    r = j("pane", "hide", a)
+    assert r["sessions"] == [made["cat"]] and session_pane(made["cat"]) is None
     assert any(s["id"] == made["cat"] and s["pane"] is None for s in ls()["sessions"])
     j("pane", "show", made["cat"])
     p = until(lambda: session_pane(made["cat"]), what="the session back on show")
@@ -281,7 +286,7 @@ def t_zoom_strip_back():
     assert pane(cat["id"])["zoomed"] is True and debug("Umi.model.activeTab().zoomed") == cat["id"]
     j("pane", "zoom", cat["id"])
     assert pane(cat["id"])["zoomed"] is False
-    # pane hide is ⌘W: the session goes on the tab's strip; pane show brings it back from there.
+    # pane hide is ⌥⌘H: the session goes on the tab's strip; pane show brings it back from there.
     j("pane", "hide", cat["id"])
     t = next(t for t in tabs() if t["id"] == made["tab"])
     assert made["cat"] in t["hidden"] and session_pane(made["cat"]) is None, t

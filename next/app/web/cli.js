@@ -239,17 +239,17 @@ Umi.cli = (() => {
     Umi.app.update(() => { if (r.pane) M.focusPane(r.pane); else M.showSession(r.session); });
     return where(M.activeTab().focused);
   };
-  // ⌘W: stops showing the pane; its session keeps running.
+  // ⌘W: closes the pane and ends its session; ⇧⌘T resumes an agent's transcript.
   H['pane.close'] = ({ pane }, caller) => {
     const r = resolvePane(pane, caller);
-    // As ⌘W does: the session goes to the tab's hidden-pane strip, and ⇧⌘T can bring the pane back.
-    Umi.app.update(() => { Umi.arrange.noteClosePane(r.pane); M.hide(r.pane); }, { focus: r.pane === M.activeTab().focused });
+    Umi.app.update(() => { Umi.arrange.noteClosePane(r.pane); M.closeAndEnd(r.pane); }, { focus: r.pane === M.activeTab().focused });
     return { panes: [r.pane], session: r.session };
   };
-  // Hiding is ⌘W in Next: the session keeps running and the tab's strip lists it (track c).
-  H['pane.hide'] = (args, caller) => {
-    const r = H['pane.close'](args, caller);
-    return { panes: r.panes, sessions: r.session ? [r.session] : [] };
+  // ⌥⌘H: stops showing the pane; the session keeps running and the tab's strip lists it.
+  H['pane.hide'] = ({ pane }, caller) => {
+    const r = resolvePane(pane, caller);
+    Umi.app.update(() => { Umi.arrange.noteClosePane(r.pane); M.hide(r.pane); }, { focus: r.pane === M.activeTab().focused });
+    return { panes: [r.pane], sessions: r.session ? [r.session] : [] };
   };
   // Shows a session that no pane shows, at the right end of the current tab; focus stays put
   // unless --focus. A pane already on show is only focused (with --focus).

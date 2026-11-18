@@ -49,7 +49,7 @@ def ui():
 
 CODES = {"t": 17, "d": 2, "w": 13, "b": 11, "[": 33, "]": 30, "1": 18, "2": 19, "3": 20, "9": 25, "k": 40, "x": 7,
          "left": 123, "right": 124, "down": 125, "up": 126, "space": 49, "escape": 53, "r": 15, "enter": 36, "tab": 48, "=": 24,
-         "f": 3, "g": 5, "i": 34, "a": 0, "p": 35, "j": 38, "/": 44, "-": 27, "0": 29, ".": 47, ",": 43, "v": 9}
+         "f": 3, "g": 5, "h": 4, "i": 34, "a": 0, "p": 35, "j": 38, "/": 44, "-": 27, "0": 29, ".": 47, ",": 43, "v": 9}
 
 
 LETTERS = dict(zip("asdfhgzxcvbqweryt", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17]))
@@ -156,7 +156,7 @@ check("⌘[ previous pane", ui()["focused"] != picker, ui())
 press("]", "cmd")
 check("⌘] next pane", ui()["focused"] == picker, ui())
 press("w", "cmd")
-check("⌘W hides the pane", ui()["panes"] == b["panes"], ui())
+check("⌘W closes the picker pane", ui()["panes"] == b["panes"], ui())
 focus_terminal()
 press("d", "cmd", "shift")
 u = ui()
@@ -256,14 +256,26 @@ press("/", "cmd")
 check("⌘/ again closes it", not J("!!Umi.state.layout.shortcutsPage"))
 focus_terminal()
 
-# ⌘W hides a pane: its session gets a dim chip after the shown ones; clicking it shows it again
-# at the right end, focused (through native's title-bar hit test).
+# ⌘W closes a pane and ends its session, a shell's too: no chip, gone from the daemon.
 new_shell_split()
 two = ui()
 sid = J("Umi.model.sessionOf(Umi.model.activeTab().focused)")
 press("w", "cmd")
+check("⌘W closes the pane", ui()["panes"] == two["panes"] - 1 and not J("document.querySelectorAll('#strip .chip.hidden').length"), ui())
+check("⌘W ends the shell's session", wait(lambda: J(f"!Umi.state.live[{json.dumps(sid)}] || Umi.state.live[{json.dumps(sid)}].alive === false"), 5))
+n_reopen = ui()["panes"]
+press("t", "cmd", "shift")
+time.sleep(0.8)
+check("⇧⌘T can't bring back a shell ⌘W ended", ui()["panes"] == n_reopen, ui())
+
+# ⌥⌘H hides a pane: its session gets a dim chip after the shown ones; clicking it shows it again
+# at the right end, focused (through native's title-bar hit test).
+new_shell_split()
+two = ui()
+sid = J("Umi.model.sessionOf(Umi.model.activeTab().focused)")
+press("h", "cmd", "opt")
 hidden = J("[...document.querySelectorAll('#strip .chip.hidden')].map((c) => c.dataset.session)")
-check("⌘W puts the session on a hidden chip", hidden == [sid] and ui()["panes"] == two["panes"] - 1, (hidden, sid))
+check("⌥⌘H puts the session on a hidden chip", hidden == [sid] and ui()["panes"] == two["panes"] - 1, (hidden, sid))
 check("the hidden session keeps running", J(f"Umi.state.live[{json.dumps(sid)}]?.alive !== false"))
 r = J("(() => { const r = document.querySelector('#strip .chip.hidden').getBoundingClientRect(); return {x: r.left + r.width / 2, y: r.top + r.height / 2}; })()")
 if debug_events:
@@ -343,7 +355,7 @@ check("⇧⌘T reopens it with its sessions", ui()["tabs"] == n and
       J("Umi.model.paneIds(Umi.model.activeTab().root).map((id) => Umi.model.sessionOf(id))") == sids, ui())
 press("1", "cmd")
 
-# ⌘W hides one pane of a split; ⇧⌘T brings that pane back in its old place and size (L-20).
+# ⌥⌘H hides one pane of a split; ⇧⌘T brings that pane back in its old place and size (L-20).
 focus_terminal()
 if ui()["panes"] < 2:
     new_shell_split()
@@ -351,12 +363,27 @@ shape = "JSON.stringify((function f(n) { return n.type === 'pane' ? Umi.model.se
 before = J(shape)
 gone = J("Umi.model.sessionOf(Umi.model.activeTab().focused)")
 np = ui()["panes"]
-press("w", "cmd")
-check("⌘W hides the pane", ui()["panes"] == np - 1 and J(f"!Umi.model.paneOfSession({json.dumps(gone)})"), ui())
+press("h", "cmd", "opt")
+check("⌥⌘H hides the pane", ui()["panes"] == np - 1 and J(f"!Umi.model.paneOfSession({json.dumps(gone)})"), ui())
 press("t", "cmd", "shift")
 time.sleep(0.8)
 check("⇧⌘T brings that pane back in its place and size, focused", J(shape) == before
       and J("Umi.model.sessionOf(Umi.model.activeTab().focused)") == gone, (J(shape), before))
+
+# ⇧⌘T after ⌘W closed an agent: a new session runs the agent's resume command in the old place.
+# (The fake reopen entry stands in for a Claude pane; its resume command only prints.)
+focus_terminal()
+before = J(shape)
+ev("""(() => { const M = Umi.model, t = M.activeTab(), id = t.focused;
+  const root = JSON.parse(JSON.stringify(t.root));
+  Umi.state.layout.reopen = [{ kind: 'pane', tab: t.id, pane: 'gone-pane', session: 'gone-session',
+    resume: { cmd: 'echo resumed-agent; exec sleep 100', name: 'resumed', cwd: Umi.state.home },
+    root: { type: 'split', dir: 'row', ratio: 0.5, a: root, b: { type: 'pane', id: 'gone-pane', view: 'terminal' } } }]; })(); 1""")
+press("t", "cmd", "shift")
+ok = wait(lambda: J("(() => { const sid = Umi.model.sessionOf(Umi.model.activeTab().focused); return !!sid && Umi.model.sessionName(sid) === 'resumed'; })()"), 8)
+check("⇧⌘T after ⌘W on an agent resumes it in a new session, focused at its old place", ok
+      and J("Umi.model.paneIds(Umi.model.activeTab().root).slice(-1)[0] === Umi.model.activeTab().focused"), ui())
+press("w", "cmd")
 
 
 # ⌘= ⌘- ⌘0 zoom the page and the terminals' text; ⌥⇧> ⌥⇧< the font size.
