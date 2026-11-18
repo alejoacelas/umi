@@ -128,10 +128,10 @@ def t_tab_new():
     # The session's name and folder reach the page at its next poll of the daemon.
     until(lambda: (p := next(t for t in tabs() if t["id"] == r["tab"])["panes"][0])["name"] == "catter" and p["cwd"] == scratch,
           what="the pane's session name and folder")
-    # Started by the CLI: out of the user's session lists (the page learns it at the next poll).
-    s = until(lambda: next((s for s in ls()["sessions"] if s["id"] == r["session"] and s["by"] == "cli"), None),
-              what="the session listed as started by the CLI")
-    assert debug(f"Umi.model.userStarted(Umi.state.live['{r['session']}'])") in (False, 0, "0", "false"), "picker would list it"
+    # Started by the CLI in a visible pane: the user's (the page learns it at the next poll).
+    s = until(lambda: next((s for s in ls()["sessions"] if s["id"] == r["session"] and s["by"] == "user"), None),
+              what="the session listed as the user's")
+    assert debug(f"Umi.model.userStarted(Umi.state.live['{r['session']}'])") in (True, 1, "1", "true"), "picker wouldn't list it"
 
 
 def t_split():

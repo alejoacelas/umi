@@ -131,8 +131,9 @@ How it works:
 - **The calling session.** Sessions have `UMI_NEXT_SESSION_ID`; PANE and TAB default to the pane
   showing that session and its tab (pane ids change when a session moves; session ids don't), else
   the focused ones. A PANE is a pane id or prefix, a session id or prefix, a session name, or `.`.
-- **Sessions the CLI starts are `by: cli`** (`start.by`), so they stay out of the picker, Review
-  and "next waiting" (DESIGN "Sessions the user started").
+- **Sessions the CLI starts in a pane are `by: user`** (`start.by`): they show in the picker,
+  Review and "next waiting". Only `umi-next-ctl new` (no pane) makes `by: cli` sessions (DESIGN
+  "Sessions the user started").
 - **Session I/O goes to the daemon**: `send`, `keys`, `read`, `wait` work while the UI is down.
 - **Comments without the app** run `web/comments.js` (`UmiComments`) in JavaScriptCore, plus the
   CLI's lookup of `--on TEXT --nth N`; files written by `umi comments` and `umi-next comments`

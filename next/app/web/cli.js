@@ -113,8 +113,9 @@ Umi.cli = (() => {
     if (node.type === 'pane') return node.id === id ? fn(node) : node;
     return { ...node, a: replaceNode(node.a, id, fn), b: replaceNode(node.b, id, fn) };
   }
+  // A session the CLI puts in a visible pane counts as the user's (DESIGN "Sessions the user started").
   function startFields(args, folder) {
-    return { cmd: args.cmd || null, name: args.name || M.defaultName(folder), cwd: folder, by: 'cli' };
+    return { cmd: args.cmd || null, name: args.name || M.defaultName(folder), cwd: folder, by: 'user' };
   }
   // A pane for a new session (with --cmd), else the picker (as ⌘D; PARITY "split" departure).
   function newPaneFor(args, folder, project) {
