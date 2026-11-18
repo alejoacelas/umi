@@ -479,8 +479,12 @@ def fake_agent(event):
         json.dump({"agent": "claude", "event": event, "ts": time.time(), "input": {}}, f)
 
 
-NAME_X = "document.querySelector(`#strip .chip[data-tab=\"${Umi.model.activeTab().id}\"] span:not(.pane-mark)`).getBoundingClientRect().left"
+NAME_X = "document.querySelector(`#strip .chip[data-tab=\"${Umi.model.activeTab().id}\"] .label`).getBoundingClientRect().left"
 name_x = J(NAME_X)
+check("each tab's chip shows the tab's name",
+      J("Umi.model.listedTabs().every((t) => document.querySelector(`#strip .chip[data-tab=\"${t.id}\"] .label`)?.textContent === Umi.views.sidebar.tabName(t))"))
+check("each pane's header shows its name, and its mark is empty",
+      J("[...document.querySelectorAll('#panes .pane-head')].every((h) => h.querySelector('.label').textContent.length > 0 && h.querySelector('.pane-mark').textContent === '')"))
 check("an idle tab's chip has its mark, in the idle grey",
       J("(() => { const m = document.querySelector(`#strip .chip[data-tab=\"${Umi.model.activeTab().id}\"] .pane-mark`); return !!m && !m.dataset.state; })()"))
 try:

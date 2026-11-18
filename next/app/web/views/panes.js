@@ -81,8 +81,8 @@ Umi.views.panes = (() => {
     head.className = 'pane-head' + (node.view === 'file' && Umi.views.file.isDirty(node.id) ? ' dirty' : '');
     head.dataset.pane = node.id;
     const label = chipLabel(node);
-    head.innerHTML = MARK + (node.view === 'file' ? fileIcon(node.path) : termIcon) + '<span></span>';
-    head.querySelector('span').textContent = label;
+    head.innerHTML = MARK + (node.view === 'file' ? fileIcon(node.path) : termIcon) + '<span class="label"></span>';
+    head.querySelector('.label').textContent = label;
     head.title = label;
     head.addEventListener('mousedown', (e) => { e.preventDefault(); Umi.app.update(() => M.focusPane(node.id)); });
     return head;
@@ -97,8 +97,8 @@ Umi.views.panes = (() => {
     const chip = (label, cls, icon, onDown) => {
       const el = document.createElement('div');
       el.className = 'chip' + cls;
-      el.innerHTML = MARK + icon + '<span></span>';
-      el.querySelector('span').textContent = label;
+      el.innerHTML = MARK + icon + '<span class="label"></span>';
+      el.querySelector('.label').textContent = label;
       el.title = label;
       el.addEventListener('mousedown', onDown);
       strip.append(el);

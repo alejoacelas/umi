@@ -136,7 +136,7 @@ body.no-sidebar #strip { padding-left: 80px; }
   border-radius: 6px; color: rgba(255, 255, 255, 0.80); font: 500 12px -apple-system, sans-serif;
   max-width: 220px;
 }
-.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip svg, .chip img { flex: none; }
 .chip:hover { background: rgba(255, 255, 255, 0.06); }
 .chip.focused { background: rgba(255, 255, 255, 0.085); color: rgba(255, 255, 255, 0.95); }
@@ -198,7 +198,7 @@ body.no-sidebar #strip { padding-left: 80px; }
   font: 500 11px -apple-system, sans-serif; color: var(--dim); background: #0b0b0b;
   border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden;
 }
-.pane-head span { overflow: hidden; text-overflow: ellipsis; }
+.pane-head .label { overflow: hidden; text-overflow: ellipsis; }
 .pane-head svg, .pane-head img { flex: none; }
 .multi .pane.focused .pane-head { background: rgba(25, 170, 216, 0.18); color: var(--ink); border-bottom-color: var(--accent); }
 
