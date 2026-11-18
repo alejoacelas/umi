@@ -128,7 +128,12 @@ Alejo, 2026-11-17: umi-next reaches Umi's features, editor and Markdown preview 
 included, built in the web layer; native code only for terminals and what a page can't do.
 `next/PARITY.md` is the plan, area by area.
 
-- **Hidden-pane strip**: lists the sessions ⌥⌘H hid from the current tab; clicking one shows it
+- **Top bar and pane headers** (Alejo, 2026-11-18): the top bar lists the open tabs, each with its
+  status dot (its most pressing pane's); each pane has a header with its status dot, icon and name,
+  and in a tab showing several panes the focused pane's header is lit in the accent. Dots are
+  always there, idle grey, and only change colour, so names never shift. No dots sit over the
+  terminals. With the sidebar hidden, the top bar starts clear of the window's buttons.
+- **Hidden-pane strip**: at the right end of the top bar, the sessions ⌥⌘H hid from the current tab; clicking one shows it
   again.
 - **Shortcuts belong to the page.** `web/shortcuts.js` is the one table of global shortcuts; the
   page sends it to native on every load, native takes only the keys it lists and passes every
