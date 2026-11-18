@@ -305,6 +305,7 @@ body.dragging-tab .tab { cursor: grabbing; }
   font: 12px -apple-system, sans-serif; color: var(--dim); background: rgba(255, 255, 255, 0.05); border-radius: 4px;
   height: 20px; min-width: 8px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center;
 }
+.sc-caps.sc-taken kbd { text-decoration: line-through; opacity: 0.5; }
 .sc-empty { color: var(--dim); padding: 12px; font-size: 14px; }
 
 /* Find in a terminal: the bar at the pane's top right, cut out of the terminal by native. */

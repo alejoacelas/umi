@@ -55,6 +55,7 @@ final class WebServices {
         case "readData": async(id) { try Self.readData(args) }
         case "openURL": reply(id, Result { try Self.openURL(args) })
         case "notify": notify(id, args)
+        case "ghosttyBindings": async(id) { ["bindings": GhosttyBindings.list()] }
         case "menu":
             let items = args["items"] as? [[String: Any]] ?? []
             // Popped up after this message is handled: the menu runs its own event loop.

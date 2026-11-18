@@ -58,6 +58,11 @@ Umi.views.shortcutsPage = (() => {
     return want.key === null || want.key === have.key;
   }
 
+  const sameKeys = (a, b) => {
+    const x = entryKeys({ keys: a }), y = entryKeys({ keys: b });
+    return x.key === y.key && x.mods.size === y.mods.size && [...x.mods].every((m) => y.mods.has(m));
+  };
+
   function el(tag, cls, text) {
     const x = document.createElement(tag);
     if (cls) x.className = cls;
@@ -133,16 +138,36 @@ Umi.views.shortcutsPage = (() => {
       if (!rows.has(e.label)) rows.set(e.label, []);
       rows.get(e.label).push(e);
     }
+    // Ghostty's own bindings in the terminals (Umi.ghostty), one row per action, in their own
+    // section. A key the table above takes never reaches the terminal: its row says so.
+    const ghostty = new Map();
+    for (const b of Umi.ghostty.bindings || []) {
+      const e = { label: b.title, group: 'Ghostty', keys: b.keys, trigger: b.trigger, action: b.action, ghostty: true };
+      if (!matches(e, q) && !(q && b.action.includes(q.toLowerCase()))) continue;
+      e.taken = !!b.keys && Umi.shortcuts.table.some((t) => t.keys && sameKeys(t.keys, b.keys));
+      if (!ghostty.has(b.action)) ghostty.set(b.action, []);
+      ghostty.get(b.action).push(e);
+    }
+    if (ghostty.size) groups.set('Ghostty', new Map([...ghostty.values()].map((es) => [es[0].label, es])));
     if (!groups.size) { list.append(el('div', 'sc-empty', 'No shortcuts match.')); return; }
     for (const [g, rows] of groups) {
       list.append(el('div', 'sc-group', g));
       for (const [label, entries] of rows) {
         const row = el('div', 'sc-row');
-        row.dataset.id = entries[0].id;
-        row.dataset.ids = entries.map((e) => e.id).join(' ');
+        if (!entries[0].ghostty) {
+          row.dataset.id = entries[0].id;
+          row.dataset.ids = entries.map((e) => e.id).join(' ');
+        }
         row.append(el('span', 'sc-label', label));
         const keys = el('span', 'sc-keys');
-        for (const e of entries) if (e.keys || e.display) keys.append(keycaps(caps(e)));
+        for (const e of entries) {
+          if (e.ghostty) {
+            const k = keycaps(e.keys ? caps(e) : [e.trigger]);
+            if (e.taken) { k.classList.add('sc-taken'); k.title = 'A shortcut above takes this key, so the terminal never gets it'; }
+            keys.append(k);
+          } else if (e.keys || e.display) keys.append(keycaps(caps(e)));
+        }
+        if (entries[0].ghostty) { row.dataset.action = entries[0].action; row.title = entries[0].action; }
         row.append(keys);
         list.append(row);
       }
@@ -158,6 +183,17 @@ Umi.views.shortcutsPage = (() => {
 
   return { render, focus, wantsKeys, parseKeys, matches };
 })();
+
+// Ghostty's keybindings in effect in the terminals (bridge `ghosttyBindings`, Sources/UmiNext/
+// GhosttyBindings.swift): [{trigger, keys|null, action, title, source}], read once per page load.
+Umi.ghostty = {
+  bindings: null,
+  async load() {
+    try { this.bindings = (await Umi.bridge.request('ghosttyBindings')).bindings; } catch { this.bindings = []; }
+    if (Umi.state.layout?.shortcutsPage) Umi.views.shortcutsPage.render();
+  },
+};
+Umi.ghostty.load();
 
 // ⌘/ opens the page with its search field focused; pressed again (or Esc in the page) closes it.
 Umi.actions.toggleShortcuts = () => {

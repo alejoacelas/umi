@@ -236,6 +236,32 @@ check("Close Pane closes the pane right-clicked, as ⌘W", wait(lambda: J("Umi.m
 m = right_click(pane_a)
 check("outside a split: no Maximize or Close Pane", m and "Close Pane" not in titles(m) and "Maximize Pane" not in titles(m), m and titles(m))
 
+# ---- Ghostty's keybindings on the shortcuts page (L-17) ----
+ev("Umi.app.run('toggleShortcuts'); 1")
+check("the shortcuts page has a Ghostty section after the page's own",
+      wait(lambda: J("[...document.querySelectorAll('#shortcuts .sc-group')].map((g) => g.textContent).pop()") == "Ghostty", 3),
+      J("[...document.querySelectorAll('#shortcuts .sc-group')].map((g) => g.textContent)"))
+row = lambda action: J("(() => { const r = document.querySelector('#shortcuts .sc-row[data-action=\"%s\"]'); return r && { label: r.querySelector('.sc-label').textContent, caps: [...r.querySelectorAll('.sc-caps')].map((c) => ({ keys: c.textContent, taken: c.classList.contains('sc-taken') })) }; })()" % action)
+r = row("clear_screen")
+check("Ghostty's bindings show by action with their keys (Clear screen ⌘K)", r and r["label"] == "Clear screen" and {"keys": "⌘K", "taken": False} in r["caps"], r)
+r = row("new_split:right")
+check("a Ghostty key the page's table takes is marked so (New split: right, ⌘D)", r and {"keys": "⌘D", "taken": True} in r["caps"], r)
+ev("(() => { const i = document.querySelector('#shortcuts input'); i.value = 'cmd k'; i.dispatchEvent(new Event('input')); })(); 1")
+check("searching by keys finds Ghostty's (cmd k → Clear screen)",
+      wait(lambda: "clear_screen" in J("[...document.querySelectorAll('#shortcuts .sc-row')].map((r) => r.dataset.action || r.dataset.id)"), 2))
+ev("(() => { const i = document.querySelector('#shortcuts input'); i.value = 'scroll to top'; i.dispatchEvent(new Event('input')); })(); 1")
+check("searching by name finds Ghostty's", wait(lambda: "scroll_to_top" in J("[...document.querySelectorAll('#shortcuts .sc-row')].map((r) => r.dataset.action || '')"), 2))
+if extra and os.path.exists(extra):
+    b = J("Umi.ghostty.bindings")
+    check("bindings from the terminal config files count (bind and unbind)",
+          any(x["action"] == "scroll_to_top" and x["keys"] == "cmd+shift+u" and x["source"] == extra for x in b)
+          and not any(x["trigger"] == "super+shift+j" for x in b), [x for x in b if "scroll_to_top" in x["action"] or "shift+j" in x["trigger"]])
+elif extra:
+    with open(extra, "w") as f:
+        f.write("keybind = super+shift+u=scroll_to_top\nkeybind = super+shift+j=unbind\n")
+    print("wrote", extra, "- restart the app with UMI_NEXT_TERMINAL_CONFIG pointing at it and run again for the config check")
+ev("Umi.app.run('toggleShortcuts'); 1")
+
 # ---- cleanup: the tabs and sessions this made ----
 ev("""(() => { const keep = new Set(%s);
   for (const t of Umi.state.layout.tabs.filter((t) => !keep.has(t.id)))

@@ -10,6 +10,9 @@ if ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) != GHOSTTY_SUCCE
     FileHandle.standardError.write("umi-next: ghostty_init failed\n".data(using: .utf8)!)
     exit(1)
 }
+// `UmiNext +list-keybinds --default --plain` (GhosttyBindings.swift) and Ghostty's other `+`
+// actions run and exit here.
+ghostty_cli_try_action()
 
 // One UI per state directory: two would fight over layout.json.
 let lockFD = open(Paths.stateDir + "/ui.lock", O_CREAT | O_RDWR, 0o644)
