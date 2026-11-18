@@ -82,7 +82,74 @@ Umi.views.sidebar = (() => {
     el.querySelector('.close').addEventListener('click', () => {
       Umi.app.run('closeTab', { tab: tab.id });
     });
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      tabMenu(tab, e.clientX, e.clientY);
+    });
     return el;
+  }
+
+  // A row's right-click menu (SPEC S-4), as Umi's UmiTabMenu: Warp's items, labels and order,
+  // sections between lines, an item that can't apply left out. It acts on the row's tab, selected
+  // or not.
+  //   Pin tab (Unpin tab), Archive Tab (an archived tab: Unarchive Tab only) | Copy branch, Copy
+  //   tab title, Copy working directory, Copy pull request link | Rename tab, Reset tab name,
+  //   Rename active pane, Reset active pane name, Move Tab Down, Move Tab Up | Close tab, Close
+  //   other tabs, Close Tabs Below
+  // Departures (PARITY.md): no tab groups or colours, no Save as New Config (no launch
+  // configurations) and no moves to other windows (one window).
+  async function tabItems(tab) {
+    const A = Umi.arrange, sections = [];
+    const item = (title, fn) => ({ title, fn: () => Umi.app.update(fn) });
+    const folder = M.folderOf(tab.focused);
+    const sid = M.sessionOf(tab.focused);
+    if (tab.archived) sections.push([item('Unarchive Tab', () => A.unarchive(tab))]);
+    else sections.push([item(tab.pinned ? 'Unpin tab' : 'Pin tab', () => A.togglePin(tab)), item('Archive Tab', () => A.archive(tab))]);
+
+    let git = {};
+    if (folder) { try { git = await Umi.bridge.request('gitBranch', { path: folder }); } catch { git = {}; } }
+    const copy = (text) => () => Umi.bridge.request('clipboard', { text });
+    const copies = [];
+    if (git.branch) copies.push({ title: 'Copy branch', fn: copy(git.branch) });
+    copies.push({ title: 'Copy tab title', fn: copy(tabName(tab)) });
+    if (folder) copies.push({ title: 'Copy working directory', fn: copy(folder) });
+    if (git.pr) copies.push({ title: 'Copy pull request link', fn: copy(git.pr) });
+    sections.push(copies);
+
+    const modify = [item('Rename tab', () => { S.layout.activeTab = tab.id; S.ui.editingTab = tab.id; S.ui.tabDraft = tab.name || ''; })];
+    if (tab.name) modify.push(item('Reset tab name', () => { delete tab.name; }));
+    if (sid) {
+      modify.push(item('Rename active pane', () => { S.layout.activeTab = tab.id; M.openPanel('palette', { mode: 'rename', sid }); }));
+      if (S.layout.meta?.sessions?.[sid]?.name) modify.push(item('Reset active pane name', () => M.rename(sid, '')));
+    }
+    // Within its group: the pinned or the unpinned tabs.
+    const group = S.layout.tabs.filter((x) => !x.archived && !!x.pinned === !!tab.pinned);
+    const at = group.indexOf(tab);
+    if (at >= 0 && at < group.length - 1) modify.push(item('Move Tab Down', () => A.moveTab(tab, 1)));
+    if (at > 0) modify.push(item('Move Tab Up', () => A.moveTab(tab, -1)));
+    sections.push(modify);
+
+    const close = (t) => Umi.actions.closeTab({ tab: t.id });
+    const closes = [item('Close tab', () => close(tab))];
+    const list = tab.archived ? Umi.arrange.archived() : group;
+    if (list.length > 1) closes.push(item('Close other tabs', () => list.filter((t) => t !== tab).forEach(close)));
+    const i = list.indexOf(tab);
+    if (i >= 0 && i < list.length - 1) closes.push(item('Close Tabs Below', () => list.slice(i + 1).forEach(close)));
+    sections.push(closes);
+
+    const items = [];
+    for (const s of sections) {
+      if (!s.length) continue;
+      if (items.length) items.push({ separator: true });
+      items.push(...s);
+    }
+    return items;
+  }
+
+  async function tabMenu(tab, x, y) {
+    const items = await tabItems(tab);
+    const r = await Umi.bridge.request('menu', { items: items.map(({ title, separator }) => (separator ? { separator } : { title })), x, y });
+    if (r && r.index != null) items[r.index].fn();
   }
 
   const linkIcon = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 9.5l3-3"/><path d="M7.5 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1"/><path d="M8.5 11.5l-1 1A2.5 2.5 0 014 9l1-1"/></svg>';
@@ -218,5 +285,5 @@ Umi.views.sidebar = (() => {
   // A tab's name as its row shows it: the given name, else its focused pane's folder.
   const tabName = (tab) => tab.name || base(M.folderOf(tab.focused)) || 'Terminal';
 
-  return { render, focus, tabName };
+  return { render, focus, tabName, tabItems };
 })();

@@ -56,6 +56,7 @@ final class WebServices {
         case "openURL": reply(id, Result { try Self.openURL(args) })
         case "notify": notify(id, args)
         case "ghosttyBindings": async(id) { ["bindings": GhosttyBindings.list()] }
+        case "gitBranch": async(id) { try Self.gitBranch(args) }
         case "menu":
             let items = args["items"] as? [[String: Any]] ?? []
             // Popped up after this message is handled: the menu runs its own event loop.
@@ -226,6 +227,42 @@ final class WebServices {
         return ["root": top, "changed": changed]
     }
 
+    /// The branch checked out in `path`'s repository, and its pull request's link once known
+    /// (the tab menu's Copy branch and Copy pull request link, as Umi's UmiPullRequests):
+    /// `{branch|null, pr|null}`. The link comes from `gh pr view`, run in the background the first
+    /// time a branch is asked about and kept for 5 minutes, so the menu never waits on the network.
+    static func gitBranch(_ args: [String: Any]) throws -> Any {
+        let p = try path(args)
+        let r = run("/usr/bin/git", ["-C", p, "symbolic-ref", "--quiet", "--short", "HEAD"])
+        let branch = r.status == 0 ? r.outString.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        guard !branch.isEmpty, let top = gitRoot(p) else { return ["branch": branch.isEmpty ? NSNull() as Any : branch, "pr": NSNull()] as [String: Any] }
+        return ["branch": branch, "pr": PullRequests.url(top: top, branch: branch) as Any? ?? NSNull()] as [String: Any]
+    }
+
+    enum PullRequests {
+        private static let lock = NSLock()
+        private static var known: [String: (url: String?, at: Date)] = [:]
+        private static var asking: Set<String> = []
+
+        static func url(top: String, branch: String) -> String? {
+            let key = top + "\n" + branch
+            lock.lock(); defer { lock.unlock() }
+            if let k = known[key], Date().timeIntervalSince(k.at) < 300 { return k.url }
+            if !asking.contains(key), let gh = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+                asking.insert(key)
+                DispatchQueue.global(qos: .utility).async {
+                    let r = WebServices.run(gh, ["pr", "view", branch, "--json", "url", "-q", ".url"], cwd: top)
+                    let url = r.outString.trimmingCharacters(in: .whitespacesAndNewlines)
+                    lock.lock()
+                    known[key] = (r.status == 0 && url.hasPrefix("http") ? url : nil, Date())
+                    asking.remove(key)
+                    lock.unlock()
+                }
+            }
+            return known[key]?.url
+        }
+    }
+
     /// The names in `dir` git ignores (empty outside a repository).
     static func gitIgnored(_ names: [String], in dir: String) -> Set<String> {
         guard !names.isEmpty, gitRoot(dir) != nil else { return [] }
@@ -270,10 +307,11 @@ final class WebServices {
 
     struct RunResult { let status: Int32; let out: Data; var outString: String { String(data: out, encoding: .utf8) ?? "" } }
 
-    static func run(_ exe: String, _ args: [String], input: Data? = nil) -> RunResult {
+    static func run(_ exe: String, _ args: [String], input: Data? = nil, cwd: String? = nil) -> RunResult {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: exe)
         p.arguments = args
+        if let cwd { p.currentDirectoryURL = URL(fileURLWithPath: cwd) }
         let out = Pipe(), inp = Pipe()
         p.standardOutput = out
         p.standardError = FileHandle.nullDevice

@@ -236,6 +236,83 @@ check("Close Pane closes the pane right-clicked, as ⌘W", wait(lambda: J("Umi.m
 m = right_click(pane_a)
 check("outside a split: no Maximize or Close Pane", m and "Close Pane" not in titles(m) and "Maximize Pane" not in titles(m), m and titles(m))
 
+# ---- a tab row's menu (S-4) ----
+def tab_menu(tab, pick=None):
+    spy(pick)
+    ev("""document.querySelector('#tabs .tab[data-tab=%s]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 80 })); 1""" % json.dumps(tab))
+    return wait(lambda: J("window.__menu"), 3)
+
+
+ev("""(() => { const M = Umi.model, cwd = %s;
+  Umi.app.update(() => {
+    for (const n of ['menus-b', 'menus-c']) { const t = M.addTab(M.newPane({ cwd, start: { cmd: null, name: n, cwd } })); t.name = n; }
+    Umi.state.ui.editingTab = null;
+    Umi.state.layout.activeTab = %s;
+  });
+})(); 1""" % (json.dumps(scratch), json.dumps(tab_a)))
+# A tab's terminal (and session) starts when the tab first shows.
+for n in ('menus-b', 'menus-c'):
+    ev("Umi.app.update(() => { Umi.state.layout.activeTab = Umi.state.layout.tabs.find((t) => t.name === '%s').id; }); 1" % n)
+    wait(lambda: J("Umi.model.sessionOf(Umi.model.activeTab().focused) || null"), 8)
+ev("Umi.app.update(() => { Umi.state.layout.activeTab = %s; }); 1" % json.dumps(tab_a))
+order = lambda: [t for t in J("Umi.state.layout.tabs.filter((t) => !t.archived && !t.pinned).map((t) => t.id)") if t not in start_tabs]
+mine = order()
+tab_b, tab_c = mine[1], mine[2]
+check("setup: three tabs", len(mine) == 3 and mine[0] == tab_a, mine)
+sid = J("Umi.model.sessionOf(Umi.state.layout.tabs.find((t) => t.id === %s).focused)" % json.dumps(tab_b))
+ev("Umi.app.update(() => Umi.model.rename(%s, 'menus-b-renamed')); 1" % json.dumps(sid))
+m = tab_menu(tab_b)
+want = ["Pin tab", "Archive Tab", None, "Copy branch", "Copy tab title", "Copy working directory", None, "Rename tab",
+        "Reset tab name", "Rename active pane", "Reset active pane name", "Move Tab Down", "Move Tab Up", None,
+        "Close tab", "Close other tabs", "Close Tabs Below"]
+check("tab menu: Umi's items in Umi's order (no colours, groups, configs or windows)", m and titles(m) == want, m and titles(m))
+last = titles(tab_menu(mine[-1]) or [])
+check("tab menu: what can't apply is left out (last tab: no Move Tab Down, no Close Tabs Below)",
+      "Move Tab Down" not in last and "Close Tabs Below" not in last and "Move Tab Up" in last, last)
+
+tab_menu(tab_b, "Copy branch")
+check("Copy branch", wait(lambda: pbpaste() == "menus-test", 2), pbpaste())
+tab_menu(tab_b, "Copy tab title")
+check("Copy tab title", wait(lambda: pbpaste() == "menus-b", 2), pbpaste())
+tab_menu(tab_b, "Copy working directory")
+check("Copy working directory", wait(lambda: os.path.realpath(pbpaste()) == os.path.realpath(scratch), 2), pbpaste())
+
+tab_menu(tab_b, "Move Tab Up")
+check("Move Tab Up moves the row's tab (not the selected one)", order()[:2] == [tab_b, tab_a] and J("Umi.state.layout.activeTab") == tab_a, order())
+tab_menu(tab_b, "Move Tab Down")
+check("Move Tab Down", order()[:2] == [tab_a, tab_b], order())
+
+tab_menu(tab_b, "Rename tab")
+check("Rename tab edits the row's name in place", J("Umi.state.ui.editingTab") == tab_b)
+ev("Umi.app.update(() => { Umi.state.ui.editingTab = null; Umi.state.ui.tabDraft = null; Umi.state.layout.activeTab = %s; }); 1" % json.dumps(tab_a))
+tab_menu(tab_b, "Reset tab name")
+check("Reset tab name", J("Umi.state.layout.tabs.find((t) => t.id === %s).name || null" % json.dumps(tab_b)) is None)
+check("… then Reset tab name is left out", "Reset tab name" not in titles(tab_menu(tab_b) or []))
+tab_menu(tab_b, "Rename active pane")
+check("Rename active pane renames the tab's focused session", J("[Umi.state.ui.panel?.mode, Umi.state.ui.panel?.sid]") == ["rename", sid])
+ev("Umi.app.update(() => Umi.model.closePanel()); 1")
+tab_menu(tab_b, "Reset active pane name")
+check("Reset active pane name drops the name given to the session",
+      J("Umi.state.layout.meta?.sessions?.[%s]?.name || null" % json.dumps(sid)) is None and J("Umi.model.sessionName(%s)" % json.dumps(sid)) == "menus-b")
+check("… then Reset active pane name is left out", "Reset active pane name" not in titles(tab_menu(tab_b) or []))
+
+tab_menu(tab_b, "Pin tab")
+check("Pin tab pins the row's tab", J("!!Umi.state.layout.tabs.find((t) => t.id === %s).pinned" % json.dumps(tab_b)))
+m = tab_menu(tab_b, "Unpin tab")
+check("… whose menu then says Unpin tab, which unpins", m and titles(m)[0] == "Unpin tab"
+      and not J("!!Umi.state.layout.tabs.find((t) => t.id === %s).pinned" % json.dumps(tab_b)))
+tab_menu(tab_c, "Archive Tab")
+check("Archive Tab archives the row's tab", J("!!Umi.state.layout.tabs.find((t) => t.id === %s).archived" % json.dumps(tab_c)))
+ev("Umi.app.update(() => { Umi.state.layout.archiveOpen = true; }); 1")
+time.sleep(0.3)
+m = tab_menu(tab_c, "Unarchive Tab")
+check("an archived tab's menu starts with Unarchive Tab alone, which brings it back",
+      m and titles(m)[:2] == ["Unarchive Tab", None] and not J("!!Umi.state.layout.tabs.find((t) => t.id === %s).archived" % json.dumps(tab_c)),
+      m and titles(m))
+mine = order()
+tab_menu(mine[0], "Close Tabs Below")
+check("Close Tabs Below closes the tabs under it in its group", wait(lambda: order() == [mine[0]], 3), order())
+
 # ---- Ghostty's keybindings on the shortcuts page (L-17) ----
 ev("Umi.app.run('toggleShortcuts'); 1")
 check("the shortcuts page has a Ghostty section after the page's own",
