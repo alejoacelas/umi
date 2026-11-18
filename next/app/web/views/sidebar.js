@@ -46,7 +46,7 @@ Umi.views.sidebar = (() => {
     } else {
       const name = document.createElement('span');
       name.className = 'name';
-      name.textContent = tab.name || base(folder) || 'Terminal';
+      name.textContent = tabName(tab);
       line1.append(name);
       if (tab.pinned) line1.prepend(mark('pin', '📌', 'Pinned (⌃⌘P)'));
       if (Umi.arrange.isSynced(tab)) line1.append(mark('sync', linkIcon, 'Input synchronized (⌥⌘I)'));
@@ -215,5 +215,8 @@ Umi.views.sidebar = (() => {
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   });
-  return { render, focus };
+  // A tab's name as its row shows it: the given name, else its focused pane's folder.
+  const tabName = (tab) => tab.name || base(M.folderOf(tab.focused)) || 'Terminal';
+
+  return { render, focus, tabName };
 })();

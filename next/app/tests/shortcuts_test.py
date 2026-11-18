@@ -172,6 +172,10 @@ focus_terminal()
 s0 = ui()["sidebar"]
 press("b", "cmd")
 check("⌘B toggles the sidebar", ui()["sidebar"] != s0)
+# Without the sidebar, the top bar's tab chips stay clear of the window's close/minimize/zoom buttons.
+if not ui()["sidebar"]:
+    check("the top bar's first chip starts right of the window buttons",
+          J("document.querySelector('#strip .chip').getBoundingClientRect().left") >= 78)
 press("b", "cmd")
 check("⌘B again", ui()["sidebar"] == s0)
 
@@ -478,9 +482,11 @@ def fake_agent(event):
 try:
     fake_agent("PermissionRequest")
     wait(lambda: J(f"Umi.views.marks.stateOf({json.dumps(other)})") == "needs", 5)
-    check("a pane needing you shows the amber mark at its bottom right",
-          J(f"document.querySelector('#panes .slot[data-pane=\"{other_pane}\"] .pane-mark')?.dataset.state || null") == "needs")
-    check("its strip chip shows the mark too", J(f"!!document.querySelector('#strip .chip[data-pane=\"{other_pane}\"] .pane-mark')"))
+    check("a pane needing you shows the amber mark in its header",
+          J(f"document.querySelector('#panes .pane-head[data-pane=\"{other_pane}\"] .pane-mark')?.dataset.state || null") == "needs")
+    check("its tab's chip in the top bar shows the mark too",
+          J("document.querySelector(`#strip .chip[data-tab=\"${Umi.model.activeTab().id}\"] .pane-mark`)?.dataset.state || null") == "needs")
+    check("no mark sits over the terminals", not J("document.querySelectorAll('#panes .slot .pane-mark').length"))
     check("the Dock badge counts it", wait(lambda: D({"cmd": "state"}).get("badge") == "1", 3), D({"cmd": "state"}).get("badge"))
     press("j", "ctrl", "cmd")
     check("⌃⌘J goes to the session waiting for you", J("Umi.model.sessionOf(Umi.model.activeTab().focused)") == other)
@@ -489,7 +495,7 @@ try:
     fake_agent("UserPromptSubmit")
     wait(lambda: J(f"Umi.views.marks.stateOf({json.dumps(other)})") == "working", 5)
     check("a working pane shows the working mark",
-          J(f"document.querySelector('#panes .slot[data-pane=\"{other_pane}\"] .pane-mark')?.dataset.state || null") == "working")
+          J(f"document.querySelector('#panes .pane-head[data-pane=\"{other_pane}\"] .pane-mark')?.dataset.state || null") == "working")
     check("the badge clears", wait(lambda: D({"cmd": "state"}).get("badge") in (None, ""), 3), D({"cmd": "state"}).get("badge"))
 finally:
     os.remove(agent_file)

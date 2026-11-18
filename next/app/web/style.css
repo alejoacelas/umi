@@ -128,6 +128,9 @@ body.cmd-held .tab .key { display: block; }
   position: absolute; top: 0; left: 0; right: 0; height: var(--titlebar);
   display: flex; align-items: center; gap: 2px; padding: 0 8px; overflow: hidden; z-index: 1;
 }
+/* With the sidebar hidden the top bar starts at the window's left edge: keep its chips clear of
+   the window's close, minimize and zoom buttons (they end about 70 px in). */
+body.no-sidebar #strip { padding-left: 80px; }
 .chip {
   display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; flex: none;
   border-radius: 6px; color: rgba(255, 255, 255, 0.80); font: 500 12px -apple-system, sans-serif;
@@ -186,6 +189,18 @@ body.cmd-held .tab .key { display: block; }
 /* SPEC PI-3: in a tab showing more than one pane the focused pane is 3% brighter (native tints
    terminals the same way). */
 .multi .slot.focused { background: var(--focus-tint); }
+
+/* A pane: its header above its slot. The header names the pane; in a tab showing several panes
+   the focused pane's header is lit in the accent (how focus shows). */
+.pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.pane-head {
+  flex: none; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 10px;
+  font: 500 11px -apple-system, sans-serif; color: var(--dim); background: #0b0b0b;
+  border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden;
+}
+.pane-head span { overflow: hidden; text-overflow: ellipsis; }
+.pane-head svg, .pane-head img { flex: none; }
+.multi .pane.focused .pane-head { background: rgba(25, 170, 216, 0.18); color: var(--ink); border-bottom-color: var(--accent); }
 
 /* Picker (a pane drawn by the web layer) */
 .slot.picker { display: flex; flex-direction: column; gap: 10px; padding: 10px 16px; color: var(--ink); }
@@ -425,11 +440,9 @@ body[data-sidebar-mode="search"] #review, body[data-sidebar-mode="search"] #tabs
 .qo-row.sel .folder, .qo-row.sel .line, .qo-row.sel.create .title { color: rgba(0, 0, 0, 0.6); }
 
 
-/* The pane indicator (SPEC PI-2): a mark at each pane's bottom right (8 px in, 10 px up, in the
-   terminal's padding) and before its chip's icon. Native cuts the terminal under it out. */
+/* The status mark (SPEC PI-2): before a pane header's icon and a tab chip's name. */
 .slot { position: relative; }
-.slot .pane-mark { position: absolute; right: 8px; bottom: 10px; transform: translate(50%, 50%); border-radius: 50%; pointer-events: none; z-index: 2; }
-.chip .pane-mark { display: inline-block; border-radius: 50%; flex: none; }
+.chip .pane-mark, .pane-head .pane-mark { display: inline-block; border-radius: 50%; flex: none; }
 
 /* The sidebar's edge drags its width (S-8: 180–600 px). */
 #sidebar { position: relative; }

@@ -41,7 +41,7 @@ Umi.app = (() => {
       rects: Umi.views.panes.terminalRects(),
       passThrough: Umi.views.panes.passThroughRects(),
       // Web chrome lying over a terminal (the find bar): native cuts it out of the terminal's view.
-      holes: [Umi.views.find.holeRect(), ...Umi.views.marks.holeRects()].filter(Boolean),
+      holes: [Umi.views.find.holeRect()].filter(Boolean),
       // A tab switch fades the terminals in from the window's background (L-11).
       fade: lastTab !== null && lastTab !== S.layout.activeTab,
       chrome: Umi.views.panes.chromeRects(),

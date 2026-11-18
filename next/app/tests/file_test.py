@@ -248,7 +248,7 @@ st = vs()
 check("a line:col opens the source with the caret there", st["mode"] == "raw" and st["caret"] == len("let x = 1\n") + 5, st)
 typ("XY")
 check("typing edits the text and marks it unsaved", vs()["dirty"] and "func XYf()" in vs()["text"])
-check("the strip chip shows the dot", J("document.querySelector('#strip .chip.dirty') !== null"))
+check("the pane's header shows the dot", J("document.querySelector('#panes .pane-head.dirty') !== null"))
 key("s", "cmd")
 time.sleep(0.4)
 st = vs()
@@ -401,7 +401,7 @@ time.sleep(0.6)
 check("a file outside git has no marks", not J(f"{V}.state().gutterMarks"))
 close_all()
 
-# ---- The strip chip's file-type icon; ⋯ and the preview's right-click menus (E-24) ----
+# ---- The pane header's file-type icon; ⋯ and the preview's right-click menus (E-24) ----
 def menu(expr, title=None):
     ev("""window.__menu = null; (() => { const orig = Umi.bridge.request;
       Umi.bridge.request = function (op, args, onEvent) {
@@ -417,12 +417,12 @@ def menu(expr, title=None):
 
 open_file(plan)
 pid = J("Umi.model.activeTab().focused")
-icon = J(f"document.querySelector('#strip .chip[data-pane=\"{pid}\"] img.file-icon')?.getAttribute('src') || null")
-check("a file pane's chip shows the file's type icon (the explorer's)", icon == J("Umi.icons.file('plan.md')") == "icons/markdown.svg", icon)
+icon = J(f"document.querySelector('#panes .pane-head[data-pane=\"{pid}\"] img.file-icon')?.getAttribute('src') || null")
+check("a file pane's header shows the file's type icon (the explorer's)", icon == J("Umi.icons.file('plan.md')") == "icons/markdown.svg", icon)
 ev(f"Umi.app.run('openFile', {{path: {json.dumps(scratch + '/data.json')}}}); 1")
 time.sleep(0.5)
 jid = J("Umi.model.activeTab().focused")
-check("…a JSON file's its own", J(f"document.querySelector('#strip .chip[data-pane=\"{jid}\"] img.file-icon')?.getAttribute('src')") == "icons/json.svg")
+check("…a JSON file's its own", J(f"document.querySelector('#panes .pane-head[data-pane=\"{jid}\"] img.file-icon')?.getAttribute('src')") == "icons/json.svg")
 ev(f"Umi.app.update(() => Umi.model.removePane({json.dumps(jid)})); 1")
 ev(f"Umi.app.update(() => Umi.model.focusPane({json.dumps(pid)})); 1")
 open_file(plan)

@@ -61,8 +61,8 @@
   border: none; border-radius: 4px; font: 11px -apple-system, sans-serif; padding: 3px 8px; }
 .fv-source .cm-panel label { color: rgba(255, 255, 255, 0.6); font-size: 11px; }
 .fv-source .cm-panel [name=close] { color: rgba(255, 255, 255, 0.6); font-size: 14px; }
-/* A file's chip in the pane strip: the same dot while unsaved (E-24). */
-.chip.dirty span::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+/* A file pane's header: the same dot while unsaved (E-24). */
+.pane-head.dirty span::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   background: rgba(255, 255, 255, 0.6); margin-right: 5px; vertical-align: 1px; }
 /* Dividers stay above file views, so they can still be dragged. */
 #panes .divider { z-index: 2; }

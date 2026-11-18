@@ -325,7 +325,7 @@ Umi.views.file = (() => {
 
     changed() {
       this.paint();
-      Umi.views.panes.renderStrip(M.activeTab());
+      document.querySelector(`#panes .pane-head[data-pane="${this.id}"]`)?.classList.toggle('dirty', this.dirty);
       clearTimeout(this.draftTimer);
       this.draftTimer = setTimeout(() => this.keepDraft(), 250);
     }

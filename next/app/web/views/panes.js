@@ -25,7 +25,13 @@ Umi.views.panes = (() => {
       if (el.dataset.view !== 'terminal') {
         el.addEventListener('mousedown', () => Umi.app.update(() => M.focusPane(node.id), { focus: false }));
       }
-      return el;
+      // The pane: its header above the slot (the slot alone goes to native, so the terminal sits
+      // under the header).
+      const pane = document.createElement('div');
+      pane.className = 'pane';
+      pane.dataset.pane = node.id;
+      pane.append(paneHead(node), el);
+      return pane;
     }
     const el = document.createElement('div');
     el.className = `split ${node.dir}`;
@@ -64,9 +70,24 @@ Umi.views.panes = (() => {
     return S.layout.meta?.sessions?.[sid]?.name || live?.name || shortPath(live?.folder || info.title || info.pwd) || 'Terminal';
   }
 
-  // SPEC H-5: a chip per pane on show, in layout order (the focused one filled), then one per
-  // session ⌘W hid from this tab, dim and in italics. Clicking a hidden one shows it again at the
-  // right end, focused.
+  // Each pane's header: its status mark (marks.js), icon and name. In a tab showing several panes
+  // the focused pane's header is lit in the accent: that is how focus shows (Alejo, 2026-11-18).
+  // A click focuses the pane.
+  function paneHead(node) {
+    const head = document.createElement('div');
+    head.className = 'pane-head' + (node.view === 'file' && Umi.views.file.isDirty(node.id) ? ' dirty' : '');
+    head.dataset.pane = node.id;
+    const label = chipLabel(node);
+    head.innerHTML = (node.view === 'file' ? fileIcon(node.path) : termIcon) + '<span></span>';
+    head.querySelector('span').textContent = label;
+    head.title = label;
+    head.addEventListener('mousedown', (e) => { e.preventDefault(); Umi.app.update(() => M.focusPane(node.id)); });
+    return head;
+  }
+
+  // The top bar: a chip per open tab, in the sidebar's order, with the tab's status mark
+  // (marks.js); the current tab's filled. Then a chip per session ⌥⌘H hid from the current tab
+  // (SPEC H-5), dim and in italics: clicking one shows it again at the right end, focused.
   function renderStrip(tab) {
     const strip = document.querySelector('#strip');
     strip.textContent = '';
@@ -80,11 +101,10 @@ Umi.views.panes = (() => {
       strip.append(el);
       return el;
     };
-    for (const node of M.panesOf(tab.root)) {
-      const cls = (node.id === tab.focused ? ' focused' : '') + (tab.zoomed === node.id ? ' zoomed' : '')
-        + (node.view === 'file' && Umi.views.file.isDirty(node.id) ? ' dirty' : '');
-      const el = chip(chipLabel(node), cls, node.view === 'file' ? fileIcon(node.path) : termIcon, () => Umi.app.update(() => M.focusPane(node.id)));
-      el.dataset.pane = node.id;
+    for (const t of M.listedTabs()) {
+      const name = Umi.views.sidebar.tabName(t);
+      const el = chip(name, t.id === tab.id ? ' focused' : '', '', () => Umi.app.update(() => { S.layout.activeTab = t.id; S.ui.sidebarFocus = null; }));
+      el.dataset.tab = t.id;
     }
     for (const sid of M.hiddenOf(tab)) {
       const el = chip(hiddenLabel(sid), ' hidden', termIcon, () => Umi.app.run('showHidden', { session: sid }));
@@ -114,7 +134,7 @@ Umi.views.panes = (() => {
     const zoomed = tab.zoomed && M.panesOf(tab.root).find((p) => p.id === tab.zoomed);
     main.classList.toggle('multi', !zoomed && M.paneIds(tab.root).length > 1);
     main.append(renderNode(zoomed || tab.root));
-    main.querySelectorAll('.slot').forEach((s) => s.classList.toggle('focused', s.dataset.pane === tab.focused));
+    main.querySelectorAll('.slot, .pane').forEach((s) => s.classList.toggle('focused', s.dataset.pane === tab.focused));
     Umi.views.file?.sync(); // file views sit over their slots and outlive this redraw
   }
 

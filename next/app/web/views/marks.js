@@ -1,9 +1,9 @@
-// The pane indicator (SPEC PI-1..PI-3, Umi's quiet palette): a small round mark at each pane's
-// bottom right and before its strip chip. working: a turn runs; needs you: waiting for Alejo
+// The status mark (SPEC PI-1..PI-2, Umi's quiet palette): a small round mark in each pane's header
+// and before each tab's chip in the top bar. working: a turn runs; needs you: waiting for Alejo
 // (Review's "needs"); finished: the turn ended (reply says done) since the pane was last looked
-// at. The focused pane's mark is larger and at full strength; the others' working and finished
-// marks are dimmer, "needs you" always full. The marks over terminals are page chrome: native cuts
-// them out of the terminal (`holes`), in its padding below the prompt.
+// at. A tab's chip shows its most pressing pane's mark (needs you, then working, then finished).
+// The focused pane's and current tab's marks are at full strength; the others' working and
+// finished marks are dimmer, "needs you" always full.
 //
 // Also the Dock badge: how many Review items the current project has.
 'use strict';
@@ -11,7 +11,7 @@ Umi.views = Umi.views || {};
 
 Umi.views.marks = (() => {
   const S = Umi.state, M = Umi.model;
-  const COLORS = { working: '#6F7F76', needs: '#E0A93E', finished: '#BDBDBD', idleFocus: '#6A6A6A' };
+  const COLORS = { working: '#6F7F76', needs: '#E0A93E', finished: '#BDBDBD' };
   const seen = {}; // session -> when its pane last had focus (ms); "finished" means after that
 
   function stateOf(sid) {
@@ -27,9 +27,20 @@ Umi.views.marks = (() => {
   // {color, size, opacity} for a pane, or null.
   function look(paneId, tab) {
     const sid = M.sessionOf(paneId), st = stateOf(sid);
-    const focused = tab.focused === paneId, split = M.paneIds(tab.root).length > 1 && !tab.zoomed;
-    if (!st) return focused && split ? { color: COLORS.idleFocus, size: 9, opacity: 1 } : null;
-    return { color: COLORS[st], size: focused ? 9 : 7, opacity: focused || st === 'needs' ? 1 : 0.7, state: st };
+    if (!st) return null;
+    const focused = tab.focused === paneId && tab.id === S.layout.activeTab;
+    return { color: COLORS[st], size: 7, opacity: focused || st === 'needs' ? 1 : 0.7, state: st };
+  }
+  const RANK = { needs: 3, working: 2, finished: 1 };
+  // A tab's mark: its most pressing pane's.
+  function tabLook(tab) {
+    let best = null;
+    for (const id of M.paneIds(tab.root)) {
+      const st = stateOf(M.sessionOf(id));
+      if (st && (!best || RANK[st] > RANK[best])) best = st;
+    }
+    if (!best) return null;
+    return { color: COLORS[best], size: 7, opacity: tab.id === S.layout.activeTab || best === 'needs' ? 1 : 0.7, state: best };
   }
 
   function dot(l) {
@@ -41,20 +52,21 @@ Umi.views.marks = (() => {
   }
 
   let badge = null;
-  // Draws the marks on the current tab's slots and chips.
+  // Draws the marks on the pane headers and the top bar's chips.
   function render() {
     if (!S.layout) return;
     const tab = M.activeTab();
     const sid = M.sessionOf(tab.focused);
     if (sid && document.hasFocus()) seen[sid] = Date.now();
     document.querySelectorAll('#panes .pane-mark, #strip .pane-mark').forEach((m) => m.remove());
-    for (const slot of document.querySelectorAll('#panes .slot')) {
-      const l = look(slot.dataset.pane, tab);
-      if (l) slot.append(dot(l));
+    for (const head of document.querySelectorAll('#panes .pane-head')) {
+      const l = look(head.dataset.pane, tab);
+      if (l) head.prepend(dot(l));
     }
-    for (const chip of document.querySelectorAll('#strip .chip[data-pane]')) {
-      const l = look(chip.dataset.pane, tab);
-      if (l && l.state) chip.prepend(dot({ ...l, size: 7 }));
+    for (const chip of document.querySelectorAll('#strip .chip[data-tab]')) {
+      const t = S.layout.tabs.find((x) => x.id === chip.dataset.tab);
+      const l = t && tabLook(t);
+      if (l) chip.prepend(dot(l));
     }
     for (const chip of document.querySelectorAll('#strip .chip.hidden')) {
       const st = stateOf(chip.dataset.session);
@@ -65,13 +77,5 @@ Umi.views.marks = (() => {
     if (n !== badge) { badge = n; Umi.bridge.post({ type: 'badge', count: n }); }
   }
 
-  // The marks over terminals, in CSS px: native cuts them out.
-  function holeRects() {
-    return [...document.querySelectorAll('#panes .slot[data-view="terminal"] .pane-mark')].map((m) => {
-      const r = m.getBoundingClientRect();
-      return { x: r.left - 1, y: r.top - 1, w: r.width + 2, h: r.height + 2 };
-    });
-  }
-
-  return { render, holeRects, stateOf };
+  return { render, stateOf };
 })();
