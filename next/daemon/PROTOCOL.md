@@ -39,12 +39,20 @@ Every message is a frame: `type` (1 byte), payload length (u32, big endian), pay
 | `ls` | | `sessions`: `[{id, name, cwd, command, pid, foreground, alive, exit_status, exit_signal, clients, cols, rows, created}]` |
 | `kill` | `id`, `signal` (default 15) | sends the signal to the session's process group |
 | `rm` | `id`, `force` | forgets an exited session; `force` SIGKILLs a live one first |
-| `screen` | `id`, `format`: `plain` or `vt` | `plain`: `text` (exactly rows lines), `styles`, `cursor {x,y,visible}`, `cols`, `rows`, `alternate`, `kitty_flags`, `mouse_tracking`, `bracketed_paste`, `app_cursor_keys`; `vt`: `vt` (base64 of the attach replay) |
+| `screen` | `id`, `format`: `plain` or `vt`, `scrollback` (bool, plain only) | `plain`: `text` (exactly rows lines), `styles`, `cursor {x,y,visible}`, `cols`, `rows`, `alternate`, `kitty_flags`, `mouse_tracking`, `bracketed_paste`, `app_cursor_keys`; with `scrollback`, also `history` (the rows above the screen, oldest first, one line each) and `history_rows`; `vt`: `vt` (base64 of the attach replay) |
 | `send` | `id`, `data` (base64) | writes the bytes to the pty |
 | `attach` | `id`, `cols`, `rows` | see below |
 | `stop` | `force` | refuses while sessions are alive unless `force`; then SIGHUPs them and exits |
 
 `id` also accepts a session's name.
+
+Each session keeps a scrollback bounded as Ghostty's default `scrollback-limit` (10 MB) and to
+about 10,000 lines (libghostty prunes whole pages), so an attach replay stays quick. The
+alternate screen has none (`history` is empty there; the primary screen's waits under it).
+
+Compatibility: requests carry only fields, so a client and a daemon of different versions keep
+working. A daemon from before scrollback ignores `scrollback` and replies without `history`;
+clients take a missing `history` as "this daemon has no scrollback to give" and say so.
 
 ## Attach
 
@@ -52,11 +60,14 @@ Every message is a frame: `type` (1 byte), payload length (u32, big endian), pay
 2. Daemon replies `{"ok":true,"id":…}`, resizes the session to the client's size (pty
    `TIOCSWINSZ`, which sends SIGWINCH, and the vt terminal), then sends one `O` frame: the replay.
 3. The replay is: `ESC c` (RIS); if the alternate screen is active, the primary screen and its
-   scrollback; then libghostty-vt's VT formatter output for the active screen with every extra
+   scrollback; then libghostty-vt's VT formatter output for the active screen, its scrollback first, with every extra
    (palette, modes that differ from default — alternate screen, bracketed paste, mouse modes,
    cursor keys, cursor visibility, … — scrolling region, tabstops, pwd, modifyOtherKeys, cursor
    position, current style, hyperlink, kitty keyboard flags, charsets); then any escape sequence
-   the program had only half written.
+   the program had only half written. The formatter leaves out the rows without text at the
+   end of a screen, so when the contents come short of filling it, the replay scrolls them up by
+   the missing rows (newlines at the bottom row) before the extras that follow the contents;
+   scrollback rows never show on the client's screen.
 4. Then live pty output as `O` frames; the client sends `I` (keystrokes) and `W` (resizes).
 5. When the session's process exits the daemon sends `X` and closes. Attaching to an exited
    session sends the replay and `X` at once.

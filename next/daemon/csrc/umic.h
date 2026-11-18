@@ -47,8 +47,12 @@ pid_t umi_tcgetpgrp(int fd);
 
 // ---- libghostty-vt ----
 
+// Scrollback bounds: Ghostty's default scrollback-limit (bytes) and a line cap.
+#define UMI_SCROLLBACK_MAX_BYTES ((size_t)10000000)
+#define UMI_SCROLLBACK_MAX_LINES ((size_t)10000)
+
 // New terminal with continuation tracking (so a replay can finish an
-// escape sequence that was cut mid-way) and a 10000-line scrollback.
+// escape sequence that was cut mid-way) and a scrollback bounded as above.
 GhosttyTerminal umi_vt_new(uint16_t cols, uint16_t rows);
 // Route VT query responses (DA, DSR, …) to fn(userdata, data, len).
 void umi_vt_set_write_pty(GhosttyTerminal t, void *userdata,
@@ -69,6 +73,12 @@ uint8_t *umi_vt_replay(GhosttyTerminal t, size_t *out_len);
 // The active area as plain text: exactly `rows` lines, each ending in
 // '\n', trailing spaces trimmed. malloc'd, free with free().
 char *umi_vt_plain(GhosttyTerminal t, size_t *out_len);
+
+// The active screen's scrollback above the active area as plain text, one
+// line per row (oldest first, trailing spaces trimmed, soft wraps kept as
+// row breaks). *out_rows receives the number of rows. In the alternate
+// screen this is empty (it has no scrollback). malloc'd, free with free().
+char *umi_vt_history(GhosttyTerminal t, size_t *out_len, size_t *out_rows);
 
 // Per-cell style of the active area: one line per row, cells separated by
 // spaces, "." for the default style, else fg/bg/flags+underline.

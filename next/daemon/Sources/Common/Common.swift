@@ -152,6 +152,16 @@ func eprint(_ s: String) {
     FileHandle.standardError.write((s + "\n").data(using: .utf8)!)
 }
 
+/// The scrollback above the screen: `history` (one line per row, oldest first) and
+/// `history_rows`, as `screen` reports them with `scrollback`.
+func vtHistory(_ t: GhosttyTerminal) -> [String: Any] {
+    var len = 0, rows = 0
+    let p = umi_vt_history(t, &len, &rows)
+    let text = p.map { String(cString: $0) } ?? ""
+    free(p)
+    return ["history": text, "history_rows": rows]
+}
+
 /// Screen text, styles, cursor and modes of a terminal, as reported by
 /// `screen --json` and `render --json`.
 func vtState(_ t: GhosttyTerminal) -> [String: Any] {

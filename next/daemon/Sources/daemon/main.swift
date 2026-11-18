@@ -360,6 +360,7 @@ func handleJSON(_ c: Conn, _ req: [String: Any]) {
             reply(c, ["ok": true, "vt": Data(replayBytes(s)).base64EncodedString()])
         } else {
             var o = vtState(s.term); o["ok"] = true
+            if (req["scrollback"] as? Bool) == true { o.merge(vtHistory(s.term)) { a, _ in a } }
             reply(c, o)
         }
     case "send":

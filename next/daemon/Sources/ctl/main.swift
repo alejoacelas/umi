@@ -10,12 +10,13 @@ usage: umi-next-ctl <command>
   ls                       sessions as JSON
   kill <id> [--signal N]   signal the session's process group (default TERM)
   rm <id> [--force]        forget an exited session (--force kills a live one)
-  screen <id> [--json|--vt] current screen (plain text; --json adds cursor and modes)
+  screen <id> [--json|--vt] [--scrollback]   current screen (plain text; --json adds cursor
+                           and modes; --scrollback puts the scrollback above it, `history` in JSON)
   send <id> <text>         type text into the session
   ping                     daemon pid and session count (fails if not running)
   daemon-start             start the daemon if it isn't running
   daemon-stop [--force]    stop the daemon (refuses while sessions are alive)
-  render --cols N --rows N [--json]   feed stdin into a fresh terminal, print its screen
+  render --cols N --rows N [--json] [--scrollback]   feed stdin into a fresh terminal, print its screen
 State dir: $UMI_NEXT_STATE_DIR or ~/Library/Application Support/Umi-next
 """
 
@@ -119,16 +120,20 @@ case "rm":
     guard let id = args.first else { die("rm <id>") }
     _ = request(["op": "rm", "id": id, "force": force])
 case "screen":
-    let json = flag("--json"), vt = flag("--vt")
+    let json = flag("--json"), vt = flag("--vt"), scrollback = flag("--scrollback")
     guard let id = args.first else { die("screen <id>") }
-    let r = request(["op": "screen", "id": id, "format": vt ? "vt" : "plain"])
+    let r = request(["op": "screen", "id": id, "format": vt ? "vt" : "plain", "scrollback": scrollback])
+    // A daemon from before scrollback ignores the field and sends the screen alone.
+    if scrollback && !vt && r["history"] == nil {
+        die("the running daemon keeps no scrollback for `screen` (it predates it); restarting it ends every session")
+    }
     if vt {
         FileHandle.standardOutput.write(Data(base64Encoded: r["vt"] as? String ?? "") ?? Data())
     } else if json {
         var o = r; o.removeValue(forKey: "ok")
         printJSON(o)
     } else {
-        FileHandle.standardOutput.write((r["text"] as? String ?? "").data(using: .utf8)!)
+        FileHandle.standardOutput.write(((r["history"] as? String ?? "") + (r["text"] as? String ?? "")).data(using: .utf8)!)
     }
 case "send":
     guard args.count == 2 else { die("send <id> <text>") }
@@ -161,10 +166,13 @@ case "render":
         let t2 = umi_vt_new(UInt16(c), UInt16(r))!
         ghostty_terminal_vt_write(t2, p, n)
         free(p)
-        printJSON(["original": vtState(t), "replayed": vtState(t2)])
+        var a = vtState(t), b = vtState(t2)
+        a.merge(vtHistory(t)) { x, _ in x }; b.merge(vtHistory(t2)) { x, _ in x }
+        printJSON(["original": a, "replayed": b])
         exit(0)
     }
-    let st = vtState(t)
+    var st = vtState(t)
+    if flag("--scrollback") { st.merge(vtHistory(t)) { a, _ in a } }
     if json { printJSON(st) } else { FileHandle.standardOutput.write((st["text"] as! String).data(using: .utf8)!) }
 case "-h", "--help", "help":
     print(usage)

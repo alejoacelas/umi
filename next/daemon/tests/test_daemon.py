@@ -71,8 +71,8 @@ class Env:
             a += ["--name", name]
         return self.ctl(*a).stdout.decode().strip()
 
-    def screen(self, sid):
-        return json.loads(self.ctl("screen", sid, "--json").stdout)
+    def screen(self, sid, scrollback=False):
+        return json.loads(self.ctl("screen", sid, "--json", *(["--scrollback"] if scrollback else [])).stdout)
 
     def session(self, sid):
         return next(s for s in json.loads(self.ctl("ls").stdout) if s["id"] == sid)
@@ -80,8 +80,9 @@ class Env:
     def daemon_pid(self):
         return json.loads(self.ctl("ping").stdout)["pid"]
 
-    def render(self, data, cols, rows):
-        return json.loads(self.ctl("render", "--cols", str(cols), "--rows", str(rows), "--json", input=data).stdout)
+    def render(self, data, cols, rows, scrollback=False):
+        return json.loads(self.ctl("render", "--cols", str(cols), "--rows", str(rows), "--json",
+                                   *(["--scrollback"] if scrollback else []), input=data).stdout)
 
     def cleanup(self):
         self.ctl("daemon-stop", "--force", check=False)
@@ -144,8 +145,8 @@ class Client:
         set_winsize(self.master, cols, rows)
         os.killpg(self.proc.pid, signal.SIGWINCH)
 
-    def render(self, env):
-        return env.render(self.output(), self.cols, self.rows)
+    def render(self, env, scrollback=False):
+        return env.render(self.output(), self.cols, self.rows, scrollback)
 
     def kill9(self):
         self.proc.kill()
@@ -418,6 +419,97 @@ def test_new_session_drops_agent_markers(env):
     assert "CODEX_HOME=/codex-home" in text and "CLAUDE_CODE_OAUTH_TOKEN=tok" in text
     for marker in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID"):
         assert marker + "=" not in text, text
+
+
+# ---------- scrollback ----------
+
+def test_scrollback_read_and_reattach(env):
+    """`screen --scrollback` gives the rows above the screen; a reattached client gets the
+    same history and the same screen, also when the screen ends in empty rows (the cursor on
+    an empty last row after a newline)."""
+    sid = env.new("seq 1 300; sleep 1000", cols=40, rows=10)
+    wait_for(lambda: "300" in env.screen(sid)["text"], what="output")
+    d = env.screen(sid, scrollback=True)
+    hist = lines(d["history"])
+    assert d["history_rows"] == len(hist) >= 290
+    assert hist[0] == "1" and hist[-1] == str(300 - len(lines(d["text"])) + 1)
+    assert lines(d["text"])[-1] == "", "the cursor sits on an empty last row"
+    # Plain text: the history, then the screen.
+    plain = env.ctl("screen", sid, "--scrollback").stdout.decode()
+    assert plain == d["history"] + d["text"]
+    assert [l for l in plain.split("\n") if l] == [str(i) for i in range(1, 301)]
+    # Without --scrollback, the reply is as before (no history).
+    assert "history" not in env.screen(sid)
+    c = Client(env, sid, 40, 10)
+    c.quiet()
+    r = c.render(env, scrollback=True)
+    assert_same_screen(r, d, "reattach with scrollback")
+    assert r["history"] == d["history"], "the reattached client's scrollback differs"
+    c.kill9()
+
+
+def test_scrollback_kept_under_a_full_screen_program(env):
+    """History written before a program takes the alternate screen comes back on reattach,
+    and is there when the program leaves."""
+    sid = env.new("seq 1 100; printf '\\033[?1049h\\033[2;3Hfull screen'; read x; printf '\\033[?1049l'; sleep 1000",
+                  cols=40, rows=8)
+    wait_for(lambda: "full screen" in env.screen(sid)["text"], what="alternate screen")
+    assert env.screen(sid, scrollback=True)["history"] == "", "the alternate screen has no scrollback"
+    c = Client(env, sid, 40, 8)
+    c.quiet()
+    assert_same_screen(c.render(env), env.screen(sid), "alternate screen on reattach")
+    c.write(b"\r")
+    wait_for(lambda: not env.screen(sid)["alternate"], what="leaving the alternate screen")
+    c.quiet()
+    d = env.screen(sid, scrollback=True)
+    assert lines(d["history"])[0] == "1"
+    r = c.render(env, scrollback=True)
+    assert r["text"] == d["text"] and r["history"] == d["history"], \
+        f"primary screen after the program left:\n{r['history']}{r['text']}\nvs daemon:\n{d['history']}{d['text']}"
+    c.kill9()
+
+
+def test_scrollback_is_bounded(env):
+    sid = env.new("seq 1 30000; sleep 1000", cols=40, rows=10)
+    wait_for(lambda: "30000" in env.screen(sid)["text"], timeout=30, what="output")
+    d = env.screen(sid, scrollback=True)
+    hist = lines(d["history"])
+    # About 10,000 lines: libghostty prunes whole pages, so a page's worth either way.
+    assert 8000 <= d["history_rows"] <= 12000, d["history_rows"]
+    assert hist[-1] == str(30000 - len(lines(d["text"])) + 1) and int(hist[0]) > 18000
+
+
+def test_scrollback_from_an_old_daemon(env):
+    """A daemon from before scrollback answers `screen` without `history`; `screen
+    --scrollback` says so instead of printing the screen as if it were everything."""
+    import socket
+    env.state.mkdir(parents=True, exist_ok=True)
+    path = str(env.state / "daemon.sock")
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    srv.bind(path)
+    srv.listen(4)
+
+    def serve():
+        for _ in range(2):
+            conn, _ = srv.accept()
+            head = conn.recv(5)
+            n = struct.unpack(">I", head[1:5])[0]
+            body = b""
+            while len(body) < n:
+                body += conn.recv(n - len(body))
+            assert json.loads(body)["op"] == "screen"
+            out = json.dumps({"ok": True, "text": "old screen\n", "cols": 40, "rows": 1}).encode()
+            conn.sendall(b"J" + struct.pack(">I", len(out)) + out)
+            conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        assert env.ctl("screen", "x").stdout == b"old screen\n"
+        r = env.ctl("screen", "x", "--scrollback", check=False)
+        assert r.returncode == 1 and b"predates it" in r.stderr, r.stderr
+    finally:
+        srv.close()
+        os.unlink(path)
 
 
 def test_send_and_single_daemon(env):

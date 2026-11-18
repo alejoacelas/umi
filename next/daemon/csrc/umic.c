@@ -154,7 +154,11 @@ GhosttyTerminal umi_vt_new(uint16_t cols, uint16_t rows) {
         return NULL;
     size_t cont = 64 * 1024;
     ghostty_terminal_set(t, GHOSTTY_TERMINAL_OPT_CONTINUATION_MAX_BYTES, &cont);
-    size_t lines = 10000;
+    // Scrollback: Ghostty's own default bound (scrollback-limit, 10 MB), and at most 10,000
+    // lines so an attach replay stays quick.
+    size_t bytes = UMI_SCROLLBACK_MAX_BYTES;
+    ghostty_terminal_set(t, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_BYTES, &bytes);
+    size_t lines = UMI_SCROLLBACK_MAX_LINES;
     ghostty_terminal_set(t, GHOSTTY_TERMINAL_OPT_SCROLLBACK_MAX_LINES, &lines);
     return t;
 }
@@ -209,7 +213,12 @@ static bool buf_writer(void *ud, const uint8_t *data, size_t len) {
     return buf_append(ud, data, len);
 }
 
-static bool format_into(GhosttyTerminal t, Buf *b, bool all_extras) {
+// Which parts of the formatter's VT output to write: the terminal extras that go before the
+// contents (palette, modes, tabstops), the contents (always), and the extras after them
+// (scrolling region, keyboard, pwd, then the screen's cursor, style, hyperlink, protection,
+// kitty keyboard flags, charsets). `all` is every extra; without it only the cursor, style and
+// hyperlink follow the contents.
+static bool format_parts(GhosttyTerminal t, Buf *b, bool all, bool before, bool after) {
     GhosttyFormatterTerminalOptions o =
         GHOSTTY_INIT_SIZED(GhosttyFormatterTerminalOptions);
     o.emit = GHOSTTY_FORMATTER_FORMAT_VT;
@@ -217,18 +226,18 @@ static bool format_into(GhosttyTerminal t, Buf *b, bool all_extras) {
     o.trim = false;
     o.extra.size = sizeof(o.extra);
     o.extra.screen.size = sizeof(o.extra.screen);
-    o.extra.palette = all_extras;
-    o.extra.modes = all_extras;
-    o.extra.scrolling_region = all_extras;
-    o.extra.tabstops = all_extras;
-    o.extra.pwd = all_extras;
-    o.extra.keyboard = all_extras;
-    o.extra.screen.cursor = true;
-    o.extra.screen.style = true;
-    o.extra.screen.hyperlink = true;
-    o.extra.screen.protection = all_extras;
-    o.extra.screen.kitty_keyboard = all_extras;
-    o.extra.screen.charsets = all_extras;
+    o.extra.palette = all && before;
+    o.extra.modes = all && before;
+    o.extra.tabstops = all && before;
+    o.extra.scrolling_region = all && after;
+    o.extra.pwd = all && after;
+    o.extra.keyboard = all && after;
+    o.extra.screen.cursor = after;
+    o.extra.screen.style = after;
+    o.extra.screen.hyperlink = after;
+    o.extra.screen.protection = all && after;
+    o.extra.screen.kitty_keyboard = all && after;
+    o.extra.screen.charsets = all && after;
     GhosttyFormatter f = NULL;
     if (ghostty_formatter_terminal_new(NULL, &f, t, o) != GHOSTTY_SUCCESS)
         return false;
@@ -238,9 +247,8 @@ static bool format_into(GhosttyTerminal t, Buf *b, bool all_extras) {
     return r == GHOSTTY_SUCCESS;
 }
 
-// A copy of t (via a snapshot) switched back to the primary screen, so the
-// primary screen can be formatted while the app is in the alternate screen.
-static GhosttyTerminal primary_copy(GhosttyTerminal t) {
+// A copy of t through a snapshot (the same state, scrollback included).
+static GhosttyTerminal snapshot_copy(GhosttyTerminal t) {
     uint8_t *snap = NULL;
     size_t snap_len = 0;
     if (ghostty_snapshot_encode_alloc(t, NULL, &snap, &snap_len) !=
@@ -255,12 +263,84 @@ static GhosttyTerminal primary_copy(GhosttyTerminal t) {
         ghostty_snapshot_decoder_free(d);
     }
     ghostty_free(NULL, snap, snap_len);
+    return copy;
+}
+
+static void vt_write_str(GhosttyTerminal t, const char *s) {
+    ghostty_terminal_vt_write(t, (const uint8_t *)s, strlen(s));
+}
+
+// A copy of t switched back to the primary screen, so the primary screen can be formatted
+// while the app is in the alternate screen.
+static GhosttyTerminal primary_copy(GhosttyTerminal t) {
+    GhosttyTerminal copy = snapshot_copy(t);
     if (!copy) return NULL;
     // Finish any partial sequence harmlessly, then leave the alternate
     // screen (restores the primary cursor saved by 1049).
-    const char *leave = "\x18\x1b[?1049l\x1b[?1047l\x1b[?47l";
-    ghostty_terminal_vt_write(copy, (const uint8_t *)leave, strlen(leave));
+    vt_write_str(copy, "\x18\x1b[?1049l\x1b[?1047l\x1b[?47l");
     return copy;
+}
+
+static bool row_has_text(GhosttyTerminal t, uint32_t y, uint16_t cols) {
+    for (uint16_t x = 0; x < cols; x++) {
+        GhosttyGridRef ref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
+        GhosttyPoint pt = {.tag = GHOSTTY_POINT_TAG_SCREEN,
+                           .value = {.coordinate = {.x = x, .y = y}}};
+        GhosttyCell cell;
+        if (ghostty_terminal_grid_ref(t, pt, &ref) != GHOSTTY_SUCCESS ||
+            ghostty_grid_ref_cell(&ref, &cell) != GHOSTTY_SUCCESS)
+            continue;
+        bool has = false;
+        ghostty_cell_get(cell, GHOSTTY_CELL_DATA_HAS_TEXT, &has);
+        if (has) return true;
+    }
+    return false;
+}
+
+// The formatter leaves out the rows without text at the end of the screen. Written from the
+// top of a blank terminal, the contents then end lower on the screen than they are, and
+// scrollback rows show on it. The rows the contents must still scroll up by.
+static size_t replay_shift(GhosttyTerminal t) {
+    size_t history = 0, total = 0;
+    uint16_t cols = 0, rows = 0;
+    ghostty_terminal_get(t, GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS, &history);
+    if (history == 0) return 0;
+    ghostty_terminal_get(t, GHOSTTY_TERMINAL_DATA_TOTAL_ROWS, &total);
+    ghostty_terminal_get(t, GHOSTTY_TERMINAL_DATA_COLS, &cols);
+    ghostty_terminal_get(t, GHOSTTY_TERMINAL_DATA_ROWS, &rows);
+    // Rows written: up to the last one with text.
+    size_t written = 0;
+    for (size_t y = total; y > 0; y--) {
+        if (row_has_text(t, (uint32_t)(y - 1), cols)) { written = y; break; }
+    }
+    // The client shows the last min(written, rows) of them, the last on row
+    // min(written, rows) - 1; it belongs on row written - 1 - history.
+    size_t over = written > rows ? written - rows : 0;
+    return history > over ? history - over : 0;
+}
+
+// The formatter's output for t (contents and the extras chosen by `all`), with the rows the
+// contents must scroll up by (replay_shift) inserted between the contents and the extras
+// that follow them. Those extras come from a copy of t with its contents erased.
+static bool format_screen(GhosttyTerminal t, Buf *b, bool all) {
+    size_t shift = replay_shift(t);
+    if (shift == 0) return format_parts(t, b, all, true, true);
+    GhosttyTerminal blank = snapshot_copy(t);
+    if (!blank) return format_parts(t, b, all, true, true);
+    // Erase with the default style and put the cursor (and its style) back.
+    vt_write_str(blank, "\x18\x1b" "7\x1b[0m\x1b[2J\x1b[3J\x1b" "8");
+    uint16_t rows = 0;
+    ghostty_terminal_get(t, GHOSTTY_TERMINAL_DATA_ROWS, &rows);
+    bool ok = format_parts(t, b, all, true, false);
+    // To the bottom row of the whole screen (the scrolling region comes after), with no
+    // background colour for the new rows.
+    char cup[32];
+    int n = snprintf(cup, sizeof cup, "\x1b[0m\x1b[%u;1H", (unsigned)rows);
+    ok = ok && buf_append(b, (const uint8_t *)cup, (size_t)n);
+    for (size_t i = 0; ok && i < shift; i++) ok = buf_append(b, (const uint8_t *)"\n", 1);
+    ok = ok && format_parts(blank, b, all, false, true);
+    ghostty_terminal_free(blank);
+    return ok;
 }
 
 uint8_t *umi_vt_replay(GhosttyTerminal t, size_t *out_len) {
@@ -272,14 +352,14 @@ uint8_t *umi_vt_replay(GhosttyTerminal t, size_t *out_len) {
     if (screen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE) {
         GhosttyTerminal copy = primary_copy(t);
         if (copy) {
-            bool ok = format_into(copy, &b, false);
+            bool ok = format_screen(copy, &b, false);
             // Reset the style the primary content left set.
             ok = ok && buf_append(&b, (const uint8_t *)"\x1b[0m", 4);
             ghostty_terminal_free(copy);
             if (!ok) goto fail;
         }
     }
-    if (!format_into(t, &b, true)) goto fail;
+    if (!format_screen(t, &b, true)) goto fail;
     // An escape sequence cut mid-way: the live stream carries its tail.
     uint8_t *cont = NULL;
     size_t cont_len = 0;
@@ -363,6 +443,47 @@ char *umi_vt_plain(GhosttyTerminal t, size_t *out_len) {
     buf_append(&b, (const uint8_t *)"", 1);  // NUL
     b.len -= 1;
     *out_len = b.len;
+    return (char *)b.ptr;
+}
+
+char *umi_vt_history(GhosttyTerminal t, size_t *out_len, size_t *out_rows) {
+    size_t history = 0;
+    ghostty_terminal_get(t, GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS, &history);
+    Buf all = {0};
+    GhosttyFormatterTerminalOptions o =
+        GHOSTTY_INIT_SIZED(GhosttyFormatterTerminalOptions);
+    o.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN;
+    o.unwrap = false;
+    o.trim = true;
+    o.extra.size = sizeof(o.extra);
+    o.extra.screen.size = sizeof(o.extra.screen);
+    GhosttyFormatter f = NULL;
+    bool ok = history > 0 &&
+              ghostty_formatter_terminal_new(NULL, &f, t, o) == GHOSTTY_SUCCESS;
+    if (ok) {
+        GhosttyWriter w = {.write = buf_writer, .userdata = &all};
+        ok = ghostty_formatter_format(f, w) == GHOSTTY_SUCCESS;
+        ghostty_formatter_free(f);
+    }
+    // The formatter writes one line per row, the history's rows first: keep those.
+    Buf b = {0};
+    size_t rows = 0, start = 0;
+    for (size_t i = 0; ok && i < all.len && rows < history; i++) {
+        if (all.ptr[i] != '\n') continue;
+        buf_append(&b, all.ptr + start, i + 1 - start);
+        start = i + 1;
+        rows++;
+    }
+    if (ok && rows < history && start < all.len) {
+        buf_append(&b, all.ptr + start, all.len - start);
+        buf_append(&b, (const uint8_t *)"\n", 1);
+        rows++;
+    }
+    free(all.ptr);
+    buf_append(&b, (const uint8_t *)"", 1);  // NUL
+    b.len -= 1;
+    *out_len = b.len;
+    *out_rows = rows;
     return (char *)b.ptr;
 }
 
