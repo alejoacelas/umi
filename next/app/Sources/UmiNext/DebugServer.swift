@@ -83,11 +83,12 @@ final class DebugServer {
             postKey(cmd["key"] as? String ?? "", mods: mods, window: c.window)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { done(["ok": true]) }
         case "click":
-            // x, y: window points from the top-left of the content.
+            // x, y: window points from the top-left of the content; button "right": a right-click.
             let x = cmd["x"] as? Double ?? 0, y = cmd["y"] as? Double ?? 0
             let h = c.window.contentView!.bounds.height
             let p = NSPoint(x: x, y: h - y)
-            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let right = cmd["button"] as? String == "right"
+            for type in right ? [NSEvent.EventType.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp] {
                 if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                               windowNumber: c.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
                     NSApp.sendEvent(e)

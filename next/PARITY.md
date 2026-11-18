@@ -99,6 +99,7 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 | Attention: jump (L-12) | ⌃⌘J next pane needing you, ⌃⌘K back | [x] ⌃⌘J = next waiting (Review order); ⌃⌘K back to the session the walk started from | — |
 | Pane indicator (PI-1..4) | small mark per pane: working, needs you, finished unseen | [x] a mark at each pane's bottom right (cut out of the terminal by native) and before its chip, hidden chips included, from `S.live[sid].agent`, in Umi's quiet palette and sizes. "Finished" lasts until the pane is focused (page memory, not persisted) | The sidebar row's mark: later |
 | Notifications, Dock badge (T-6, `badge`) | desktop notification from panes; Dock badge counts needs-you | [x] Dock badge = Review items of the current project (`badge` message); `umi-next notify` posts a desktop notification (bridge `notify`), none from a snoozed or docketed session | Clicking a notification to focus its pane: later |
+| Terminal right-click menu (L-31) | Warp's items with their keys, then Ghostty's; acts on the pane clicked | [x] `web/views/termmenu.js`, through the native menu (keys from the shortcut table and the terminal's Ghostty bindings): Copy (text selected) · Paste (greyed with an empty clipboard), Clear (neither with text selected before the click or in a full-screen program) · Split Pane Right, Split Pane Down, in a split Maximize / Minimize Pane and Close Pane (⌘W's) · Reset Terminal, Terminal Read-only (checked) · Change Tab Title..., Change Terminal Title... (renames the session). A program reading the mouse gets the right-click instead. Paste goes into synchronized panes too | Departure: no Split Pane Left / Up (Next splits right and down), no Toggle Terminal Inspector (no inspector) |
 | Edit menu | Undo, Redo, Cut, Copy, Paste, Select All | [x] the same items; a terminal takes Copy, Paste and Select All, and the rest pass its keys on | — |
 | Tab switch fade (L-11) | 140 ms fade on tab switch | [x] terminals (native) and the page's panes fade in over 140 ms; none with Reduce Motion | — |
 | Find in terminal (Ghostty's search) | ⌘F bar at the top right, ⌘G ⇧⌘G, Esc | [x] ⌘F opens a bar at the pane's top right (drawn by the page, cut out of the terminal by native: `holes`); Ghostty searches and highlights; count "N of M"; ⌘G / ⇧⌘G / Enter / ⇧Enter step; Esc closes. Keys are `when: 'terminal'` | — |
@@ -187,7 +188,7 @@ set|get|until` attributes and queries, `list`/`slot`/`command`, `events`, `log`,
 - Settings / config file, slots, named lists, queries, key bindings and palette commands from the
   config (Q-1..Q-8).
 - Multiple windows, tab moves between windows (M-2, M-5, M-6).
-- Launch configurations (L-21), the terminal's right-click menu (L-31).
+- Launch configurations (L-21).
 - Attributes, events and the activity log (D-1..D-8). The focus log is in (track d).
 - Warp's terminal look (S-9..S-12) beyond what Ghostty's zsh integration already gives.
 - Docs tab and default-app registration (E-10, `editor default`), web panes (E-12).

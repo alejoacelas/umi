@@ -5,7 +5,7 @@
   umi-next-ui-debug keys 'echo hi\r'          # typed as key presses into the key window
   umi-next-ui-debug shortcut t cmd            # ⌘T (mods: cmd shift opt ctrl)
   umi-next-ui-debug screen [PANE]             # the pane's visible text
-  umi-next-ui-debug click X Y                 # window points from the content's top-left
+  umi-next-ui-debug click X Y [right]         # window points from the content's top-left
   umi-next-ui-debug eval 'document.title'
   umi-next-ui-debug resize W H
   umi-next-ui-debug liveResize FROM TO [STEPS] [INTERVAL_MS]
@@ -26,7 +26,7 @@ elif a[0] == "shortcut":
 elif a[0] == "screen":
     cmd = {"cmd": "screen", **({"pane": a[1]} if len(a) > 1 else {})}
 elif a[0] == "click":
-    cmd = {"cmd": "click", "x": float(a[1]), "y": float(a[2])}
+    cmd = {"cmd": "click", "x": float(a[1]), "y": float(a[2]), **({"button": "right"} if a[3:4] == ["right"] else {})}
 elif a[0] == "eval":
     cmd = {"cmd": "eval", "js": a[1]}
 elif a[0] == "resize":

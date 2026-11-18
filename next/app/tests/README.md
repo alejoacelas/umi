@@ -32,6 +32,10 @@
     images, find, Rendered / Raw, comments, source editing, save, disk changes, drafts across a
     reload, ⌘W's question, refusals, JSON / CSV / TSV previews, git marks, chip icons, the pane menus. Debug-socket keys only, so it runs with `UMI_NEXT_OFFSCREEN=1`;
     start the app with `UMI_NEXT_TEST_OPEN_LOG=OPEN_LOG`.
+  - `menus_test.py STATE_DIR SCRATCH [EXTRA_CONF]`: the terminal's right-click menu (a right-click
+    through the debug socket), a tab row's menu and Ghostty's keybindings on the shortcuts page;
+    the native menu answers as if an item were chosen. Off screen; uses the clipboard. EXTRA_CONF:
+    the app's `UMI_NEXT_TERMINAL_CONFIG`, written by a first run, checked by the next.
   - `file_keys_test.py STATE_DIR KEY SCRATCH`: the file-pane keys the debug socket can't send as a
     keyboard does (⌥⌘M, Escape in CodeMirror's panels, the Edit menu's ⌘X ⌘Z ⇧⌘Z), by real key
     events, under the screen lock.

@@ -111,6 +111,10 @@ final class GhosttyRuntime {
             guard let view else { return false }
             view.setCursorShape(action.action.mouse_shape)
             return true
+        case GHOSTTY_ACTION_READONLY:
+            guard let view else { return false }
+            view.readonly = action.action.readonly == GHOSTTY_READONLY_ON
+            return true
         case GHOSTTY_ACTION_MOUSE_VISIBILITY:
             NSCursor.setHiddenUntilMouseMoves(action.action.mouse_visibility == GHOSTTY_MOUSE_HIDDEN)
             return true

@@ -68,3 +68,17 @@ struct ShortcutTable {
         return entries.first { $0.mods == mods && ($0.keyCode.map { $0 == e.keyCode } ?? ($0.char == base)) }
     }
 }
+
+extension ShortcutTable.Entry {
+    /// The key as a menu item shows it (NSMenuItem.keyEquivalent), nil for one a menu can't show.
+    var keyEquivalent: String? {
+        if let char { return char }
+        let function: [UInt16: Int] = [123: NSLeftArrowFunctionKey, 124: NSRightArrowFunctionKey, 125: NSDownArrowFunctionKey,
+                                       126: NSUpArrowFunctionKey, 115: NSHomeFunctionKey, 119: NSEndFunctionKey,
+                                       116: NSPageUpFunctionKey, 121: NSPageDownFunctionKey, 117: NSDeleteFunctionKey]
+        let plain: [UInt16: String] = [36: "\r", 53: "\u{1b}", 48: "\t", 49: " ", 51: "\u{8}"]
+        guard let keyCode else { return nil }
+        if let s = plain[keyCode] { return s }
+        return function[keyCode].flatMap { UnicodeScalar(UInt32($0)) }.map { String(Character($0)) }
+    }
+}

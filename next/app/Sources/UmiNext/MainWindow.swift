@@ -439,6 +439,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             command: launch.command, workingDirectory: launch.workingDirectory, environment: env))
         view.onFocus = { [weak self] v in self?.send(["type": "focused", "pane": v.paneID]) }
         view.syncPeers = { [weak self] v in self?.syncPeers(of: v) ?? [] }
+        view.onContextMenu = { [weak self] v, p, before in self?.terminalMenu(v, at: p, selectedBefore: before) }
         terminalLayer.addSubview(view)
         applyFont(to: view)
         surfaces[id] = view
@@ -532,7 +533,9 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     /// A native context menu for the web layer (the explorer's right-click menu, as Umi's is native).
-    /// Items: {title, enabled?} or {separator: true}. Returns the chosen item's index.
+    /// Items: {title, enabled?, checked?, key?} or {separator: true}; `key` is a shortcut as
+    /// web/shortcuts.js writes it (`cmd+shift+d`), shown beside the title (a context menu's keys
+    /// don't act on their own). Returns the chosen item's index.
     private func popUpMenu(_ items: [[String: Any]], x: Double, y: Double) -> Int? {
         final class Picker: NSObject { var chosen: Int?; @objc func pick(_ s: NSMenuItem) { chosen = s.tag } }
         let picker = Picker()
@@ -544,6 +547,11 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             item.target = picker
             item.tag = i
             item.isEnabled = it["enabled"] as? Bool ?? true
+            item.state = it["checked"] as? Bool == true ? .on : .off
+            if let keys = it["key"] as? String, let e = ShortcutTable.parse("", keys, nil), let k = e.keyEquivalent {
+                item.keyEquivalent = k
+                item.keyEquivalentModifierMask = e.mods
+            }
             menu.addItem(item)
         }
         let zoom = webView.pageZoom
@@ -577,10 +585,24 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
     // MARK: Find, zoom, synchronized input
 
-    /// The page's requests about terminals (web/views/find.js): `termSearch {pane, needle}`,
-    /// `termSearchNav {pane, dir}`, `termSearchEnd {pane}`. Returns false for other ops.
+    /// A right-click in a terminal its program didn't take: the page shows the menu
+    /// (web/views/termmenu.js), with what it needs to choose the items.
+    private func terminalMenu(_ v: TerminalSurfaceView, at p: NSPoint, selectedBefore: Bool) {
+        let w = webView.convert(v.convert(p, to: nil), from: nil)
+        let zoom = webView.pageZoom
+        send(["type": "termMenu", "pane": v.paneID, "x": w.x / zoom,
+              "y": (webView.isFlipped ? w.y : webView.bounds.height - w.y) / zoom,
+              "selected": v.hasSelection, "selectedBefore": selectedBefore, "alternate": v.alternateScreen,
+              "clipboard": !(NSPasteboard.general.string(forType: .string) ?? "").isEmpty, "readonly": v.readonly])
+    }
+
+    /// The page's requests about terminals: find (web/views/find.js) `termSearch {pane, needle}`,
+    /// `termSearchNav {pane, dir}`, `termSearchEnd {pane}`; the right-click menu's
+    /// (web/views/termmenu.js) `termAction {pane, action}`, action `copy`, `paste` (into the
+    /// synchronized terminals too, as ⌘V), `clear`, `reset`, `readonly` (toggles). Returns false
+    /// for other ops.
     private func handleTerminalRequest(_ msg: [String: Any]) -> Bool {
-        guard let op = msg["op"] as? String, op.hasPrefix("termSearch"), let id = msg["id"] as? String else { return false }
+        guard let op = msg["op"] as? String, op.hasPrefix("termSearch") || op == "termAction", let id = msg["id"] as? String else { return false }
         let args = msg["args"] as? [String: Any] ?? [:]
         guard let pane = args["pane"] as? String, let v = surfaces[pane] else {
             send(["type": "reply", "id": id, "ok": false, "error": ["code": "notFound", "message": "no terminal for that pane"]])
@@ -591,6 +613,15 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         case "termSearch": v.bindingAction("search:" + (args["needle"] as? String ?? "")); done = true
         case "termSearchNav": done = v.bindingAction("navigate_search:" + ((args["dir"] as? String) == "previous" ? "previous" : "next"))
         case "termSearchEnd": done = v.bindingAction("end_search")
+        case "termAction":
+            switch args["action"] as? String {
+            case "copy": v.copy(nil); done = true
+            case "paste": v.paste(nil); done = true
+            case "clear": done = v.bindingAction("clear_screen")
+            case "reset": done = v.bindingAction("reset")
+            case "readonly": done = v.bindingAction("toggle_readonly")
+            default: done = false
+            }
         default: done = false
         }
         send(["type": "reply", "id": id, "ok": true, "result": done])

@@ -26,6 +26,12 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
     var pasteRequestedAt: TimeInterval = 0
     /// umi-next: the font size last set on this terminal (nil: the config's).
     var appliedFontSize: Double?
+    /// umi-next: a right-click the program didn't take (no mouse reporting): the page shows the
+    /// terminal's menu (SPEC L-31). The point is in the view; `selectedBefore`: text was selected
+    /// before the click (Ghostty's right-click may select the word under it).
+    var onContextMenu: ((TerminalSurfaceView, NSPoint, Bool) -> Void)?
+    /// umi-next: Ghostty's read-only mode (toggle_readonly), as the core reports it.
+    var readonly = false
 
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]?
@@ -186,10 +192,19 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
 
     override func rightMouseDown(with event: NSEvent) {
         guard let surface else { return super.rightMouseDown(with: event) }
+        let selectedBefore = ghostty_surface_has_selection(surface)
         if !ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, GhosttyInput.ghosttyMods(event.modifierFlags)) {
-            super.rightMouseDown(with: event)
+            if let onContextMenu {
+                onContextMenu(self, convert(event.locationInWindow, from: nil), selectedBefore)
+            } else {
+                super.rightMouseDown(with: event)
+            }
         }
     }
+
+    var hasSelection: Bool { surface.map { ghostty_surface_has_selection($0) } ?? false }
+    /// A program's full-screen view (vim, less) shows: the alternate screen.
+    var alternateScreen: Bool { surface.map { ghostty_surface_umi_alternate_screen($0) } ?? false }
 
     override func rightMouseUp(with event: NSEvent) {
         guard let surface else { return super.rightMouseUp(with: event) }
@@ -456,6 +471,8 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
 
     @objc func paste(_ sender: Any?) {
         guard let surface else { return }
+        // Typed into the synchronized terminals too, as ⌘V (GhosttyRuntime.readClipboard).
+        pasteRequestedAt = ProcessInfo.processInfo.systemUptime
         _ = "paste_from_clipboard".withCString { ghostty_surface_binding_action(surface, $0, UInt(strlen($0))) }
     }
 
