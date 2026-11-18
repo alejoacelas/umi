@@ -82,7 +82,7 @@ Umi.app = (() => {
 })();
 
 Umi.bridge.on('state', (msg) => Umi.app.update(() => Umi.model.load(msg)));
-Umi.bridge.on('pane', (msg) => { Umi.model.paneInfo(msg.id, msg.info); Umi.views.sidebar.render(); Umi.views.panes.renderStrip(Umi.model.activeTab()); Umi.app.report(false); if (Umi.state.ui.editingTab) Umi.views.sidebar.focus(); });
+Umi.bridge.on('pane', (msg) => { Umi.model.paneInfo(msg.id, msg.info); Umi.views.sidebar.render(); Umi.views.panes.refreshChrome(); Umi.app.report(false); if (Umi.state.ui.editingTab) Umi.views.sidebar.focus(); });
 Umi.bridge.on('focused', (msg) => {
   const found = Umi.model.findPane(msg.pane);
   if (!found) return;
@@ -108,8 +108,7 @@ Umi.bridge.on('sessions', (msg) => {
   if (!Umi.state.layout) return;
   if (Umi.model.sessions(msg.list)) Umi.app.save();
   Umi.views.sidebar.render();
-  Umi.views.panes.renderStrip(Umi.model.activeTab());
-  Umi.views.marks.render();
+  Umi.views.panes.refreshChrome();
   Umi.app.report(false);
   if (Umi.state.ui.editingTab) Umi.views.sidebar.focus();
   Umi.views.panes.refreshPickers();

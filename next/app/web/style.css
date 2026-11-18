@@ -444,7 +444,7 @@ body[data-sidebar-mode="search"] #review, body[data-sidebar-mode="search"] #tabs
 
 /* The status mark (SPEC PI-2): before a pane header's icon and a tab chip's name. */
 .slot { position: relative; }
-.chip .pane-mark, .pane-head .pane-mark { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; background: #3A3A3A; transition: background-color 200ms, opacity 200ms; }
+.chip .pane-mark, .pane-head .pane-mark { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; background: #3A3A3A; }
 
 /* The sidebar's edge drags its width (S-8: 180–600 px). */
 #sidebar { position: relative; }

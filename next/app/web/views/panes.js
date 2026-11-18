@@ -116,6 +116,20 @@ Umi.views.panes = (() => {
     }
   }
 
+  // Redraws the top bar and the pane headers' names from the latest pane and session info, and
+  // colours the dots at once (a chip drawn without its colour would flash grey).
+  function refreshChrome() {
+    renderStrip(M.activeTab());
+    for (const head of document.querySelectorAll('#panes .pane-head')) {
+      const found = M.findPane(head.dataset.pane);
+      if (!found) continue;
+      const label = chipLabel(found.node);
+      const el = head.querySelector('.label');
+      if (el.textContent !== label) { el.textContent = label; head.title = label; }
+    }
+    Umi.views.marks.render();
+  }
+
   // Rects of the strip's chips, which take clicks in the title bar.
   function chromeRects() {
     return [...document.querySelectorAll('#strip .chip')].map((c) => {
@@ -196,5 +210,5 @@ Umi.views.panes = (() => {
     });
   }
 
-  return { render, renderStrip, renderers, slotRects, terminalRects, passThroughRects, chromeRects, refreshPickers };
+  return { render, renderStrip, refreshChrome, renderers, slotRects, terminalRects, passThroughRects, chromeRects, refreshPickers };
 })();
