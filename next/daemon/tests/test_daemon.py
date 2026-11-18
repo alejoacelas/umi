@@ -407,6 +407,19 @@ def test_exit_status_and_lifecycle(env):
     assert env.ctl("ping", check=False).returncode != 0
 
 
+def test_new_session_drops_agent_markers(env):
+    # UmiNext started from inside a Claude session carries its markers; a session that inherits
+    # CLAUDE_CODE_CHILD_SESSION makes Claude save no transcript.
+    env.env.update({"CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_ENTRYPOINT": "cli",
+                    "CODEX_THREAD_ID": "t", "CODEX_HOME": "/codex-home", "CLAUDE_CODE_OAUTH_TOKEN": "tok"})
+    sid = env.new("env | grep -E '^(CLAUDE|CODEX)' | sort | tr '\\n' ' '; echo END; exec sleep 100", cols=120, rows=5)
+    wait_for(lambda: "END" in env.screen(sid)["text"], what="env listing")
+    text = env.screen(sid)["text"]
+    assert "CODEX_HOME=/codex-home" in text and "CLAUDE_CODE_OAUTH_TOKEN=tok" in text
+    for marker in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID"):
+        assert marker + "=" not in text, text
+
+
 def test_send_and_single_daemon(env):
     sid = env.new("exec cat", cols=40, rows=5)
     env.ctl("send", sid, "hello\r")

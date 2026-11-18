@@ -76,8 +76,24 @@ func ensureDaemon() {
 
 func parseSize(_ s: String?) -> Int? { s.flatMap { Int($0) } }
 
+/// Agent session markers a launching process may have left in this environment (UmiNext started
+/// from inside a Claude session, say). A session that inherits them takes itself for that agent's
+/// child: Claude then saves no transcript ("Transcript saving is off — inherited
+/// CLAUDE_CODE_CHILD_SESSION marker"). Same set as Umi's `UmiEnvironment.scrubInherited`, except
+/// that the OAuth token stays: it is a credential, not a marker, and sessions over SSH need it.
+func scrubAgentMarkers() {
+    let exact: Set<String> = ["CLAUDECODE", "CLAUDE_AGENT_SDK_VERSION"]
+    let prefixes = ["CLAUDE_CODE_", "CODEX_"]
+    let kept: Set<String> = ["CODEX_HOME", "CLAUDE_CODE_OAUTH_TOKEN"]
+    for key in ProcessInfo.processInfo.environment.keys where !kept.contains(key)
+        && (exact.contains(key) || prefixes.contains(where: { key.hasPrefix($0) })) {
+        unsetenv(key)
+    }
+}
+
 switch cmd {
 case "new":
+    scrubAgentMarkers()
     var req: [String: Any] = ["op": "new", "env": ProcessInfo.processInfo.environment]
     req["cwd"] = option("--cwd") ?? FileManager.default.currentDirectoryPath
     if let c = option("--cmd") { req["cmd"] = c }
