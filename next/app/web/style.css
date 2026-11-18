@@ -133,13 +133,14 @@ body.cmd-held .tab .key { display: block; }
 body.no-sidebar #strip { padding-left: 80px; }
 .chip {
   display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; flex: none;
-  border-radius: 6px; color: rgba(255, 255, 255, 0.80); font: 500 12px -apple-system, sans-serif;
+  border-radius: 6px; color: rgba(255, 255, 255, 0.40); font: 400 11px -apple-system, sans-serif;
   max-width: 220px;
 }
 .chip .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip svg, .chip img { flex: none; }
-.chip:hover { background: rgba(255, 255, 255, 0.06); }
-.chip.focused { background: rgba(255, 255, 255, 0.085); color: rgba(255, 255, 255, 0.95); }
+/* Quiet: the top bar stays in the background; the current tab is only a little brighter. */
+.chip:hover { background: rgba(255, 255, 255, 0.03); color: rgba(255, 255, 255, 0.62); }
+.chip.focused { background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.68); }
 
 /* The panel lies over the bottom of the panes: they keep their size (no reflow). Native clips the
    terminals it covers (`cover` in the rects message), so it shows through. */
@@ -256,8 +257,8 @@ body.no-sidebar #strip { padding-left: 80px; }
 }
 
 /* Hidden-pane chips (SPEC H-5): the sessions ⌘W hid from this tab, after the panes on show. */
-.chip.hidden { color: rgba(255, 255, 255, 0.42); font-style: italic; }
-.chip.hidden:hover { color: rgba(255, 255, 255, 0.7); }
+.chip.hidden { color: rgba(255, 255, 255, 0.28); font-style: italic; }
+.chip.hidden:hover { color: rgba(255, 255, 255, 0.55); }
 /* A zoomed pane's chip (⇧⌘↩) carries a small mark. */
 .chip.zoomed::after { content: '⤢'; font-style: normal; color: var(--dim); margin-left: 2px; }
 
