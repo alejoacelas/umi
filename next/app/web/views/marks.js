@@ -11,7 +11,7 @@ Umi.views = Umi.views || {};
 
 Umi.views.marks = (() => {
   const S = Umi.state, M = Umi.model;
-  const COLORS = { working: '#6F7F76', needs: '#E0A93E', finished: '#BDBDBD' };
+  const COLORS = { working: '#6F7F76', needs: '#E0A93E', finished: '#BDBDBD', idle: '#3A3A3A' };
   const seen = {}; // session -> when its pane last had focus (ms); "finished" means after that
 
   function stateOf(sid) {
@@ -24,12 +24,12 @@ Umi.views.marks = (() => {
     return null;
   }
 
-  // {color, size, opacity} for a pane, or null.
+  // {color, opacity, state} for a pane, or null (idle).
   function look(paneId, tab) {
     const sid = M.sessionOf(paneId), st = stateOf(sid);
     if (!st) return null;
     const focused = tab.focused === paneId && tab.id === S.layout.activeTab;
-    return { color: COLORS[st], size: 7, opacity: focused || st === 'needs' ? 1 : 0.7, state: st };
+    return { color: COLORS[st], opacity: focused || st === 'needs' ? 1 : 0.7, state: st };
   }
   const RANK = { needs: 3, working: 2, finished: 1 };
   // A tab's mark: its most pressing pane's.
@@ -40,15 +40,15 @@ Umi.views.marks = (() => {
       if (st && (!best || RANK[st] > RANK[best])) best = st;
     }
     if (!best) return null;
-    return { color: COLORS[best], size: 7, opacity: tab.id === S.layout.activeTab || best === 'needs' ? 1 : 0.7, state: best };
+    return { color: COLORS[best], opacity: tab.id === S.layout.activeTab || best === 'needs' ? 1 : 0.7, state: best };
   }
 
-  function dot(l) {
-    const d = document.createElement('span');
-    d.className = 'pane-mark';
-    d.style.cssText = `width:${l.size}px;height:${l.size}px;background:${l.color};opacity:${l.opacity}`;
-    if (l.state) d.dataset.state = l.state;
-    return d;
+  // Colours a mark in place (it is always there, so nothing beside it moves): its state's colour,
+  // or the quiet idle grey.
+  function paint(m, l) {
+    m.style.background = l ? l.color : COLORS.idle;
+    m.style.opacity = l ? l.opacity : 1;
+    if (l) m.dataset.state = l.state; else delete m.dataset.state;
   }
 
   let badge = null;
@@ -58,19 +58,14 @@ Umi.views.marks = (() => {
     const tab = M.activeTab();
     const sid = M.sessionOf(tab.focused);
     if (sid && document.hasFocus()) seen[sid] = Date.now();
-    document.querySelectorAll('#panes .pane-mark, #strip .pane-mark').forEach((m) => m.remove());
-    for (const head of document.querySelectorAll('#panes .pane-head')) {
-      const l = look(head.dataset.pane, tab);
-      if (l) head.prepend(dot(l));
+    for (const m of document.querySelectorAll('#panes .pane-head > .pane-mark')) paint(m, look(m.parentElement.dataset.pane, tab));
+    for (const m of document.querySelectorAll('#strip .chip[data-tab] > .pane-mark')) {
+      const t = S.layout.tabs.find((x) => x.id === m.parentElement.dataset.tab);
+      paint(m, t && tabLook(t));
     }
-    for (const chip of document.querySelectorAll('#strip .chip[data-tab]')) {
-      const t = S.layout.tabs.find((x) => x.id === chip.dataset.tab);
-      const l = t && tabLook(t);
-      if (l) chip.prepend(dot(l));
-    }
-    for (const chip of document.querySelectorAll('#strip .chip.hidden')) {
-      const st = stateOf(chip.dataset.session);
-      if (st) chip.prepend(dot({ color: COLORS[st], size: 7, opacity: st === 'needs' ? 1 : 0.7, state: st }));
+    for (const m of document.querySelectorAll('#strip .chip.hidden > .pane-mark')) {
+      const st = stateOf(m.parentElement.dataset.session);
+      paint(m, st && { color: COLORS[st], opacity: st === 'needs' ? 1 : 0.7, state: st });
     }
     const cur = M.review().find((g) => g.current);
     const n = cur ? cur.items.length : 0;

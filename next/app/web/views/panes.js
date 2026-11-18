@@ -70,6 +70,9 @@ Umi.views.panes = (() => {
     return S.layout.meta?.sessions?.[sid]?.name || live?.name || shortPath(live?.folder || info.title || info.pwd) || 'Terminal';
   }
 
+  // Every chip and header keeps its status mark, so names never shift; marks.js only colours it.
+  const MARK = '<span class="pane-mark"></span>';
+
   // Each pane's header: its status mark (marks.js), icon and name. In a tab showing several panes
   // the focused pane's header is lit in the accent: that is how focus shows (Alejo, 2026-11-18).
   // A click focuses the pane.
@@ -78,7 +81,7 @@ Umi.views.panes = (() => {
     head.className = 'pane-head' + (node.view === 'file' && Umi.views.file.isDirty(node.id) ? ' dirty' : '');
     head.dataset.pane = node.id;
     const label = chipLabel(node);
-    head.innerHTML = (node.view === 'file' ? fileIcon(node.path) : termIcon) + '<span></span>';
+    head.innerHTML = MARK + (node.view === 'file' ? fileIcon(node.path) : termIcon) + '<span></span>';
     head.querySelector('span').textContent = label;
     head.title = label;
     head.addEventListener('mousedown', (e) => { e.preventDefault(); Umi.app.update(() => M.focusPane(node.id)); });
@@ -94,7 +97,7 @@ Umi.views.panes = (() => {
     const chip = (label, cls, icon, onDown) => {
       const el = document.createElement('div');
       el.className = 'chip' + cls;
-      el.innerHTML = icon + '<span></span>';
+      el.innerHTML = MARK + icon + '<span></span>';
       el.querySelector('span').textContent = label;
       el.title = label;
       el.addEventListener('mousedown', onDown);

@@ -175,7 +175,7 @@ check("⌘B toggles the sidebar", ui()["sidebar"] != s0)
 # Without the sidebar, the top bar's tab chips stay clear of the window's close/minimize/zoom buttons.
 if not ui()["sidebar"]:
     check("the top bar's first chip starts right of the window buttons",
-          J("document.querySelector('#strip .chip').getBoundingClientRect().left") >= 78)
+          json.loads(ev("JSON.stringify(document.querySelector('#strip .chip').getBoundingClientRect().left)")) >= 78)
 press("b", "cmd")
 check("⌘B again", ui()["sidebar"] == s0)
 
@@ -479,6 +479,10 @@ def fake_agent(event):
         json.dump({"agent": "claude", "event": event, "ts": time.time(), "input": {}}, f)
 
 
+NAME_X = "document.querySelector(`#strip .chip[data-tab=\"${Umi.model.activeTab().id}\"] span:not(.pane-mark)`).getBoundingClientRect().left"
+name_x = J(NAME_X)
+check("an idle tab's chip has its mark, in the idle grey",
+      J("(() => { const m = document.querySelector(`#strip .chip[data-tab=\"${Umi.model.activeTab().id}\"] .pane-mark`); return !!m && !m.dataset.state; })()"))
 try:
     fake_agent("PermissionRequest")
     wait(lambda: J(f"Umi.views.marks.stateOf({json.dumps(other)})") == "needs", 5)
@@ -486,6 +490,7 @@ try:
           J(f"document.querySelector('#panes .pane-head[data-pane=\"{other_pane}\"] .pane-mark')?.dataset.state || null") == "needs")
     check("its tab's chip in the top bar shows the mark too",
           J("document.querySelector(`#strip .chip[data-tab=\"${Umi.model.activeTab().id}\"] .pane-mark`)?.dataset.state || null") == "needs")
+    check("the tab's name stays put when its mark changes colour", J(NAME_X) == name_x, (J(NAME_X), name_x))
     check("no mark sits over the terminals", not J("document.querySelectorAll('#panes .slot .pane-mark').length"))
     check("the Dock badge counts it", wait(lambda: D({"cmd": "state"}).get("badge") == "1", 3), D({"cmd": "state"}).get("badge"))
     press("j", "ctrl", "cmd")
