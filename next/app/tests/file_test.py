@@ -208,7 +208,7 @@ key("M", "cmd", "shift")
 check("⇧⌘M switches back to Rendered", vs()["mode"] == "rendered")
 
 # Run in terminal (MD-2): the command goes to the tab's terminal input, not run.
-term = J("Umi.model.panesOf(Umi.model.activeTab().root).find(p => p.view === 'terminal')?.id")
+term = J("Umi.model.panesOf(Umi.model.activeTab().root).find(p => p.view === 'terminal')?.id || null")
 if term:
     ev(f"{F}.querySelector('.umi-run').click(); 1")
     time.sleep(0.8)

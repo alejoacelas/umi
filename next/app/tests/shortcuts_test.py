@@ -248,7 +248,10 @@ focus_terminal()
 press("/", "cmd")
 check("⌘/ opens the shortcuts page", J("!!Umi.state.layout.shortcutsPage") and ui()["keys"] == "web", ui())
 labelled = J("new Set(Umi.shortcuts.table.filter((e) => e.label).map((e) => (e.group || 'Other') + '/' + e.label)).size")
-check("the page lists every action in the table (one row per action)", J("document.querySelectorAll('#shortcuts .sc-row').length") == labelled)
+check("the page lists every action in the table (one row per action)", J("document.querySelectorAll('#shortcuts .sc-row[data-id]').length") == labelled)
+check("then Ghostty's keybindings, one row per action, in their own section",
+      J("document.querySelectorAll('#shortcuts .sc-row[data-action]').length") == J("new Set((Umi.ghostty.bindings || []).map((b) => b.action)).size") > 0
+      and J("[...document.querySelectorAll('#shortcuts .sc-group')].pop().textContent") == "Ghostty")
 for q, want in [("cmd shift d", "splitDown"), ("shift cmd d", "splitDown"), ("⇧⌘D", "splitDown"), ("zoom the pane", "toggleZoom")]:
     ev(f"""(() => {{ const i = document.querySelector('#shortcuts input'); i.value = {json.dumps(q)}; i.dispatchEvent(new Event('input')); }})(); 1""")
     ids = J("[...document.querySelectorAll('#shortcuts .sc-row')].map((r) => r.dataset.id)")
