@@ -498,16 +498,16 @@ try:
     check("its tab's chip in the top bar shows the mark too",
           J("document.querySelector(`#strip .chip[data-tab=\"${Umi.model.activeTab().id}\"] .pane-mark`)?.dataset.state || null") == "needs")
     check("the tab's name stays put when its mark changes colour", J(NAME_X) == name_x, (J(NAME_X), name_x))
-    # Title changes redraw the top bar: its dot must never show without its colour, even for a frame.
-    ev("""window.__grey = 0; window.__obs = new MutationObserver(() => {
+    # Title changes redraw the top bar (the shell sets its own title again after the command): its
+    # dot must never show without its colour, even for a frame.
+    ev("""window.__grey = 0; window.__muts = 0; window.__obs = new MutationObserver(() => { window.__muts++;
       const m = document.querySelector(`#strip .chip[data-tab="${Umi.model.activeTab().id}"] .pane-mark`);
       if (!m || m.dataset.state !== 'needs') window.__grey++; });
       window.__obs.observe(document.querySelector('#strip'), {childList: true, subtree: true, attributes: true}); 1""")
     D({"cmd": "keys", "text": "printf '\\033]0;title-one\\007'; sleep 0.3; printf '\\033]0;title-two\\007'\r"})
     time.sleep(1.2)
     check("title changes redraw the top bar without the dot losing its colour",
-          wait(lambda: J("Object.values(Umi.state.panes).some((p) => p.title === 'title-two')"), 3) and J("window.__grey") == 0,
-          (J("window.__grey"), J("Object.values(Umi.state.panes).map((p) => p.title)")))
+          J("window.__muts") > 0 and J("window.__grey") == 0, (J("window.__muts"), J("window.__grey")))
     ev("window.__obs.disconnect(); 1")
     check("no mark sits over the terminals", not J("document.querySelectorAll('#panes .slot .pane-mark').length"))
     check("the Dock badge counts it", wait(lambda: D({"cmd": "state"}).get("badge") == "1", 3), D({"cmd": "state"}).get("badge"))
