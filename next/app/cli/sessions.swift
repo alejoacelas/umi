@@ -154,11 +154,20 @@ func keysCommand(_ argv: [String]) {
 
 func readCommand(_ argv: [String]) {
     let args = parse(argv, ArgSpec(valued: ["--pane", "--lines"], boolean: ["--scrollback"]))
-    if args.has("--scrollback") { fail("read --scrollback: the daemon keeps each session's screen, not its scrollback") }
     let lines = args.value("--lines").map { Int($0) ?? -1 }
     if let lines, lines < 1 { fail("--lines takes a positive number") }
     let sid = resolveSession(args.value("--pane") ?? args.positional.first)
-    let text = tidy(screen(sid)["text"] as? String ?? "", lines: lines)
+    let scrollback = args.has("--scrollback")
+    let r = daemon(["op": "screen", "id": sid, "format": "plain", "scrollback": scrollback])
+    var raw = r["text"] as? String ?? ""
+    if scrollback {
+        // A daemon started before scrollback ignores the field and sends the screen alone.
+        guard let history = r["history"] as? String else {
+            fail("read --scrollback: the running umi-next daemon predates scrollback (it gives the screen only); it gets it when it restarts, which ends every session")
+        }
+        raw = history + (r["text"] as? String ?? "")
+    }
+    let text = tidy(raw, lines: lines)
     if jsonOutput { printJSON(["session": sid, "text": text]) } else { print(text) }
 }
 

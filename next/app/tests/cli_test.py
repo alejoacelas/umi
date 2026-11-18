@@ -165,7 +165,18 @@ def t_send_read_wait():
     # By name, by id prefix, piped stdin.
     run("send", "--pane", "shell-1", input="echo piped-ok\n")
     run("wait", "--pane", sid[:5], "--pattern", "^piped-ok$", "--timeout", "5")
-    assert "scrollback" in run("read", "--pane", sid, "--scrollback", ok=False, code=1).stderr
+    # --scrollback: the history above the screen too, --lines from its end.
+    run("send", "--pane", sid, "--enter", "seq -f 'row-%g' 1 300")
+    run("wait", "--pane", sid, "--pattern", "^row-300$", "--timeout", "5")
+    assert "row-1\n" not in screen(sid)
+    full = run("read", "--pane", sid, "--scrollback").stdout
+    rows = [l for l in full.splitlines() if l.startswith("row-")]
+    assert rows == [f"row-{i}" for i in range(1, 301)], rows[:3]
+    assert full.index("hello-42") < full.index("row-1\n"), "history comes first"
+    tail = run("read", "--pane", sid, "--scrollback", "--lines", "250").stdout
+    assert tail.splitlines() == full.splitlines()[-250:]
+    assert run("read", "--pane", sid, "--scrollback", "--lines", "2").stdout == run("read", "--pane", sid, "--lines", "2").stdout
+    assert j("read", "--pane", sid, "--scrollback")["text"] == full.rstrip("\n")
 
 
 def t_keys():

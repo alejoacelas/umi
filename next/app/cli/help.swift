@@ -24,7 +24,7 @@ let commandTable: [(section: String, usage: String, summary: String)] = [
     ("Panes", "pane zoom [PANE]", "zoom the pane (PARITY track c)"),
     ("Sessions", "send [--pane P] [--enter|-e] TEXT…", "type text into the session (stdin when piped)"),
     ("Sessions", "keys [--pane P] KEY…", "enter esc tab backspace up down left right ctrl+c shift+tab …"),
-    ("Sessions", "read [--pane P] [--lines N]", "the session's screen as text"),
+    ("Sessions", "read [--pane P] [--scrollback] [--lines N]", "the session's screen as text; --scrollback: with the history above it"),
     ("Sessions", "wait [--pane P] (--pattern RE | --idle SECS) [--timeout T]", "until the screen matches or stays still; 124 on timeout"),
     ("Window", "sidebar [on|off|toggle|status|tabs|files|search]", "show, hide or switch the sidebar"),
     ("Window", "notify TITLE [BODY]", "a desktop notification (PARITY track c)"),

@@ -164,7 +164,7 @@ What the CLI uses from the other tracks:
 | `pane exit` (new) | [x] ends the session, as the palette's Exit |
 | `pane hide`, `pane show [--focus]` | [x] `hide` = ⌥⌘H: the session goes on the tab's strip; `show` brings it back through the strip at the right end of the tab, focus stays unless `--focus`. Departure: no `--until` |
 | `pane zoom` | [x] toggles track c's zoom |
-| `send [--enter]`, `keys`, `read [--lines]`, `wait --pattern\|--idle [--timeout]` | [x] daemon-side; several lines go as a bracketed paste when the program asked for it; keys follow the session's cursor-key and kitty modes. Departures: no `read --scrollback` (the daemon keeps the screen only); `wait --pattern` matches the screen minus the line echoing the last `send` (no shell marks); no `wait --attr` |
+| `send [--enter]`, `keys`, `read [--scrollback] [--lines]`, `wait --pattern\|--idle [--timeout]` | [x] daemon-side; several lines go as a bracketed paste when the program asked for it; keys follow the session's cursor-key and kitty modes. `read --scrollback` adds the daemon's scrollback (10 MB / about 10,000 lines per session, as PROTOCOL.md says; a reattached pane gets the same history); a daemon started before it gives a clear error. Departures: `wait --pattern` matches the screen minus the line echoing the last `send` (no shell marks); no `wait --attr` |
 | `sidebar on\|off\|toggle\|status\|tabs\|files\|search` | [x] |
 | `notify [--pane P] TITLE [BODY]` | [x] none from a snoozed or docketed session (`suppressed` in `--json`) |
 | `go --next jump`, `go --back` | [x] next waiting; back to where the walk started |
