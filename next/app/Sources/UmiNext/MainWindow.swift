@@ -107,10 +107,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     private(set) var webErrors: [String] = []
     private(set) var reloads: [[String: Double]] = []
     private var pendingReload: [String: Double]?
-    private(set) var resizeLags: [Double] = []
     /// (time, viewport width) of every rects message, for the debug hook's resize timing.
     private(set) var rectsLog: [(t: Double, w: Double)] = []
-    private var resizeAt: (size: CGSize, t: Double)?
+    /// Panes whose program ended while the page was down: it hears of them at its next hello.
+    private var exitedWhileDown: [String] = []
     private var helloWatchdog: DispatchWorkItem?
 
     init(runtime: GhosttyRuntime) {
@@ -298,20 +298,20 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             send(stateMessage())
             // Only a polled list: an empty one before the first poll would read as "every session ended".
             if sessions.polled { send(["type": "sessions", "list": sessions.last]) }
+            for id in exitedWhileDown where surfaces[id] != nil { send(["type": "paneExited", "pane": id]) }
+            exitedWhileDown = []
             if let u = pendingTaskURL { pendingTaskURL = nil; openURL(u) }
             control.pageReady()
         case "cliReply":
             control.reply(msg)
         case "layout":
-            if let l = msg["layout"] as? [String: Any] { applyLayout(l, closed: msg["closed"] as? [String: String] ?? [:]) }
+            if let l = msg["layout"] as? [String: Any] { applyLayout(l) }
         case "rects":
             applyRects(msg)
         case "request":
             if !handleTerminalRequest(msg) { services.handle(msg) }
         case "shortcuts":
             if let table = msg["table"] as? [[String: Any]] { setShortcuts(table, save: true) }
-        case "focus":
-            if let id = msg["pane"] as? String { focusPane(id) }
         case "focusWeb":
             // The web layer wants the keys (an open panel, a pane it draws itself).
             window.makeFirstResponder(webView)
@@ -332,8 +332,6 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             // The Dock badge: Review items of the current project (web/views/marks.js).
             let n = msg["count"] as? Int ?? 0
             NSApp.dockTile.badgeLabel = n > 0 ? String(n) : nil
-        case "refreshSessions":
-            sessions.pollSoon()
         case "docket":
             if let id = msg["session"] as? String { sessions.setDocketed(id, true, name: msg["name"] as? String) }
         case "undocket":
@@ -372,12 +370,11 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         applyLayout(l, save: false)
     }
 
-    /// Creates a terminal for every pane the layout has and ends the terminals of panes it lost.
     /// Creates a terminal for every terminal pane the layout has and ends the terminals of panes
-    /// it lost. `closed` says how the user closed each removed pane ("close" or "detach").
+    /// it lost.
     /// A pane whose view isn't "terminal" (e.g. the picker the web layer draws) has no terminal.
     /// A pane with `attach` set to another session shows that session instead (one pane per session).
-    private func applyLayout(_ newLayout: [String: Any], closed: [String: String] = [:], save: Bool = true) {
+    private func applyLayout(_ newLayout: [String: Any], save: Bool = true) {
         var wanted: [String: [String: Any]] = [:]
         Self.panes(in: newLayout).forEach { pane in
             let view = pane["view"] as? String ?? "terminal"
@@ -388,13 +385,13 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             guard let target = pane["attach"] as? String, attachHandled[id] != target else { continue }
             attachHandled[id] = target
             if target == paneInfo[id]?["session"] as? String { continue }
-            endTerminal(id, how: "detach")
+            endTerminal(id)
             var p = pane
             p["session"] = target
             wanted[id] = p
         }
         for id in Set(surfaces.keys).union(pending.keys) where wanted[id] == nil {
-            endTerminal(id, how: closed[id] ?? "detach")
+            endTerminal(id)
         }
         for (id, pane) in wanted where surfaces[id] == nil && pending[id] == nil {
             // New panes wait for their first slot, so their program starts at its real size.
@@ -411,11 +408,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         focusLog.update()
     }
 
-    private func endTerminal(_ id: String, how: String) {
-        if let view = surfaces.removeValue(forKey: id) {
-            view.close()
-            if let s = paneInfo[id]?["session"] as? String { SessionBackend.paneClosed(sessionID: s, how: how) }
-        }
+    private func endTerminal(_ id: String) {
+        surfaces.removeValue(forKey: id)?.close()
         pending[id] = nil
         paneInfo[id] = nil
         lastRects[id] = nil
@@ -437,7 +431,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
                                            name: start?["name"] as? String, cmd: start?["cmd"] as? String,
                                            by: start?["by"] as? String ?? "user")
         sessions.pollSoon()
-        let env = ["UMI_NEXT_PANE": id, "UMI_NEXT_SESSION": launch.sessionID, "UMI_NEXT_STATE_DIR": Paths.stateDir]
+        let env = ["UMI_NEXT_SESSION": launch.sessionID, "UMI_NEXT_STATE_DIR": Paths.stateDir]
         let view = TerminalSurfaceView(runtime: runtime, paneID: id, frame: frame, config: .init(
             command: launch.command, workingDirectory: launch.workingDirectory, environment: env))
         view.onFocus = { [weak self] v in self?.send(["type": "focused", "pane": v.paneID]) }
@@ -492,10 +486,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         for id in shown { if let v = surfaces[id] { clip(v, by: cover, holes: holes) } }
         terminalLayer.passThrough = ((msg["passThrough"] as? [[String: Double]]) ?? []).compactMap { rect($0) }
             + (cover.map { [$0] } ?? []) + holes
-        terminalLayer.chrome = ((msg["chrome"] as? [[String: Double]]) ?? []).compactMap { r in
-            guard let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] else { return nil }
-            return CGRect(x: x * zoom, y: y * zoom, width: w * zoom, height: h * zoom)
-        }
+        terminalLayer.chrome = ((msg["chrome"] as? [[String: Double]]) ?? []).compactMap { rect($0) }
         if let id = msg["tint"] as? String, let frame = lastRects[id] {
             focusTint.frame = frame
             clip(focusTint, by: cover, holes: holes)
@@ -512,11 +503,6 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             lastViewport = CGSize(width: w * zoom, height: h * zoom)
             rectsLog.append((t, w * zoom))
             if rectsLog.count > 2000 { rectsLog.removeFirst(1000) }
-            if let r = resizeAt, abs(r.size.width - lastViewport.width) < 1, abs(r.size.height - lastViewport.height) < 1 {
-                resizeLags.append(t - r.t)
-                if resizeLags.count > 500 { resizeLags.removeFirst() }
-                resizeAt = nil
-            }
         }
         if var p = pendingReload, p["helloAt"] != nil {
             p["rectsAt"] = t
@@ -749,10 +735,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     }
 
     private func openPalette() {
-        lastHyperAt = Self.now()
         if webReady { send(["type": "action", "name": "togglePalette"]) } else { showBanner("Web layer not ready: palette unavailable.") }
     }
-    private(set) var lastHyperAt: Double = 0
 
     // MARK: Task links
 
@@ -804,10 +788,6 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
     // MARK: Window
 
-    func windowDidResize(_ notification: Notification) {
-        resizeAt = (webView.frame.size, Self.now())
-    }
-
     func windowWillClose(_ notification: Notification) {
         NSApp.terminate(nil)
     }
@@ -847,6 +827,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         if webReady {
             send(["type": "paneExited", "pane": view.paneID])
         } else {
+            if !exitedWhileDown.contains(view.paneID) { exitedWhileDown.append(view.paneID) }
             showBanner("A pane's program ended while the web layer is down; it closes when the web layer is back.")
         }
     }

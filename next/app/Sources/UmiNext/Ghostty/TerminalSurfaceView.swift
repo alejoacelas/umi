@@ -481,7 +481,7 @@ final class TerminalSurfaceView: NSView, NSTextInputClient {
         _ = "select_all".withCString { ghostty_surface_binding_action(surface, $0, UInt(strlen($0))) }
     }
 
-    /// Text sent as if typed (no key events): the debug hook's `text` command.
+    /// Text sent as if typed (no key events): a paste into the synchronized terminals.
     func sendText(_ text: String) {
         guard let surface else { return }
         let len = text.utf8.count

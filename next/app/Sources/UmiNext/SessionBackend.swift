@@ -58,9 +58,9 @@ enum SessionBackend {
         if let existing, live?.contains(existing) == true {
             return Launch(sessionID: existing, command: shellQuote([attachPath, existing]), workingDirectory: cwd)
         }
-        // Sessions the UI starts are the user's (picker, new tab, resume, restart): the session
-        // lists show only these, not those agents or scripts start with `umi-next-ctl new` or the
-        // `umi-next` CLI (`by: cli`).
+        // Sessions the UI starts are the user's (picker, new tab, resume, restart, and those the
+        // `umi-next` CLI opens in a pane): the session lists show only these, not those agents or
+        // scripts start without a pane with `umi-next-ctl new` (`by: cli`).
         var args = ["new", "--by", by == "cli" ? "cli" : "user", "--cwd", cwd ?? NSHomeDirectory()]
         if let name, !name.isEmpty { args += ["--name", name] }
         if let cmd { args += ["--cmd", cmd] }
@@ -75,10 +75,6 @@ enum SessionBackend {
         }
         return Launch(sessionID: id, command: shellQuote([attachPath, id]), workingDirectory: cwd)
     }
-
-    /// A pane stopped showing a session (⌘W, a session moved to another pane). The session keeps
-    /// running in the daemon: ⌘W never ends a program (Alejo, 2026-11-17). Only Exit ends one.
-    static func paneClosed(sessionID: String, how: String) {}
 
     /// The session's program ended (its pane's attach got the exit): forget it in the daemon.
     static func sessionEnded(sessionID: String) {

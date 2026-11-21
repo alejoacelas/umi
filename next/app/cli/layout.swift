@@ -243,7 +243,7 @@ func shortcutsCommand(_ argv: [String]) {
 // MARK: edit, editor
 
 func editCommand(_ argv: [String]) {
-    let args = parse(argv, ArgSpec(valued: ["--pane", "--tab", "--line"], boolean: ["--source", "--preview"]))
+    let args = parse(argv, ArgSpec(valued: ["--pane", "--tab"], boolean: ["--source", "--preview"]))
     var files = args.words
     if files.isEmpty {
         guard isatty(STDIN_FILENO) == 0 else { fail("edit FILE… [--source|--preview] [--pane P|--tab T]") }

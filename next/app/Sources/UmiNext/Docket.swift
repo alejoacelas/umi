@@ -65,7 +65,7 @@ final class Docket {
         let event = agent?["event"] as? String ?? ""
         let reply = agent?["reply"] as? String
         let name = (m["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (s["name"] as? String) ?? sid
-        var payload: [String: Any] = [
+        let payload: [String: Any] = [
             "session": sid, "name": name,
             "cwd": s["folder"] as? String ?? NSHomeDirectory(),
             "agent": agent?["agent"] as? String ?? (s["kind"] as? String ?? "shell"),
@@ -94,7 +94,6 @@ final class Docket {
             next["state"] = "failed"
             next["error"] = "no docket hook (\(hook) missing or not executable)"
         }
-        payload.removeAll()
         next["ranAt"] = Date().timeIntervalSince1970
         marks[sid] = next
         save()

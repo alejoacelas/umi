@@ -61,7 +61,7 @@ func sendCommand(_ argv: [String]) {
         if paste { text = "\u{1B}[200~" + text + "\u{1B}[201~" }
         sendBytes(sid, Array(text.utf8))
         try? FileManager.default.createDirectory(atPath: stateDir + "/cli", withIntermediateDirectories: true)
-        try? words.joined(separator: " ").write(toFile: sentFile(sid), atomically: true, encoding: .utf8)
+        try? (words == ["-"] ? "" : words.joined(separator: " ")).write(toFile: sentFile(sid), atomically: true, encoding: .utf8)
     }
     if args.has("--enter") {
         if !text.isEmpty { usleep(60_000) }  // programs that read a paste then Enter as one burst drop the Enter

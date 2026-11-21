@@ -103,9 +103,9 @@ cat > "$app.tmp/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-for tool in daemon attach ctl; do codesign --force --sign "$sign_identity" "$app.tmp/Contents/MacOS/umi-next-$tool" >/dev/null 2>&1; done
-codesign --force --sign "$sign_identity" "$app.tmp/Contents/MacOS/umi-next" >/dev/null 2>&1
-codesign --force --sign "$sign_identity" "$app.tmp" >/dev/null 2>&1
+for tool in daemon attach ctl; do codesign --force --sign "$sign_identity" "$app.tmp/Contents/MacOS/umi-next-$tool" >/dev/null; done
+codesign --force --sign "$sign_identity" "$app.tmp/Contents/MacOS/umi-next" >/dev/null
+codesign --force --sign "$sign_identity" "$app.tmp" >/dev/null
 rm -rf "$app"
 mv "$app.tmp" "$app"
 echo "$app"

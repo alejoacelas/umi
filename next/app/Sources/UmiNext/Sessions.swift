@@ -174,8 +174,9 @@ final class SessionMonitor {
 
     /// `pastSessions` on the monitor's queue; `done` runs on the main thread.
     func past(project: String, done: @escaping ([[String: Any]]) -> Void) {
+        // Read here, on the main thread, where `last` is written.
+        let live = Set(last.compactMap { ($0["agent"] as? [String: Any])?["agentSession"] as? String })
         queue.async { [self] in
-            let live = Set(last.compactMap { ($0["agent"] as? [String: Any])?["agentSession"] as? String })
             let list = pastSessions(project: project, exclude: live)
             DispatchQueue.main.async { done(list) }
         }
