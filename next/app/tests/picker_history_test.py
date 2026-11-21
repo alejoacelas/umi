@@ -75,6 +75,7 @@ try:
     # Spy on the real response without changing the history reader or picker handler.
     ev("window.__historyResponse = null; window.__historyHandler = Umi.bridge.handlers.agentProjects; Umi.bridge.handlers.agentProjects = (msg) => { window.__historyResponse = msg.list; window.__historyHandler(msg); }; 1")
     ev(f"Umi.app.update(() => {{ window.__picker = Umi.model.split('row', 'picker', {{cwd: {json.dumps(str(folders['zrank-a-unused']))}}}); }}); 1")
+    ev("document.querySelector('.slot[data-pane=\"' + __picker.id + '\"] [data-page=new]').click(); 1")
     started = time.monotonic()
     ev("window.__pickerEl = document.querySelector('#panes .slot[data-pane=\"' + __picker.id + '\"]'); window.__input = __pickerEl.querySelector('.picker-name'); __input.dispatchEvent(new KeyboardEvent('keydown', {key:'/', bubbles:true, cancelable:true})); 1")
     history = until(lambda: js_json('window.__historyResponse'), 'native history response')
@@ -108,7 +109,7 @@ try:
     until(lambda: rows() and rows()[0] == 'zrank-b-claude', 'selected folder')
     ev("__input.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true})); 1")
     assert js_json('__picker.cwd') == str(folders['zrank-b-claude'])
-    assert js_json('__picker.picker.mode || null') is None
+    assert js_json('__picker.picker.mode') == 'new'
     print('ok Enter chooses the ranked folder and returns to session naming')
 finally:
     try:

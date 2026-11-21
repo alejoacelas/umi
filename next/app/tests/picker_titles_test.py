@@ -43,6 +43,7 @@ separator='\n' if original and not original.endswith(b'\n') else ''
 with index.open('a') as f:f.write(separator+line)
 try:
  e(f"window.__titleReply=null; window.__titleHandler=Umi.bridge.handlers.pastSessions; Umi.bridge.handlers.pastSessions=m=>{{if(m.project==={json.dumps(str(root))}) window.__titleReply=m.list; __titleHandler(m);}}; Umi.app.update(()=>{{window.__titlePicker=Umi.model.split('row','picker',{{cwd:{json.dumps(str(root))}}});__titlePicker.picker.project={json.dumps(str(root))};}}); Umi.bridge.post({{type:'pastSessions',project:{json.dumps(str(root))}}}); 1")
+ e("""document.querySelector('.slot[data-pane="'+__titlePicker.id+'"] [data-page=history]').click(); 1""")
  rows=until(lambda:v('window.__titleReply'))
  titles={r['id']:r['title'] for r in rows}
  assert titles[indexed]=='Saved meaningful session name',titles

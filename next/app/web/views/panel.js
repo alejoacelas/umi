@@ -12,9 +12,9 @@ Umi.views.panel = (() => {
 
   const COLUMNS = [
     { title: 'Sessions', cmds: [
-      ['n', 'New session', () => Umi.actions.splitRight()],
+      ['n', 'New session', () => { Umi.actions.splitRight().picker.mode = 'new'; }],
       ['s', 'Switch session', () => Umi.actions.switchSession()],
-      ['p', 'Open past', () => { Umi.actions.switchSession(); Umi.model.focusedPane().picker.jump = 'past'; }],
+      ['p', 'Open past', () => Umi.actions.switchSession({ mode: 'history' })],
       ['o', 'Reopen the last closed pane or tab', () => Umi.actions.reopen()],
       ['a', 'Show archived tabs', () => Umi.actions.showArchived()],
     ] },

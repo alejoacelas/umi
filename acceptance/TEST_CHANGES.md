@@ -1732,3 +1732,7 @@ Added `next/app/tests/picker_titles_test.py`, exercised on the signed isolated a
 ## 2026-11-21 — open the Umi Next picker at the far right
 
 `next/app/tests/shortcuts_test.py` presses ⌘D from a pane with a neighbor to its right and checks that the focused picker appears beyond every existing pane.
+
+## 2026-11-21 — Umi Next session switcher
+
+Added model and native interaction tests for cross-project search, attention states, snoozes, and opening sessions in their existing pane or in the switcher's slot. The picker icon, folder, history and docket tests now enter New or History for those actions.

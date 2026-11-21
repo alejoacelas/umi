@@ -58,36 +58,29 @@ changes it; "tell me later" is snooze, whose finished sessions the Dock badge co
 
 - A new tab opens with its name in edit mode in the sidebar; Enter keeps the name, Escape keeps the
   folder name.
-- A new session is named in the picker's first field. Left empty, it is named after its folder with a
+- A new session is named in the **+ New** form. Left empty, it is named after its folder with a
   number, so naming never blocks starting.
 
-## ⌘D: the pane picker
+## ⌘D opens the session switcher
 
-⌘D opens the picker in a new column at the far right of the tab. ⇧⌘D opens it below the focused pane.
+⌘D opens a column at the far right of the tab. ⇧⌘D opens it below the focused pane. The first
+screen answers which session to return to across all projects. Each row gives its name and project.
+Sessions waiting for input and snoozes that have come due lead the list under **Needs you**, marked
+in amber. **Running** follows. **Available** holds idle shells and finished sessions. **Snoozed**
+and **On the docket** stay folded until opened or searched.
 
-1. A name field, focused. Enter starts a Claude session with that name; Tab cycles Claude, Codex,
-   shell.
-2. Live sessions of the focused pane's project waiting for input, most recent first.
-3. Live sessions of that project that are busy.
-4. Past sessions of that project that can be resumed (Claude's and Codex's own transcripts).
+Typing filters by session name or project. ↑↓ chooses a row and Enter opens it. If a session
+already has a pane, Umi takes you to it. A hidden session opens in the switcher's place.
 
-↑↓ choose, Enter opens.
+**+ New** opens the name field and agent choices for Claude Code, Codex, Antigravity and a shell.
+Tab cycles the choices. Enter starts the selected kind in the originating pane's folder.
+**History** lists resumable conversations for the chosen project. Both screens offer a folder
+chooser. Typing `/` from the empty switcher search goes straight to choosing a folder for a new session.
 
-The session starts in the folder shown under the name field, at first the focused pane's. `/` in
-the empty name field (or a click on the folder) turns the field into a folder search (Alejo,
-2026-11-21: `ls` and `cd` in a new shell took too many keys), so ⌘D `/` a few letters Enter Enter
-starts a session elsewhere:
-
-- Letters match the folders in use (live sessions, tabs, folders chosen before), the folders next to
-  them, and the folders next to their parents, so every project of a workspace like `~/best`. It
-  only lists folders inside home that are next to one in use, so macOS never asks for Documents
-  or Desktop.
-- A path (`~/…`, `/…`, `../…`, anything with a `/`) lists that folder's folders, filtered by what
-  follows the last `/`. Tab goes into the chosen folder, ⇧Tab up one.
-- Enter takes the folder: the lists below become its project's. Esc goes back to the name.
-
-agent-emacs splits these into a switcher, a new-session prompt and a history
-browser; one list ordered by what needs Alejo is fewer steps.
+- Letters match folders in use, nearby folders and folders with agent history. Matches with Claude
+  or Codex history come first, followed by match quality and recent folder choices.
+- A path (`~/…`, `/…`, `./…`, `../…`, or anything containing a slash) lists its matching children.
+  Tab enters the selected folder, ⇧Tab goes up, and Enter takes the folder.
 
 ## The palette at the bottom
 
@@ -110,7 +103,7 @@ it is open.
 
 - `z` in the palette snoozes the focused session, optionally for a time (`2h`): its pane closes while
   the session keeps running, `umi-next notify` from it fires no alert, and it is left out of Review.
-  The picker still lists it, marked "snoozed".
+  The switcher keeps it in the folded Snoozed group.
 - A snoozed session's snooze finishes when its turn ends or its time runs out. It then counts in
   Review whatever its reply says: snoozing asked to be told. Showing the session again, or `c` in
   the palette, clears it.
@@ -118,15 +111,13 @@ it is open.
   session's turn ends, its last reply's status line decides, read as agent-emacs's
   `agent-session-reply-status` does (the last line of the reply starting `Status:`, after list marks
   and emphasis, case ignored):
-  - `done` or `done, pending verification`: it stays out of Review; the picker lists it under
-    Finished, below the busy sessions.
+  - `done` or `done, pending verification`: it stays out of Review; the switcher lists it under Available.
   - `waiting on you`, a question or permission dialog on screen, or no readable status line: it
-    counts in Review, since it can't be confirmed done, and the picker lists it under "Waiting for you".
+    counts in Review, since it can't be confirmed done, and the switcher lists it under Needs you.
   - `in progress` with the turn ended: the same.
 - **Review** is what waits for Alejo, grouped by project, the current project first: sessions waiting
-  for input, finished snoozes, and docketed sessions whose hook failed. Nothing on screen lists it
-  (the sidebar's Review section was removed, Alejo, 2026-11-21): the Dock badge counts the current
-  project's items, and `umi-next go --next` walks them in that order; it has no key or palette entry (Alejo, 2026-11-21).
+  for input, finished snoozes, and docketed sessions whose hook failed. The switcher shows them
+  across projects. The Dock badge counts the current project's items, and `umi-next go --next` walks them in that order; it has no key or palette entry (Alejo, 2026-11-21).
 - agent-emacs's snooze fades a session and silences its alert; grouping by project and scoping the
   badge to the current project is the addition.
 
@@ -141,8 +132,7 @@ When its turn ends, UmiNext runs `~/.config/umi-next/docket-hook` (dotfiles
 `desk/requested/` item from the end of the transcript with `claude -p`, makes a link with
 `umi-link --app next`, and commits it to desk. Drafting from outside, not by typing `/queue` into
 the session, works while a dialog blocks the input box and leaves the session's last reply as it
-was. A failing hook makes the session count in Review, with the hook's message shown on the
-session's row in the picker.
+was. A failed hook puts the session in Review and under Needs you. Hovering the row shows the error.
 
 The item's `umi-next://open?task=…` link reattaches the daemon session while it lives, and
 resumes the agent session once it doesn't.

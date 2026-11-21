@@ -23,11 +23,18 @@ Umi.views.panes = (() => {
       if (r) r(el, node);
       else el.textContent = el.dataset.view;
       if (el.dataset.view !== 'terminal') {
-        // Only a change of focus redraws: a redraw replaces the picker's field under the click.
-        // When it does, the update gives the keys to the new field, and the click's own focusing
-        // (of the element just removed) is cancelled so it can't take them back.
         el.addEventListener('mousedown', (e) => {
           if (!M.findPane(node.id) || (M.activeTab().focused === node.id && !S.ui.sidebarFocus)) return;
+          if (node.view === 'picker') {
+            // Keep the pressed control in the DOM through mouseup so the first click activates it.
+            M.focusPane(node.id);
+            Umi.app.save();
+            highlightFocus(node.id);
+            Umi.views.sidebar.render();
+            refreshChrome();
+            Umi.app.report(true);
+            return;
+          }
           e.preventDefault();
           Umi.app.update(() => M.focusPane(node.id));
         });
@@ -63,7 +70,11 @@ Umi.views.panes = (() => {
   // A chip's label: the session's given name, else what its terminal's title says, else its folder.
   function chipLabel(node) {
     if (node.view === 'file') return Umi.views.file.label(node);
-    if ((node.view || 'terminal') !== 'terminal') return node.view === 'picker' ? 'New session' : node.view;
+    if (node.view === 'picker') {
+      const mode = node.picker.mode === 'folder' ? node.picker.folderFrom || 'new' : node.picker.mode;
+      return { new: 'New session', history: 'Session history' }[mode] || 'Sessions';
+    }
+    if ((node.view || 'terminal') !== 'terminal') return node.view;
     const sid = M.sessionOf(node.id), live = sid && S.live[sid];
     const given = sid && (S.layout.meta?.sessions?.[sid]?.name || live?.name);
     return given || shortPath(S.panes[node.id]?.title) || shortPath(M.folderOf(node.id)) || 'Terminal';
@@ -153,6 +164,10 @@ Umi.views.panes = (() => {
   }
 
   let lastTab = null;
+  function highlightFocus(id) {
+    document.querySelectorAll('#panes .slot, #panes .pane').forEach((s) => s.classList.toggle('focused', s.dataset.pane === id));
+  }
+
   function render() {
     renderStrip(M.activeTab());
     const main = document.querySelector('#panes');
@@ -165,7 +180,7 @@ Umi.views.panes = (() => {
     const zoomed = tab.zoomed && M.panesOf(tab.root).find((p) => p.id === tab.zoomed);
     main.classList.toggle('multi', !zoomed && M.paneIds(tab.root).length > 1);
     main.append(renderNode(zoomed || tab.root));
-    main.querySelectorAll('.slot, .pane').forEach((s) => s.classList.toggle('focused', s.dataset.pane === tab.focused));
+    highlightFocus(tab.focused);
     Umi.views.file?.sync(); // file views sit over their slots and outlive this redraw
   }
 

@@ -1,21 +1,4 @@
-// The pane picker (DESIGN "⌘D: the pane picker"), drawn inside a new pane:
-//   1. a name field, focused: Enter starts a Claude session with that name; Tab cycles
-//      Claude, Codex, shell;
-//   2. live sessions of the focused pane's project waiting for input, most recent first;
-//   3. live sessions of that project that are busy;
-//   4. past sessions of that project that can be resumed (Claude's and Codex's transcripts).
-// ↑↓ choose, Enter opens, Esc closes the pane.
-//
-// The session starts in the folder under the name field: at first the focused pane's. `/` in the
-// empty name field (or a click on the folder) turns the field into a folder search:
-//   - letters match folders in use (live sessions, tabs, folders chosen here before), the folders
-//     next to them and, for a folder two or more levels under home, the folders next to its parent
-//     (so every project of a workspace like ~/best). Projects with Claude/Codex history come
-//     first, then match quality and recent folder choices;
-//   - a path (`~/…`, `/…`, `./…`, `../…`, or anything with a `/`) lists that folder's folders,
-//     filtered by what follows the last `/`.
-// ↑↓ choose, Enter takes the folder, Tab goes into the chosen one, ⇧Tab goes up one, Esc (or ⌫ in
-// the empty field) goes back to the name without changing the folder.
+// The pane switcher opens live sessions across projects. New and History share its folder chooser.
 'use strict';
 Umi.views = Umi.views || {};
 
@@ -125,13 +108,30 @@ Umi.views.picker = (() => {
     return { rows: hits.map((r) => ({ path: all[rank.get(r.path)] })) };
   }
 
+  function changePage(el, node, mode) {
+    const pk = node.picker;
+    pk.mode = mode;
+    delete pk.choice;
+    delete pk.notice;
+    const input = el.querySelector('.picker-name');
+    input.value = fieldValue(pk);
+    refresh(el, node);
+    input.focus();
+    Umi.views.panes.refreshChrome();
+    Umi.app.save();
+  }
+
   function folderMode(el, node, on) {
     const pk = node.picker;
-    if (on) { dirs = new Map(); known = null; pk.mode = 'folder'; Umi.bridge.post({ type: 'agentProjects' }); } else delete pk.mode;
+    if (on) {
+      pk.folderFrom = pk.mode === 'history' ? 'history' : 'new';
+      dirs = new Map();
+      known = null;
+      Umi.bridge.post({ type: 'agentProjects' });
+    }
     pk.query = '';
     pk.fsel = 0;
-    el.querySelector('.picker-name').value = on ? '' : pk.name;
-    refresh(el, node);
+    changePage(el, node, on ? 'folder' : pk.folderFrom || 'new');
   }
 
   // The repository's main folder (a worktree counts as its repository), else the folder.
@@ -149,7 +149,6 @@ Umi.views.picker = (() => {
     Umi.app.update(() => {
       node.cwd = path;
       pk.project = path;
-      pk.sel = 0;
       S.layout.meta = S.layout.meta || { sessions: {} };
       const f = (S.layout.meta.folders = S.layout.meta.folders || {});
       f[path] = Date.now();
@@ -160,8 +159,10 @@ Umi.views.picker = (() => {
     focus();
     projectOfFolder(path).then((project) => {
       if (node.cwd !== path) return;
-      Umi.app.update(() => { pk.project = project; });
-      askPast(project);
+      if (pk.project === project || !M.findPane(node.id)) return;
+      pk.project = project;
+      Umi.app.save();
+      redraw();
     });
   }
 
@@ -208,39 +209,118 @@ Umi.views.picker = (() => {
     });
   }
 
-  function items(node) {
-    const pk = node.picker;
-    const all = Object.values(S.live).filter((s) => M.userStarted(s) && s.project === pk.project);
-    const docketed = all.filter((s) => s.docket);
-    const live = all.filter((s) => s.alive && !s.docket);
-    const recent = (a, b) => (b.agent?.ts || b.created || 0) - (a.agent?.ts || a.created || 0);
-    const by = (st) => live.filter((s) => M.standing(s) === st).sort(recent);
-    const past = S.past[pk.project] || [];
-    return [
-      { type: 'new' },
-      ...[...by('needs'), ...by('idle')].map((s) => ({ type: 'live', section: 'Waiting for you', s })),
-      ...by('busy').map((s) => ({ type: 'live', section: 'Busy', s })),
-      ...by('finished').map((s) => ({ type: 'live', section: 'Finished', s })),
-      ...docketed.sort(recent).map((s) => ({ type: 'live', section: 'On the docket', s })),
-      ...past.map((p) => ({ type: 'past', section: 'Past sessions', p })),
-    ];
+  const groups = [
+    ['needs', 'Needs you'], ['busy', 'Running'], ['available', 'Available'],
+    ['snoozed', 'Snoozed'], ['docketed', 'On the docket'],
+  ];
+  const collapsible = (group) => group === 'snoozed' || group === 'docketed';
+  function fieldValue(pk) {
+    if (pk.mode === 'folder') return pk.query || '';
+    if (pk.mode === 'new') return pk.name || '';
+    if (pk.mode === 'history') return pk.historyQuery || '';
+    return pk.search || '';
   }
 
-  function act(node, item) {
+  // Keys identify the choices even as a session changes group or another arrives above it.
+  function choices(node) {
     const pk = node.picker;
-    const cmds = S.commands || {};
-    Umi.app.update(() => {
-      if (item.type === 'new') {
-        const cmd = pk.kind === 'shell' ? null : (cmds[pk.kind] || pk.kind);
-        M.startSession(node.id, { cmd, name: pk.name.trim() });
-      } else if (item.type === 'live') {
-        M.openSession(item.s.id, node.id);
+    if (pk.mode === 'new') return [{ key: 'new', name: 'New session', detail: pk.name.trim() || M.defaultName(node.cwd), icon: pk.kind }];
+    if (pk.mode === 'history') {
+      const q = (pk.historyQuery || '').trim().toLowerCase();
+      return (S.past[pk.project] || []).filter((p) => p.title.toLowerCase().includes(q))
+        .map((p) => ({ key: 'past:' + p.kind + ':' + p.id, name: p.title, detail: ago(p.mtime), icon: p.kind, past: p }));
+    }
+    const found = M.switcherGroups(pk.search);
+    const rows = [];
+    for (const [group, label] of groups) {
+      const sessions = found[group];
+      if (!sessions.length) continue;
+      if (collapsible(group) && !pk.search?.trim()) {
+        const expanded = !!pk.expanded?.[group];
+        rows.push({ key: group, disclosure: group, name: label, count: sessions.length, expanded });
+        if (!expanded) continue;
       } else {
-        const p = item.p;
-        const cmd = p.kind === 'claude' ? `${cmds.claude || 'claude'} --resume ${p.id}` : `${cmds.codex || 'codex'} resume ${p.id}`;
-        M.startSession(node.id, { cmd, name: p.title.slice(0, 40), cwd: p.cwd });
+        rows.push({ heading: group, name: label });
+      }
+      for (const s of sessions) {
+        const project = s.project || s.folder || '';
+        const name = M.sessionName(s.id);
+        const tip = s.docket?.state === 'failed' ? 'Docket failed: ' + (s.docket.error || '') : project;
+        rows.push({ key: 'session:' + s.id, session: s.id, kind: s.kind, group, name, detail: base(project), tip });
+      }
+    }
+    return rows;
+  }
+
+  function activate(el, node, item) {
+    if (!item) return;
+    const pk = node.picker, cmds = S.commands || {};
+    if (item.disclosure) {
+      pk.expanded ??= {};
+      pk.expanded[item.disclosure] = !pk.expanded[item.disclosure];
+      pk.choice = item.key;
+      refresh(el, node);
+      return;
+    }
+    Umi.app.update(() => {
+      if (item.key === 'new') {
+        const cmd = pk.kind === 'shell' ? null : cmds[pk.kind] || pk.kind;
+        M.startSession(node.id, { cmd, name: pk.name.trim() });
+      } else if (item.session) {
+        pk.notice = M.switchFromPicker(item.session, node.id);
+      } else if (item.past) {
+        const p = item.past;
+        M.startSession(node.id, { cmd: (cmds[p.kind] || p.kind) + ' --resume ' + p.id, name: p.title.slice(0, 40), cwd: p.cwd });
       }
     });
+  }
+
+  function selected(rows, pk) {
+    return rows.find((r) => r.key && r.key === pk.choice) || rows.find((r) => r.key);
+  }
+
+  function handleKey(e, el, node) {
+    if (e.isComposing) return;
+    const pk = node.picker, input = el.querySelector('.picker-name');
+    if (pk.mode === 'folder' && e.target === input) return folderKey(e, el, node);
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (pk.mode === 'folder') return folderMode(el, node, false);
+      if (pk.mode === 'new' || pk.mode === 'history') return changePage(el, node, 'switcher');
+      if (S.layout.tabs.some((t) => M.paneIds(t.root).some((id) => id !== node.id))) {
+        Umi.app.update(() => M.removePane(node.id));
+      }
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'Tab' && (!pk.mode || pk.mode === 'switcher')) {
+      const order = [input, el.querySelector('[data-page=new]'), el.querySelector('[data-page=history]')];
+      const i = order.indexOf(e.target);
+      if (i >= 0) {
+        e.preventDefault();
+        order[(i + (e.shiftKey ? 2 : 1)) % 3].focus();
+      }
+      return;
+    }
+    if (e.target !== input) return;
+    if (e.key === '/' && !input.value) {
+      e.preventDefault();
+      return folderMode(el, node, true);
+    }
+    if (e.key === 'Tab' && pk.mode === 'new') {
+      e.preventDefault();
+      pk.kind = KINDS[(KINDS.indexOf(pk.kind) + (e.shiftKey ? KINDS.length - 1 : 1)) % KINDS.length];
+      return refresh(el, node);
+    }
+    if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+    e.preventDefault();
+    const rows = choices(node).filter((r) => r.key);
+    const on = selected(rows, pk);
+    if (!on) return;
+    if (e.key === 'Enter') return activate(el, node, on);
+    const i = rows.indexOf(on) + (e.key === 'ArrowDown' ? 1 : -1);
+    pk.choice = rows[Math.max(0, Math.min(i, rows.length - 1))].key;
+    refresh(el, node);
   }
 
   function render(el, node) {
@@ -248,136 +328,144 @@ Umi.views.picker = (() => {
     el.classList.add('picker');
     el.innerHTML = `
       <div class="picker-head">
-        <input class="picker-name" spellcheck="false">
+        <button type="button" data-page="switcher" class="picker-nav picker-back" aria-label="Back to sessions" title="Back (Esc)">‹</button>
+        <input class="picker-name" spellcheck="false" autocomplete="off">
+        <button type="button" data-page="new" class="picker-nav picker-new">+ New</button>
         <div class="picker-kinds">${KINDS.map((k) => `<button type="button" data-kind="${k}" title="${LABEL[k]}" aria-label="${LABEL[k]}"></button>`).join('')}</div>
       </div>
-      <div class="picker-project"></div>
-      <div class="picker-list"></div>`;
+      <button type="button" class="picker-project"><b></b><span></span></button>
+      <div role="status" class="picker-notice" hidden></div>
+      <div class="picker-list"></div>
+      <button type="button" data-page="history" class="picker-nav picker-history">History</button>`;
     el.querySelectorAll('[data-kind]').forEach((k) => k.prepend(Umi.icons.agent(k.dataset.kind)));
     const input = el.querySelector('.picker-name');
-    input.value = pk.mode === 'folder' ? pk.query || '' : pk.name;
+    input.value = fieldValue(pk);
     input.addEventListener('input', () => {
-      if (pk.mode === 'folder') { pk.query = input.value; pk.fsel = 0; } else { pk.name = input.value; pk.sel = 0; }
+      if (pk.mode === 'folder') { pk.query = input.value; pk.fsel = 0; }
+      else if (pk.mode === 'new') pk.name = input.value;
+      else if (pk.mode === 'history') pk.historyQuery = input.value;
+      else pk.search = input.value;
+      delete pk.choice;
+      delete pk.notice;
       refresh(el, node);
     });
-    input.addEventListener('keydown', (e) => {
-      if (pk.mode === 'folder') return folderKey(e, el, node);
-      if (e.key === '/' && !input.value) { e.preventDefault(); return folderMode(el, node, true); }
-      const list = items(node);
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        pk.kind = KINDS[(KINDS.indexOf(pk.kind) + (e.shiftKey ? KINDS.length - 1 : 1)) % KINDS.length];
+    el.addEventListener('keydown', (e) => handleKey(e, el, node));
+    el.addEventListener('click', (e) => {
+      const button = e.target.closest('button');
+      if (!button) return;
+      if (button.classList.contains('picker-project')) return folderMode(el, node, pk.mode !== 'folder');
+      if (button.dataset.page) {
+        if (pk.mode === 'folder' && button.dataset.page === 'switcher') return folderMode(el, node, false);
+        return changePage(el, node, button.dataset.page);
+      }
+      if (button.closest('.picker-kinds')) {
+        pk.kind = button.dataset.kind;
         refresh(el, node);
-      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        pk.sel = Math.max(0, Math.min(list.length - 1, pk.sel + (e.key === 'ArrowDown' ? 1 : -1)));
-        refresh(el, node);
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        act(node, list[pk.sel] || list[0]);
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        const all = S.layout.tabs.flatMap((t) => M.paneIds(t.root));
-        if (all.length > 1) Umi.app.update(() => M.removePane(node.id));
+        input.focus();
       }
     });
-    el.addEventListener('mousedown', (e) => {
-      const k = e.target.closest('[data-kind]');
-      if (k) e.preventDefault();
-      if (e.target.closest('.picker-project')) { e.preventDefault(); folderMode(el, node, pk.mode !== 'folder'); input.focus(); }
-    });
-    el.addEventListener('click', (e) => {
-      const k = e.target.closest('[data-kind]');
-      if (k) { pk.kind = k.dataset.kind; refresh(el, node); input.focus(); }
-    });
     refresh(el, node);
-    askPast(pk.project);
   }
 
-  // Focuses the name field of the focused picker (after a render, when the web view has the keys).
   function focus() {
     const tab = M.activeTab();
-    const el = document.querySelector(`#panes .slot[data-pane="${tab.focused}"] .picker-name`);
-    if (el && document.activeElement !== el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    const el = document.querySelector(`#panes .slot[data-pane="${tab.focused}"]`);
+    if (el && !el.contains(document.activeElement)) el.querySelector('.picker-name')?.focus();
+  }
+
+  function drawChoice(el, node, item, on) {
+    if (item.heading) {
+      const heading = document.createElement('div');
+      heading.className = 'picker-section';
+      heading.dataset.group = item.heading;
+      heading.textContent = item.name;
+      return heading;
+    }
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.tabIndex = -1;
+    row.className = 'picker-row' + (item === on ? ' sel' : '');
+    if (item.disclosure) {
+      row.classList.add('picker-disclosure');
+      row.dataset.action = item.disclosure;
+      row.setAttribute('aria-expanded', item.expanded);
+      row.innerHTML = '<span class="picker-caret" aria-hidden="true"></span><b></b><span class="dim"></span>';
+      row.querySelector('b').textContent = item.name;
+      row.querySelector('.dim').textContent = item.count;
+    } else {
+      row.innerHTML = '<b></b><span class="dim"></span>';
+      row.querySelector('b').textContent = item.name;
+      row.querySelector('.dim').textContent = item.detail;
+      if (item.session) {
+        row.dataset.session = item.session;
+        row.dataset.group = item.group;
+        row.dataset.kind = item.kind;
+        row.title = [item.name, item.tip].filter(Boolean).join('\n');
+      }
+      if (item.past) row.dataset.past = item.past.id;
+      if (item.icon) row.prepend(Umi.icons.agent(item.icon));
+    }
+    row.addEventListener('mousedown', (e) => e.preventDefault());
+    row.addEventListener('click', () => {
+      activate(el, node, item);
+      if (item.disclosure) el.querySelector('.picker-name').focus();
+    });
+    return row;
   }
 
   function refresh(el, node) {
-    const pk = node.picker;
-    el.querySelectorAll('[data-kind]').forEach((k) => {
+    const pk = node.picker, mode = pk.mode || 'switcher';
+    const switcher = mode === 'switcher', folder = mode === 'folder';
+    el.dataset.mode = mode;
+    for (const b of el.querySelectorAll('[data-page]')) b.hidden = (b.dataset.page === 'switcher') === switcher;
+    el.querySelector('.picker-kinds').hidden = mode !== 'new';
+    el.querySelectorAll('.picker-kinds [data-kind]').forEach((k) => {
       k.classList.toggle('on', k.dataset.kind === pk.kind);
       k.setAttribute('aria-pressed', String(k.dataset.kind === pk.kind));
     });
-    const folder = pk.mode === 'folder';
-    el.querySelector('.picker-name').placeholder = folder
-      ? 'Folder: letters to match, or a path like ~/ or ../'
-      : `Name (empty: ${base(node.cwd)} and a number)`;
+    const input = el.querySelector('.picker-name');
+    input.placeholder = { switcher: 'Find a session…', new: 'Session name', history: 'Find a past session…', folder: 'Find a folder or enter a path…' }[mode];
+    input.setAttribute('aria-label', input.placeholder);
     const where = el.querySelector('.picker-project');
-    where.innerHTML = '<b></b> <span></span>';
-    where.querySelector('b').hidden = !folder;
-    where.querySelector('b').textContent = folder ? tilde(node.cwd || S.home || '') : '';
-    where.querySelector('span').textContent = folder ? '↩ take · ⇥ go in · ⇧⇥ up · esc back' : '/ to change the folder';
+    where.hidden = switcher;
+    where.querySelector('b').hidden = mode === 'new';
+    where.querySelector('b').textContent = mode === 'history' ? base(pk.project) : tilde(node.cwd || S.home || '');
+    where.querySelector('span').textContent = folder ? '↩ choose · ⇥ enter folder · esc back' : '/ to change the folder';
+    where.title = mode === 'history' ? pk.project : node.cwd || '';
     const list = el.querySelector('.picker-list');
-    // A refresh for new session data keeps the list where it was scrolled; only a selection that
-    // moved (a key, a new folder search) is brought into view.
+    const notice = el.querySelector('.picker-notice');
+    notice.hidden = !pk.notice;
+    notice.textContent = pk.notice || '';
     const scroll = list.scrollTop;
-    const place = () => {
-      const at = folder ? 'f' + (pk.fsel || 0) : 's' + pk.sel;
-      const on = list.querySelector('.sel');
-      if (list.dataset.at !== at && on) on.scrollIntoView({ block: 'nearest' });
-      else list.scrollTop = scroll;
-      list.dataset.at = at;
-    };
-    list.textContent = '';
+    let at;
     if (folder) {
+      delete list.dataset.drawn;
+      list.replaceChildren();
       drawFolders(el, node, list);
-      return place();
-    }
-    if (pk.jump === 'past') {
-      const i = items(node).findIndex((it) => it.type === 'past');
-      if (i > 0) { pk.sel = i; delete pk.jump; }
-    }
-    let section = null;
-    items(node).forEach((item, i) => {
-      if (item.section && item.section !== section) {
-        section = item.section;
-        const h = document.createElement('div');
-        h.className = 'picker-section';
-        h.textContent = section;
-        list.append(h);
+      at = 'folder:' + (pk.fsel || 0);
+    } else {
+      if (mode === 'history') askPast(pk.project);
+      const rows = choices(node), on = selected(rows, pk);
+      at = on?.key || '';
+      pk.choice = at;
+      // Session snapshots arrive while the user is pointing at a row. Keep the actual
+      // buttons when their contents and selection match the previous drawing.
+      const drawn = JSON.stringify([mode, at, rows, fieldValue(pk), mode === 'history' && pk.project in S.past]);
+      if (list.dataset.drawn === drawn) return;
+      list.dataset.drawn = drawn;
+      list.replaceChildren(...rows.map((item) => drawChoice(el, node, item, on)));
+      if (!rows.length) {
+        const msg = document.createElement('div');
+        msg.className = 'picker-empty';
+        if (fieldValue(pk).trim()) msg.textContent = 'No matching sessions';
+        else if (mode === 'history') msg.textContent = pk.project in S.past ? 'No past sessions in this project' : 'Loading history…';
+        else msg.textContent = 'No live sessions';
+        list.append(msg);
       }
-      const row = document.createElement('div');
-      row.className = 'picker-row' + (i === pk.sel ? ' sel' : '');
-      if (item.type === 'new') {
-        row.innerHTML = `<b>New session</b><span class="dim"></span>`;
-        row.prepend(Umi.icons.agent(pk.kind));
-        row.querySelector('.dim').textContent = pk.name.trim() || M.defaultName(node.cwd);
-      } else if (item.type === 'live') {
-        const s = item.s;
-        const shown = M.paneOfSession(s.id);
-        row.innerHTML = `<span class="kind"></span><b></b><span class="dim"></span>`;
-        row.querySelector('.kind').replaceWith(Umi.icons.agent(s.kind));
-        row.querySelector('b').textContent = M.sessionName(s.id);
-        const st = s.agent && Umi.status.parseStatus(s.agent.reply);
-        const said = st ? (st.kind === 'other' ? st.detail : `${st.kind === 'pending' ? 'done, pending' : st.kind}${st.detail ? ': ' + st.detail : ''}`) : '';
-        // A failed docket hook says why here, the one place a docketed session shows: the first
-        // line of its message in the row, all of it on hover (a hook's stderr can be long).
-        const failed = s.docket?.state === 'failed', why = failed && String(s.docket.error || '').trim();
-        const dk = s.docket && (failed ? `docket failed${why ? ': ' + why.split('\n')[0] : ''}`
-          : { pending: 'docketed, turn running', on: 'on the docket' }[s.docket.state]);
-        const dim = row.querySelector('.dim');
-        dim.textContent = [dk, M.isSnoozed(s.id) ? 'snoozed' : '', shown ? 'on screen' : '', said || s.foreground, base(s.folder)].filter(Boolean).join(' · ');
-        if (failed && why) dim.title = 'docket failed: ' + why;
-      } else {
-        const p = item.p;
-        row.innerHTML = `<span class="kind"></span><b></b><span class="dim"></span>`;
-        row.querySelector('.kind').replaceWith(Umi.icons.agent(p.kind));
-        row.querySelector('b').textContent = p.title;
-        row.querySelector('.dim').textContent = ago(p.mtime);
-      }
-      row.addEventListener('mousedown', (e) => { e.preventDefault(); pk.sel = i; act(node, item); });
-      list.append(row);
-    });
-    place();
+    }
+    if (list.dataset.at !== at) list.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+    else list.scrollTop = scroll;
+    list.dataset.at = at;
   }
 
   return { render, refresh, focus };

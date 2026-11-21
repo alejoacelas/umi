@@ -3,7 +3,7 @@
 // Plain script (no build step); everything hangs off `window.Umi`. Spec: next/DESIGN.md.
 //
 // - A session (agent or shell) lives in the daemon; a pane is a view onto at most one session, and
-//   a session shows in at most one pane: opening one already on screen moves it.
+//   a session shows in at most one pane. The switcher focuses that pane wherever it is.
 // - ⌘W closes a pane and ends its session, whatever runs there (agent, shell, any program); ⇧⌘T
 //   brings an agent back by resuming its transcript. ⌥⌘H only hides the pane: its session keeps
 //   running and goes on the tab's strip. Exit (palette) ends a session and leaves its pane. A
@@ -56,7 +56,14 @@ Umi.model = (() => {
   const listedTabs = () => S.layout.tabs.filter((t) => !t.archived);
   const focusedPane = () => findPane(activeTab().focused)?.node;
   const sessionOf = (paneId) => S.panes[paneId]?.session || findPane(paneId)?.node.session;
-  const paneOfSession = (sid) => Object.keys(S.panes).find((p) => S.panes[p].session === sid && findPane(p));
+  function paneOfSession(sid) {
+    if (!sid) return;
+    // A newly attached or restored pane can be in the layout before native reports its session.
+    for (const tab of S.layout.tabs) {
+      const pane = panesOf(tab.root).find((p) => (S.panes[p.id]?.session || p.session) === sid);
+      if (pane) return pane.id;
+    }
+  }
 
   function mapPane(node, id, fn) {
     if (node.type === 'pane') return node.id === id ? fn(node) : node;
@@ -118,23 +125,43 @@ Umi.model = (() => {
   // On the docket (native keeps the mark: <state>/docket.json): {state: pending|on|failed, error?}.
   const docketOf = (sid) => S.live[sid]?.docket || null;
 
+  function switcherGroup(s) {
+    if (!userStarted(s)) return null;
+    if (s.docket) return s.docket.state === 'failed' ? 'needs' : 'docketed';
+    if (!s.alive) return null;
+    const snooze = S.layout.meta?.sessions?.[s.id]?.snooze;
+    if (snooze) return snooze.done ? 'needs' : 'snoozed';
+    const state = standing(s);
+    return state === 'idle' || state === 'finished' ? 'available' : state;
+  }
+
+  function switcherGroups(query = '') {
+    const groups = { needs: [], busy: [], available: [], snoozed: [], docketed: [] };
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const latest = (s) => {
+      const snooze = S.layout.meta?.sessions?.[s.id]?.snooze;
+      const due = snooze?.done && snooze.until <= now() ? snooze.until : 0;
+      return Math.max(s.agent?.ts || 0, s.created || 0, due || 0);
+    };
+    for (const s of Object.values(S.live)) {
+      const group = switcherGroup(s);
+      if (!group) continue;
+      const text = `${sessionName(s.id)} ${s.project || s.folder || ''}`.toLowerCase();
+      if (terms.every((term) => text.includes(term))) groups[group].push(s);
+    }
+    for (const group of Object.values(groups)) {
+      group.sort((a, b) => latest(b) - latest(a) || a.id.localeCompare(b.id));
+    }
+    return groups;
+  }
+
   // What waits for Alejo, grouped by project, the current project first (DESIGN "Review"):
   // agent sessions waiting for input, and finished snoozes.
   function review() {
     const cur = currentProject();
     const groups = {};
     for (const s of Object.values(S.live)) {
-      if ((!s.alive && !s.docket) || !userStarted(s)) continue;
-      if (isSnoozed(s.id)) continue;
-      // Docketed sessions never show here, except when the docket hook failed (no silent loss).
-      if (s.docket) {
-        if (s.docket.state === 'failed') (groups[s.project] = groups[s.project] || []).push(s);
-        continue;
-      }
-      const z = S.layout.meta?.sessions?.[s.id]?.snooze;
-      // A finished snooze shows even if it says done: snoozing asked to be told.
-      if (standing(s) !== 'needs' && !(z && z.done)) continue;
-      (groups[s.project] = groups[s.project] || []).push(s);
+      if (switcherGroup(s) === 'needs') (groups[s.project] = groups[s.project] || []).push(s);
     }
     for (const g of Object.values(groups)) g.sort((a, b) => (b.agent?.ts || 0) - (a.agent?.ts || 0));
     return Object.keys(groups).sort((a, b) => (a === cur ? -1 : b === cur ? 1 : a.localeCompare(b)))
@@ -275,6 +302,29 @@ Umi.model = (() => {
     const m = S.layout.meta?.sessions?.[sid];
     if (m && m.snooze) delete m.snooze; // looked at
     undocket(sid);
+  }
+
+  // The switcher visits an existing pane in place. A session with no pane takes the picker's slot.
+  function switchFromPicker(sid, pickerId) {
+    const found = findPane(pickerId), s = S.live[sid];
+    if (found?.node.view !== 'picker') return;
+    if (!s) return 'This session has ended.';
+    const shown = paneOfSession(sid);
+    if (shown) {
+      // A standalone picker belongs to its tab, which may be named or hold hidden sessions.
+      if (found.tab.root !== found.node) removePane(pickerId);
+      focusPane(shown);
+      const m = S.layout.meta?.sessions?.[sid];
+      if (m) delete m.snooze;
+      undocket(sid);
+    } else if (s.alive) {
+      openSession(sid, pickerId);
+    } else {
+      const resume = resumeOf(sid);
+      if (!resume) return s.docket?.error || 'This session has ended.';
+      startSession(pickerId, resume);
+      undocket(sid);
+    }
   }
 
   // Shows a session wherever is best: its pane if on screen, else a split of the focused pane.
@@ -453,7 +503,16 @@ Umi.model = (() => {
     const l = msg.layout;
     S.layout = l && l.tabs && l.tabs.length ? l : { version: 1, tabs: [newTab(newPane({ cwd: S.home }))], sidebar: true };
     S.layout.meta = S.layout.meta || { sessions: {} };
-    for (const p of S.layout.tabs.flatMap((t) => panesOf(t.root))) p.view = p.view || 'terminal';
+    for (const p of S.layout.tabs.flatMap((t) => panesOf(t.root))) {
+      p.view = p.view || 'terminal';
+      const pk = p.picker;
+      if (pk && !pk.mode) {
+        // Older layouts used a single picker for drafts and history.
+        if (pk.jump === 'past') pk.mode = 'history';
+        else if (pk.name || (pk.kind && pk.kind !== 'claude')) pk.mode = 'new';
+        delete pk.jump;
+      }
+    }
     if (!S.layout.tabs.some((t) => t.id === S.layout.activeTab)) S.layout.activeTab = S.layout.tabs[0].id;
   }
 
@@ -494,8 +553,8 @@ Umi.model = (() => {
   return {
     newPane, newPicker, newTab, panesOf, paneIds, findPane, activeTab, listedTabs, focusedPane, sessionOf, paneOfSession,
     mapPane, removeFromTree, hide, closeAndEnd, resumeOf, unhide, hiddenOf, appendPane, showHidden, rowWeight,
-    folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, review,
-    addTab, split, removePane, openSession, showSession, startSession, focusPane,
+    folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, switcherGroups, review,
+    addTab, split, removePane, openSession, switchFromPicker, showSession, startSession, focusPane,
     selectTab, stepTab, focusDir, moveFocusedPane, snooze, rename, docket, undocket, docketOf, openPanel, closePanel,
     load, paneInfo, sessions,
   };
@@ -539,10 +598,11 @@ Umi.actions = {
     const item = Umi.model.review().flatMap((g) => g.items).find((s) => s.id !== cur);
     if (item) Umi.model.showSession(item.id);
   },
-  switchSession: () => {
+  switchSession: ({ mode = 'switcher' } = {}) => {
     const M = Umi.model, p = M.focusedPane();
     if (!p) return;
     const fresh = M.newPicker(M.folderOf(p.id), M.projectOf(p.id));
+    fresh.picker.mode = mode;
     const found = M.findPane(p.id);
     found.tab.root = (function map(n) { return n.type === 'pane' ? (n.id === p.id ? fresh : n) : { ...n, a: map(n.a), b: map(n.b) }; })(found.tab.root);
     found.tab.focused = fresh.id;
