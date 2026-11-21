@@ -418,9 +418,10 @@ Umi.views.file = (() => {
         else if (msg.type === 'resolve') await this.changeComments((cur) => C.resolve(cur, msg.id, msg.resolved));
         else if (msg.type === 'delete') { await this.changeComments((cur) => C.remove(cur, msg.id)); if (this.selected === msg.id) this.selected = null; }
         // A reply being written doesn't hold the page back (its text comes back from replyDraft);
-        // only a new comment's card does, whose text and place live in the margin alone. Until
-        // that card closes, the margin takes clicks again.
-        if (this.margin?.composingNew()) { this.previewStale = true; this.margin.idle(); }
+        // only a new comment's card does, whose text and place live in the margin alone, unless
+        // that card is the comment just added. Until such a card closes, the margin takes clicks
+        // again.
+        if (msg.type !== 'add' && this.margin?.composingNew()) { this.previewStale = true; this.margin.idle(); }
         else this.renderPreview({ force: true });
       } catch (e) {
         this.margin?.failed(e.message);

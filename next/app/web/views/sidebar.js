@@ -86,6 +86,10 @@ Umi.views.sidebar = (() => {
     el.dataset.shows = shows(d);
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('.close, input') || e.button !== 0) return;
+      // The row outlives the click (render keeps unchanged rows), so WebKit's own handling of a
+      // press on it (selection, drag, autoscroll) is turned off: dragTab handles the mouse.
+      e.preventDefault();
+      if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
       Umi.app.update(() => { S.layout.activeTab = tab.id; S.ui.sidebarFocus = null; });
       if (!tab.archived) dragTab(e, tab);
     });
@@ -183,12 +187,14 @@ Umi.views.sidebar = (() => {
   // Dragging a row moves the tab within its group (pinned or not) where it's dropped (SPEC M-4).
   function dragTab(down, tab) {
     let moved = false, target = null, after = false;
+    // The row level with the pointer, from the rows' boxes.
+    const rowAt = (y) => [...document.querySelectorAll('#tabs .tab')].find((r) => { const b = r.getBoundingClientRect(); return y >= b.top && y < b.bottom; });
     const move = (e) => {
       if (!moved && Math.abs(e.clientY - down.clientY) < 4) return;
       moved = true;
       document.body.classList.add('dragging-tab');
       document.querySelectorAll('#tabs .tab').forEach((r) => r.classList.remove('drop-before', 'drop-after'));
-      const row = document.elementFromPoint(e.clientX, e.clientY)?.closest('#tabs .tab');
+      const row = rowAt(e.clientY);
       const t = row && S.layout.tabs.find((x) => x.id === row.dataset.tab);
       target = t && t !== tab && !!t.pinned === !!tab.pinned ? t : null;
       if (!target) return;
@@ -196,7 +202,9 @@ Umi.views.sidebar = (() => {
       after = e.clientY > r.top + r.height / 2;
       row.classList.add(after ? 'drop-after' : 'drop-before');
     };
-    const up = () => {
+    const up = (e) => {
+      // Where the button comes up decides, whatever moves were seen on the way.
+      move(e);
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
       document.body.classList.remove('dragging-tab');
