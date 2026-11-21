@@ -123,7 +123,8 @@ Umi.cli = (() => {
     return M.newPane({ view: 'picker', cwd: folder, picker: { kind: 'claude', name: args.name || '', sel: 0, project } });
   }
 
-  // A new terminal pane gets its session once native starts it (on its first slot); wait for it.
+  // A new terminal pane gets its session once native starts it (on its first slot, or at once in a
+  // tab that isn't showing); wait for it.
   function sessionSoon(paneId, ms = 6000) {
     return new Promise((resolve) => {
       const t0 = Date.now();
@@ -138,7 +139,6 @@ Umi.cli = (() => {
     const sid = waitSession ? await sessionSoon(paneId) : null;
     return { ...where(paneId), session: sid || M.sessionOf(paneId) || null };
   }
-  const shownInActiveTab = (paneId) => M.paneIds(M.activeTab().root).includes(paneId);
 
   // ---- the commands ----
   const waiters = new Map(); // request id -> {path, resolve}
@@ -184,7 +184,7 @@ Umi.cli = (() => {
       if (args.noFocus) tabs.push(t);
       else { tabs.splice(tabs.indexOf(cur) + 1, 0, t); S.layout.activeTab = t.id; }
     }, { focus: !args.noFocus });
-    return placed(pane.id, !args.noFocus);
+    return placed(pane.id, true);
   };
 
   H['tab.focus'] = ({ tab }, caller) => {
@@ -231,7 +231,7 @@ Umi.cli = (() => {
       }));
       if (!args.noFocus) { f.tab.focused = p.id; S.layout.activeTab = f.tab.id; }
     }, { focus: !args.noFocus });
-    return placed(p.id, !!p.start && shownInActiveTab(p.id));
+    return placed(p.id, !!p.start);
   };
 
   H['pane.focus'] = ({ pane }, caller) => {

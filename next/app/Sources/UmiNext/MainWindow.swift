@@ -404,11 +404,42 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             if let c = pane["cwd"] { info["pwd"] = c }
             paneInfo[id] = info
         }
+        startUnshownSessions(newLayout)
         layout = Self.withSessions(newLayout, paneInfo)
         applyZoom(newLayout["zoom"] as? [String: Any])
         syncedPanes = Self.syncedPanes(newLayout)
         if save { saveLayout() }
         focusLog.update()
+    }
+
+    /// A new session asked for in a tab that isn't showing (`umi-next tab new --no-focus --cmd …`)
+    /// starts now instead of waiting for the tab's first slot, at the size of the terminal in
+    /// front; showing the tab attaches to it, which resizes it to its slot. Panes in the active tab
+    /// still wait for their slot, so their program starts at its real size.
+    private func startUnshownSessions(_ layout: [String: Any]) {
+        guard !SessionBackend.plainShell else { return }
+        let tabs = layout["tabs"] as? [[String: Any]] ?? []
+        let active = tabs.first { $0["id"] as? String == layout["activeTab"] as? String } ?? tabs.first
+        let inActiveTab = Set(Self.panes(in: active?["root"]).compactMap { $0["id"] as? String })
+        let size = (focusedPaneID().flatMap { surfaces[$0] } ?? surfaces.values.first)?.gridSize
+        for (id, pane) in pending where !inActiveTab.contains(id) && pane["session"] == nil {
+            guard let start = pane["start"] as? [String: Any] else { continue }
+            let cwd = ((start["cwd"] ?? pane["cwd"]) as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+            let launch = SessionBackend.launch(existing: nil, live: nil, cwd: cwd, name: start["name"] as? String,
+                                               cmd: start["cmd"] as? String, by: start["by"] as? String ?? "user", size: size)
+            // A refused session waits for its slot, where the pane shows the failure.
+            guard !launch.failed else { continue }
+            var p = pane
+            p["session"] = launch.sessionID
+            p["start"] = nil
+            pending[id] = p
+            liveSessions?.insert(launch.sessionID)
+            var info: [String: Any] = ["session": launch.sessionID]
+            if let cwd { info["pwd"] = cwd }
+            paneInfo[id] = info
+            send(["type": "pane", "id": id, "info": info])
+            sessions.pollSoon()
+        }
     }
 
     private func endTerminal(_ id: String, how: String) {

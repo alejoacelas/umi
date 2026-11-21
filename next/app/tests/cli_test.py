@@ -134,6 +134,27 @@ def t_tab_new():
     assert debug(f"Umi.model.userStarted(Umi.state.live['{r['session']}'])") in (True, 1, "1", "true"), "picker wouldn't list it"
 
 
+def t_tab_new_no_focus():
+    # A tab opened in the background starts its program at once, before anyone shows the tab.
+    before = ls()
+    mark = os.path.join(scratch, "bg-started")
+    r = j("tab", "new", "bg-tab", "--cmd", f"touch {mark}; exec cat", "--cwd", scratch, "--no-focus")
+    try:
+        assert r["session"], r
+        now = ls()
+        assert now["current_tab"] == before["current_tab"] and now["current_pane"] == before["current_pane"], "--no-focus moved focus"
+        until(lambda: os.path.exists(mark), what="the background tab's program to run")
+        assert now["current_tab"] == before["current_tab"], "the tab was shown"
+        # Showing it later attaches to that session rather than starting another.
+        run("tab", "focus", r["tab"])
+        until(lambda: pane(r["pane"])["session"] == r["session"], what="the shown pane keeping its session")
+        run("send", "--pane", r["session"], "-e", "bg-hello")
+        until(lambda: "bg-hello" in screen(r["session"]), what="the attached session echoing")
+    finally:
+        run("tab", "focus", before["current_tab"], ok=False)
+        run("pane", "close", r["pane"], ok=False)
+
+
 def t_split():
     before = ls()["current_pane"]
     r = j("split", "right", "--cmd", "/bin/sh", "--name", "shell-1", "--no-focus")
@@ -429,7 +450,8 @@ def t_exit():
     until(lambda: all(s["id"] != made["cat"] for s in ls()["sessions"]), what="cat to end")
 
 
-for name, fn in [("help", t_help), ("ls", t_ls), ("tab new", t_tab_new), ("split", t_split),
+for name, fn in [("help", t_help), ("ls", t_ls), ("tab new", t_tab_new),
+                 ("tab new --no-focus", t_tab_new_no_focus), ("split", t_split),
                  ("send, read, wait", t_send_read_wait), ("keys", t_keys), ("caller defaults", t_caller),
                  ("pane commands", t_pane_ops), ("tab commands", t_tabs),
                  ("sidebar, shortcuts, go, notify", t_sidebar_shortcuts_go_notify),

@@ -15,6 +15,8 @@ enum SessionBackend {
         /// nil: Ghostty's default (the user's login shell), plain-shell debug mode only.
         let command: String?
         let workingDirectory: String?
+        /// The daemon refused to create the session; `command` shows why in the pane.
+        var failed = false
     }
 
     static let plainShell = ProcessInfo.processInfo.environment["UMI_NEXT_PLAIN_SHELL"] == "1"
@@ -50,8 +52,9 @@ enum SessionBackend {
     }
 
     /// The command for a pane: reattach to `existing` when it's live, else start a new session
-    /// (`cmd` nil: the login shell).
-    static func launch(existing: String?, live: Set<String>?, cwd: String?, name: String?, cmd: String? = nil, by: String = "user") -> Launch {
+    /// (`cmd` nil: the login shell) of `size` (nil: the daemon's 80×24; attaching resizes it).
+    static func launch(existing: String?, live: Set<String>?, cwd: String?, name: String?, cmd: String? = nil, by: String = "user",
+                       size: (cols: Int, rows: Int)? = nil) -> Launch {
         if plainShell {
             return Launch(sessionID: "shell-" + UUID().uuidString.prefix(8).lowercased(), command: nil, workingDirectory: cwd)
         }
@@ -64,6 +67,7 @@ enum SessionBackend {
         var args = ["new", "--by", by == "cli" ? "cli" : "user", "--cwd", cwd ?? NSHomeDirectory()]
         if let name, !name.isEmpty { args += ["--name", name] }
         if let cmd { args += ["--cmd", cmd] }
+        if let size, size.cols > 0, size.rows > 0 { args += ["--cols", String(size.cols), "--rows", String(size.rows)] }
         let r = run(ctlPath, args, extraEnv: shellIntegrationEnv().merging(hookEnv()) { a, _ in a }.merging(cliEnv()) { a, _ in a })
         let id = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
         guard r.status == 0, !id.isEmpty else {
@@ -71,7 +75,7 @@ enum SessionBackend {
             let msg = "umi-next: could not create a session: \(r.err.trimmingCharacters(in: .whitespacesAndNewlines))"
             return Launch(sessionID: "failed-" + UUID().uuidString.prefix(8).lowercased(),
                           command: shellQuote(["/bin/sh", "-c", "echo \"$0\"; exec sleep 2147483647", msg]),
-                          workingDirectory: cwd)
+                          workingDirectory: cwd, failed: true)
         }
         return Launch(sessionID: id, command: shellQuote([attachPath, id]), workingDirectory: cwd)
     }
