@@ -5,7 +5,7 @@ Umi.views = Umi.views || {};
 
 Umi.views.sidebar = (() => {
   const S = Umi.state, M = Umi.model;
-  const shortPath = (p) => (p && S.home && p.startsWith(S.home) ? '~' + p.slice(S.home.length) : p || '');
+  const shortPath = (p) => (p && S.home && (p === S.home || p.startsWith(S.home + '/')) ? '~' + p.slice(S.home.length) : p || '');
   const base = (p) => (p ? shortPath(p).split('/').filter(Boolean).pop() || '/' : '');
 
   function tabRow(tab, i) {

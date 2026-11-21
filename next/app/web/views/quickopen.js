@@ -151,7 +151,11 @@ Umi.views.quickOpen = (() => {
       row.title = it.path;
     }
     row.addEventListener('mousedown', (e) => { e.preventDefault(); p.sel = i; choose(p, it); });
-    row.addEventListener('mousemove', () => { if (p.sel !== i) { p.sel = i; refresh(); } });
+    row.addEventListener('mousemove', () => {
+      if (p.sel === i) return;
+      p.sel = i;
+      for (const r of row.parentNode.children) r.classList.toggle('sel', r === row);
+    });
     return row;
   }
 

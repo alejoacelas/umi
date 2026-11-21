@@ -397,10 +397,6 @@ function umiCommentsAttach(document, window, data, post) {
 
   render();
   if (data.scroll != null) window.scrollTo(0, data.scroll);
-  if (state.selected) {
-    const a = anchorOf(state.selected);
-    if (a && data.reveal) { const r = a.getBoundingClientRect(); if (r.top < 0 || r.bottom > window.innerHeight) a.scrollIntoView({ block: 'center' }); }
-    layout();
-  }
+  if (state.selected) layout();
   return api;
 }

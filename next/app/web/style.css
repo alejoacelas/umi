@@ -122,8 +122,9 @@ body.cmd-held .tab .key { display: block; }
 /* The work area: the pane strip, the panes, and the bottom panel (palette) over them. */
 #work { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
 
-/* The pane strip (SPEC H-5) in the title bar above the panes: a chip per pane of the tab, in layout
-   order, the focused one filled. Native lets clicks on chips through its drag strip (`chrome`). */
+/* The top bar, in the title bar above the panes: a chip per open tab, in the sidebar's order, the
+   current one filled, then the hidden-pane chips (SPEC H-5). Native lets clicks on chips through
+   its drag strip (`chrome`). */
 #strip {
   position: absolute; top: 0; left: 0; right: 0; height: var(--titlebar);
   display: flex; align-items: center; gap: 2px; padding: 0 8px; overflow: hidden; z-index: 1;
@@ -245,11 +246,9 @@ body.no-sidebar #strip { padding-left: 80px; }
   color: var(--ink); font: 12px -apple-system, sans-serif; padding: 1px 4px; outline: none;
 }
 
-/* Hidden-pane chips (SPEC H-5): the sessions ⌘W hid from this tab, after the panes on show. */
+/* Hidden-pane chips (SPEC H-5): the sessions ⌥⌘H hid from this tab, after the tabs' chips. */
 .chip.hidden { color: rgba(255, 255, 255, 0.28); font-style: italic; }
 .chip.hidden:hover { color: rgba(255, 255, 255, 0.55); }
-/* A zoomed pane's chip (⇧⌘↩) carries a small mark. */
-.chip.zoomed::after { content: '⤢'; font-style: normal; color: var(--dim); margin-left: 2px; }
 
 /* Tab marks: pinned, input synchronized (Warp's link mark, SPEC L-32). */
 .tab .mark { flex: none; display: inline-flex; align-items: center; }

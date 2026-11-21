@@ -16,7 +16,7 @@
 Umi.views = Umi.views || {};
 
 Umi.views.termMenu = (() => {
-  const S = Umi.state, M = Umi.model;
+  const M = Umi.model;
 
   // The key an item shows: the page's table for its actions, the terminal's Ghostty binding with ⌘
   // for its own (Copy, Paste, Clear; none when the config unbinds them), Ghostty's default until

@@ -1,11 +1,17 @@
 // The link to the native shell (Sources/UmiNext/MainWindow.swift).
-//   to native:   hello · layout {layout, closed} · rects {rects, viewport, focus?} · focus {pane}
-//                · focusWeb · error {message} · log {message} · shortcuts {table}
-//                · request {id, op, args} (Umi.bridge.request; Sources/UmiNext/Services.swift)
+//   to native:   hello · layout {layout, closed} · rects {rects, passThrough, holes, chrome, cover,
+//                tint, fade, viewport, focus?} · focusWeb · log {message} · shortcuts {table} · reload
+//                · exitSession {session} · pastSessions {project} · badge {count}
+//                · docket {session, name} · undocket {session}
+//                · request {id, op, args} (Umi.bridge.request; Sources/UmiNext/Services.swift, and
+//                  MainWindow.swift for termSearch, termSearchNav, termSearchEnd, termAction)
 //                · cliReply {id, ok, result|error} (web/cli.js; Sources/UmiNext/ControlServer.swift)
-//   from native: state · pane {id, info} · focused {pane} · action {name, ...} · paneExited {pane}
-//                · shortcut {id} · reply {id, ok, result|error} · event {id, data}
-//                · cli {id, req} · cliCancel {id}
+//                · error {message}: sent by the script native injects, for uncaught errors and
+//                  unhandled rejections (native shows them in its banner)
+//   from native: state · sessions {list} · pastSessions {project, list} · pane {id, info}
+//                · focused {pane} · action {name, ...} · paneExited {pane} · shortcut {id}
+//                · search {pane, total?, selected?} · searchEnded {pane} · termMenu {pane, x, y, ...}
+//                · reply {id, ok, result|error} · event {id, data} · cli {id, req} · cliCancel {id}
 'use strict';
 window.Umi = window.Umi || {};
 

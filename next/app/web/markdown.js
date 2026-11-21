@@ -504,7 +504,7 @@ del { background: rgba(248, 81, 73, 0.14); color: var(--umi-fg2); }
     }
 
     // Links: #anchors scroll here, web links open in the browser, others open the file in Umi.
-    page.addEventListener('click', (e) => {
+    const onClick = (e) => {
       const a = e.target.closest && e.target.closest('a[href]');
       if (!a) return;
       e.preventDefault();
@@ -520,7 +520,11 @@ del { background: rgba(248, 81, 73, 0.14); color: var(--umi-fg2); }
         try { path = decodeURIComponent(path); } catch (x) { /* as is */ }
         ctx.openFile(Umi.fs.resolve(path, ctx.dir), hash || null);
       }
-    });
+    };
+    // The page element outlives a render: one listener, the latest.
+    if (doc.__umiClick) page.removeEventListener('click', doc.__umiClick);
+    doc.__umiClick = onClick;
+    page.addEventListener('click', onClick);
 
     // Find (MD-4): Warp's bar at the top right.
     doc.getElementById('umi-find')?.remove();

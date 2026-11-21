@@ -9,8 +9,8 @@
 // prefix; a session id or unique prefix; a session name. Tabs (`args.tab`): absent → the caller's
 // tab, else the current one; '.', an id or unique prefix, a name, '#N'.
 //
-// Sessions the CLI starts are recorded as started by `cli` (start.by), so they stay out of the
-// user's session lists (DESIGN "Sessions the user started").
+// Sessions the CLI starts in a pane are recorded as started by the user (start.by), so the
+// session lists show them (DESIGN "Sessions the user started").
 //
 //   Umi.cli.commentsDone(path)   the editor's Done on a file's comments: answers `comments wait`
 //   Umi.cli.waiting()            the files `comments wait` waits on
@@ -97,8 +97,8 @@ Umi.cli = (() => {
     const out = {
       id: tab.id, index: S.layout.tabs.indexOf(tab) + 1, title: tabTitle(tab), selected: tab.id === M.activeTab().id,
       focused_pane: tab.focused, panes: M.panesOf(tab.root).map((n) => paneJSON(n, tab, rects)),
-      // The sessions ⌘W hid from this tab (the strip's chips; track c).
-      hidden: M.hiddenOf ? M.hiddenOf(tab) : [],
+      // The sessions ⌥⌘H hid from this tab (the strip's chips).
+      hidden: M.hiddenOf(tab),
     };
     if (tab.name) out.name = tab.name;
     return out;
@@ -182,7 +182,7 @@ Umi.cli = (() => {
       if (args.title) t.name = args.title;
       const tabs = S.layout.tabs;
       if (args.noFocus) tabs.push(t);
-      else { tabs.splice(tabs.indexOf(cur) + 1, 0, t); S.layout.activeTab = t.id; }
+      else { tabs.splice(Math.max(tabs.indexOf(cur) + 1, tabs.filter((x) => x.pinned).length), 0, t); S.layout.activeTab = t.id; }
     }, { focus: !args.noFocus });
     return placed(pane.id, !args.noFocus);
   };
@@ -259,21 +259,12 @@ Umi.cli = (() => {
       if (focus) Umi.app.update(() => M.focusPane(r.pane));
       return { panes: [r.pane], hid: [] };
     }
-    if (Umi.actions.showHidden) {
-      // The strip's own show (track c), which focuses what it shows; focus goes back unless --focus.
-      Umi.app.update(() => {
-        const tab = M.activeTab(), keep = tab.focused;
-        Umi.actions.showHidden({ session: r.session });
-        if (!focus && M.findPane(keep)) { S.layout.activeTab = M.findPane(keep).tab.id; M.findPane(keep).tab.focused = keep; }
-      }, { focus: true });
-    } else {
-      Umi.app.update(() => {
-        const tab = M.activeTab(), keep = tab.focused;
-        const p = M.newPane({ session: r.session, attach: r.session, cwd: S.live[r.session]?.folder });
-        tab.root = { type: 'split', dir: 'row', ratio: 1 - 1 / (M.paneIds(tab.root).length + 1), a: tab.root, b: p };
-        tab.focused = focus ? p.id : keep;
-      }, { focus: !!focus });
-    }
+    // The strip's own show, which focuses what it shows; focus goes back unless --focus.
+    Umi.app.update(() => {
+      const tab = M.activeTab(), keep = tab.focused;
+      Umi.actions.showHidden({ session: r.session });
+      if (!focus && M.findPane(keep)) { S.layout.activeTab = M.findPane(keep).tab.id; M.findPane(keep).tab.focused = keep; }
+    }, { focus: true });
     return { panes: [M.paneOfSession(r.session) || null].filter(Boolean), hid: [], session: r.session };
   };
   H['pane.exit'] = ({ pane }, caller) => {
@@ -317,7 +308,6 @@ Umi.cli = (() => {
   };
   H['pane.zoom'] = ({ pane }, caller) => {
     const r = resolvePane(pane, caller);
-    if (!Umi.actions.toggleZoom) fail('zoom isn\'t in Umi next yet (PARITY track c: ⇧⌘↩)');
     Umi.app.update(() => { M.focusPane(r.pane); Umi.actions.toggleZoom({ pane: r.pane }); });
     return { pane: r.pane };
   };
@@ -332,7 +322,6 @@ Umi.cli = (() => {
       return status();
     }
     if (['tabs', 'files', 'search'].includes(mode)) {
-      if (!Umi.actions.sidebarMode) fail(`the sidebar's ${mode} mode isn't in Umi next yet (PARITY track b)`);
       Umi.app.run('sidebarMode', { mode });
       return status();
     }
@@ -352,7 +341,6 @@ Umi.cli = (() => {
 
   H.go = ({ next, back }) => {
     if (back) {
-      if (!Umi.actions.goBack) fail('go --back isn\'t in Umi next yet (PARITY track c: ⌃⌘K)');
       Umi.app.run('goBack');
       return where(M.activeTab().focused);
     }
@@ -387,7 +375,6 @@ Umi.cli = (() => {
   // Opens each file to the right of the pane (the caller's, or the tab's focused pane), each next
   // one to the right of the one before, with track a's openFile; keyboard focus stays put.
   H.edit = ({ paths, mode, pane, tab }, caller) => {
-    if (!Umi.actions.openFile) fail('the editor isn\'t in Umi next yet (PARITY track a: Umi.actions.openFile)');
     const refused = paths.filter((p) => /^[a-z]+:\/\//i.test(p));
     if (refused.length) fail(`web pages don't open in Umi next yet: ${refused.join(' ')}`);
     let beside = tab ? resolveTab(tab, caller).focused : resolvePane(pane, caller).pane;
@@ -474,7 +461,7 @@ Umi.cli = (() => {
 })();
 
 // Actions the CLI asked for (PARITY: swapPanes, resizePane); keys may take them up later.
-Umi.actions.swapPanes = Umi.actions.swapPanes || (({ a, b }) => {
+Umi.actions.swapPanes = ({ a, b }) => {
   const M = Umi.model, fa = M.findPane(a), fb = M.findPane(b);
   if (!fa || !fb) return;
   const na = fa.node, nb = fb.node;
@@ -483,11 +470,11 @@ Umi.actions.swapPanes = Umi.actions.swapPanes || (({ a, b }) => {
     t.root = swap(t.root);
     if (t.focused === a && t !== fb.tab) t.focused = b; else if (t.focused === b && t !== fa.tab) t.focused = a;
   }
-});
+};
 
 // Moves the divider nearest the pane on its `dir` side by `amount` cells (Umi's unit; a cell is
 // taken as 8×16 px), as Ghostty's resize_split does. Returns false when no divider is there.
-Umi.actions.resizePane = Umi.actions.resizePane || (({ pane, dir, amount = 5 }) => {
+Umi.actions.resizePane = ({ pane, dir, amount = 5 }) => {
   const M = Umi.model, f = M.findPane(pane);
   if (!f) return false;
   const horizontal = dir === 'left' || dir === 'right';
@@ -513,4 +500,4 @@ Umi.actions.resizePane = Umi.actions.resizePane || (({ pane, dir, amount = 5 }) 
   const d = (dir === 'right' || dir === 'down' ? 1 : -1) * px / size;
   split.ratio = Math.min(0.95, Math.max(0.05, split.ratio + d));
   return true;
-});
+};

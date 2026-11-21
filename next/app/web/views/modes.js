@@ -65,7 +65,7 @@ Umi.views.modes = (() => {
         focusPane();
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        const first = S.layout.tabs.find(matchesTab);
+        const first = M.listedTabs().find(matchesTab);
         Umi.app.update(() => { if (first) S.layout.activeTab = first.id; S.ui.sidebarFocus = null; });
       }
     });
