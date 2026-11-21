@@ -15,7 +15,6 @@ Umi.views.picker = (() => {
   // ---- the folder search ----
   const tilde = (p) => (S.home && (p === S.home || p.startsWith(S.home + '/')) ? '~' + p.slice(S.home.length) : p);
   const parent = (p) => p.replace(/\/[^/]*$/, '') || '/';
-  const inHome = (p) => !!S.home && (p === S.home || p.startsWith(S.home + '/'));
   const redraw = () => Umi.views.panes.refreshPickers();
   // Projects whose past sessions were asked for since the page loaded (S.past holds the answers).
   const askedPast = new Set();
@@ -34,25 +33,22 @@ Umi.views.picker = (() => {
     return [...new Set([...chosen, ...live, ...panes].filter(Boolean))];
   }
 
-  // A folder's folders (names), from a cache that lasts one folder search: [] while loading,
-  // null when the folder can't be read.
+  // Results are cached for this visit to the folder chooser. The native service checks Git
+  // worktree metadata and resolves symlinks before returning any selectable paths.
   let dirs = new Map();
-  function subdirs(dir, hidden) {
-    const k = (hidden ? '.' : '') + dir;
-    if (!dirs.has(k)) {
-      dirs.set(k, []);
-      const cache = dirs;
-      Umi.fs.list(dir, { hidden, ignored: true })
-        .then((r) => r.entries.filter((e) => e.kind === 'dir').map((e) => e.name), () => null)
-        .then((names) => { cache.set(k, names); if (cache === dirs) { known = null; redraw(); } });
-    }
-    return dirs.get(k);
-  }
-
-  // The folders letters match: recents, then the folders next to each and next to its parent.
-  // Only inside home, and never home's own folders' contents unless one is in use, so macOS
-  // doesn't ask for Documents, Desktop and the like.
   let known = null;
+  function subdirs(path, hidden) {
+    const key = (hidden ? '.' : '') + path;
+    if (!dirs.has(key)) {
+      const cache = dirs;
+      cache.set(key, null);
+      Umi.bridge.request('pickerFolders', { path, hidden }).then(
+        (result) => cache.set(key, result),
+        (error) => cache.set(key, { error: error.message }),
+      ).then(() => { if (dirs === cache) redraw(); });
+    }
+    return dirs.get(key);
+  }
   let history = [];
   Umi.bridge.on('agentProjects', (msg) => {
     history = msg.list;
@@ -69,19 +65,15 @@ Umi.views.picker = (() => {
     return paths.sort((a, b) => Number(used.has(b)) - Number(used.has(a)));
   }
   function knownFolders() {
-    if (known) return known;
-    const seeds = [...new Set([...recents(), ...history])];
-    const parents = new Set();
-    for (const p of seeds) {
-      const up = parent(p), top = parent(up);
-      if (inHome(up)) parents.add(up);
-      if (inHome(top) && top !== S.home) for (const n of subdirs(top, false) || []) parents.add(top + '/' + n);
+    if (!known) {
+      const request = known = { paths: [] };
+      const seeds = [...new Set([...recents(), ...history])];
+      Umi.bridge.request('pickerFolders', { seeds }).then(
+        ({ paths }) => { request.paths = paths; },
+        (error) => { request.error = error.message; },
+      ).then(() => { if (known === request) redraw(); });
     }
-    const out = new Set(seeds);
-    const near = [...parents].slice(0, 60);
-    for (const d of near) for (const n of subdirs(d, false) || []) out.add(d + '/' + n);
-    for (const d of near) out.add(d);
-    return (known = [...out]);
+    return known;
   }
 
   // The rows of the folder search for what is typed: [{path, use?}] and whether the folder exists.
@@ -92,12 +84,16 @@ Umi.views.picker = (() => {
       const cut = typed.lastIndexOf('/') + 1;
       const dir = Umi.fs.resolve(typed.slice(0, cut) || '.', node.cwd || S.home);
       const seg = typed.slice(cut);
-      const names = subdirs(dir, seg.startsWith('.'));
-      if (!names) return { rows: [], missing: tilde(dir) };
+      const result = subdirs(dir, seg.startsWith('.'));
+      if (!result || result.excluded) return { rows: [] };
+      if (result.error) return { rows: [], error: result.error };
+      const names = result.names;
       const rows = (seg ? Umi.fs.fuzzy(seg, names, 200).map((r) => r.path) : names).map((n) => ({ path: (dir === '/' ? '' : dir) + '/' + n }));
       return { rows: seg ? rows : [{ path: dir, use: true }, ...rows] };
     }
-    const all = prioritize([...knownFolders()]);
+    const { paths, error } = knownFolders();
+    if (error) return { rows: [], error };
+    const all = prioritize([...paths]);
     if (!q.trim()) return { rows: all.slice(0, 200).map((path) => ({ path })) };
     const shown = all.map(tilde);
     const rank = new Map(shown.map((p, i) => [p, i]));
@@ -191,11 +187,11 @@ Umi.views.picker = (() => {
 
   function drawFolders(el, node, list) {
     const pk = node.picker;
-    const { rows, missing } = folderRows(node);
-    if (missing || !rows.length) {
+    const { rows, error } = folderRows(node);
+    if (!rows.length) {
       const none = document.createElement('div');
       none.className = 'picker-section';
-      none.textContent = missing ? `No folder ${missing}` : 'No folder matches';
+      none.textContent = error || 'No folder matches';
       list.append(none);
     }
     rows.forEach((r, i) => {

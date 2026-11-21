@@ -63,7 +63,22 @@ for name in ['zrank-b-claude', 'unrelated-project']:
     (claude_dir / (sid + '.jsonl')).write_text(json.dumps({'type': 'user', 'sessionId': sid, 'cwd': str(folders[name]), 'message': {'content': 'fixture'}}) + '\n')
 (codex_dir / ('rollout-' + token + '.jsonl')).write_text(json.dumps({'type': 'session_meta', 'payload': {'id': str(uuid.uuid4()), 'cwd': str(folders['zrank-c-codex'])}}) + '\n')
 
+tmp = Path(tempfile.mkdtemp(prefix='zrank-picker-', dir='/tmp'))
 try:
+    # Both a conventional worktree directory and a linked checkout with an ordinary name.
+    main_repo = folders['zrank-b-claude']
+    linked = root / 'zrank-parallel'
+    conventional = main_repo / '.worktrees' / 'zrank-review'
+    subprocess.run(['git', 'init', '-q', str(main_repo)], check=True)
+    subprocess.run(['git', '-C', str(main_repo), '-c', 'user.name=Fixture', '-c', 'user.email=test@localhost',
+                    'commit', '-qm', 'Fixture', '--allow-empty'], check=True)
+    subprocess.run(['git', '-C', str(main_repo), 'worktree', 'add', '-q', '--detach', str(linked)], check=True)
+    nested = linked / 'src' / 'zrank-tests'
+    nested.mkdir(parents=True)
+    conventional.mkdir(parents=True)
+    excluded = [linked, nested, conventional, tmp, tmp.resolve()]
+    remembered = {str(p): i for i, p in enumerate(excluded)}
+    ev(f"Umi.state.layout.meta.folders = {{...Umi.state.layout.meta.folders, ...{json.dumps(remembered)}}}; 1")
     # Spy on the real response without changing the history reader or picker handler.
     ev("window.__historyResponse = null; window.__historyHandler = Umi.bridge.handlers.agentProjects; Umi.bridge.handlers.agentProjects = (msg) => { window.__historyResponse = msg.list; window.__historyHandler(msg); }; 1")
     ev(f"Umi.app.update(() => {{ window.__picker = Umi.model.split('row', 'picker', {{cwd: {json.dumps(str(folders['zrank-a-unused']))}}}); }}); 1")
@@ -81,7 +96,7 @@ try:
     print(f'ok repeated history request returns the same projects ({time.monotonic() - cached_at:.2f}s)')
 
     def query(value):
-        ev(f"__input.value = {json.dumps(value)}; __input.dispatchEvent(new Event('input', {{bubbles:true}})); 1")
+        ev(f"window.__beforeSearch = Umi.bridge._seq; __input.value = {json.dumps(value)}; __input.dispatchEvent(new Event('input', {{bubbles:true}})); 1")
 
     def rows():
         return js_json("Array.from(__pickerEl.querySelectorAll('.picker-row b')).map(e => e.textContent)")
@@ -91,12 +106,23 @@ try:
     assert result.index('zrank-b-claude') < result.index('zrank-a-unused'), result
     assert result.index('zrank-c-codex') < result.index('zrank-a-unused'), result
     assert 'unrelated-project' not in result, result
+    assert set(result).isdisjoint(p.name for p in excluded), result
     print('ok rendered / search ranks both agent projects before unused matches and excludes nonmatches')
     query(str(root) + '/')
     result = until(lambda: (r if len(r := rows()) >= 5 else None), 'path rows')
     assert result[0] == 'This folder', result
     assert set(folders).issubset(result), result
+    assert linked.name not in result, result
     print('ok explicit path browsing retains This folder and child folders')
+    for blocked in [*excluded, Path('/tmp'), Path('/private/tmp'), conventional.parent]:
+        query(str(blocked) + '/')
+        # An empty list while native is still looking up this path proves nothing.
+        until(lambda: js_json("[...Umi.bridge._pending.keys()].every(id => Number(id.slice(1)) <= __beforeSearch)"),
+              'native folder search to finish')
+        assert not rows(), f'Folder search offered a row inside {blocked}'
+        ev("__input.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true})); 1")
+        assert js_json('__picker.picker.mode') == 'folder', blocked
+    print('ok remembered folders, nearby siblings, and direct path searches exclude worktrees and both temp aliases')
     # Measure the text fragments WebKit actually lays out. textContent is complete even when
     # flex shrinks the name down to a few pixels and draws an ellipsis.
     dbg({'cmd': 'resize', 'w': 700, 'h': 620})
@@ -131,4 +157,4 @@ finally:
     try:
         ev("Umi.bridge.handlers.agentProjects = window.__historyHandler; Umi.app.update(() => Umi.model.removePane(__picker.id)); 1")
     finally:
-        subprocess.run(['trash', str(claude_dir), str(codex_dir), str(root)], check=True)
+        subprocess.run(['trash', str(claude_dir), str(codex_dir), str(root), str(tmp)], check=True)

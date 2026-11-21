@@ -40,6 +40,11 @@ final class WebServices {
         case "readFile": async(id) { try Self.readFile(args) }
         case "writeFile": async(id) { try Self.writeFile(args) }
         case "listDir": async(id) { try Self.listDir(args) }
+        case "pickerFolders": async(id) {
+            var folders = PickerFolders()
+            if let seeds = args["seeds"] as? [String] { return ["paths": folders.suggestions(seeds)] }
+            return try folders.browse(Self.path(args), hidden: args["hidden"] as? Bool == true)
+        }
         case "listFiles": async(id) { try Self.listFiles(args) }
         case "watch": startWatch(id, args)
         case "search": startSearch(id, args)

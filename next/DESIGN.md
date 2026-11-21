@@ -81,6 +81,8 @@ chooser. Typing `/` from the empty switcher search goes straight to choosing a f
   or Codex history come first, followed by match quality and recent folder choices.
 - A path (`~/…`, `/…`, `./…`, `../…`, or anything containing a slash) lists its matching children.
   Tab enters the selected folder, ⇧Tab goes up, and Enter takes the folder.
+- Folder suggestions and path browsing exclude linked Git worktrees, worktree directories and
+  the macOS temporary tree at `/private/tmp` (also reachable as `/tmp`).
 
 ## The palette at the bottom
 

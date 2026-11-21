@@ -15,3 +15,5 @@ The folder path now appears only while searching folders, leaving the normal new
 ⌘D now opens a session switcher across projects. A row shows the session name and project. Waiting work appears first, and a snoozed session returns there when its turn ends or its timer expires. New-session controls and past transcripts have their own views. On mac-air-2, keyboard and mouse checks confirmed that an open session kept its pane and a snoozed session reattached in the rightmost slot. A real shell launched from New in the same test.
 
 The folder chooser gives the name its full width before allocating room to the parent path. In a 194 px row on mac-air-2, “Umi” previously had only 3.3 px of space. The same row now shows the full name, and a 115-character folder name wraps within the row.
+
+Folder discovery now filters candidates before displaying them. On mac-air-2, the previous picker showed a remembered temporary folder under both aliases and suggested linked worktree descendants. The updated picker excluded those locations from suggestions and direct path searches while retaining the main checkout.
