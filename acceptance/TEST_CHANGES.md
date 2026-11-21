@@ -1713,3 +1713,10 @@ file shows.
 - Added `app/macos/Tests/Umi/UmiSessionLinksTests.swift` (Swift): the origin check, reading tasks,
   remote matching across URL forms, folder resolution (worktrees, `orgs/`), the branch note and
   the typed commands.
+
+**Umi Next folder search history (2026-11-21).**
+- Added `next/app/tests/picker_history_test.py`: creates isolated Claude and Codex transcript
+  fixtures, reads them through the native bridge, and checks the rendered `/` folder picker ranks
+  both projects ahead of unused matches, excludes nonmatches, preserves explicit-path browsing,
+  and accepts the chosen folder with Enter. Also checks repeated history responses agree. Runs
+  against an isolated offscreen app on mac-air-2 and trashes its own fixtures afterward.
