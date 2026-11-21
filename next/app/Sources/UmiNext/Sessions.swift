@@ -10,6 +10,8 @@ import Foundation
 /// the agent's session ends. Shell sessions: "busy" while a program other than the shell runs.
 final class SessionMonitor {
     private let queue = DispatchQueue(label: "umi-next.sessions")
+    private let historyQueue = DispatchQueue(label: "umi-next.project-history", qos: .utility)
+    private var historyCache: (date: Date, paths: [String])?
     private var timer: DispatchSourceTimer?
     private var watcher: FileWatcher?
     private var projects: [String: String] = [:]   // folder → project (git main folder)
@@ -162,13 +164,18 @@ final class SessionMonitor {
     /// else the folder itself.
     func project(of folder: String) -> String {
         if let p = projects[folder] { return p }
+        let p = Self.resolveProject(folder)
+        projects[folder] = p
+        return p
+    }
+
+    private static func resolveProject(_ folder: String) -> String {
         let r = SessionBackend.run("/usr/bin/git", ["-C", folder, "rev-parse", "--path-format=absolute", "--git-common-dir"])
         var p = folder
         if r.status == 0 {
             let common = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
             p = common.hasSuffix("/.git") ? String(common.dropLast(5)) : (common as NSString).deletingLastPathComponent
         }
-        projects[folder] = p
         return p
     }
 
@@ -184,16 +191,23 @@ final class SessionMonitor {
 
     /// Projects from agent transcripts, including sessions started outside Umi.
     func agentProjects(done: @escaping ([String]) -> Void) {
-        queue.async { [self] in
+        historyQueue.async { [self] in
+            if let cache = historyCache, Date().timeIntervalSince(cache.date) < 60 {
+                DispatchQueue.main.async { done(cache.paths) }
+                return
+            }
             var seen = Set<String>()
+            var roots: [String: String] = [:]
             let list = pastSessions(project: nil, exclude: [], limit: Int.max).compactMap { row -> String? in
                 guard let cwd = row["cwd"] as? String else { return nil }
-                let path = project(of: cwd)
+                let path = roots[cwd] ?? Self.resolveProject(cwd)
+                roots[cwd] = path
                 var isDir: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue,
                       seen.insert(path).inserted else { return nil }
                 return path
             }
+            historyCache = (Date(), list)
             DispatchQueue.main.async { done(list) }
         }
     }
