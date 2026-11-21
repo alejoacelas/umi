@@ -15,12 +15,15 @@ Umi.views.panel = (() => {
       ['n', 'New session', () => Umi.actions.splitRight()],
       ['s', 'Switch session', () => Umi.actions.switchSession()],
       ['p', 'Open past', () => { Umi.actions.switchSession(); Umi.model.focusedPane().picker.jump = 'past'; }],
+      ['o', 'Reopen the last closed pane or tab', () => Umi.actions.reopen()],
+      ['a', 'Show archived tabs', () => Umi.actions.showArchived()],
     ] },
     { title: 'This session', cmds: [
       ['r', 'Rename', () => ask('rename')],
       ['z', 'Snooze', () => ask('snooze')],
       ['d', 'Send to docket', () => Umi.actions.docketSession()],
       ['t', 'Restart', () => Umi.actions.restartSession()],
+      ['h', 'Hide (keeps running)', () => Umi.actions.hidePane()],
       ['x', 'Exit', () => Umi.actions.exitSession()],
       ['m', 'Move to new tab', () => Umi.actions.moveToNewTab()],
     ] },
@@ -33,6 +36,7 @@ Umi.views.panel = (() => {
       ['b', 'Sidebar', () => Umi.actions.toggleSidebar()],
       ['l', 'Reload web layer', () => Umi.actions.reloadWeb()],
       ['u', 'Update and restart', () => Umi.actions.updateApp()],
+      ['k', 'Keyboard shortcuts', () => Umi.actions.toggleShortcuts()],
     ] },
   ];
   const ALL = COLUMNS.flatMap((c) => c.cmds.map(([key, name, fn]) => ({ key, name, fn, column: c.title })));

@@ -98,8 +98,9 @@ It lies over the bottom of the panes: they keep their size and place, so no term
 it is open.
 
 - Columns of commands, each on one letter, the frequent ones under the left hand: Sessions (new,
-  switch, open past), This session (rename, snooze, restart, exit, move), Review,
-  Options (sidebar, reload the web layer, `u` update and restart: runs `next/install.sh` from the
+  switch, open past, reopen the last closed, archived tabs), This session (rename, snooze, docket,
+  restart, hide, exit, move), Review,
+  Options (sidebar, reload the web layer, keyboard shortcuts, `u` update and restart: runs `next/install.sh` from the
   app's checkout, which rebuilds, quits and reopens Umi next; sessions keep running in the daemon,
   and a failed build leaves the app running with a banner naming `<state>/update.log`).
 - `/` searches every command by name instead.
