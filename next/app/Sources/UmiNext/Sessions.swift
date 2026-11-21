@@ -197,12 +197,12 @@ final class SessionMonitor {
                 return
             }
             var seen = Set<String>()
-            var roots: [String: String] = [:]
+            var folders = Set<String>()
             let list = pastSessions(project: nil, exclude: [], limit: Int.max).compactMap { row -> String? in
-                guard let cwd = row["cwd"] as? String else { return nil }
-                let path = roots[cwd] ?? Self.resolveProject(cwd)
-                roots[cwd] = path
+                guard let cwd = row["cwd"] as? String, folders.insert(cwd).inserted else { return nil }
                 var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else { return nil }
+                let path = Self.resolveProject(cwd)
                 guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue,
                       seen.insert(path).inserted else { return nil }
                 return path
@@ -237,7 +237,17 @@ final class SessionMonitor {
             let data = h.readData(ofLength: 256 * 1024)
             try? h.close()
             var cwd: String?, id: String?, title: String?, prompt: String?
-            for line in data.split(separator: 10) {
+            // Read lines only until the required metadata is found. Splitting the entire
+            // 256 KB prefix first makes project discovery scan gigabytes of unused messages.
+            var offset = data.startIndex
+            while offset < data.endIndex {
+                let end = data.withUnsafeBytes { bytes -> Int in
+                    guard let start = bytes.baseAddress else { return data.endIndex }
+                    guard let newline = memchr(start.advanced(by: offset), 10, bytes.count - offset) else { return data.endIndex }
+                    return start.distance(to: newline)
+                }
+                let line = data[offset..<end]
+                offset = end == data.endIndex ? end : data.index(after: end)
                 guard let j = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { continue }
                 if kind == "claude" {
                     if id == nil { id = j["sessionId"] as? String }
