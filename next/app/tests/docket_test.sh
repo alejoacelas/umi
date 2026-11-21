@@ -32,7 +32,7 @@ echo "== failing hook:"; echo 1 > ~/.config/umi-next/hook-exit
 K "key code 48"; K "key code 48"; K "key code 36"; sleep 2; SSID=$(J "Umi.model.sessionOf(Umi.model.activeTab().focused)"); echo "shell session $SSID"
 H d; sleep 4
 J "JSON.stringify(Umi.model.review().flatMap(g=>g.items.filter(i=>i.docketFailed).map(i=>[i.id, i.docket.state, i.docket.error])))"
-J "document.querySelector('#review').innerText.replace(/\\n/g,' | ')"; screencapture -x /tmp/dock3.png
+screencapture -x /tmp/dock3.png
 echo 0 > ~/.config/umi-next/hook-exit
 echo "== task link, live session:"
 printf '{"folder":"projects/2026-10-26-umi","agent":"claude","session":"%s","next_session":"%s","title":"Dock test"}' $AGS $DSID > /tmp/umitask/umi/task1.json

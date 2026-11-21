@@ -121,8 +121,9 @@ it is open.
   - `in progress` with the turn ended: it shows in Review.
   A snoozed session shows in Review when it finishes even if it says `done`: snoozing asked to be
   told.
-- **Review** is a section of the sidebar listing what waits for Alejo, grouped by project, the current
-  project first: sessions waiting for input, finished snoozes. "Next waiting" walks it in that order.
+- **Review** is the list of what waits for Alejo, grouped by project, the current project first:
+  sessions waiting for input, finished snoozes. "Next waiting" (⌃⌘J) walks it in that order and the
+  Dock badge counts the current project's. The sidebar doesn't draw it (Alejo, 2026-11-21).
 - agent-emacs's snooze fades a session and silences its alert; grouping by project and scoping alerts
   to the current project is the addition.
 

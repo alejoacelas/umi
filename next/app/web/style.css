@@ -240,18 +240,6 @@ body.no-sidebar #strip { padding-left: 80px; }
 .palette-ask input.bad { border-bottom-color: #bc362a; }
 .palette-ask .dim { font-size: 11px; }
 
-/* Review */
-#review { padding: 0 8px 8px; }
-#review[hidden] { display: none; }
-.section-head { color: var(--dim); font-size: 11px; padding: 4px 4px 2px; }
-.review-project { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 4px 2px; }
-.review-project.current { color: var(--ink); }
-.review-row { display: flex; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 4px; }
-.review-row:hover { background: rgba(255,255,255,0.05); }
-.review-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.review-row .what { color: var(--dim); font-size: 10px; }
-.review-row .dot { width: 6px; height: 6px; border-radius: 50%; background: #e0b04a; flex: none; }
-.review-row .dot.badge { background: var(--accent); }
 .tab .line1 input.tab-name {
   width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(25,170,216,0.7); border-radius: 3px;
   color: var(--ink); font: 12px -apple-system, sans-serif; padding: 1px 4px; outline: none;
@@ -339,8 +327,7 @@ body.dragging-tab .tab { cursor: grabbing; }
 .head-gap { flex: 1; display: none; }
 body:not([data-sidebar-mode="tabs"]) #tab-search { display: none; }
 body:not([data-sidebar-mode="tabs"]) .head-gap { display: block; }
-body[data-sidebar-mode="files"] #review, body[data-sidebar-mode="files"] #tabs,
-body[data-sidebar-mode="search"] #review, body[data-sidebar-mode="search"] #tabs { display: none; }
+body[data-sidebar-mode="files"] #tabs, body[data-sidebar-mode="search"] #tabs { display: none; }
 #explorer[hidden], #search[hidden], #sidebar-flash[hidden] { display: none; }
 #sidebar-flash { margin: 0 8px 6px; padding: 6px 8px; border-radius: 4px; background: rgba(188, 54, 42, 0.25); color: var(--ink); font-size: 12px; }
 

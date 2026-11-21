@@ -66,7 +66,7 @@ only in view), `web/icons.js` + `web/icons/` (Umi's Material file icons). Check:
 
 | Area | Umi | Next now | Planned Next |
 |---|---|---|---|
-| Sidebar modes (S-2) | Tabs, Files, Search; ⌘B / ⌘\ toggle | [x] done: header buttons as Umi's; Review stays above the tabs in Tabs mode; `S.layout.sidebarMode` | — |
+| Sidebar modes (S-2) | Tabs, Files, Search; ⌘B / ⌘\ toggle | [x] done: header buttons as Umi's; `S.layout.sidebarMode` | — |
 | Search tabs (S-2 header) | "Search tabs..." field, ⌥⌘F | [x] done: matches the tab's name, folder, title, foreground program, session name; Esc clears, Enter shows the first | Branch and agent title once tabs show them |
 | Explorer tree (S-2 Files) | git root of the focused pane's folder; follows disk changes; folders first, dotfiles first; ignored entries italic; `.git`, `.DS_Store` never shown; follows the focused file | [x] done. Root = git top folder of the focused pane's folder (`Umi.fs.gitRoot`: a worktree's own, not `Umi.fs.root()`'s main checkout). One recursive `Umi.fs.watch` on the root while Files shows; a change re-lists the open folders it touches | — |
 | Explorer keys | ⇧⌘E / ⌃1 show it with focus (again: back); ↑↓ ← → Enter Esc; ⇧⌘> dotfiles | [x] done | — |
