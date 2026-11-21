@@ -20,6 +20,10 @@ def run(state, bundle, tools, screenshot):
     web = Path(__file__).resolve().parents[1] / 'web'
     bins = bundle / 'Contents/MacOS'
     env = dict(os.environ, UMI_NEXT_STATE_DIR=str(state), UMI_NEXT_WEB_DIR=str(web), UMI_NEXT_DEBUG='1')
+    # A distinct harmless command for each agent lets the real daemon confirm which one ran.
+    agents = {'claude': '/bin/sleep 90', 'codex': '/bin/sleep 91', 'antigravity': '/bin/sleep 92'}
+    for kind, cmd in agents.items():
+        env[f'UMI_NEXT_{kind.upper()}_CMD'] = cmd
     dbg = Debug(state, timeout=5, show_js=True)
     J, ev = dbg.J, dbg.ev
     log = (state / 'app.log').open('w')
@@ -56,7 +60,7 @@ def run(state, bundle, tools, screenshot):
 
     def session(name, folder, event=None):
         cwd = state / folder
-        cwd.mkdir(exist_ok=True)
+        cwd.mkdir(parents=True, exist_ok=True)
         sid = subprocess.check_output([str(bins / 'umi-next-ctl'), 'new', '--by', 'user',
                                        '--name', name, '--cwd', str(cwd)], env=env, text=True).strip()
         if event:
@@ -84,7 +88,10 @@ def run(state, bundle, tools, screenshot):
         poll(lambda: dbg({'cmd': 'state'}).get('webReady'), 30, swallow=(OSError,), what='ready test app')
         assert bring_to_front(dbg)
         original = J('Umi.model.activeTab().focused')
-        waiting = session('Check the invoice', 'Accounts', 'PermissionRequest')
+        project = state / 'Accounts'
+        subprocess.run(['git', 'init', '-q', str(project)], check=True)
+        folder = project / 'invoices'
+        waiting = session('Check the invoice', 'Accounts/invoices', 'PermissionRequest')
         running = session('Refresh charts', 'Forecast', 'UserPromptSubmit')
         sleeping = session('Review draft', 'Planning', 'UserPromptSubmit')
         snooze_ends = session('Review handoff', 'Design', 'UserPromptSubmit')
@@ -102,7 +109,7 @@ def run(state, bundle, tools, screenshot):
         until(has_row(waiting), 'waiting row')
         assert not J(has_row(sleeping))
         assert not J(has_row(snooze_ends))
-        assert not J("Boolean(document.querySelector('.slot.picker [data-kind]')?.getClientRects().length)")
+        assert J("document.querySelector('.picker-kinds [aria-pressed=true] .agent-icon').getAttribute('aria-label')") == 'Claude Code'
         labels = J("""(() => {
           const groups = {};
           let group;
@@ -154,6 +161,7 @@ def run(state, bundle, tools, screenshot):
         type_text('planning')
         until(has_row(sleeping), 'project search includes a collapsed snooze')
         assert not J(has_row(waiting))
+        key(125)  # Down past the quick-create row to the matching session.
         key(36)
         until(f"Umi.model.sessionOf(Umi.model.activeTab().focused) === '{sleeping}'", 'returned to snoozed session')
         focused = J('Umi.model.activeTab().focused')
@@ -175,6 +183,41 @@ def run(state, bundle, tools, screenshot):
         assert J(f"Umi.state.panes[window.switcherOpenPane].session === '{waiting}'")
         assert J(f"!!Umi.model.findPane('{original}')")
         print('ok clicking an open session jumps to its original pane and removes the temporary picker')
+
+        for kind, label in [('claude', 'Claude Code'), ('codex', 'Codex'), ('antigravity', 'Antigravity'), ('shell', 'Shell')]:
+            split()
+            context = J("""(() => {
+              const el = document.querySelector('.slot.picker .picker-project');
+              return {visible: el.checkVisibility(), project: el.querySelector('b').innerText,
+                      subfolder: el.querySelector('span').innerText, cwd: el.title};
+            })()""")
+            assert context['visible'] and context['project'] == 'Accounts', context
+            assert 'invoices' in context['subfolder'] and Path(context['cwd']).resolve() == folder.resolve(), context
+            if kind in ('antigravity', 'shell'):
+                click(f'.picker-kinds button[data-kind={kind}]')
+            # The default agent is tested with exactly ⌘D, an already used name, and Return.
+            name = 'Check the invoice' if kind == 'claude' else f'Quick {label}'
+            type_text(name)
+            if kind == 'codex':
+                key(48)  # With a name typed, Tab cycles the launch kind.
+            until("document.querySelector('.slot.picker .picker-row.sel')?.dataset.action === 'new'", 'create row selected')
+            assert J("document.querySelector('.slot.picker .picker-row.sel .agent-icon').getAttribute('aria-label')") == label
+            if kind == 'claude':
+                assert J(has_row(waiting)), 'the existing session should also match'
+            key(36)
+            until("Umi.model.focusedPane()?.view === 'terminal' && Umi.state.panes[Umi.model.activeTab().focused]?.session",
+                  f'{label} quick launch')
+            created = J('Umi.model.sessionOf(Umi.model.activeTab().focused)')
+            assert created != waiting
+            until(f"Umi.state.live['{created}']?.name === {json.dumps(name)}", 'daemon assigned the typed name')
+            live = J(f"Umi.state.live['{created}']")
+            assert Path(live['cwd']).resolve() == folder.resolve(), live
+            assert Path(live['project']).resolve() == project.resolve(), live
+            assert live.get('command') == agents.get(kind), live
+            # Close only the new pane and return to the source for the next keyboard run.
+            key(13, 'cmd')
+            until("Umi.model.activeTab().focused === window.switcherOpenPane", 'return to originating pane')
+        print('ok quick Enter creates a distinct named session in the displayed project subfolder for each launch kind')
 
         split()
         key(48)  # Tab from Search to + New

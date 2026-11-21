@@ -1740,3 +1740,5 @@ Added model and native interaction tests for cross-project search, attention sta
 The folder chooser regression now measures the rendered names in a narrow pane with a long parent path and checks the full path on hover.
 
 Folder search now tests both macOS temporary path aliases, a conventional worktree directory and an arbitrarily named linked Git worktree with a nested folder. The cases cover suggestions and paths typed directly.
+
+The native switcher and icon tests now verify that typing an existing name and pressing Enter creates a distinct session in the displayed project subfolder. They cover selecting each launch kind, checking its icon, and opening an existing match with Down and Enter.

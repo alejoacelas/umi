@@ -213,9 +213,11 @@ body.no-sidebar #strip { padding-left: 80px; }
 }
 .picker-name:focus { border-color: rgba(25,170,216,0.7); }
 .picker-kinds { display: flex; flex-wrap: wrap; gap: 2px; }
+.picker-context { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.picker-context .picker-project { flex: 1 1 8em; align-self: center; }
 .picker-kinds button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 4px; border: 0; background: none; cursor: pointer; border-radius: 4px; color: var(--dim); opacity: 0.55; }
 .picker-kinds button:hover, .picker-kinds button:focus-visible { opacity: 1; }
-.picker-kinds button.on { background: rgba(255,255,255,0.08); color: var(--ink); opacity: 0.85; }
+.picker-kinds button.on { background: rgba(25,170,216,0.18); box-shadow: inset 0 0 0 1px var(--accent); color: var(--ink); opacity: 1; }
 .picker-project b { font-weight: 500; color: var(--ink); }
 .picker-project span { opacity: 0.85; margin-left: 6px; }
 .picker-project b[hidden] + span { margin-left: 0; }
@@ -248,6 +250,7 @@ button.picker-row.sel { background: rgba(25,170,216,0.18); }
 button.picker-row:hover { background: rgba(255,255,255,0.08); }
 .picker-row[data-session] b { flex: 1; }
 .picker-row[data-session] .dim { flex: 0 1 auto; max-width: 42%; }
+.picker-row .agent-icon, .picker-row .agent-icon img { width: 15px; height: 15px; }
 .picker[data-mode="folder"] .picker-row b {
   flex: none; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere;
 }
@@ -263,8 +266,8 @@ button.picker-row:hover { background: rgba(255,255,255,0.08); }
 .picker-notice { color: #e0a93e; overflow-wrap: anywhere; max-height: 5em; overflow-y: auto; }
 .picker-empty { padding: 12px 3px; color: var(--dim); }
 @container (max-width: 235px) {
-  .picker-row[data-session] { flex-direction: column; align-items: stretch; gap: 2px; }
-  .picker-row[data-session] .dim { max-width: 100%; }
+  .picker-row[data-session] { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 2px 6px; }
+  .picker-row[data-session] .dim { grid-column: 2; max-width: 100%; }
   .picker-head { row-gap: 5px; }
   .picker-name { flex-basis: 68px; }
 }

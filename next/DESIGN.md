@@ -58,22 +58,24 @@ changes it; "tell me later" is snooze, whose finished sessions the Dock badge co
 
 - A new tab opens with its name in edit mode in the sidebar; Enter keeps the name, Escape keeps the
   folder name.
-- A new session is named in the **+ New** form. Left empty, it is named after its folder with a
-  number, so naming never blocks starting.
+- Type a name in the session switcher and press Enter to start it. The **+ New** form also
+  accepts an empty name and numbers the session after its folder.
 
 ## ⌘D opens the session switcher
 
 ⌘D opens a column at the far right of the tab. ⇧⌘D opens it below the focused pane. The first
-screen answers which session to return to across all projects. Each row gives its name and project.
+screen answers which session to return to across all projects. Each row shows the agent or shell icon, session name and project.
 Sessions waiting for input and snoozes that have come due lead the list under **Needs you**, marked
 in amber. **Running** follows. **Available** holds idle shells and finished sessions. **Snoozed**
 and **On the docket** stay folded until opened or searched.
 
-Typing filters by session name or project. ↑↓ chooses a row and Enter opens it. If a session
-already has a pane, Umi takes you to it. A hidden session opens in the switcher's place.
+Typing a name selects **Create** and shows matching sessions below. Enter creates the named
+session, even when another session has the same name. Down and Enter or a click opens a match.
+An open session keeps its pane. A hidden session opens in the switcher's place.
 
-**+ New** opens the name field and agent choices for Claude Code, Codex, Antigravity and a shell.
-Tab cycles the choices. Enter starts the selected kind in the originating pane's folder.
+The chooser shows the current project and working folder alongside the Claude Code, Codex,
+Antigravity and shell icons. The highlighted icon is what Enter will launch there. After typing
+a name, Tab cycles those choices. **+ New** also opens a dedicated creation form.
 **History** lists resumable conversations for the chosen project. Both screens offer a folder
 chooser. Typing `/` from the empty switcher search goes straight to choosing a folder for a new session.
 

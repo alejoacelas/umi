@@ -89,7 +89,8 @@ Umi.model = (() => {
   }
   function projectOf(paneId) {
     const sid = sessionOf(paneId);
-    return S.panes[paneId]?.project || (sid && S.live[sid]?.project) || folderOf(paneId);
+    return S.panes[paneId]?.project || (sid && S.live[sid]?.project) ||
+      findPane(paneId)?.node.picker?.project || folderOf(paneId);
   }
 
   // Where a session stands for Alejo (DESIGN "Detached sessions that finish done stay out of the way"):

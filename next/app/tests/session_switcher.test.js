@@ -92,3 +92,8 @@ M.switchFromPicker(failed.id, deadPicker.id);
 assert.equal(M.focusedPane().start.cmd, 'codex resume transcript');
 assert.equal(M.focusedPane().start.cwd, desk);
 assert.deepEqual(messages, [{ type: 'undocket', session: failed.id }]);
+
+M.addTab(M.newPicker(umi + '/next', umi));
+const nestedPicker = Umi.actions.splitRight();
+assert.equal(nestedPicker.cwd, umi + '/next');
+assert.equal(nestedPicker.picker.project, umi);

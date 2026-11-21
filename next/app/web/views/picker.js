@@ -106,6 +106,7 @@ Umi.views.picker = (() => {
 
   function changePage(el, node, mode) {
     const pk = node.picker;
+    if ((!pk.mode || pk.mode === 'switcher') && (mode === 'new' || mode === 'folder') && pk.search?.trim()) pk.name = pk.search;
     pk.mode = mode;
     delete pk.choice;
     delete pk.notice;
@@ -221,14 +222,19 @@ Umi.views.picker = (() => {
   // Keys identify the choices even as a session changes group or another arrives above it.
   function choices(node) {
     const pk = node.picker;
-    if (pk.mode === 'new') return [{ key: 'new', name: 'New session', detail: pk.name.trim() || M.defaultName(node.cwd), icon: pk.kind }];
     if (pk.mode === 'history') {
       const q = (pk.historyQuery || '').trim().toLowerCase();
       return (S.past[pk.project] || []).filter((p) => p.title.toLowerCase().includes(q))
         .map((p) => ({ key: 'past:' + p.kind + ':' + p.id, name: p.title, detail: ago(p.mtime), icon: p.kind, past: p }));
     }
-    const found = M.switcherGroups(pk.search);
     const rows = [];
+    const name = fieldValue(pk).trim();
+    if (pk.mode === 'new' || name) {
+      rows.push({ key: 'new', name: name ? `Create “${name}”` : 'New session',
+        detail: name ? '' : M.defaultName(node.cwd), icon: pk.kind, launchName: name });
+    }
+    if (pk.mode === 'new') return rows;
+    const found = M.switcherGroups(pk.search);
     for (const [group, label] of groups) {
       const sessions = found[group];
       if (!sessions.length) continue;
@@ -243,7 +249,7 @@ Umi.views.picker = (() => {
         const project = s.project || s.folder || '';
         const name = M.sessionName(s.id);
         const tip = s.docket?.state === 'failed' ? 'Docket failed: ' + (s.docket.error || '') : project;
-        rows.push({ key: 'session:' + s.id, session: s.id, kind: s.kind, group, name, detail: base(project), tip });
+        rows.push({ key: 'session:' + s.id, session: s.id, icon: s.kind, group, name, detail: base(project), tip });
       }
     }
     return rows;
@@ -262,7 +268,7 @@ Umi.views.picker = (() => {
     Umi.app.update(() => {
       if (item.key === 'new') {
         const cmd = pk.kind === 'shell' ? null : cmds[pk.kind] || pk.kind;
-        M.startSession(node.id, { cmd, name: pk.name.trim() });
+        M.startSession(node.id, { cmd, name: item.launchName, cwd: node.cwd });
       } else if (item.session) {
         pk.notice = M.switchFromPicker(item.session, node.id);
       } else if (item.past) {
@@ -290,12 +296,20 @@ Umi.views.picker = (() => {
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'Tab' && (!pk.mode || pk.mode === 'switcher')) {
-      const order = [input, el.querySelector('[data-page=new]'), el.querySelector('[data-page=history]')];
+    const switcher = !pk.mode || pk.mode === 'switcher';
+    if (e.key === 'Tab' && e.target === input && (pk.mode === 'new' || (switcher && pk.search?.trim()))) {
+      e.preventDefault();
+      pk.kind = KINDS[(KINDS.indexOf(pk.kind) + (e.shiftKey ? KINDS.length - 1 : 1)) % KINDS.length];
+      pk.choice = 'new';
+      return refresh(el, node);
+    }
+    if (e.key === 'Tab' && switcher) {
+      const order = [input, el.querySelector('[data-page=new]'), el.querySelector('.picker-project'),
+        ...el.querySelectorAll('.picker-kinds button'), el.querySelector('[data-page=history]')];
       const i = order.indexOf(e.target);
       if (i >= 0) {
         e.preventDefault();
-        order[(i + (e.shiftKey ? 2 : 1)) % 3].focus();
+        order[(i + (e.shiftKey ? -1 : 1) + order.length) % order.length].focus();
       }
       return;
     }
@@ -303,11 +317,6 @@ Umi.views.picker = (() => {
     if (e.key === '/' && !input.value) {
       e.preventDefault();
       return folderMode(el, node, true);
-    }
-    if (e.key === 'Tab' && pk.mode === 'new') {
-      e.preventDefault();
-      pk.kind = KINDS[(KINDS.indexOf(pk.kind) + (e.shiftKey ? KINDS.length - 1 : 1)) % KINDS.length];
-      return refresh(el, node);
     }
     if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
     e.preventDefault();
@@ -328,9 +337,11 @@ Umi.views.picker = (() => {
         <button type="button" data-page="switcher" class="picker-nav picker-back" aria-label="Back to sessions" title="Back (Esc)">‹</button>
         <input class="picker-name" spellcheck="false" autocomplete="off">
         <button type="button" data-page="new" class="picker-nav picker-new">+ New</button>
-        <div class="picker-kinds">${KINDS.map((k) => `<button type="button" data-kind="${k}" title="${LABEL[k]}" aria-label="${LABEL[k]}"></button>`).join('')}</div>
       </div>
-      <button type="button" class="picker-project"><b></b><span></span></button>
+      <div class="picker-context">
+        <button type="button" class="picker-project"><b></b><span></span></button>
+        <div class="picker-kinds" role="group" aria-label="New session type">${KINDS.map((k) => `<button type="button" data-kind="${k}" title="${LABEL[k]}" aria-label="${LABEL[k]}"></button>`).join('')}</div>
+      </div>
       <div role="status" class="picker-notice" hidden></div>
       <div class="picker-list"></div>
       <button type="button" data-page="history" class="picker-nav picker-history">History</button>`;
@@ -357,6 +368,7 @@ Umi.views.picker = (() => {
       }
       if (button.closest('.picker-kinds')) {
         pk.kind = button.dataset.kind;
+        if (pk.mode === 'new' || pk.search?.trim()) pk.choice = 'new';
         refresh(el, node);
         input.focus();
       }
@@ -396,10 +408,11 @@ Umi.views.picker = (() => {
       if (item.session) {
         row.dataset.session = item.session;
         row.dataset.group = item.group;
-        row.dataset.kind = item.kind;
+        row.dataset.kind = item.icon;
         row.title = [item.name, item.tip].filter(Boolean).join('\n');
       }
       if (item.past) row.dataset.past = item.past.id;
+      if (item.key === 'new') row.dataset.action = 'new';
       if (item.icon) row.prepend(Umi.icons.agent(item.icon));
     }
     row.addEventListener('mousedown', (e) => e.preventDefault());
@@ -415,20 +428,22 @@ Umi.views.picker = (() => {
     const switcher = mode === 'switcher', folder = mode === 'folder';
     el.dataset.mode = mode;
     for (const b of el.querySelectorAll('[data-page]')) b.hidden = (b.dataset.page === 'switcher') === switcher;
-    el.querySelector('.picker-kinds').hidden = mode !== 'new';
+    el.querySelector('.picker-kinds').hidden = !(switcher || mode === 'new');
     el.querySelectorAll('.picker-kinds [data-kind]').forEach((k) => {
       k.classList.toggle('on', k.dataset.kind === pk.kind);
       k.setAttribute('aria-pressed', String(k.dataset.kind === pk.kind));
     });
     const input = el.querySelector('.picker-name');
-    input.placeholder = { switcher: 'Find a session…', new: 'Session name', history: 'Find a past session…', folder: 'Find a folder or enter a path…' }[mode];
+    input.placeholder = { switcher: 'Find or name a session…', new: 'Session name', history: 'Find a past session…', folder: 'Find a folder or enter a path…' }[mode];
     input.setAttribute('aria-label', input.placeholder);
     const where = el.querySelector('.picker-project');
-    where.hidden = switcher;
-    where.querySelector('b').hidden = mode === 'new';
-    where.querySelector('b').textContent = mode === 'history' ? base(pk.project) : tilde(node.cwd || S.home || '');
-    where.querySelector('span').textContent = folder ? '↩ choose · ⇥ enter folder · esc back' : '/ to change the folder';
-    where.title = mode === 'history' ? pk.project : node.cwd || '';
+    const cwd = node.cwd || S.home, project = pk.project || cwd;
+    const subfolder = cwd === project ? '' : cwd.startsWith(project + '/') ? cwd.slice(project.length) : tilde(cwd);
+    where.querySelector('b').textContent = folder ? tilde(cwd) : base(tilde(project));
+    where.querySelector('span').textContent = folder ? '↩ choose · ⇥ enter folder · esc back'
+      : mode === 'history' ? '/ to change the folder' : subfolder;
+    where.title = mode === 'history' ? project : cwd;
+    where.setAttribute('aria-label', `Change folder (${where.title})`);
     const list = el.querySelector('.picker-list');
     const notice = el.querySelector('.picker-notice');
     notice.hidden = !pk.notice;

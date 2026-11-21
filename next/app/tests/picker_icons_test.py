@@ -53,17 +53,20 @@ def until(fn, description):
 until(lambda: value("typeof Umi !== 'undefined' && !!Umi.state.layout && !!Umi.views.picker"), 'picker did not load')
 ev("window.__iconSaved = {sessions:Umi.bridge.handlers.sessions, past:Umi.bridge.handlers.pastSessions, live:Umi.state.live, oldPast:Umi.state.past, start:Umi.model.startSession, commands:Umi.state.commands}; Umi.bridge.handlers.sessions = () => {}; Umi.bridge.handlers.pastSessions = () => {}; Umi.app.update(() => {window.__iconPicker = Umi.model.split('row','picker');}); 1")
 try:
-    ev("window.__iconEl = document.querySelector('.slot[data-pane=\"'+__iconPicker.id+'\"]'); window.__iconInput = __iconEl.querySelector('.picker-name'); __iconPicker.picker.project = '/icon-test-project'; Umi.state.live = Object.fromEntries(['claude','codex','antigravity'].map(kind => [kind,{id:kind,kind,name:kind+' fixture',project:'/icon-test-project',folder:'/icon-test-project',alive:true,state:'waiting'}])); Umi.state.past = {'/icon-test-project':['claude','codex'].map(kind=>({kind,id:kind+'-past',title:kind+' past fixture',mtime:Date.now()/1000,cwd:'/icon-test-project'}))}; Umi.views.picker.refresh(__iconEl,__iconPicker); 1")
+    ev("window.__iconEl = document.querySelector('.slot[data-pane=\"'+__iconPicker.id+'\"]'); window.__iconInput = __iconEl.querySelector('.picker-name'); __iconPicker.picker.project = '/icon-test-project'; Umi.state.live = Object.fromEntries(['claude','codex','antigravity','shell'].map(kind => [kind,{id:kind,kind,name:kind+' fixture',project:'/icon-test-project',folder:'/icon-test-project',alive:true,state:'waiting'}])); Umi.state.past = {'/icon-test-project':['claude','codex'].map(kind=>({kind,id:kind+'-past',title:kind+' past fixture',mtime:Date.now()/1000,cwd:'/icon-test-project'}))}; Umi.views.picker.refresh(__iconEl,__iconPicker); 1")
     kinds = ['claude', 'codex', 'antigravity', 'shell']
     labels = ['Claude Code', 'Codex', 'Antigravity', 'Shell']
-    assert value("[...__iconEl.querySelectorAll('[data-session]')].map(e=>e.querySelector('b').textContent).sort()") == sorted(k + ' fixture' for k in kinds[:3])
-    assert value("__iconEl.querySelector('[data-session] .agent-icon') === null")
+    assert value("[...__iconEl.querySelectorAll('[data-session]')].map(e=>e.querySelector('b').textContent).sort()") == sorted(k + ' fixture' for k in kinds)
+    for kind, label in zip(kinds, labels):
+        assert value(f"__iconEl.querySelector('[data-session={kind}] .agent-icon').getAttribute('aria-label')") == label
+        assert value(f"__iconEl.querySelector('[data-session={kind}] .agent-icon').getBoundingClientRect().width > 0")
+    assert value("__iconEl.querySelector('.picker-kinds [aria-pressed=true] .agent-icon').getAttribute('aria-label')") == 'Claude Code'
     ev("__iconEl.querySelector('[data-page=history]').click(); 1")
     assert value("[...__iconEl.querySelectorAll('[data-past] .agent-icon')].map(e=>e.getAttribute('aria-label'))") == labels[:2]
     ev("__iconEl.querySelector('[data-page=switcher]').click(); __iconEl.querySelector('[data-page=new]').click(); 1")
     assert value("[...__iconEl.querySelectorAll('.picker-kinds [data-kind]')].map(e=>e.dataset.kind)") == kinds
     until(lambda: value("[...__iconEl.querySelectorAll('img')].every(i=>i.complete && i.naturalWidth>0)"), 'brand images failed to load')
-    print('ok live rows show session names; History and New show agent icons with accessible names')
+    print('ok live rows and launch choices show their agent icons; History and New retain accessible icons')
 
     for kind, label in zip(kinds, labels):
         ev(f"__iconEl.querySelector('[data-kind={kind}]').click(); 1")
@@ -112,7 +115,7 @@ try:
     sid = subprocess.check_output([str(ctl), 'new', '--cmd', shlex.quote(str(agent)), '--cwd', str(fixture), '--by', 'user', '--name', 'Antigravity native fixture'], env=env, text=True).strip()
     until(lambda: value(f"Umi.state.live[{json.dumps(sid)}]?.kind === 'antigravity'"), 'native agy kind missing')
     ev(f"Umi.app.update(() => {{ window.__nativePicker=Umi.model.split('row','picker',{{cwd:{json.dumps(str(fixture))}}}); __nativePicker.picker.project={json.dumps(str(fixture))}; }}); 1")
-    until(lambda: value(f"[...document.querySelectorAll('.slot[data-pane=\"'+__nativePicker.id+'\"] .picker-row')].some(r=>r.querySelector('b')?.textContent==='Antigravity native fixture' && r.dataset.session==={json.dumps(sid)})"), 'native session row missing')
+    until(lambda: value(f"[...document.querySelectorAll('.slot[data-pane=\"'+__nativePicker.id+'\"] .picker-row')].some(r=>r.querySelector('b')?.textContent==='Antigravity native fixture' && r.dataset.session==={json.dumps(sid)} && r.querySelector('.agent-icon')?.getAttribute('aria-label')==='Antigravity')"), 'native session row missing')
     print('ok real agy daemon session is identified as Antigravity and appears in the switcher; native launcher command is configured')
 finally:
     if sid:

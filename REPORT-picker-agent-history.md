@@ -17,3 +17,5 @@ The folder path now appears only while searching folders, leaving the normal new
 The folder chooser gives the name its full width before allocating room to the parent path. In a 194 px row on mac-air-2, “Umi” previously had only 3.3 px of space. The same row now shows the full name, and a 115-character folder name wraps within the row.
 
 Folder discovery now filters candidates before displaying them. On mac-air-2, the previous picker showed a remembered temporary folder under both aliases and suggested linked worktree descendants. The updated picker excluded those locations from suggestions and direct path searches while retaining the main checkout.
+
+Typing a name in the switcher now selects creation, including for an exact match. The Air test confirmed the original project and subfolder, all four launch routes, and explicit selection of an existing session. The signed Umi Next update was installed on the main Mac and its six running sessions survived the UI restart.
