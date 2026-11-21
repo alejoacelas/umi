@@ -125,10 +125,6 @@ case "screen":
     let json = flag("--json"), vt = flag("--vt"), scrollback = flag("--scrollback")
     guard let id = args.first else { die("screen <id>") }
     let r = request(["op": "screen", "id": id, "format": vt ? "vt" : "plain", "scrollback": scrollback])
-    // A daemon from before scrollback ignores the field and sends the screen alone.
-    if scrollback && !vt && r["history"] == nil {
-        die("the running daemon keeps no scrollback for `screen` (it predates it); restarting it ends every session")
-    }
     if vt {
         FileHandle.standardOutput.write(Data(base64Encoded: r["vt"] as? String ?? "") ?? Data())
     } else if json {

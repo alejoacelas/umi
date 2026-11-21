@@ -7,12 +7,33 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
+#include <sys/syslimits.h>
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>
 #include <util.h>
 
 // ---- processes ----
+
+// The soft RLIMIT_NOFILE the daemon started with; sessions get it back, as
+// Ghostty restores its own raised limits for the programs it starts.
+static struct rlimit original_nofile;
+static int nofile_raised = 0;
+
+rlim_t umi_raise_nofile(void) {
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_NOFILE, &rl) != 0) return 0;
+    original_nofile = rl;
+    // macOS refuses a soft limit above OPEN_MAX even when the hard limit is unlimited.
+    rlim_t want = rl.rlim_max < OPEN_MAX ? rl.rlim_max : OPEN_MAX;
+    if (rl.rlim_cur < want) {
+        rl.rlim_cur = want;
+        if (setrlimit(RLIMIT_NOFILE, &rl) == 0) nofile_raised = 1;
+    }
+    getrlimit(RLIMIT_NOFILE, &rl);
+    return rl.rlim_cur;
+}
 
 pid_t umi_spawn_pty(const char *path, char *const argv[], char *const envp[],
                     const char *cwd, uint16_t cols, uint16_t rows,
@@ -31,16 +52,18 @@ pid_t umi_spawn_pty(const char *path, char *const argv[], char *const envp[],
         sigemptyset(&none);
         sigprocmask(SIG_SETMASK, &none, NULL);
         int maxfd = (int)sysconf(_SC_OPEN_MAX);
-        if (maxfd < 0 || maxfd > 4096) maxfd = 4096;
+        if (maxfd < 0 || maxfd > OPEN_MAX) maxfd = OPEN_MAX;
         for (int fd = 3; fd < maxfd; fd++) close(fd);
+        if (nofile_raised) setrlimit(RLIMIT_NOFILE, &original_nofile);
         struct termios t;
         if (tcgetattr(0, &t) == 0) {
             t.c_iflag |= IUTF8;
             tcsetattr(0, TCSANOW, &t);
         }
+        // The daemon checked the folder before forking; it can still vanish in between.
         if (cwd && *cwd && chdir(cwd) != 0) {
-            const char *home = getenv("HOME");
-            if (!home || chdir(home) != 0) chdir("/");
+            dprintf(2, "umi-next: cannot enter %s: %s\n", cwd, strerror(errno));
+            _exit(126);
         }
         execve(path, argv, envp);
         _exit(127);

@@ -32,6 +32,10 @@ if lockFD < 0 || flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
 ftruncate(lockFD, 0)
 _ = "\(getpid())\n".withCString { write(lockFD, $0, strlen($0)) }
 
+// Every session takes a pty master and every client a socket; the default soft limit (256) is
+// reached with a few dozen panes.
+let fdLimit = umi_raise_nofile()
+
 let listenFD = socket(AF_UNIX, SOCK_STREAM, 0)
 unlink(Paths.socket)
 guard withUnixAddr(Paths.socket, { bind(listenFD, $0, $1) }) == 0 else {
@@ -49,7 +53,7 @@ setNonBlocking(sigPipe[0]); setNonBlocking(sigPipe[1])
 _ = fcntl(sigPipe[0], F_SETFD, FD_CLOEXEC); _ = fcntl(sigPipe[1], F_SETFD, FD_CLOEXEC)
 umi_install_sigchld(sigPipe[1])
 
-log("daemon started, socket \(Paths.socket)")
+log("daemon started, socket \(Paths.socket), fd limit \(fdLimit)")
 
 func setNonBlocking(_ fd: Int32) {
     _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
@@ -178,6 +182,17 @@ final class Conn {
 var sessions: [Session] = []
 var conns: [Conn] = []
 var stopping = false
+/// While stopping: the process groups to SIGKILL if they outlive the SIGHUP (each session's, and
+/// its terminal's foreground group, which a shell with job control gives its own), when the
+/// grace ends, and the latest time to exit after the kill.
+var stopGroups: Set<pid_t> = []
+var stopKillAt = Date.distantFuture
+var stopExitBy: Date? = nil
+/// accept() ran out of file descriptors. macOS then drops the connection it was taking, so the
+/// listening socket sits out of poll for a second: connections wait in the queue meanwhile and
+/// get served if descriptors free up, instead of each being dropped on arrival.
+var acceptPausedUntil = Date.distantPast
+var acceptFullLogged = false
 
 func findSession(_ id: Any?) -> Session? {
     guard let id = id as? String else { return nil }
@@ -211,6 +226,10 @@ func loginShell(_ env: [String: String]) -> String {
 func createSession(_ req: [String: Any]) throws -> Session {
     var env = (req["env"] as? [String: String]) ?? ProcessInfo.processInfo.environment
     let cwd = (req["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (env["HOME"] ?? "/")
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else {
+        throw NSError(domain: "umi", code: Int(ENOENT), userInfo: [NSLocalizedDescriptionKey: "no folder \(cwd)"])
+    }
     let cmd = (req["cmd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     let cols = UInt16(clamping: (req["cols"] as? Int) ?? 80)
     let rows = UInt16(clamping: (req["rows"] as? Int) ?? 24)
@@ -389,10 +408,17 @@ func handleJSON(_ c: Conn, _ req: [String: Any]) {
         if !alive.isEmpty && (req["force"] as? Bool) != true {
             return fail(c, "\(alive.count) session(s) alive; use --force")
         }
-        for s in alive { kill(-s.pid, SIGHUP); kill(s.pid, SIGHUP) }
+        // The requester's connection stays open: it closes when the daemon exits.
         reply(c, ["ok": true])
-        c.closeAfterFlush = true
+        guard !stopping else { return }
         stopping = true
+        for s in alive {
+            stopGroups.insert(s.pid)
+            if s.master >= 0 { let fg = umi_tcgetpgrp(s.master); if fg > 0 { stopGroups.insert(fg) } }
+            kill(-s.pid, SIGHUP); kill(s.pid, SIGHUP)
+        }
+        stopKillAt = Date() + 2
+        log("stopping: SIGHUP to \(alive.count) session(s)")
     default:
         fail(c, "unknown op '\(op)'")
     }
@@ -424,7 +450,8 @@ func dropConn(_ c: Conn) {
 // ---- loop ----
 
 while true {
-    var fds: [pollfd] = [pollfd(fd: listenFD, events: Int16(POLLIN), revents: 0),
+    let listening = Date() >= acceptPausedUntil
+    var fds: [pollfd] = [pollfd(fd: listening ? listenFD : -1, events: Int16(POLLIN), revents: 0),
                          pollfd(fd: sigPipe[0], events: Int16(POLLIN), revents: 0)]
     let liveSessions = sessions.filter { $0.master >= 0 }
     for s in liveSessions {
@@ -438,7 +465,7 @@ while true {
         if c.pendingOut > 0 { ev |= Int16(POLLOUT) }
         fds.append(pollfd(fd: c.fd, events: ev, revents: 0))
     }
-    let rc = poll(&fds, nfds_t(fds.count), 1000)
+    let rc = poll(&fds, nfds_t(fds.count), stopping ? 50 : 1000)
     if rc < 0 && errno != EINTR { log("poll failed: \(errno)"); exit(1) }
 
     if fds[1].revents != 0 {
@@ -450,7 +477,17 @@ while true {
     if fds[0].revents & Int16(POLLIN) != 0 {
         while true {
             let fd = accept(listenFD, nil, nil)
-            if fd < 0 { break }
+            if fd < 0 {
+                if errno == EMFILE || errno == ENFILE {
+                    acceptPausedUntil = Date() + 1
+                    if !acceptFullLogged {
+                        log("out of file descriptors (limit \(fdLimit)); new connections wait")
+                        acceptFullLogged = true
+                    }
+                }
+                break
+            }
+            acceptFullLogged = false
             setNonBlocking(fd)
             _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
             var on: Int32 = 1
@@ -498,9 +535,23 @@ while true {
         dropConn(c)
     }
 
-    if stopping && conns.isEmpty {
-        log("daemon stopping")
-        unlink(Paths.socket)
-        exit(0)
+    if stopping {
+        let now = Date()
+        if stopExitBy == nil {
+            stopGroups = stopGroups.filter { kill(-$0, 0) == 0 || errno != ESRCH }
+            if stopGroups.isEmpty || now >= stopKillAt {
+                for pg in stopGroups { kill(-pg, SIGKILL) }
+                if !stopGroups.isEmpty { log("stopping: SIGKILL to process groups \(stopGroups.sorted()) that outlived SIGHUP") }
+                stopExitBy = now + 1
+            }
+        }
+        // After the kill, a second at most for the last exits to be reaped and every reply and
+        // exit frame to be written; a client that doesn't read doesn't hold the daemon up.
+        if let by = stopExitBy,
+           now >= by || (!sessions.contains(where: { $0.alive }) && conns.allSatisfy({ $0.pendingOut == 0 })) {
+            log("daemon stopping")
+            unlink(Paths.socket)
+            exit(0)
+        }
     }
 }

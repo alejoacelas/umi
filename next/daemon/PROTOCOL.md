@@ -36,14 +36,14 @@ Every message is a frame: `type` (1 byte), payload length (u32, big endian), pay
 | op | fields | reply |
 |---|---|---|
 | `ping` | | `pid`, `sessions`, `state_dir` |
-| `new` | `cwd`, `cmd` (run as `$SHELL -l -c cmd`; absent: `$SHELL -l`), `cols`, `rows`, `name`, `by` (who started it: `user` from the UI, `cli` from `umi-next-ctl new` by default), `env` (object; the session's environment, absent: the daemon's; the daemon then sets `TERM`, `COLORTERM`, `PWD` and `UMI_NEXT_SESSION_ID`) | `id` |
+| `new` | `cwd` (must be an existing folder, else `no folder <cwd>` and nothing starts), `cmd` (run as `$SHELL -l -c cmd`; absent: `$SHELL -l`), `cols`, `rows`, `name`, `by` (who started it: `user` from the UI, `cli` from `umi-next-ctl new` by default), `env` (object; the session's environment, absent: the daemon's; the daemon then sets `TERM`, `COLORTERM`, `PWD` and `UMI_NEXT_SESSION_ID`) | `id` |
 | `ls` | | `sessions`: `[{id, name, by, cwd, command, pid, foreground, alive, exit_status, exit_signal, clients, cols, rows, created}]` |
 | `kill` | `id`, `signal` (default 15) | sends the signal to the session's process group |
 | `rm` | `id`, `force` | forgets an exited session; `force` SIGKILLs a live one first |
 | `screen` | `id`, `format`: `plain` or `vt`, `scrollback` (bool, plain only) | `plain`: `text` (exactly rows lines), `styles`, `cursor {x,y,visible}`, `cols`, `rows`, `alternate`, `kitty_flags`, `mouse_tracking`, `bracketed_paste`, `app_cursor_keys`; with `scrollback`, also `history` (the rows above the screen, oldest first, one line each) and `history_rows`; `vt`: `vt` (base64 of the attach replay) |
 | `send` | `id`, `data` (base64) | writes the bytes to the pty |
 | `attach` | `id`, `cols`, `rows` | see below |
-| `stop` | `force` | refuses while sessions are alive unless `force`; then SIGHUPs them and exits |
+| `stop` | `force` | refuses while sessions are alive unless `force`. Then replies, SIGHUPs each live session's process group and its terminal's foreground group, gives them 2 s, SIGKILLs the groups still alive, waits at most 1 s more for the exits and every client's pending output, and exits; the requester's connection closes when the daemon exits |
 
 `id` also accepts a session's name.
 
@@ -52,8 +52,7 @@ about 10,000 lines (libghostty prunes whole pages), so an attach replay stays qu
 alternate screen has none (`history` is empty there; the primary screen's waits under it).
 
 Compatibility: requests carry only fields, so a client and a daemon of different versions keep
-working. A daemon from before scrollback ignores `scrollback` and replies without `history`;
-clients take a missing `history` as "this daemon has no scrollback to give" and say so.
+working.
 
 ## Attach
 

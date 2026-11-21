@@ -30,6 +30,14 @@ ATTACH = str(BIN / "umi-next-attach")
 
 # ---------- helpers ----------
 
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
 def wait_for(cond, timeout=10.0, interval=0.05, what="condition"):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
@@ -404,6 +412,78 @@ def test_exit_status_and_lifecycle(env):
     assert env.ctl("ping", check=False).returncode != 0
 
 
+def test_stop_force_kills_a_program_that_ignores_hup(env):
+    """`daemon-stop --force` ends a session whose program ignores SIGHUP, with a client attached,
+    and the daemon exits instead of waiting on it."""
+    sid = env.new("trap '' HUP; echo ready; sleep 600", cols=40, rows=5)
+    wait_for(lambda: "ready" in env.screen(sid)["text"], what="session start")
+    c = Client(env, sid, 40, 5)
+    wait_for(lambda: env.session(sid)["clients"] == 1, what="attach")
+    pid, child = env.daemon_pid(), env.session(sid)["pid"]
+    t0 = time.monotonic()
+    r = env.ctl("daemon-stop", "--force", check=False)
+    took = time.monotonic() - t0
+    assert r.returncode == 0, r.stderr
+    assert took < 5, f"daemon-stop --force took {took:.1f}s"
+    wait_for(lambda: not pid_alive(pid), timeout=5 - took, what="daemon exit")
+    assert not pid_alive(child), "the session's program outlived the daemon"
+    wait_for(lambda: c.proc.poll() is not None, timeout=2, what="attach exit")
+    assert c.proc.returncode == 128 + signal.SIGKILL
+    assert "SIGKILL to process groups" in (env.state / "daemon.log").read_text()
+
+
+def test_new_in_a_missing_folder_fails(env):
+    """`new` in a folder that doesn't exist (or isn't a folder) fails and starts nothing."""
+    env.ctl("daemon-start")
+    for cwd in ("/nonexistent", "/etc/hosts"):
+        r = env.ctl("new", "--cwd", cwd, "--cmd", "sleep 100", check=False)
+        assert r.returncode != 0 and f"no folder {cwd}" in r.stderr.decode(), r.stderr
+    assert json.loads(env.ctl("ls").stdout) == []
+    # A folder the daemon sees but the child can't enter: the child says so and exits 126.
+    locked = env.root / "locked"
+    locked.mkdir(mode=0)
+    try:
+        sid = env.new("sleep 100", cols=200, cwd=locked)
+        wait_for(lambda: not env.session(sid)["alive"], what="child exit")
+        assert env.session(sid)["exit_status"] == 126
+        assert f"cannot enter {locked}" in env.screen(sid)["text"]
+    finally:
+        locked.chmod(0o700)
+
+
+def start_daemon_with_fd_limit(env, soft, hard):
+    import resource
+    subprocess.run([CTL, "daemon-start"], env=env.env, check=True, capture_output=True, timeout=10,
+                   preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard)))
+
+
+def test_fd_limit_raised_for_the_daemon_only(env):
+    """The daemon raises its descriptor limit to the hard limit; sessions get the one it started with."""
+    start_daemon_with_fd_limit(env, 64, 4096)
+    assert "fd limit 4096" in (env.state / "daemon.log").read_text()
+    sid = env.new("echo limit=$(ulimit -n); sleep 100", cols=40, rows=5)
+    wait_for(lambda: "limit=" in env.screen(sid)["text"], what="ulimit output")
+    assert "limit=64" in env.screen(sid)["text"]
+
+
+def test_out_of_file_descriptors(env):
+    """With every descriptor taken, the daemon logs it once, and serves again once they free up."""
+    import socket
+    start_daemon_with_fd_limit(env, 48, 48)
+    socks = []
+    for _ in range(60):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(str(env.state / "daemon.sock"))
+        socks.append(s)
+    log = env.state / "daemon.log"
+    wait_for(lambda: "out of file descriptors" in log.read_text(), what="log line")
+    time.sleep(2.5)
+    assert log.read_text().count("out of file descriptors") == 1
+    for s in socks:
+        s.close()
+    wait_for(lambda: env.ctl("ping", check=False).returncode == 0, timeout=5, what="ping after descriptors free up")
+
+
 def test_new_session_drops_agent_markers(env):
     # UmiNext started from inside a Claude session carries its markers; a session that inherits
     # CLAUDE_CODE_CHILD_SESSION makes Claude save no transcript.
@@ -473,39 +553,6 @@ def test_scrollback_is_bounded(env):
     # About 10,000 lines: libghostty prunes whole pages, so a page's worth either way.
     assert 8000 <= d["history_rows"] <= 12000, d["history_rows"]
     assert hist[-1] == str(30000 - len(lines(d["text"])) + 1) and int(hist[0]) > 18000
-
-
-def test_scrollback_from_an_old_daemon(env):
-    """A daemon from before scrollback answers `screen` without `history`; `screen
-    --scrollback` says so instead of printing the screen as if it were everything."""
-    import socket
-    env.state.mkdir(parents=True, exist_ok=True)
-    path = str(env.state / "daemon.sock")
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(path)
-    srv.listen(4)
-
-    def serve():
-        for _ in range(2):
-            conn, _ = srv.accept()
-            head = conn.recv(5)
-            n = struct.unpack(">I", head[1:5])[0]
-            body = b""
-            while len(body) < n:
-                body += conn.recv(n - len(body))
-            assert json.loads(body)["op"] == "screen"
-            out = json.dumps({"ok": True, "text": "old screen\n", "cols": 40, "rows": 1}).encode()
-            conn.sendall(b"J" + struct.pack(">I", len(out)) + out)
-            conn.close()
-
-    threading.Thread(target=serve, daemon=True).start()
-    try:
-        assert env.ctl("screen", "x").stdout == b"old screen\n"
-        r = env.ctl("screen", "x", "--scrollback", check=False)
-        assert r.returncode == 1 and b"predates it" in r.stderr, r.stderr
-    finally:
-        srv.close()
-        os.unlink(path)
 
 
 def test_send_and_single_daemon(env):

@@ -7,16 +7,21 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <ghostty/vt.h>
 
 // Fork a child on a new pty (forkpty: new session, the pty is its
 // controlling terminal), chdir to cwd and execve path. Returns the pid, or
-// -1 with errno set. *master_fd receives the pty master (non-blocking,
-// close-on-exec).
+// -1 with errno set. A child that can't enter cwd exits 126. *master_fd
+// receives the pty master (non-blocking, close-on-exec).
 pid_t umi_spawn_pty(const char *path, char *const argv[], char *const envp[],
                     const char *cwd, uint16_t cols, uint16_t rows,
                     int *master_fd);
+
+// Raise the soft RLIMIT_NOFILE to the hard limit, at most OPEN_MAX; children
+// started by umi_spawn_pty get the original back. Returns the soft limit now.
+rlim_t umi_raise_nofile(void);
 
 // Set the pty size (TIOCSWINSZ; the kernel sends SIGWINCH to the
 // foreground process group).
