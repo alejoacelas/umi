@@ -21,8 +21,8 @@ Umi.views = Umi.views || {};
 
 Umi.views.picker = (() => {
   const S = Umi.state, M = Umi.model;
-  const KINDS = ['claude', 'codex', 'shell'];
-  const LABEL = { claude: 'Claude', codex: 'Codex', shell: 'Shell' };
+  const KINDS = ['claude', 'codex', 'antigravity', 'shell'];
+  const LABEL = Umi.icons.agentLabels;
   const base = (p) => (p || '').split('/').filter(Boolean).pop() || '~';
   const ago = (t) => {
     const s = Date.now() / 1000 - t;
@@ -242,10 +242,11 @@ Umi.views.picker = (() => {
     el.innerHTML = `
       <div class="picker-head">
         <input class="picker-name" spellcheck="false">
-        <div class="picker-kinds">${KINDS.map((k) => `<span data-kind="${k}">${LABEL[k]}</span>`).join('')}</div>
+        <div class="picker-kinds">${KINDS.map((k) => `<button type="button" data-kind="${k}">${LABEL[k]}</button>`).join('')}</div>
       </div>
       <div class="picker-project"></div>
       <div class="picker-list"></div>`;
+    el.querySelectorAll('[data-kind]').forEach((k) => k.prepend(Umi.icons.agent(k.dataset.kind)));
     const input = el.querySelector('.picker-name');
     input.value = pk.mode === 'folder' ? pk.query || '' : pk.name;
     input.addEventListener('input', () => {
@@ -258,7 +259,7 @@ Umi.views.picker = (() => {
       const list = items(node);
       if (e.key === 'Tab') {
         e.preventDefault();
-        pk.kind = KINDS[(KINDS.indexOf(pk.kind) + (e.shiftKey ? 2 : 1)) % 3];
+        pk.kind = KINDS[(KINDS.indexOf(pk.kind) + (e.shiftKey ? KINDS.length - 1 : 1)) % KINDS.length];
         refresh(el, node);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -275,8 +276,12 @@ Umi.views.picker = (() => {
     });
     el.addEventListener('mousedown', (e) => {
       const k = e.target.closest('[data-kind]');
-      if (k) { pk.kind = k.dataset.kind; refresh(el, node); }
+      if (k) e.preventDefault();
       if (e.target.closest('.picker-project')) { e.preventDefault(); folderMode(el, node, pk.mode !== 'folder'); input.focus(); }
+    });
+    el.addEventListener('click', (e) => {
+      const k = e.target.closest('[data-kind]');
+      if (k) { pk.kind = k.dataset.kind; refresh(el, node); input.focus(); }
     });
     refresh(el, node);
     if (S.past.project !== pk.project && !pk.askedPast) {
@@ -294,7 +299,10 @@ Umi.views.picker = (() => {
 
   function refresh(el, node) {
     const pk = node.picker;
-    el.querySelectorAll('[data-kind]').forEach((k) => k.classList.toggle('on', k.dataset.kind === pk.kind));
+    el.querySelectorAll('[data-kind]').forEach((k) => {
+      k.classList.toggle('on', k.dataset.kind === pk.kind);
+      k.setAttribute('aria-pressed', String(k.dataset.kind === pk.kind));
+    });
     const folder = pk.mode === 'folder';
     el.querySelector('.picker-name').placeholder = folder
       ? 'Folder: letters to match, or a path like ~/ or ../'
@@ -328,12 +336,13 @@ Umi.views.picker = (() => {
       row.className = 'picker-row' + (i === pk.sel ? ' sel' : '');
       if (item.type === 'new') {
         row.innerHTML = `<b>New ${LABEL[pk.kind]} session</b><span class="dim"></span>`;
+        row.prepend(Umi.icons.agent(pk.kind));
         row.querySelector('.dim').textContent = pk.name.trim() || M.defaultName(node.cwd);
       } else if (item.type === 'live') {
         const s = item.s;
         const shown = M.paneOfSession(s.id);
         row.innerHTML = `<span class="kind"></span><b></b><span class="dim"></span>`;
-        row.querySelector('.kind').textContent = s.kind;
+        row.querySelector('.kind').replaceWith(Umi.icons.agent(s.kind));
         row.querySelector('b').textContent = M.sessionName(s.id);
         const st = s.agent && Umi.status.parseStatus(s.agent.reply);
         const said = st ? (st.kind === 'other' ? st.detail : `${st.kind === 'pending' ? 'done, pending' : st.kind}${st.detail ? ': ' + st.detail : ''}`) : '';
@@ -342,7 +351,7 @@ Umi.views.picker = (() => {
       } else {
         const p = item.p;
         row.innerHTML = `<span class="kind"></span><b></b><span class="dim"></span>`;
-        row.querySelector('.kind').textContent = p.kind;
+        row.querySelector('.kind').replaceWith(Umi.icons.agent(p.kind));
         row.querySelector('b').textContent = p.title;
         row.querySelector('.dim').textContent = ago(p.mtime);
       }

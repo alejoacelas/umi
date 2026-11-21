@@ -206,23 +206,26 @@ body.no-sidebar #strip { padding-left: 80px; }
 
 /* Picker (a pane drawn by the web layer) */
 .slot.picker { display: flex; flex-direction: column; gap: 10px; padding: 10px 16px; color: var(--ink); }
-.picker-head { display: flex; align-items: center; gap: 10px; }
+.picker-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .picker-name {
-  flex: 1; min-width: 0; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);
+  flex: 1 1 180px; min-width: 0; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);
   border-radius: 4px; color: var(--ink); font: 13px -apple-system, sans-serif; padding: 6px 8px; outline: none;
 }
 .picker-name:focus { border-color: rgba(25,170,216,0.7); }
-.picker-kinds { display: flex; gap: 2px; }
-.picker-kinds span { padding: 3px 8px; border-radius: 4px; color: var(--dim); font-size: 11px; }
-.picker-kinds span.on { background: rgba(255,255,255,0.12); color: var(--ink); }
+.picker-kinds { display: flex; flex-wrap: wrap; gap: 2px; }
+.picker-kinds button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; cursor: pointer; font-family: inherit; padding: 3px 8px; border-radius: 4px; color: var(--dim); font-size: 11px; }
+.picker-kinds button.on { background: rgba(255,255,255,0.12); color: var(--ink); }
 .picker-project { color: var(--dim); font-size: 11px; cursor: default; }
 .picker-project b { font-weight: 500; color: var(--ink); }
 .picker-project span { opacity: 0.6; margin-left: 6px; }
 .picker-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 .picker-section { flex: none; color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px; }
-.picker-row { flex: none; display: flex; gap: 8px; align-items: baseline; padding: 5px 8px; border-radius: 4px; white-space: nowrap; overflow: hidden; }
+.picker-row { flex: none; display: flex; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 4px; white-space: nowrap; overflow: hidden; }
 .picker-row b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
-.picker-row .kind { color: var(--dim); font: 10px ui-monospace, Menlo, monospace; width: 44px; flex: none; }
+.agent-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: none; color: var(--dim); }
+.agent-icon img { display: block; width: 18px; height: 18px; }
+.picker-kinds .agent-icon { width: 16px; height: 16px; }
+.picker-kinds .agent-icon img { width: 15px; height: 15px; }
 .picker-row .dim { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 .picker-row.sel { background: rgba(25,170,216,0.18); }
 

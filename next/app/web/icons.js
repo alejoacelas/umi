@@ -79,5 +79,26 @@ Umi.icons = (() => {
     return svg.doc;
   }
 
-  return { iconName, file, img, svg, glyph };
+  const agentLabels = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity', shell: 'Shell', command: 'Command' };
+  function agent(kind) {
+    const label = agentLabels[kind] || 'Command';
+    const el = document.createElement('span');
+    el.className = 'agent-icon';
+    el.title = label;
+    el.setAttribute('role', 'img');
+    el.setAttribute('aria-label', label);
+    if (['claude', 'codex', 'antigravity'].includes(kind)) {
+      const image = document.createElement('img');
+      image.src = `icons/agent-${kind}.svg`;
+      image.width = image.height = 18;
+      image.alt = '';
+      image.draggable = false;
+      el.append(image);
+    } else {
+      el.innerHTML = svg.code;
+    }
+    return el;
+  }
+
+  return { iconName, file, img, svg, glyph, agent, agentLabels };
 })();

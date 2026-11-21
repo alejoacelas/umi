@@ -396,6 +396,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             "commands": [
                 "claude": Paths.env["UMI_NEXT_CLAUDE_CMD"] ?? "claude --dangerously-skip-permissions",
                 "codex": Paths.env["UMI_NEXT_CODEX_CMD"] ?? "codex --dangerously-bypass-approvals-and-sandbox",
+                "antigravity": Paths.env["UMI_NEXT_ANTIGRAVITY_CMD"] ?? "agy --dangerously-skip-permissions",
             ],
             "home": NSHomeDirectory(),
             "fontBase": baseFontSize,
