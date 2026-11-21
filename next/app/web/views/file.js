@@ -306,8 +306,8 @@ Umi.views.file = (() => {
 
     // Replaces the text with `text`, changing only what differs, so the caret and undo stay.
     setText(text) {
-      if (text === this.text && (!this.cm || this.cm.state.doc.length === text.length)) return;
       const old = this.cm ? this.cm.state.doc.toString() : this.text;
+      if (text === this.text && old === text) return;
       this.text = text;
       this.previewStale = true;
       if (this.cm && old !== text) {
@@ -434,7 +434,6 @@ Umi.views.file = (() => {
         case 'done': {
           const open = UmiComments.threads(this.text).filter((t) => t.status === 'open').length;
           const n = waitingOn(this.path);
-          Umi.cli?.commentsDone?.(this.path);
           window.dispatchEvent(new CustomEvent('umi:commentsDone', { detail: { path: this.path, open } }));
           Umi.bridge.post({ type: 'log', message: `comments done ${this.path} (${open} open)` });
           this.margin?.notice(n ? (n === 1 ? 'Sent: the agent waiting on this file has your comments.' : `Sent to the ${n} agents waiting on this file.`)
@@ -610,10 +609,7 @@ Umi.views.file = (() => {
         this.page.openFind(sel);
       } else if (this.mode === 'rendered' && this.page && k === 'KeyG' && only(true, false, false)) this.page.findNext();
       else if (this.mode === 'rendered' && this.page && k === 'KeyG' && only(true, true, false)) this.page.findPrevious();
-      else if (this.mode === 'rendered' && k === 'KeyF' && only(true, false, true)) {
-        this.setMode('raw');
-        CM.search.openSearchPanel(this.cm);
-      } else done = false;
+      else done = false;
       if (done) { e.preventDefault(); e.stopPropagation(); }
     }
 
@@ -848,22 +844,9 @@ Umi.views.file = (() => {
     for (const v of views.values()) if (v.path === path && v.mode === 'rendered' && v.margin) v.margin.setWaiting(n);
   }
 
-  // Agents waiting for a file's review: `umi-next comments wait` (web/cli.js), or setWaiting.
-  function waitingOn(path) {
-    const cli = Umi.cli?.waiting ? Umi.cli.waiting().filter((p) => p === path).length : 0;
-    return cli + (waiting[path] || 0);
-  }
-  // The margin says when an agent starts or stops waiting.
-  setInterval(() => {
-    for (const v of views.values()) {
-      if (v.mode !== 'rendered' || !v.margin) continue;
-      const n = waitingOn(v.path);
-      if (n !== v.shownWaiting) { v.shownWaiting = n; v.margin.setWaiting(n); }
-    }
-  }, 1000);
-
-  // For the CLI (`editor ls`, `editor close --force`).
-  Umi.editor = { isDirty, discard: (id) => { const v = views.get(id); if (v) v.discarded = true; } };
+  // Agents waiting for a file's review: web/cli.js sets the count (setWaiting) each time a
+  // `umi-next comments wait` starts or ends.
+  const waitingOn = (path) => waiting[path] || 0;
 
   return { sync, focus, askClose, label, isDirty, setWaiting, get: (id) => views.get(id), views, languageOf };
 })();

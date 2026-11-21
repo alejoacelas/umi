@@ -103,7 +103,7 @@ Umi.shortcuts = (() => {
     if (!keys) return '';
     const { mods, key } = parse(keys);
     const m = mods.size === 4 ? 'Hyper+' : ORDER.filter((x) => mods.has(x)).map((x) => GLYPH[x]).join('');
-    return m + (NAMES[key] || (/^f\d+$/.test(key) ? key.toUpperCase() : key.toUpperCase()));
+    return m + (NAMES[key] || key.toUpperCase());
   }
 
   // The key a KeyboardEvent is, as table keys name it (by physical key, so ⇧[ is '[').

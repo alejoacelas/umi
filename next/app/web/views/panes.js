@@ -1,6 +1,6 @@
 // The active tab's split layout. Each pane gets a slot; what fills it depends on the pane's view:
 // 'terminal' slots stay empty (a native Ghostty view sits there and their rects go to native);
-// other views (later: 'picker') are drawn here by a renderer in `renderers`.
+// other views ('picker', 'file') are drawn here by a renderer in `renderers`.
 'use strict';
 Umi.views = Umi.views || {};
 

@@ -8,7 +8,8 @@
 //   brings an agent back by resuming its transcript. ⌥⌘H only hides the pane: its session keeps
 //   running and goes on the tab's strip. Exit (palette) ends a session and leaves its pane. A
 //   session whose program ends by itself leaves its pane.
-// - A pane shows a `view`: 'terminal' (a native Ghostty view) or 'picker' (drawn here; ⌘D).
+// - A pane shows a `view`: 'terminal' (a native Ghostty view), or one drawn here: 'picker' (⌘D)
+//   or 'file' (views/file.js).
 // - The palette is the bottom panel; it lies over the bottom of the panes, which keep their size
 //   (native clips the terminals it covers), and the web view has the keys while it's open.
 'use strict';
@@ -264,6 +265,7 @@ Umi.model = (() => {
     const fresh = newPane({ session: sid, attach: sid, cwd: S.live[sid]?.folder });
     found.tab.root = mapPane(found.tab.root, paneId, () => fresh);
     if (found.tab.focused === paneId) found.tab.focused = fresh.id;
+    if (found.tab.zoomed === paneId) found.tab.zoomed = fresh.id;
     S.closed[paneId] = 'detach';
     if (shown) removePane(shown);
     focusPane(fresh.id);
@@ -288,6 +290,7 @@ Umi.model = (() => {
     const fresh = newPane({ cwd: folder, start: { cmd, name: name || defaultName(folder), cwd: folder } });
     found.tab.root = mapPane(found.tab.root, paneId, () => fresh);
     found.tab.focused = fresh.id;
+    if (found.tab.zoomed === paneId) found.tab.zoomed = fresh.id;
   }
 
   // Focusing another pane of a zoomed tab unzooms it (Ghostty's and Warp's rule). Focusing a pane
@@ -317,7 +320,7 @@ Umi.model = (() => {
   }
 
   // ---- the hidden-pane strip (SPEC H-5; DESIGN "Hidden-pane strip") ----
-  // A tab remembers the sessions ⌘W hid from it (`tab.hidden`, session ids, in the order hidden).
+  // A tab remembers the sessions ⌥⌘H hid from it (`tab.hidden`, session ids, in the order hidden).
   // Exit, or the session showing anywhere, takes it off the list.
   function hide(paneId) {
     const found = findPane(paneId);
@@ -400,6 +403,7 @@ Umi.model = (() => {
     if (!node || paneIds(tab.root).length < 2) return;
     tab.root = removeFromTree(tab.root, node.id);
     tab.focused = paneIds(tab.root)[0];
+    if (tab.zoomed === node.id) delete tab.zoomed;
     addTab(node);
   }
 
@@ -409,7 +413,7 @@ Umi.model = (() => {
     if (p) removePane(p);
   }
 
-  // Sends a session to the docket: its pane stops showing it (like ⌘W) and native marks it.
+  // Sends a session to the docket: its pane stops showing it (like ⌥⌘H) and native marks it.
   function docket(sid) {
     if (!sid) return;
     const m = S.layout.meta?.sessions?.[sid];
@@ -523,6 +527,7 @@ Umi.actions = {
     const found = M.findPane(p.id);
     found.tab.root = (function map(n) { return n.type === 'pane' ? (n.id === p.id ? fresh : n) : { ...n, a: map(n.a), b: map(n.b) }; })(found.tab.root);
     found.tab.focused = fresh.id;
+    if (found.tab.zoomed === p.id) found.tab.zoomed = fresh.id;
     Umi.state.closed[p.id] = 'detach';
   },
   exitSession: () => {
@@ -543,6 +548,7 @@ Umi.actions = {
     const fresh = M.newPane({ cwd: M.folderOf(p.id), start: { cmd, name: M.sessionName(sid), cwd: M.folderOf(p.id) } });
     found.tab.root = (function map(n) { return n.type === 'pane' ? (n.id === p.id ? fresh : n) : { ...n, a: map(n.a), b: map(n.b) }; })(found.tab.root);
     found.tab.focused = fresh.id;
+    if (found.tab.zoomed === p.id) found.tab.zoomed = fresh.id;
     Umi.state.closed[p.id] = 'detach';
   },
   moveToNewTab: () => Umi.model.moveToNewTab(),
@@ -552,8 +558,6 @@ Umi.actions = {
     const M = Umi.model, tab = M.activeTab(), ids = M.paneIds(tab.root);
     M.focusPane(ids[(ids.indexOf(tab.focused) + d + ids.length) % ids.length]);
   },
-  // ⌥⌘W: stops showing the tab's panes, as its row's × does (sessions keep running).
-  closeTab: () => { const M = Umi.model; M.paneIds(M.activeTab().root).forEach((id) => M.removePane(id)); },
   // ⌃⌘=: every split gives each pane the same share along its direction (Ghostty's equalize).
   equalize: () => {
     const weight = (n, dir) => (n.type === 'pane' ? 1

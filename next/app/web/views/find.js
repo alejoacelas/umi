@@ -36,7 +36,11 @@ Umi.views.find = (() => {
       else if (e.key === 'Enter') { e.preventDefault(); Umi.app.run(e.shiftKey ? 'findPrev' : 'findNext'); }
     });
     el.addEventListener('mousedown', (e) => {
-      if (S.ui.find) S.ui.find.focus = true;
+      const f = S.ui.find;
+      if (f) {
+        f.focus = true;
+        if (M.activeTab().focused !== f.pane && M.findPane(f.pane)) Umi.app.update(() => M.focusPane(f.pane), { focus: false });
+      }
       if (e.target.closest('button')) e.preventDefault();
     });
     el.querySelector('.prev').addEventListener('click', () => Umi.app.run('findPrev'));
@@ -80,7 +84,8 @@ Umi.views.find = (() => {
     return { x: r.left, y: r.top, w: r.width, h: r.height };
   }
 
-  const wantsKeys = () => !!(S.ui.find && S.ui.find.focus);
+  // The bar has the keys only while its pane is the focused one (another tab or pane: the keys go there).
+  const wantsKeys = () => !!(S.ui.find && S.ui.find.focus && S.layout && S.ui.find.pane === M.activeTab().focused);
 
   return { render, focus, holeRect, wantsKeys, search };
 })();
