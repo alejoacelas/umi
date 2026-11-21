@@ -13,7 +13,7 @@ section at the end of PROTOCOLS.md: thinking and rate-limit frames now exist und
 now delayed, and the periodic queue notification is now emulated under chaos. The 2026-10-08 recordings
 (C11wake, C12missing, C12othercwd, C13projectmcp, X14missing) added `WAKE`, `FAKE_MCP` and the missing-session
 checks. The 2026-10-10 recordings (Claude Code 2.1.296 and codex-cli 0.162.1, script
-`reference/agent-probes/probe_phase3.py`, logs in `reference/logs/`: `X16*`, `C14*`, `C15cancelq`) added
+`reference/agent-probes/probe_phase3.py`; their logs, `X16*`, `C14*` and `C15cancelq`, were not kept) added
 [live sessions](#live-sessions-tui-hooks-transcripts): the unix-socket app server, both TUIs, hooks, the
 Claude transcript, the [violations log](#one-process-per-session-violationslog) and
 [`cancel_queued`](#claude-interrupt-with-cancel_queued-c15cancelq).
@@ -96,8 +96,7 @@ message still queued: each gets `command_lifecycle cancelled` at once, then the 
 interrupt), then the usual interrupted-turn frames. A cancelled message never runs, gets no `started` and writes
 no receipt. With no turn running the answer comes at once (`"cancelled": [...]`, possibly empty). A plain
 interrupt keeps the C2 behaviour: `still_queued` lists the queued messages and they run next as their own turn.
-The self-test replays C15cancelq and matches it frame for frame. `send_now` (`interrupt_send_now_v1`) is not
-implemented.
+`send_now` (`interrupt_send_now_v1`) is not implemented.
 
 ### STATE
 
@@ -329,9 +328,9 @@ notifications carry no `turnId` and may land inside a turn, as in the real logs.
 
 ## Live sessions: TUI, hooks, transcripts
 
-Umi runs every session headless (`claude -p` stream-json, a private `codex app-server`) and lets the user
-take one over live: the agent's own interface in a pane, on the same conversation, and back. It observes live
-agents through hooks in its plugins. The fakes support all of it: Codex's app server on a unix socket with
+Until design step 1 (2026-11-07) Umi ran every session headless (`claude -p` stream-json, a private
+`codex app-server`) and let the user take one over live: the agent's own interface in a pane, on the same
+conversation, and back. Now agents are only typed in panes, and Umi observes them through hooks in its plugins. The fakes support all of it: Codex's app server on a unix socket with
 several clients, a line-oriented TUI for each harness, plugin hooks in every mode, Claude's transcript file,
 and a log of any moment two processes ran one conversation.
 
@@ -408,7 +407,7 @@ and at the end of the input they finish the work they were given before quitting
   differently". Anything else repeats the question. `ASK_QUESTIONS` asks each question in turn; a number picks
   an option, any other text is the answer.
 * Ctrl-C or Esc during a turn interrupts it (no hook fires). Lines still queued stay queued and run next.
-* `/exit` and Ctrl-D end it with SessionEnd reason `exit`; SIGTERM, SIGHUP or the terminal going away with
+* `/exit` and Ctrl-D end it with SessionEnd reason `prompt_input_exit`; SIGTERM, SIGHUP or the terminal going away with
   reason `other` (for the two signals the fake then dies of the signal). A running turn is abandoned (no Stop
   hook) and RUN commands are killed.
 
@@ -451,8 +450,8 @@ and at the end of the input they finish the work they were given before quitting
   Questions are asked one by one (number or text). Permission and elicitation requests take `y`/`n`. A request
   another client answers first prints `(answered elsewhere)`.
 * Ctrl-C or Esc during a turn sends `turn/interrupt`.
-* Ending it: in local mode a running turn is saved as interrupted (no hook), SessionEnd runs (reason `exit` for
-  `/exit` and Ctrl-D, `other` for signals) and the thread lock is released. In remote mode it only closes its
+* Ending it: in local mode a running turn is saved as interrupted (no hook), SessionEnd runs (reason `other`, for
+  `/exit`, Ctrl-D and signals alike) and the thread lock is released. In remote mode it only closes its
   WebSocket; the thread, and any turn still running, stay on the server.
 
 ### Hooks
@@ -707,7 +706,7 @@ inside that gap therefore never records the input. A product must not assume tha
 * The TUIs are line-oriented stand-ins, not the real full-screen interfaces: no slash commands besides `/exit`
   and `/quit`, no `--continue`, no session pickers, no Shift-Tab mode cycling, no spinner or working title.
 * Hooks: only `"type": "command"` hooks run; hook output, exit codes and JSON decisions (block, continue,
-  additional context) are ignored; there is no SubagentStop, PreCompact or PostToolUseFailure.
+  additional context) are ignored; there is no SubagentStop or PreCompact.
 
 ### Live sessions: decisions taken without a probe
 
@@ -717,15 +716,14 @@ are marked in the sections above):
   a client that subscribes while one is pending gets it too; turn methods subscribe the caller;
   `thread/unsubscribe` stops that client's notifications; non-WebSocket HTTP gets a 400; messages over 16 MiB
   are fragmented at 16 MiB.
-* **Claude SessionEnd `reason`**: `exit` for `/exit` and Ctrl-D, as the brief for this work specified. Claude
-  Code's documentation lists `prompt_input_exit` for leaving from the prompt and `other` otherwise; nobody
-  probed `/exit`, so treat the exact value as unverified and don't let a product depend on it. Signals and stdin
-  EOF give `other` (stdin EOF in `-p` mode is probed).
+* **Claude SessionEnd `reason`**: `prompt_input_exit` for `/exit` and Ctrl-D (probed on 2026-11-09, "Hooks"
+  above). Signals and stdin EOF give `other` (stdin EOF in `-p` mode is probed).
 * **Claude TUI answers**: `n` on a permission prompt stops the turn (the real dialog's third option);
   `a` adds a `localSettings` allow rule for the exact command. Codex TUI: `n` is `cancel`, `a` is
   `acceptForSession`.
 * **Claude hooks**: PermissionRequest fires in both modes; Notification only in the TUI; AskUserQuestion gets
-  Pre/PostToolUse but no PermissionRequest; StopFailure's `error` is `invalid_request`; SIGTERM runs SessionEnd.
+  Pre/PostToolUse and a PermissionRequest without suggestions; StopFailure's `error` is `invalid_request`
+  (`model_not_found` for a `no-such-model` model); SIGTERM runs SessionEnd.
 * **Codex hooks**: the event list (including PreToolUse, which codex-warp doesn't use), `tool_name: "Bash"`,
   `tool_response` as the output string, SessionStart at `thread/start`/load, Stop only for completed turns,
   SessionEnd only from the local TUI, a BACKGROUND command's PostToolUse when it starts.
@@ -785,8 +783,7 @@ are marked in the sections above):
   * missing conversations (C12missing, X14missing) and resuming from another folder (C12othercwd);
   * `FAKE_MCP` for both harnesses (with and without chaos, after `thread/start` and `thread/resume`), unset,
     and malformed;
-  * `cancel_queued` (and the C15cancelq frame sequence, replayed against `../reference/logs/C15cancelq.jsonl`
-    when it exists), the capabilities, and `--plugin-dir` / `-n` in `-p` mode;
+  * `cancel_queued`, the capabilities, and `--plugin-dir` / `-n` in `-p` mode;
   * Claude hooks in `-p` mode: the `hook_started`/`hook_response` frames, the event order and inputs for a
     steered turn, WAKE (both Stops), FAIL (StopFailure), an interrupt (nothing), stdin EOF and SIGTERM
     (SessionEnd `other`), matchers, both plugin sources, `$PPID`, the plugin root variables and cwd;

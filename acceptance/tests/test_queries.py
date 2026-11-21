@@ -283,14 +283,17 @@ def configured(target, tmp_path_factory):
         f.write('font-size = 13\nlist.early = a=1\nslot.badge = @needs-you\nkey.ctrl+cmd+y = ls\n'
                 'command."Early" = true\n')
     instance = Instance(target, prefix="acc-queries-", env={"XDG_CONFIG_HOME": xdg})
-    instance.start_app()
-    instance.xdg = xdg
-    created = instance.json("window", "new", "--name", "queries")
-    pane = created["pane"]
-    wait_until(lambda: instance.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20, message="the shell")
-    instance.win = {"pane": pane, "tab": created["tab"], "window": created["window"]}
-    yield instance
-    instance.cleanup()
+    try:
+        instance.start_app()
+        instance.xdg = xdg
+        created = instance.json("window", "new", "--name", "queries")
+        pane = created["pane"]
+        wait_until(lambda: instance.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20,
+                   message="the shell")
+        instance.win = {"pane": pane, "tab": created["tab"], "window": created["window"]}
+        yield instance
+    finally:
+        instance.cleanup()
 
 
 def write_config(inst, text):

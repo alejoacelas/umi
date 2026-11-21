@@ -437,7 +437,7 @@ def test_archive_until_a_condition_brings_the_tab_back_by_itself(inst, win, four
 @pytest.mark.req("AR-6", "R-3")
 def test_archived_tabs_their_order_the_open_archive_and_conditions_come_back_after_a_relaunch(target, fresh):
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = fresh(prefix="acc-archive-", restore=True)
     made = other.json("window", "new")
     window = made["window"]

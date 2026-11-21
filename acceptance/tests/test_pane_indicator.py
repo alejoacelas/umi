@@ -260,14 +260,17 @@ def configured(target, tmp_path_factory):
     with open(os.path.join(xdg, "umi", "config"), "w") as f:
         f.write("font-size = 13\n")
     instance = Instance(target, prefix="acc-indicator-", env={"XDG_CONFIG_HOME": xdg})
-    instance.start_app()
-    instance.xdg = xdg
-    created = instance.json("window", "new", "--name", "indicator")
-    pane = created["pane"]
-    wait_until(lambda: instance.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20, message="the shell")
-    instance.win = {"pane": pane, "tab": created["tab"], "window": created["window"]}
-    yield instance
-    instance.cleanup()
+    try:
+        instance.start_app()
+        instance.xdg = xdg
+        created = instance.json("window", "new", "--name", "indicator")
+        pane = created["pane"]
+        wait_until(lambda: instance.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20,
+                   message="the shell")
+        instance.win = {"pane": pane, "tab": created["tab"], "window": created["window"]}
+        yield instance
+    finally:
+        instance.cleanup()
 
 
 def write_config(inst, text):

@@ -53,8 +53,6 @@ the tests stay independent of any implementation.
   "restore_launch_args": [],
   "env": {
     "state_dir": "SHADE_STATE_DIR",
-    "claude_bin": "SHADE_CLAUDE_BIN",
-    "codex_bin": "SHADE_CODEX_BIN",
     "feed_url": "SHADE_FEED_URL"
   },
   "release": {
@@ -96,21 +94,20 @@ the tests stay independent of any implementation.
 
 ## Running
 
-Tooling is managed by `uv` (Python 3.12, pytest, Hypothesis, pyobjc; see `pyproject.toml`).
+Tooling is managed by `uv` (Python 3.11 or later, pytest, pyobjc; see `pyproject.toml`).
 
 ```sh
 uv run pytest --target targets/<name>.json                 # everything automated, fakes only
-uv run pytest --target targets/<name>.json -m managed      # one area: layout editor interactive managed
-                                                           # chaos panes robustness install
+uv run pytest --target targets/<name>.json -m layout       # one area: layout editor agents robustness install
 uv run pytest --target targets/<name>.json -m "not slow"   # the quick loop
-uv run pytest --target targets/<name>.json --req MA-4,R-2 # only the tests of these requirements
-uv run pytest --target targets/<name>.json --phase 1      # phase 1 (the app): tests needing managed agents left out
+uv run pytest --target targets/<name>.json --req L-4,R-3   # only the tests of these requirements
 ACCEPTANCE_REAL=1 uv run pytest --target ... -m real       # real Claude Code / Codex (cheap models)
 uv run python checks/run_checks.py --target targets/<name>.json   # written checks: evidence + REPORT.md
 ```
 
 - `results/traceability.md` maps every requirement in SPEC.md to its tier, its tests and their
-  status. It's rewritten after every run.
+  status. A full run rewrites it; a selective run (`-k`, `-m`, `--req`, paths) writes
+  `results/traceability-partial.md` instead.
 - UI tests (`ui` fixture) need this terminal to have the Accessibility permission (System Settings →
   Privacy & Security → Accessibility). Without it they're skipped, and the report says so.
 - The tests open windows on screen and type into them. They don't touch the user's running copy of

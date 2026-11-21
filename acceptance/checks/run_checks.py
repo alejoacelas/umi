@@ -10,6 +10,7 @@ from CHECKS.md), its evidence and an empty verdict line for the judge.
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -232,7 +233,7 @@ def setup_theme(target, base):
     shots = []
     for name, theme in (("light", "background = #fafafa\nforeground = #202020\n"),
                         ("dark", "background = #101014\nforeground = #e0e0e0\n")):
-        config = os.path.join(base, f"xdg-{name}", "ghostty")
+        config = os.path.join(base, f"xdg-{name}", "umi")
         os.makedirs(config)
         with open(os.path.join(config, "config"), "w") as f:
             f.write(theme)
@@ -309,19 +310,13 @@ def setup_markdown(target, base):
 
 
 SETUPS = [setup_layout, setup_blocks, setup_editor]
-PHASE = "all"
-PHASE_TWO_CHECKS = ()
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", required=True)
     parser.add_argument("--only", default="")
-    parser.add_argument("--phase", default="all", choices=["1", "all"],
-                        help="1: phase 1 (the app); checks of managed agents are deferred")
     args = parser.parse_args()
-    global PHASE
-    PHASE = args.phase
     target = Target(args.target)
     os.makedirs(OUT, exist_ok=True)
     texts = criteria()
@@ -353,9 +348,6 @@ def main():
     for check, text in texts.items():
         if only and check not in only:
             continue
-        if PHASE == "1" and check.startswith(PHASE_TWO_CHECKS):
-            lines += [f"## {check}", "", "Deferred to phase 2 (managed agents).", ""]
-            continue
         lines += [f"## {check}", "", text, "", "**Evidence:**", ""]
         items = evidence.get(check, [])
         if not items:
@@ -374,6 +366,7 @@ def main():
         lines += [f"## Setup error in {name}", "", "```", trace[-3000:], "```", ""]
     with open(os.path.join(OUT, "REPORT.md"), "w") as f:
         f.write("\n".join(lines))
+    shutil.rmtree(base, ignore_errors=True)
     print(os.path.join(OUT, "REPORT.md"))
 
 

@@ -280,8 +280,8 @@ def test_ssh_integration_reaches_the_renamed_executable(target):
     custom = Target(target.path, dict(target.data, launch_args=list(target.launch_args)
                                       + ["--shell-integration-features=ssh-env,ssh-terminfo"]))
     inst = Instance(custom, prefix="acc-ssh-")
-    inst.start_app()
     try:
+        inst.start_app()
         pane = inst.json("window", "new")["pane"]
         wait_until(lambda: inst.cli("read", "--pane", pane, check=False).stdout.strip() != "", 20, message="prompt")
         time.sleep(1)
@@ -380,8 +380,8 @@ def test_a_panes_folder_is_right_without_shell_integration(target, tmp_path):
     custom = Target(target.path, dict(target.data, launch_args=list(target.launch_args)
                                       + ["--shell-integration=none", f"--working-directory={start}"]))
     inst = Instance(custom, prefix="acc-nosi-")
-    inst.start_app()
     try:
+        inst.start_app()
         pane = inst.json("window", "new")["pane"]
         wait_until(lambda: os.path.realpath(pane_info(inst, pane)["cwd"] or "/") == os.path.realpath(start), 20,
                    message="the configured working directory")

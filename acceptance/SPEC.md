@@ -760,7 +760,7 @@ later, like a messaging app's archived chats.
   that doesn't switch tab order depending on recency". Tabs stay where they are until the user moves
   them:
   - selecting a tab never moves it, whatever selects it: a click, ⌘1–9, ⇧⌘[ / ⇧⌘], ⌃Tab, `<cli> tab
-    focus` (or `next`, `prev`, `back`), a pane focus, `go` and `go --back`, a notification, reopen;
+    focus` (or `next`, `prev`), a pane focus, `go` and `go --back`, a notification, reopen;
   - an agent finishing its turn (or asking for something) never moves its tab; the tab shows its
     mark (S-3);
   - tabs move only when the user moves them: dragging (M-4), `<cli> tab move`, Move Tab Up/Down
@@ -1087,8 +1087,8 @@ lists", "Slots", "Keys and palette commands"; CLI.md, "Selectors", "Queries", "L
   matching panes with their tab and window, in the query's order, and succeeds when there are none.
 - **Q-2 [A]** Named lists: `list.NAME = QUERY` lines in `~/.config/umi/config` (`$XDG_CONFIG_HOME`),
   read again when the file changes, without Ghostty reporting them as unknown settings. Umi defines
-  `needs-you` (`agent.status=needs_input | sort status_since`), `unseen`, `jump` (`@needs-you then
-  @unseen`) and `manager` (`role=manager`), each of which the config can redefine. `<cli> list ls`
+  `needs-you` (`agent.status=needs_input | sort status_since`), `unseen`, `jump` (`@needs-you and
+  tab.archived!=true | sort status_since then @unseen and tab.archived!=true | sort changed_at`) and `manager` (`role=manager`), each of which the config can redefine. `<cli> list ls`
   shows every list with its query and how many panes it holds; `list show NAME` its panes in order.
   A list named in a query that doesn't exist fails with exit 1, and so does a list whose own query
   names, directly or through other lists, one that doesn't exist or names it back; `list ls` and

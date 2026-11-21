@@ -26,7 +26,7 @@ FAKE_CODEX = os.path.join(FAKES, "fake_codex.py")
 # product) out of the product under test. The app's own environment reaches its panes' shells,
 # so an agent the tests run in a pane would otherwise inherit, say, the outer Claude Code's
 # CLAUDE_EFFORT or CLAUDE_CONFIG_DIR.
-_SCRUB_PREFIXES = ("CLAUDE_", "CODEX_", "SHADE_", "WRAITH_", "GHOSTTY_", "FAKE_", "UMI_")
+_SCRUB_PREFIXES = ("CLAUDE_", "CODEX_", "SHADE_", "WRAITH_", "GHOSTTY_", "TERN_", "FAKE_", "UMI_")
 _SCRUB_KEYS = {"CLAUDECODE", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "AI_AGENT",
                # The runner's Python environment and SSH session (uv run, ssh into the test Mac) aren't
                # a new window's: Warp's block header shows them (S-10).
@@ -143,10 +143,6 @@ def alive(pid):
     return False
 
 
-def zombies():
-    return [(p, pp) for p, pp, stat, _ in ps_rows() if stat.startswith("Z")]
-
-
 def descendants(root):
     rows = ps_rows()
     children = {}
@@ -188,11 +184,6 @@ def login_env():
     return _LOGIN_ENV
 
 
-def login_which(name):
-    import shutil
-    return shutil.which(name, path=login_env().get("PATH", ""))
-
-
 def holding_files_under(directory):
     """Pids of processes with a file (or their cwd) open under a directory."""
     out = subprocess.run(["lsof", "-t", "+D", directory], capture_output=True, text=True, timeout=60).stdout
@@ -232,8 +223,6 @@ class Instance:
         # Where the fake Claude writes its transcript (fakes/README.md); `start_agent` passes it on.
         self.claude_config = os.path.join(self.fake_dir, "claude-config")
         if fakes:
-            self.env[target.env_names["claude_bin"]] = FAKE_CLAUDE
-            self.env[target.env_names["codex_bin"]] = FAKE_CODEX
             # The agents' configuration folders, for the app and every pane's shell: nothing an
             # instance running fakes does (`agent plugins`, an agent typed in a pane) may reach the
             # user's own ~/.claude or ~/.codex. (Real-agent instances need the user's logins, so
@@ -419,21 +408,6 @@ class Instance:
         payload.setdefault("session_id", "00000000-0000-4000-8000-000000000001")
         return self.cli(*args, stdin=json.dumps(payload), env=env, timeout=30)
 
-    def receipts(self):
-        return read_jsonl(os.path.join(self.fake_dir, "receipts.jsonl"))
-
-    def self_turns(self):
-        """Turns the fake Claude started by itself (WAKE), from fakes/README.md's self_turns.jsonl."""
-        return read_jsonl(os.path.join(self.fake_dir, "self_turns.jsonl"))
-
-    def violations(self):
-        """Lines of the fakes' violations.log: two processes ran one conversation at once."""
-        path = os.path.join(self.fake_dir, "violations.log")
-        if not os.path.exists(path):
-            return []
-        with open(path) as f:
-            return [line.rstrip("\n") for line in f if line.strip()]
-
     # -- sessions shown in panes
 
     def screen(self, pane, scrollback=False):
@@ -444,20 +418,6 @@ class Instance:
     def type_line(self, pane, text):
         """Type a line into a pane's terminal (and press Enter), as a person would."""
         self.cli("send", "--pane", pane, "--enter", text, timeout=30)
-
-
-def read_jsonl(path):
-    if not os.path.exists(path):
-        return []
-    out = []
-    with open(path) as f:
-        for line in f:
-            if line.strip():
-                try:
-                    out.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass   # a line being written right now
-    return out
 
 
 # ---------------------------------------------------------------------------------------------
@@ -642,11 +602,6 @@ class UI:
         assert self.attr(item, "AXEnabled") is not False, f"the menu item {self.label(item)!r} is disabled"
         self.press(item)
         time.sleep(0.3)
-
-    def press_shortcut(self, spec):
-        item = self.shortcut(spec)
-        assert item is not None, f"no menu item has the shortcut {spec}"
-        self.choose(item)
 
     def press_keys(self, spec):
         """A ⌘ shortcut: through its menu item if there is one, else as a key event (which text views,

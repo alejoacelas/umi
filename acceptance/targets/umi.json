@@ -7,8 +7,6 @@
   "restore_launch_args": [],
   "env": {
     "state_dir": "UMI_STATE_DIR",
-    "claude_bin": "UMI_CLAUDE_BIN",
-    "codex_bin": "UMI_CODEX_BIN",
     "feed_url": "UMI_FEED_URL"
   },
   "release": {

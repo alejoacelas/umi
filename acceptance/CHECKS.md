@@ -44,7 +44,7 @@ items (see S-4); dragging reorders with an insertion line.
 at the limits; another window keeps its width; quitting and relaunching keeps both.
 
 **S-5: readable chrome.** Setup: the same window under a light theme and then a dark theme, set
-through the user's Ghostty config in the isolated instance.
+through the user's config file (`$XDG_CONFIG_HOME/umi/config`) in the isolated instance.
 - Sidebar text is readable on both.
 - The configured theme wins over the product's default theme.
 

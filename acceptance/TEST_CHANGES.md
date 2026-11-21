@@ -1713,3 +1713,26 @@ file shows.
 - Added `app/macos/Tests/Umi/UmiSessionLinksTests.swift` (Swift): the origin check, reading tasks,
   remote matching across URL forms, folder resolution (worktrees, `orgs/`), the branch note and
   the typed commands.
+
+## Audit fixes (2026-11-21)
+
+From an audit of the suite. No test checks less than before.
+- Tests that could not fail: `test_umi_nav.py::test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart`
+  lost an assert that the first shortcut is not None, `test_umi_sidebar_warp.py::test_search_field_keys_ui`
+  one that repeated the wait before it, and `test_layout.py::test_sidebar_modes_from_the_cli` keeps only
+  the clause of its `or` that checks something. `test_agent_panes.py::test_claudes_status_is_truthful`
+  fails after 30 s instead of hanging when the background task never wakes the agent.
+- `fakes/test_fakes.py::t_claude_cancel_queued` lost its replay against `reference/logs/C15cancelq.jsonl`,
+  a log that was never kept, so the replay always returned early.
+- Isolation and cleanup: `test_robustness.py::test_builds_from_a_path_with_spaces` runs `doctor` with an
+  isolated state folder instead of pinging the user's Umi. `test_umi_warp_terminal.py::test_the_box_text_is_bold`
+  removes its `/tmp` folder. Fixtures and tests that start an app (`conftest.py`'s `inst`,
+  `test_pane_indicator.py`, `test_queries.py`, `test_umi_layouts.py`, `test_hidden_panes.py`, two in
+  `test_umi_extra.py`) clean up when the start itself fails. `test_drawer.py::test_drawer_panes_come_back_after_a_relaunch`
+  skips on a build that isn't restoration-safe, as its siblings do, and their skip messages name
+  capability 6.
+- Removed: the `--phase` option and its `harness` marker, which no test used; the target keys
+  `claude_bin`/`codex_bin`, which the app never read; unused harness helpers. The written checks'
+  theme setup writes `umi/config` (the app never read `ghostty/config`), and the update check runs its
+  instance with `--auto-update=check`, the only mode that asks.
+

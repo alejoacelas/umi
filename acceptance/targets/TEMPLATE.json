@@ -7,8 +7,6 @@
   "restore_launch_args": [],
   "env": {
     "state_dir": "<STATE_DIR_ENV_VAR>",
-    "claude_bin": "<CLAUDE_BIN_ENV_VAR>",
-    "codex_bin": "<CODEX_BIN_ENV_VAR>",
     "feed_url": "<FEED_URL_ENV_VAR>"
   },
   "release": {

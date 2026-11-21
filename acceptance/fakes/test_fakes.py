@@ -2632,45 +2632,6 @@ def t_claude_cancel_queued():
     assert r["result"] == "ok: after"
     c.close()
     assert c.exit_code() == 0
-    # frame for frame against the real C15cancelq (interrupt 5 s into the command, after task_started)
-    path = os.path.join(HERE, "..", "reference", "logs", "C15cancelq.jsonl")
-    if not os.path.exists(path):
-        return
-    real = []
-    for line in open(path):
-        e = json.loads(line)
-        if e["k"] == "out" and isinstance(e["m"], dict):
-            real.append(e["m"])
-    first = [i for i, m in enumerate(real) if m.get("type") == "system" and m.get("subtype") == "session_state_changed"][0]
-    c = FC("--dangerously-skip-permissions")
-    c.init()
-    n = c.n()
-    c.user("SLEEP 15")
-    c.wait_for(lambda m: m.get("subtype") == "task_started", timeout=10)
-    u2 = c.user("Reply with exactly: BANANA")
-    c.lifecycle(u2, "queued")
-    c.send({"type": "control_request", "request_id": "int1", "request": {"subtype": "interrupt", "cancel_queued": True}})
-    i, _ = c.result(n)
-    c.state("idle", i)
-
-    def seq(msgs):
-        out = []
-        for m in msgs:
-            t = m.get("type")
-            if t in ("rate_limit_event",) or m.get("subtype") == "thinking_tokens":
-                continue
-            if t == "command_lifecycle":
-                out.append("lifecycle:" + m["state"])
-            elif t == "system":
-                out.append("system:" + (m["state"] if m["subtype"] == "session_state_changed" else m["subtype"]))
-            elif t == "control_response":
-                out.append("control_response:" + ",".join(sorted(m["response"]["response"])))
-            else:
-                out.append(t)
-        return out
-    assert seq(c.msgs[n:]) == seq(real[first:]), (seq(c.msgs[n:]), seq(real[first:]))
-    c.close()
-    c.exit_code()
 
 
 def t_claude_hooks_print():

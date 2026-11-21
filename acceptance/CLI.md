@@ -118,7 +118,7 @@ VALUE  := a word, or text in double quotes
 | `send [--pane P] [--enter\|-e] TEXT…` | no TEXT plus a piped stdin sends stdin |
 | `keys [--pane P] KEY…` | enter esc tab backspace up down left right ctrl+c shift+tab … |
 | `read [--pane P] [--scrollback] [--lines N]` | prints the text as the shell and programs printed it. With Umi's look (SPEC S-9 to S-12) a zsh prompt is two blank rows, the folder, and the command line; durations, lines and the folder box are drawn, not text |
-| `wait [--pane P] (--pattern RE \| --idle SECS \| --attr QUERY) [--timeout T]` | prints the matched text (`--attr`: waits until the pane matches the query, for example `agent.status=idle`, and prints its attributes as `key=value` lines; JSON `{"pane", "attributes"}`); 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
+| `wait [--pane P] (--pattern RE \| --idle SECS \| --attr QUERY) [--timeout SECS]` | prints the matched text (`--attr`: waits until the pane matches the query, for example `agent.status=idle`, and prints its attributes as `key=value` lines; JSON `{"pane", "attributes"}`); 124 on timeout. The pattern matches program output, never the prompt (the folder line) or the typed command |
 | `events [--filter PREFIX]… [--pane P] [--since T]` | streams Event objects as JSON lines ("Events and logs"); a filter keeps events whose name starts with PREFIX; `--since` replays the activity log from T first |
 | `notify [--pane P] TITLE [BODY]` | |
 | `sidebar [on\|off\|toggle\|status\|tabs\|files\|search] [--window W]` | shown or hidden per window (the given one, else the caller's, else the current); JSON: `{"visible": bool, "mode": "tabs"\|"files"\|"search", "width": points, "window": id}` |

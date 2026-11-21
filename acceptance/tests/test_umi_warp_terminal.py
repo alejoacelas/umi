@@ -491,24 +491,27 @@ def test_the_box_text_is_bold(inst, win, tmp_path):
     active(inst, pane)
     folder = "/tmp/" + "W" * 30
     os.makedirs(folder, exist_ok=True)
-    run(inst, pane, f"cd {folder}")
-    ran = run(inst, pane, ": weight")
-    b = active(inst, pane)
-    prompt = b["blocks"][-1]
-    assert prompt["header"] == folder and ran["header"] == folder, (prompt, ran)
-    time.sleep(0.5)
-    shot = Shot(inst, win, tmp_path / "weight.png")
-    cell_w = b["cell_pt"][0] * shot.scale
-    pad = b["padding_pt"]["left"] * shot.scale
-    dx = b["box_text_dx_pt"] * shot.scale
+    try:
+        run(inst, pane, f"cd {folder}")
+        ran = run(inst, pane, ": weight")
+        b = active(inst, pane)
+        prompt = b["blocks"][-1]
+        assert prompt["header"] == folder and ran["header"] == folder, (prompt, ran)
+        time.sleep(0.5)
+        shot = Shot(inst, win, tmp_path / "weight.png")
+        cell_w = b["cell_pt"][0] * shot.scale
+        pad = b["padding_pt"]["left"] * shot.scale
+        dx = b["box_text_dx_pt"] * shot.scale
 
-    def heavy(row, shift):
-        """Pixels over half the brightest of the W's (columns 6 to 34) on viewport row `row`."""
-        y = row_y(shot, inst, win, b, row)
-        x0, x1 = int(shot.left + pad + shift + cell_w * 6), int(shot.left + pad + shift + cell_w * 34)
-        pixels = [max(shot.px(x, yy)) for x in range(x0, x1) for yy in range(y - 6, y + 7)]
-        top = max(pixels)
-        assert top > 60, f"text on row {row}"
-        return sum(1 for v in pixels if v > (top + 5) / 2)
-    box, header = heavy(prompt["first"] + 2, dx), heavy(ran["first"] + 2, 0)
-    assert box > header * 1.1, f"the box's text drawn bold: {box} heavy pixels against {header} in the header"
+        def heavy(row, shift):
+            """Pixels over half the brightest of the W's (columns 6 to 34) on viewport row `row`."""
+            y = row_y(shot, inst, win, b, row)
+            x0, x1 = int(shot.left + pad + shift + cell_w * 6), int(shot.left + pad + shift + cell_w * 34)
+            pixels = [max(shot.px(x, yy)) for x in range(x0, x1) for yy in range(y - 6, y + 7)]
+            top = max(pixels)
+            assert top > 60, f"text on row {row}"
+            return sum(1 for v in pixels if v > (top + 5) / 2)
+        box, header = heavy(prompt["first"] + 2, dx), heavy(ran["first"] + 2, 0)
+        assert box > header * 1.1, f"the box's text drawn bold: {box} heavy pixels against {header} in the header"
+    finally:
+        os.rmdir(folder)

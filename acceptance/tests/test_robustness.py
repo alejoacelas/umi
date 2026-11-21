@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 
-from harness import wait_until
+from harness import clean_env, wait_until
 
 pytestmark = pytest.mark.robustness
 
@@ -25,7 +25,7 @@ def nonce():
 @pytest.mark.req("R-3", "L-2")
 def test_restart_restores_pins_and_names(target, fresh):
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = fresh(prefix="acc-r3p-", restore=True)
     pane = other.cli("tab", "new", "--name", "kept-name").stdout.strip()
     tab = other.json("pane", "info", pane)["tab"]
@@ -74,7 +74,8 @@ def test_builds_from_a_path_with_spaces(target, tmp_path):
     proc = subprocess.run(command, capture_output=True, text=True, timeout=900,
                           env={**os.environ, "TMPDIR": os.path.join(tmp_path, "tmp dir") + "/"})
     assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
-    assert subprocess.run([out, "doctor"], capture_output=True, timeout=60).returncode in (0, 1)
+    env = {**clean_env(), target.env_names["state_dir"]: os.path.join(tmp_path, "state")}
+    assert subprocess.run([out, "doctor"], capture_output=True, timeout=60, env=env).returncode in (0, 1)
 
 
 # ---- R-5, R-7 -----------------------------------------------------------------------------------

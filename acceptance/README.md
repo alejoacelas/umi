@@ -21,14 +21,9 @@ A small per-build adapter (a target file) connects it to any implementation.
 | `targets/` | Target files: one per build under test. |
 
 What the tests use:
-- **Property-based tests** (`tests/test_chaos.py`, Hypothesis) generate operation sequences against
-  fakes that vary timing and event order. They check invariants: exactly-once delivery, nothing
-  pending forever, truthful statuses, no leftover processes.
 - **Fault injection:** the fakes crash, hang, ignore SIGTERM, spawn detached children, flood output
   and print garbage on request.
-- **Phases:** `--phase 1` runs the tests of the app alone, leaving out those that need managed agents
-  (SPEC.md, Delivery phases).
-- **Traceability:** every run writes `results/traceability.md`, one row per requirement with its tier,
+- **Traceability:** every full run writes `results/traceability.md`, one row per requirement with its tier,
   its tests and their status.
 
 Quick start: see "Running" in `TEST_INTERFACE.md`.

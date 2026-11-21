@@ -260,7 +260,9 @@ def test_claudes_status_is_truthful(inst, pane):
     wait_screen(inst, pane, "⏺ started")
     time.sleep(0.5)
     seen = set()
+    deadline = time.time() + 30
     while f"woke: {w}" not in screen(inst, pane):
+        assert time.time() < deadline, "the background task never woke the agent"
         seen.add(inst.agent_status(pane))
         time.sleep(0.1)
     assert seen == {"working"}, f"with background work pending, agent.status was {seen}"
@@ -342,7 +344,7 @@ def test_a_claude_typed_with_flags_comes_back_after_a_quit(target, fresh):
     crash): Umi types it again in its pane, on the same conversation, with the same flags, without its
     first prompt."""
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = relaunch_instance(fresh, "claude")
     pane = other.json("window", "new", "--cwd", other.work)["pane"]
     wait_until(lambda: other.screen(pane).strip(), 20, message="the shell")
@@ -381,7 +383,7 @@ def test_a_codex_comes_back_after_a_crash_and_a_stopped_one_doesnt(target, fresh
     """After every process of the app is killed, a Codex that ran in a pane comes back there on its
     thread; a pane whose agent had exited before gets nothing typed."""
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = relaunch_instance(fresh, "codex")
     pane = other.json("window", "new", "--cwd", other.work)["pane"]
     wait_until(lambda: other.screen(pane).strip(), 20, message="the shell")
@@ -418,7 +420,7 @@ def test_an_agent_umi_09_ran_in_a_pane_comes_back_after_the_update(target, fresh
     interface ran in that pane is typed again there, with its settings and on its conversation; a
     session Umi 0.9 ran headless (shown read-only) isn't."""
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = fresh(prefix="acc-from09-", restore=True, start_app=False)
     harness_id = str(uuid.uuid4())
     sessions = {"live-one": {"live": True, "conversation": True}, "headless-one": {}}

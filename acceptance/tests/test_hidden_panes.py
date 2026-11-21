@@ -325,7 +325,7 @@ def test_a_move_that_made_room_is_undone_with_the_pane_it_hid(inst, win):
 @pytest.mark.req("H-7", "R-3")
 def test_hidden_panes_and_their_conditions_come_back_after_a_restart(target, fresh):
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = fresh(prefix="acc-h7-", restore=True)
     made = other.json("window", "new")
     a = made["pane"]
@@ -351,8 +351,8 @@ def test_launch_configurations_save_hidden_panes_and_open_the_rest_hidden(target
     home = os.path.realpath(str(tmp_path / "xdg"))
     os.makedirs(os.path.join(home, "umi", "launch_configurations"))
     inst = Instance(target, prefix="acc-h7lc-", env={"XDG_CONFIG_HOME": home})
-    inst.start_app()
     try:
+        inst.start_app()
         folders = []
         for name in "abcde":
             folders.append(str(tmp_path / name))

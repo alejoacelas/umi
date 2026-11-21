@@ -10,6 +10,7 @@ Writes results/checks/extra-*.png. Uses an isolated instance and Umi's `screensh
 """
 
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -115,6 +116,7 @@ def main():
         shot(inst, w["window"], "E-4-disk-changed")
     finally:
         inst.cleanup()
+        shutil.rmtree(base, ignore_errors=True)
 
 
 def agents_and_ui_evidence():
@@ -186,11 +188,11 @@ def agents_and_ui_evidence():
             inst.type_line(pane, "/exit")
     finally:
         inst.cleanup()
+        shutil.rmtree(base, ignore_errors=True)
 
 
 def update_evidence():
     """I-4: the question a background check raises (nothing downloaded), then the staged update."""
-    import shutil
     import threading
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -212,7 +214,7 @@ def update_evidence():
     dest = os.path.join(base, "Applications", "Umi.app")
     proc = run_installer(target, os.path.join(root, "old", "Umi.app"), dest, os.path.join(base, "bin"), holder.env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    inst = Instance(Target.from_installed(target, dest), state_dir=holder.dir, env=env)
+    inst = Instance(Target.from_installed(target, dest), state_dir=holder.dir, env=env, args=["--auto-update=check"])
     try:
         inst.start_app()
         w = inst.json("window", "new", "--name", "work")

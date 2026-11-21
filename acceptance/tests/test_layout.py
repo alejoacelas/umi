@@ -532,5 +532,4 @@ def test_sidebar_modes_from_the_cli(inst, win):
     inst.cli("sidebar", "files")
     assert inst.json("sidebar", "status")["mode"] == "files"
     inst.cli("sidebar", "tabs")
-    assert inst.json("sidebar", "status") == {"visible": True, "mode": "tabs"} or \
-        inst.json("sidebar", "status")["mode"] == "tabs"
+    assert inst.json("sidebar", "status")["mode"] == "tabs"

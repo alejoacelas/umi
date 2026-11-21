@@ -156,7 +156,7 @@ def test_each_attribute_change_is_an_event(inst, win):
 @pytest.mark.req("D-1", "R-3")
 def test_attributes_come_back_after_a_restart(target, fresh):
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = fresh(prefix="acc-d1r-", restore=True)
     pane = other.cli("tab", "new", "--name", "kept-attrs").stdout.strip()
     info = other.json("pane", "info", pane)

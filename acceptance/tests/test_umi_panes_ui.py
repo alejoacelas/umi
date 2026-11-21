@@ -714,7 +714,7 @@ def test_each_window_has_its_own_sidebar_width(inst, win):
 @pytest.mark.req("S-8", "R-3")
 def test_sidebar_widths_are_restored_with_the_layout(target, fresh):
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = fresh(prefix="acc-s8-", restore=True)
     first = other.json("window", "new", "--name", "wide")["window"]
     second = other.json("window", "new", "--name", "narrow")["window"]

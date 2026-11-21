@@ -28,10 +28,12 @@ pytestmark = pytest.mark.layout
 def lc(target, tmp_path_factory):
     home = os.path.realpath(tmp_path_factory.mktemp("xdg-config"))
     instance = Instance(target, prefix="acc-layouts-", env={"XDG_CONFIG_HOME": home})
-    instance.start_app()
-    instance.configs = os.path.join(home, "umi", "launch_configurations")
-    yield instance
-    instance.cleanup()
+    try:
+        instance.start_app()
+        instance.configs = os.path.join(home, "umi", "launch_configurations")
+        yield instance
+    finally:
+        instance.cleanup()
 
 
 @pytest.fixture

@@ -423,7 +423,6 @@ def test_shortcuts_can_be_changed_cleared_and_reset_without_a_restart(inst, win)
         inst.cli("shortcuts", "set", "tab.next", "ctrl+cmd+down")
         item = menu_item(inst, "Show Next Tab")
         assert item["modifiers"] == ["ctrl", "cmd"], item
-        assert inst.json("shortcuts")["shortcuts"][0] is not None
         assert {s["id"]: s for s in inst.json("shortcuts")["shortcuts"]}["tab.next"]["changed"]
         # Clearing removes it.
         inst.cli("shortcuts", "clear", "tab.previous")

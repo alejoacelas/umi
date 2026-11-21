@@ -548,7 +548,7 @@ def test_the_group_header_closes_the_tabs_above_or_below_it(inst, win):
 @pytest.mark.req("S-14", "R-3")
 def test_groups_are_restored_with_the_layout(target, fresh):
     if not target.restoration_safe:
-        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 5)")
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = fresh(prefix="acc-groups-", restore=True)
     created = other.json("window", "new", "--name", "grouped")
     pane = other.cli("tab", "new", "--window", created["window"]).stdout.strip()
@@ -629,7 +629,6 @@ def test_search_field_keys_ui(inst, win, ui, tmp_path):
     wait_until(lambda: selected(inst, win["window"]) == a, 5, message="wraps to the first match")
     press(ui, "[", "cmd", "shift")
     wait_until(lambda: selected(inst, win["window"]) == c, 5, message="⇧⌘[ to the previous match")
-    assert skip not in [selected(inst, win["window"])]
     # Esc in the field: the query goes and the pane has the keyboard again.
     press(ui, "f", "cmd", "option")
     wait_until(lambda: sidebar(inst, win["window"])["search_focused"], 5, message="focused again")

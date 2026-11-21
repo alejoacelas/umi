@@ -461,7 +461,9 @@ def test_closing_a_drawer_pane_ends_its_program(inst, win, closing):
 # ---- DR-5: saved with the layout ---------------------------------------------------------------------------
 
 @pytest.mark.req("DR-5", "R-3")
-def test_drawer_panes_come_back_after_a_relaunch(fresh):
+def test_drawer_panes_come_back_after_a_relaunch(target, fresh):
+    if not target.restoration_safe:
+        pytest.skip("needs a restoration-safe build (TEST_INTERFACE.md, capability 6)")
     other = fresh(prefix="acc-drawer-", restore=True)
     w = other.json("window", "new")
     b = other.cli("split", "right", "--pane", w["pane"]).stdout.strip()
