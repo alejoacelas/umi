@@ -52,15 +52,15 @@ echo 0 > ~/.config/umi-next/hook-exit
 echo "== task link, live session:"
 printf '{"folder":"projects/2026-10-26-umi","agent":"claude","session":"%s","next_session":"%s","title":"Dock test"}' $AGS $DSID > /tmp/umitask/umi/task1.json
 curl -sf http://127.0.0.1:18765/umi/task1.json | grep -q "$DSID" || FAIL "http://127.0.0.1:18765/umi/task1.json doesn't serve /tmp/umitask/umi/task1.json"
-open "umi-next://open?task=http%3A%2F%2F127.0.0.1%3A18765%2Fumi%2Ftask1.json"
+open -a ~/umi-next-ui/next/app/build/UmiNext.app "umi-next://open?task=http%3A%2F%2F127.0.0.1%3A18765%2Fumi%2Ftask1.json"
 UNTIL "Umi.model.sessionOf(Umi.model.activeTab().focused)" "$DSID" 10 || FAIL "after the task link the focused session is $(J "Umi.model.sessionOf(Umi.model.activeTab().focused)"), not $DSID"
 J "JSON.stringify({tab: Umi.model.activeTab().name, focusedSession: Umi.model.sessionOf(Umi.model.activeTab().focused), docket: Umi.state.live['$DSID'].docket||null})"
 sleep 1; D screen | grep -v '^ *$' | tail -3; screencapture -x /tmp/dock4.png
-echo "== refused link:"; open "umi-next://open?task=https%3A%2F%2Fexample.com%2Fumi%2Fx.json"; sleep 2; screencapture -x /tmp/dock5.png
+echo "== refused link:"; open -a ~/umi-next-ui/next/app/build/UmiNext.app "umi-next://open?task=https%3A%2F%2Fexample.com%2Fumi%2Fx.json"; sleep 2; screencapture -x /tmp/dock5.png
 echo "== task link, dead session: Exit it first"
 H tap; sleep 0.5; K "keystroke \"x\""; sleep 4
 C ls | python3 -c "import json,sys;print('  alive:', [s['id'] for s in json.load(sys.stdin) if s['id']=='$DSID'])"
-open "umi-next://open?task=http%3A%2F%2F127.0.0.1%3A18765%2Fumi%2Ftask1.json"; for i in 1 2 3 4 5; do sleep 3; [ "$(FRONT)" = UmiNext ] && ~/umi-next-tools/click 778 367; done; sleep 5
+open -a ~/umi-next-ui/next/app/build/UmiNext.app "umi-next://open?task=http%3A%2F%2F127.0.0.1%3A18765%2Fumi%2Ftask1.json"; for i in 1 2 3 4 5; do sleep 3; [ "$(FRONT)" = UmiNext ] && ~/umi-next-tools/click 778 367; done; sleep 5
 J "JSON.stringify({tab: Umi.model.activeTab().name, session: Umi.model.sessionOf(Umi.model.activeTab().focused), cwd: Umi.model.folderOf(Umi.model.activeTab().focused)})"
 NS=$(J "Umi.model.sessionOf(Umi.model.activeTab().focused)"); C ls | python3 -c "import json,sys;[print('  new session:',s['id'],s['command'],s['cwd']) for s in json.load(sys.stdin) if s['id']=='$NS']"
 D screen | grep -v '^ *$' | head -12; screencapture -x /tmp/dock6.png
