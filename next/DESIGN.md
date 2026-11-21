@@ -99,7 +99,9 @@ it is open.
 
 - Columns of commands, each on one letter, the frequent ones under the left hand: Sessions (new,
   switch, open past), This session (rename, snooze, restart, exit, move), Review,
-  Options.
+  Options (sidebar, reload the web layer, `u` update and restart: runs `next/install.sh` from the
+  app's checkout, which rebuilds, quits and reopens Umi next; sessions keep running in the daemon,
+  and a failed build leaves the app running with a banner naming `<state>/update.log`).
 - `/` searches every command by name instead.
 - It is part of the web layer, so it can be changed live.
 

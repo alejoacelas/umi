@@ -591,4 +591,5 @@ Umi.actions = {
     }
   },
   reloadWeb: () => Umi.bridge.post({ type: 'reload' }),
+  updateApp: () => Umi.bridge.post({ type: 'updateApp' }),
 };

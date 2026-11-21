@@ -249,6 +249,41 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
     func reloadWeb() { webFilesChanged() }
 
+    private var updating: Process?
+
+    /// The palette's Update and restart: runs next/install.sh from the checkout the app was built
+    /// from, which builds, quits this app, installs the new copy and opens it. Sessions keep running
+    /// in the daemon. A failed build leaves this app running and says so; the log is
+    /// <state>/update.log.
+    func updateAndRestart() {
+        guard updating == nil else { showBanner("Already updating; log: \(Paths.stateDir)/update.log"); return }
+        guard let app = Paths.appSourceDir else { showBanner("Can't update: this build doesn't record its checkout."); return }
+        let script = (app as NSString).deletingLastPathComponent + "/install.sh"
+        guard FileManager.default.isExecutableFile(atPath: script) else { showBanner("Can't update: no \(script)."); return }
+        let logPath = Paths.stateDir + "/update.log"
+        FileManager.default.createFile(atPath: logPath, contents: nil)
+        guard let log = FileHandle(forWritingAtPath: logPath) else { showBanner("Can't update: can't write \(logPath)."); return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/bash")
+        p.arguments = [script]
+        p.currentDirectoryURL = URL(fileURLWithPath: (app as NSString).deletingLastPathComponent)
+        // An app opened from Finder has a bare PATH; the build needs swift, and install.sh trash.
+        var env = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("UMI_") }
+        env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:" + NSHomeDirectory() + "/.local/bin"
+        p.environment = env
+        p.standardOutput = log
+        p.standardError = log
+        p.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async {
+                self?.updating = nil
+                if proc.terminationStatus != 0 { self?.showBanner("Update failed (exit \(proc.terminationStatus)); log: \(logPath)") }
+            }
+        }
+        do { try p.run() } catch { showBanner("Can't update: \(error.localizedDescription)"); return }
+        updating = p
+        showBanner("Updating: building from \((app as NSString).deletingLastPathComponent)… Umi next restarts when it's built.")
+    }
+
     private func armWatchdog() {
         helloWatchdog?.cancel()
         let w = DispatchWorkItem { [weak self] in
@@ -321,6 +356,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             showBanner("Web layer error: \(text). Terminals keep running.")
         case "reload":
             reloadWeb()
+        case "updateApp":
+            updateAndRestart()
         case "exitSession":
             if let id = msg["session"] as? String { SessionBackend.endSession(sessionID: id); sessions.pollSoon() }
         case "pastSessions":

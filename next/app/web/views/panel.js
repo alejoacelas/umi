@@ -32,6 +32,7 @@ Umi.views.panel = (() => {
     { title: 'Options', cmds: [
       ['b', 'Sidebar', () => Umi.actions.toggleSidebar()],
       ['l', 'Reload web layer', () => Umi.actions.reloadWeb()],
+      ['u', 'Update and restart', () => Umi.actions.updateApp()],
     ] },
   ];
   const ALL = COLUMNS.flatMap((c) => c.cmds.map(([key, name, fn]) => ({ key, name, fn, column: c.title })));
