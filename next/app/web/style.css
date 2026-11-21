@@ -219,6 +219,7 @@ body.no-sidebar #strip { padding-left: 80px; }
 .picker-project { color: var(--dim); font-size: 11px; cursor: default; }
 .picker-project b { font-weight: 500; color: var(--ink); }
 .picker-project span { opacity: 0.6; margin-left: 6px; }
+.picker-project b[hidden] + span { margin-left: 0; }
 .picker-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 .picker-section { flex: none; color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px; }
 .picker-row { flex: none; display: flex; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 4px; white-space: nowrap; overflow: hidden; }

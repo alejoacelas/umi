@@ -309,7 +309,8 @@ Umi.views.picker = (() => {
       : `Name (empty: ${base(node.cwd)} and a number)`;
     const where = el.querySelector('.picker-project');
     where.innerHTML = '<b></b> <span></span>';
-    where.querySelector('b').textContent = tilde(node.cwd || S.home || '');
+    where.querySelector('b').hidden = !folder;
+    where.querySelector('b').textContent = folder ? tilde(node.cwd || S.home || '') : '';
     where.querySelector('span').textContent = folder ? '↩ take · ⇥ go in · ⇧⇥ up · esc back' : '/ to change the folder';
     const list = el.querySelector('.picker-list');
     list.textContent = '';
