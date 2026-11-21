@@ -106,7 +106,6 @@ enum UmiAgentHooks {
             if questionTools.contains(tool) {
                 agent.status = .needsInput
                 agent.detail = "asking you a question"
-                agent.lastStop = now
             } else {
                 agent.status = .working
             }
@@ -117,7 +116,6 @@ enum UmiAgentHooks {
             // Claude Code asks permission for its question tool too: it's still a question.
             agent.status = .needsInput
             agent.detail = questionTools.contains(tool) ? "asking you a question" : "asking permission: \(tool)"
-            agent.lastStop = now
         case "PostModelRequest":
             // Codex: a request that failed is the turn's error (Stop follows only a completed turn).
             // A retry starts with PreModelRequest, which makes it `working` again.
@@ -130,18 +128,15 @@ enum UmiAgentHooks {
             }
             agent.done = false
             agent.background = 0
-            agent.lastStop = now
         case "Interrupt":
             agent.status = .idle
             agent.background = 0
             agent.detail = nil
-            agent.lastStop = now
         case "Notification":
             let type = payload["notification_type"] as? String ?? ""
             if ["permission_prompt", "elicitation_dialog", "agent_needs_input"].contains(type) {
                 agent.status = .needsInput
                 agent.detail = oneLine(payload["message"] as? String ?? "waiting for you", max: 120)
-                agent.lastStop = now
             }
         case "Stop", "StopFailure":
             let reply = payload["last_assistant_message"] as? String ?? ""
@@ -159,12 +154,10 @@ enum UmiAgentHooks {
                 agent.summary = reply.split(whereSeparator: \.isNewline).first.map { oneLine(String($0), max: 160) }
             }
             agent.done = doneCheck(reply)
-            agent.lastStop = now
         case "SessionEnd":
             agent.status = .stopped
             agent.background = 0
             agent.detail = nil
-            agent.lastStop = now
             agent.draft = false
             agent.draftChars = 0
             agent.inputTouched = false
@@ -218,7 +211,6 @@ enum UmiAgentHooks {
         attention.update(pane.id) {
             $0.status = .stopped
             $0.background = 0
-            $0.lastStop = Date()
             $0.draft = false
             $0.draftChars = 0
             $0.inputTouched = false
@@ -399,7 +391,6 @@ enum UmiAgentHooks {
                     $0.idleInferred = true
                     $0.background = 0
                     $0.detail = nil
-                    $0.lastStop = Date()
                 }
             }
         }

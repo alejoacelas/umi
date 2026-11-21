@@ -3,8 +3,8 @@ import SwiftUI
 
 /// File-type icons, colored by language as Warp's are: Material Icon Theme's SVGs (MIT,
 /// licenses/MATERIAL-ICON-THEME.md) in the asset catalog's `FileIcons` folder, each named
-/// `fileicon-<name>`. One place for every view that shows a file's type (stack chips, the
-/// file tree).
+/// `fileicon-<name>`. One place for every view that shows a file's type (the pane strip's
+/// chips, the file tree, global search).
 enum UmiFileIcons {
     /// The icon's asset name for a file, by its name.
     static func assetName(for url: URL) -> String {

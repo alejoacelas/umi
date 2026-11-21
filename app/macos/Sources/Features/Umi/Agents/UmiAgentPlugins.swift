@@ -66,7 +66,6 @@ enum UmiAgentPlugins {
         var version: String?
         var bundled: String?
         var hooksTrusted: Bool?
-        var detail: String?
         /// Installed from this copy of the app (another copy, a moved app or an old build may have
         /// installed it: then it's brought over to this one).
         var fromThisApp = true
@@ -84,7 +83,6 @@ enum UmiAgentPlugins {
             if let bundled { out["bundled_version"] = bundled }
             if let hooksTrusted { out["hooks_trusted"] = hooksTrusted }
             if let enabled { out["enabled"] = enabled }
-            if let detail { out["detail"] = detail }
             return out
         }
     }
@@ -146,7 +144,7 @@ enum UmiAgentPlugins {
         guard let root = bundledRoot else { return ["error": "this build has no plugins"] }
         guard let bin = binary(kind, env) else { return ["skipped": "\(kind.rawValue) isn't installed"] }
         let before = status(kind, env: env)
-        if before.current && !force { return status(kind, env: env).json }
+        if before.current && !force { return before.json }
         var steps: [String] = []
         func run(_ args: [String]) -> Bool {
             let result = runCommand(bin, args, env: env)
@@ -264,7 +262,7 @@ enum UmiAgentPlugins {
         return "codex hooks: trusted \(trust.count)"
     }
 
-    /// Remove both plugins (`agent plugins remove`).
+    /// Remove both plugins (`umi plugins remove`).
     static func remove() -> [String: Any] {
         queue.sync {
             let env = commandEnvironment()

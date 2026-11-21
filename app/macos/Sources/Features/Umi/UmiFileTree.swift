@@ -260,10 +260,6 @@ final class UmiFileTreeModel: ObservableObject {
         return model
     }
 
-    static func existing(for controller: TerminalController) -> UmiFileTreeModel? {
-        models[ObjectIdentifier(controller)]
-    }
-
     /// Whether the model watches its root with FSEvents. Unit tests turn it off and hand
     /// `filesChanged` the events themselves, so a late event can't stand in for the code under test.
     private let watchesFiles: Bool

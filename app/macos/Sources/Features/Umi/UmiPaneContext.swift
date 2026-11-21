@@ -153,14 +153,12 @@ final class UmiCommandLog: @unchecked Sendable {
 
     private let lock = NSLock()
     private var commands: [UUID: Entry] = [:]
-    private var lastTitle: [UUID: String] = [:]
 
     /// A title change. Shell integration sets the title to the command line when a command
     /// starts and back to the folder at the prompt.
     func recordTitle(_ paneID: UUID, _ title: String) {
         lock.lock()
         defer { lock.unlock() }
-        lastTitle[paneID] = title
         guard Self.isCommandLike(title) else {
             // Back at the prompt: whatever ran has finished.
             if var entry = commands[paneID] {

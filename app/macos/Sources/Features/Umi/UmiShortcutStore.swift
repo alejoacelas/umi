@@ -110,11 +110,6 @@ struct UmiShortcut: Hashable {
             self.init(key: entry.character, modifiers: modifiers)
             return
         }
-        let aliases = ["enter": "return", "escape": "esc", "backspace": "delete", "arrow_left": "left"]
-        if let alias = aliases[lowered], let entry = Self.named.first(where: { $0.name == alias }) {
-            self.init(key: entry.character, modifiers: modifiers)
-            return
-        }
         // Ghostty's physical key names.
         if let physical = Self.physicalCharacter(lowered) {
             self.init(key: physical, modifiers: modifiers)
@@ -303,15 +298,15 @@ enum UmiGhosttyBindings {
         for (trigger, action) in builtInDefaults() { apply(.bind(trigger, action), source: "Ghostty") }
         if let defaults = UmiTheme.defaultsConfigPath() { load(defaults, source: "Umi", apply: apply) }
         // `config-file` includes load after the files that name them, as in Ghostty.
-        var queue = userConfigFiles.map { ($0, true) }
+        var queue = userConfigFiles
         var index = 0
         var seen = Set<String>()
         while index < queue.count {
-            let (path, optional) = queue[index]
+            let path = queue[index]
             index += 1
             guard seen.insert(path).inserted else { continue }
-            guard FileManager.default.fileExists(atPath: path) else { _ = optional; continue }
-            for include in load(path, source: "your config", apply: apply) { queue.append((include, true)) }
+            guard FileManager.default.fileExists(atPath: path) else { continue }
+            for include in load(path, source: "your config", apply: apply) { queue.append(include) }
         }
         load(UmiShortcutStore.ghosttyFile, source: "Umi shortcuts", apply: apply)
         return order.compactMap { bindings[$0] }
@@ -469,7 +464,8 @@ final class UmiShortcutStore {
     func set(_ id: String, to shortcut: UmiShortcut?) throws -> [String] {
         // Menu shortcuts need ⌘ or ⌃ (anything else is typing); terminal bindings can be any key.
         if let shortcut, !id.hasPrefix("ghostty:") {
-            guard shortcut.isFunctionKey || !shortcut.modifiers.isDisjoint(with: [.command, .control]) else { throw StoreError.needsModifier }
+            guard shortcut.isFunctionKey || !shortcut.modifiers.isDisjoint(with: [.command, .control])
+                    || UmiShortcuts.item(id: id)?.defaultShortcut == shortcut else { throw StoreError.needsModifier }
         }
         var notes: [String] = []
         if id.hasPrefix("ghostty:") {
@@ -534,7 +530,9 @@ final class UmiShortcutStore {
     func reset(_ id: String?) throws {
         if let id {
             if id.hasPrefix("ghostty:") {
-                saved.ghostty.removeValue(forKey: String(id.dropFirst("ghostty:".count)))
+                let action = String(id.dropFirst("ghostty:".count))
+                guard saved.ghostty[action] != nil || Self.isKnownGhosttyAction(action) else { throw StoreError.unknown(id) }
+                saved.ghostty.removeValue(forKey: action)
             } else {
                 guard let item = UmiShortcuts.item(id: id) else { throw StoreError.unknown(id) }
                 // Its default key may have been given to something else meanwhile: setting it back

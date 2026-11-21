@@ -61,6 +61,7 @@ final class UmiFilePanes: ObservableObject {
             guard entry.pane != nil else {
                 if entry.doc.isDirty, !discarded.contains(id) { entry.doc.preserveEdits() }
                 entries[id] = nil
+                focusTargets[id] = nil
                 preserved.remove(id)
                 discarded.remove(id)
                 continue
@@ -202,7 +203,6 @@ final class UmiTabFiles {
     }
 
     var documents: [UmiDocument] { files.map(\.doc) }
-    var isEmpty: Bool { files.isEmpty }
 
     /// The file a command without a path is about: the focused pane's, else the file pane
     /// focused most recently, else the first.
@@ -234,7 +234,7 @@ final class UmiTabFiles {
 
 // MARK: - The view over a file pane
 
-/// Drawn over a file pane's terminal: a header (drag grip, name, preview/source) and the editor.
+/// Drawn over a file pane's terminal: a header (name, preview/source, ⋯, close) and the editor.
 /// It's an AppKit view of its own, as the agent pane's is: SwiftUI drawn directly in the overlay
 /// would sit under the terminal's view.
 struct UmiFilePaneOverlay: View {

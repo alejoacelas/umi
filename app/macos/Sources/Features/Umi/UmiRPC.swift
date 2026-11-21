@@ -219,15 +219,7 @@ enum UmiRPC {
         case "pane.hide":
             // Every pane a query matches (design/cli.md choice 3).
             let panes = try UmiTopology.panes(params.string("pane"), caller: caller)
-            var conditions: [UmiHidden.Condition] = []
-            for text in params.strings("until") ?? [] {
-                if let seconds = UmiQuery.duration(text), seconds > 0 {
-                    conditions.append(UmiHidden.Condition(query: nil, at: Date().addingTimeInterval(seconds)))
-                } else {
-                    _ = try UmiTopology.parseQuery(text)
-                    conditions.append(UmiHidden.Condition(query: text, at: nil))
-                }
-            }
+            let conditions = try UmiArchive.parseConditions(params.strings("until") ?? [])
             for pane in panes {
                 if let location = UmiTopology.locate(pane), !location.inDrawer, !location.tab.isHidden(pane) {
                     let shownCount = location.window.tree(of: location.tab).root?.leaves().count ?? 0
@@ -413,7 +405,10 @@ enum UmiRPC {
             return ["stretches": stretches]
 
         case "notify":
-            let pane = try? UmiTopology.pane(params.string("pane"), caller: caller)
+            // An unknown pane is an error; with none given, the caller's pane or none.
+            let pane = (params.string("pane") ?? "").isEmpty
+                ? try? UmiTopology.pane(nil, caller: caller)
+                : try UmiTopology.pane(params.string("pane"), caller: caller)
             try await UmiNotify.post(title: params.string("title") ?? "", body: params.string("body"), pane: pane)
             return ["ok": true]
 

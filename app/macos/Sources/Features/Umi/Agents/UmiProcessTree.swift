@@ -13,7 +13,6 @@ enum UmiProcessTree {
         let tdev: dev_t
         let tpgid: pid_t
         let zombie: Bool
-        let start: timeval
     }
 
     /// Every process of this user (`everyone`: of every user, for links through root-owned
@@ -34,7 +33,7 @@ enum UmiProcessTree {
         let count = size / stride
         return buffer.prefix(count).map { p in
             Info(pid: p.kp_proc.p_pid, ppid: p.kp_eproc.e_ppid, pgid: p.kp_eproc.e_pgid, tdev: p.kp_eproc.e_tdev, tpgid: p.kp_eproc.e_tpgid,
-                 zombie: p.kp_proc.p_stat == 5 /* SZOMB */, start: p.kp_proc.p_un.__p_starttime)
+                 zombie: p.kp_proc.p_stat == 5 /* SZOMB */)
         }
     }
 

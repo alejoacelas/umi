@@ -36,7 +36,7 @@ enum UmiToast {
         hosting.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(hosting, positioned: .above, relativeTo: nil)
         // The tab's content: the window less the sidebar, when it shows.
-        let sidebar = UmiState.shared.sidebarVisible ? controller.sidebarWidth : 0
+        let sidebar = controller.sidebarVisible ? controller.sidebarWidth : 0
         NSLayoutConstraint.activate([
             hosting.topAnchor.constraint(equalTo: content.safeAreaLayoutGuide.topAnchor, constant: 16),
             hosting.centerXAnchor.constraint(equalTo: content.centerXAnchor, constant: sidebar / 2),

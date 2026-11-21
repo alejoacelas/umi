@@ -145,8 +145,8 @@ enum UmiArchive {
     private static func startWatching() {
         if listener == nil {
             listener = UmiEvents.shared.addListener { name, _ in
-                guard name == "pane.changed" else { return }
-                DispatchQueue.main.async { if !conditions.isEmpty { checkConditions() } }
+                guard name == "pane.changed", !conditions.isEmpty else { return }
+                DispatchQueue.main.async { checkConditions() }
             }
         }
         if timer == nil {

@@ -103,7 +103,6 @@ final class UmiConfig {
     private var stamps: [String: Date?] = [:]
     private var lastCheck = Date.distantPast
 
-    /// Change it in tests.
     var configFile: String { UmiPaths.userConfigFile }
     var commandsDirectory: String { ((configFile as NSString).deletingLastPathComponent as NSString).appendingPathComponent("commands") }
 
@@ -176,7 +175,7 @@ final class UmiConfig {
                     let spec = String(key.dropFirst(4))
                     guard let shortcut = UmiShortcut(spec: spec) else { problem("can't read the keys \"\(spec)\""); continue }
                     let id = shortcut.spec
-                    if keys[id] == nil { keyOrder.append(id) }
+                    if !keyOrder.contains(id) { keyOrder.append(id) }
                     if value.isEmpty || value == "unbind" {
                         keys.removeValue(forKey: id)
                     } else {

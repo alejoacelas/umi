@@ -424,6 +424,9 @@ enum UmiLayout {
     static func move(_ pane: Ghostty.SurfaceView, to destination: PaneDestination, focus: Bool) throws -> UmiTopology.Location {
         guard var source = UmiTopology.locate(pane) else { throw UmiError.notFound("the pane isn't in a window") }
         if case .besidePane(let target, _) = destination, UmiTopology.locate(target)?.inDrawer == true { throw inDrawer }
+        if case .besidePane(let target, _) = destination, target === pane {
+            throw UmiError.badRequest("can't move a pane next to itself")
+        }
         let fromDrawer = source.inDrawer
         if fromDrawer {
             // A drawer pane moves from the right end of the tab the drawer is over: it goes there
@@ -437,9 +440,6 @@ enum UmiLayout {
             // hiding another for it, then leaves.
             UmiHidden.withoutMakingRoom { UmiHidden.quietly { _ = try? UmiHidden.show(pane, focus: false) } }
             source = UmiTopology.locate(pane) ?? source
-        }
-        if case .besidePane(let target, _) = destination, target === pane {
-            throw UmiError.badRequest("can't move a pane next to itself")
         }
         var involved: [TerminalController] = [source.window]
         switch destination {

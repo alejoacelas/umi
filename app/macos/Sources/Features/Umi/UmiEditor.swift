@@ -50,7 +50,12 @@ enum UmiTextFile {
         let fd = open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else { throw UmiError.failed("can't read \(url.path): \(String(cString: strerror(errno)))") }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        let data = (try? handle.readToEnd()) ?? Data()
+        let data: Data
+        do {
+            data = try handle.readToEnd() ?? Data()
+        } catch {
+            throw UmiError.failed("can't read \(url.path): \(error.localizedDescription)")
+        }
         guard data.count <= sizeLimit else {
             throw UmiError.badRequest("\(url.lastPathComponent) is too large for the editor")
         }
@@ -254,6 +259,7 @@ final class UmiDocument: ObservableObject, Identifiable {
             error = nil
             renderRevision &+= 1
             watch()
+            code?.reloadDiffBase()
             UmiEvents.shared.emit("editor.reloaded", ["path": url.path])
         } catch let e as UmiError {
             error = "Reload failed: \(e.message)"
@@ -320,6 +326,7 @@ final class UmiDocument: ObservableObject, Identifiable {
         }
         if loaded.text == savedText {
             // Our own save, or nothing that matters.
+            changedOnDisk = false
             watch()
             return
         }
@@ -666,17 +673,6 @@ enum UmiEditor {
         attempt(50)
     }
 
-    /// True when keyboard focus is in an editor view.
-    static var editorHasFocus: Bool {
-        guard let responder = NSApp.keyWindow?.firstResponder as? NSView else { return false }
-        var view: NSView? = responder
-        while let current = view {
-            if current is UmiEditorContainerView { return true }
-            view = current.superview
-        }
-        return false
-    }
-
     /// ⌘S (and Overwrite): save and say so, as Warp's "File saved." toast does (E-23).
     @discardableResult
     static func saveFromUser(_ doc: UmiDocument) -> Bool {
@@ -720,7 +716,6 @@ enum UmiEditor {
             }
             try doc.write(to: target)
             shown.reload()
-            shown.code?.reloadDiffBase()
             UmiEvents.shared.emit("editor.saved", ["path": shown.url.path, "from": doc.url.path])
             UmiFilePanes.closePane(pane, discarding: true)
             try UmiFilePanes.open(shown.url, mode: nil, near: other, focus: true)
@@ -728,7 +723,7 @@ enum UmiEditor {
             return
         }
         try doc.write(to: target)
-        let saved = try UmiDocument(url: target, mode: doc.hasPreview ? doc.mode : nil)
+        let saved = try UmiDocument(url: target.resolvingSymlinksInPath(), mode: doc.hasPreview ? doc.mode : nil)
         UmiFilePanes.shared.replaceDocument(of: pane, with: saved)
         UmiEvents.shared.emit("editor.saved", ["path": saved.url.path, "from": doc.url.path])
         UmiToast.show("File saved.", near: pane)
@@ -897,9 +892,6 @@ final class UmiEditorContainerView: NSView {
             window.makeFirstResponder(focusTarget)
         }
     }
-
-    @objc func saveDocument(_ sender: Any?) { document.map { UmiEditor.saveFromUser($0) } }
-    @objc func toggleMarkdownPreview(_ sender: Any?) { document?.toggleMode() }
 
     // The Find menu's items (⌘F, ⌘G, ⇧⌘G, ⌘E) reach the editor's own find instead of the
     // terminal underneath the file pane (whose window controller handles them otherwise).
@@ -1423,7 +1415,7 @@ struct UmiMarkdownPreview: NSViewRepresentable {
             decisionHandler(.cancel)
             if url.isFileURL {
                 let target = URL(fileURLWithPath: url.path)
-                if let group, (try? UmiTextFile.checkOpenable(target)) != nil, UmiEditor.handles(target) || UmiEditor.isMarkdown(target) {
+                if let group, (try? UmiTextFile.checkOpenable(target)) != nil, UmiEditor.handles(target) {
                     try? group.open(target, mode: nil)
                 } else {
                     NSWorkspace.shared.open(target)

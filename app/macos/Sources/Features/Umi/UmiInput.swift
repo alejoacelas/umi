@@ -25,9 +25,6 @@ enum UmiInput {
         guard let surface = pane.surfaceModel else { throw UmiError.failed("the pane has no terminal") }
         let parsed = try keys.map(parseKey)
         for (key, mods, text, codepoint) in parsed {
-            let translation = surface.keyTranslationMods(mods)
-            let consumed = mods.subtracting(translation.subtracting(.shift))
-            _ = consumed
             surface.sendKeyEvent(.init(key: key, action: .press, text: text, mods: mods,
                                        consumedMods: text == nil ? [] : mods.intersection(.shift),
                                        unshiftedCodepoint: codepoint))

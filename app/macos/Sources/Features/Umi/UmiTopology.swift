@@ -37,8 +37,6 @@ enum UmiTopology {
         return windows.last
     }
 
-    static var currentTab: UmiTab? { currentWindow?.selectedTab }
-
     static var currentPane: Ghostty.SurfaceView? {
         guard let window = currentWindow else { return nil }
         if let focused = window.focusedSurface, window.surfaceTree.contains(focused) { return focused }

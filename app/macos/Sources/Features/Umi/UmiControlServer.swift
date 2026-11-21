@@ -11,14 +11,13 @@ struct UmiError: Error {
     static func notFound(_ message: String) -> UmiError { .init(code: "not_found", message: message) }
     static func ambiguous(_ message: String) -> UmiError { .init(code: "ambiguous", message: message) }
     static func failed(_ message: String) -> UmiError { .init(code: "failed", message: message) }
-    static func timeout(_ message: String) -> UmiError { .init(code: "timeout", message: message) }
 }
 
 /// The control socket: JSON lines over a Unix socket in the per-user temporary directory.
 ///
 /// Requests are `{"id", "method", "params", "caller"}`; responses are `{"id", "result"}` or
 /// `{"id", "error": {"code", "message"}}`. After `events.subscribe` a connection also gets
-/// `{"event", "data", "ts"}` lines.
+/// `{"event", "at", "cause", "data", "ts"}` lines.
 ///
 /// Sockets are non-blocking and every connection has its own outgoing buffer, so a client
 /// that stops reading can never stall the app: it is disconnected once its buffer passes a
@@ -323,8 +322,6 @@ final class UmiConnection: @unchecked Sendable {
         outBuffer.removeAll()
         server?.remove(self)
     }
-
-    var isClosed: Bool { queue.sync { closed } }
 }
 
 /// Request parameters with typed accessors.

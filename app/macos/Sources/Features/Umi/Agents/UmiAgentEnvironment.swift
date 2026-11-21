@@ -20,11 +20,6 @@ enum UmiAgentEnvironment {
         }
     }
 
-    /// Warm the cache (at launch), so the first agent starts quickly.
-    static func warm() {
-        DispatchQueue.global(qos: .utility).async { _ = login() }
-    }
-
     static var userShell: String {
         if let entry = getpwuid(getuid()), let raw = entry.pointee.pw_shell {
             let candidate = String(cString: raw)

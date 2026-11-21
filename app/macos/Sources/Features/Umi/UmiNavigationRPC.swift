@@ -16,7 +16,8 @@ enum UmiNavigationRPC {
         switch method {
         case "tab.next", "tab.prev":
             let window = try UmiTopology.window(params.string("window"), caller: caller)
-            guard window.tabs.count > 1 else { throw UmiError.notFound("the window has only one tab") }
+            let others = window.activeTabs.count
+            guard window.selectedTab.archived ? others > 0 : others > 1 else { throw UmiError.notFound("the window has only one tab") }
             guard let tab = UmiNavigation.selectAdjacentTab(method == "tab.next" ? 1 : -1, in: window) else {
                 throw UmiError.failed("couldn't change tabs")
             }

@@ -174,7 +174,7 @@ final class UmiTabHints: ObservableObject {
 
     func install() {
         guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
             MainActor.assumeIsolated { UmiTabHints.shared.handle(event) }
             return event
         }
@@ -197,9 +197,6 @@ final class UmiTabHints: ObservableObject {
             guard command != commandDown else { return }
             commandDown = command
             set(held: command)
-        case .keyDown:
-            // A shortcut pressed while ⌘ is down: Warp keeps the hints, so do we; nothing to do.
-            break
         default:
             break
         }

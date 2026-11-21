@@ -178,7 +178,7 @@ enum UmiDrawer {
     /// `drawer toggle [PANE…]`: show when closed or showing another pane, else put it away.
     static func toggle(_ panes: [Ghostty.SurfaceView]?, in window: TerminalController) throws {
         let drawer = window.drawer
-        guard let panes, let first = panes.first else {
+        guard let panes, !panes.isEmpty else {
             if drawer.isOpen { close(window) } else { try open(window) }
             return
         }
@@ -186,7 +186,6 @@ enum UmiDrawer {
             close(window)
         } else {
             try show(panes, in: window)
-            _ = first
         }
     }
 
@@ -272,14 +271,19 @@ enum UmiDrawer {
         return CGSize(width: area.width, height: max((area.height * heightShare).rounded() - headerHeight - 1, 40))
     }
 
+    /// The header above the drawer's terminal (and its border line), in `content`'s coordinates.
+    private static func headerRect(above frame: NSRect, in content: NSView) -> NSRect {
+        content.isFlipped
+            ? NSRect(x: frame.minX, y: frame.minY - headerHeight - 1, width: frame.width, height: headerHeight + 1)
+            : NSRect(x: frame.minX, y: frame.maxY, width: frame.width, height: headerHeight + 1)
+    }
+
     /// The open drawer as it looks now (its header and its terminal), for it to go down as a picture.
     private static func picture(of window: TerminalController) -> NSImage? {
         guard let pane = window.drawer.showing, pane.window === window.window,
               let content = window.window?.contentView else { return nil }
         let frame = pane.convert(pane.bounds, to: content)
-        let header = content.isFlipped
-            ? NSRect(x: frame.minX, y: frame.minY - headerHeight - 1, width: frame.width, height: headerHeight + 1)
-            : NSRect(x: frame.minX, y: frame.maxY, width: frame.width, height: headerHeight + 1)
+        let header = headerRect(above: frame, in: content)
         let panel = frame.union(header)
         // Only what is on screen (a drawer still rising is partly below the edge): its top part.
         let visible = panel.intersection(content.bounds)
@@ -687,10 +691,7 @@ enum UmiDrawer {
         let drawer = controller.drawer
         if let pane = drawer.showing, pane.window === controller.window, !pane.isHiddenOrHasHiddenAncestor {
             let frame = pane.convert(pane.bounds, to: content)
-            // The header above the terminal (and its border line).
-            let header = content.isFlipped
-                ? NSRect(x: frame.minX, y: frame.minY - headerHeight - 1, width: frame.width, height: headerHeight + 1)
-                : NSRect(x: frame.minX, y: frame.maxY, width: frame.width, height: headerHeight + 1)
+            let header = headerRect(above: frame, in: content)
             cached.draw(in: header, from: header, operation: .copy, fraction: 1)
             if !UmiFilePanes.shared.isFilePane(pane.id), !UmiWebPanes.shared.isWebPane(pane.id) {
                 if let image = pane.terminalImage() { image.draw(in: frame) } else { cached.draw(in: frame, from: frame, operation: .copy, fraction: 1) }

@@ -300,9 +300,12 @@ final class UmiAttributes {
         let old = tab.attributes[key]
         guard old != value else { return }
         if let value, Self.singleHolder.contains(key) {
-            for other in UmiTopology.windows.flatMap(\.tabs) where other !== tab && other.attributes[key] == value {
-                other.attributes.removeValue(forKey: key)
-                emit("tab.changed", ["tab": other.idString, "key": key, "old": value, "new": NSNull()])
+            for holder in UmiTopology.windows {
+                for other in holder.tabs where other !== tab && other.attributes[key] == value {
+                    other.attributes.removeValue(forKey: key)
+                    emit("tab.changed", ["tab": other.idString, "window": holder.umiIDString, "key": key,
+                                         "old": value, "new": NSNull()])
+                }
             }
         }
         if let value { tab.attributes[key] = value } else { tab.attributes.removeValue(forKey: key) }

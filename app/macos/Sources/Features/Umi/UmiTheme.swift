@@ -18,7 +18,6 @@ enum UmiTheme {
     static var textSecondary: Color { ink.opacity(isLight ? 0.64 : 0.60) }
     static var textTertiary: Color { ink.opacity(isLight ? 0.50 : 0.42) }
 
-    static var chromeFill: Color { ink.opacity(0.035) }
     /// The sidebar's fill: ink at 5% over the window background, as Warp paints its vertical
     /// tabs panel (`fg_overlay_1`; #121212 over the default Dark theme's #050505).
     static var sidebarFill: Color { ink.opacity(0.05) }
@@ -96,7 +95,6 @@ enum UmiTheme {
 
     static let uiFont = Font.system(size: 12, weight: .medium)
     static let uiFontSmall = Font.system(size: 11, weight: .regular)
-    static let monoSmall = Font.system(size: 11, weight: .regular, design: .monospaced)
 
     // MARK: Default terminal configuration
 

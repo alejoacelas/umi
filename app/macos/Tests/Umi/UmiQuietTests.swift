@@ -112,16 +112,6 @@ struct UmiQuietTests {
                 == ["--thinking", "disabled", "--channels", "a", "b", "--verbose"])
     }
 
-    @Test func codexFlags() {
-        let flags = UmiTypedCommand.codex(["--yolo", "-m", "gpt-5", "-c", "model_reasoning_effort=\"high\"", "-p", "fast",
-                                           "resume", "--last", "do it"])
-        #expect(flags.fullAccess)
-        #expect(flags.model == "gpt-5")
-        #expect(flags.effort == "high")
-        #expect(flags.profile == "fast")
-        #expect(flags.args.isEmpty)
-    }
-
     @Test func aRestartResumesTheConversationWithTheTypedFlags() {
         #expect(UmiTypedCommand.restartCommand(program: "claude", args: ["--dangerously-skip-permissions", "--model", "opus",
                                                                         "--resume", "old", "--add-dir", "/a", "--verbose", "fix it"],

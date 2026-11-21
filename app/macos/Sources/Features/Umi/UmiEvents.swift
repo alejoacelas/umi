@@ -49,10 +49,6 @@ final class UmiEvents {
         return id
     }
 
-    func removeListener(_ id: UUID) {
-        listeners.removeValue(forKey: id)
-    }
-
     /// Events that aren't changes, kept out of the activity log: the update notice's countdown ticks.
     static let unlogged: Set<String> = ["update.countdown"]
 

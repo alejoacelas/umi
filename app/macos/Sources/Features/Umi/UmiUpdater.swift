@@ -9,7 +9,7 @@ import UserNotifications
 ///
 /// - The feed is a small JSON file (`appcast.json`) published with each release. It names
 ///   the version, the zip's URL, its SHA-256 and an Ed25519 signature of the zip.
-/// - How an update arrives is the config's `auto-update` (DECISIONS.md §78):
+/// - How an update arrives is the config's `auto-update`:
 ///   - `install` (the default): a check that finds a newer version downloads and verifies it
 ///     without asking, then installs it at the first quiet moment (`UmiQuiet`): a notice in
 ///     the sidebar counts down 30 seconds (Not now, Install now), then Umi quits, installs and
@@ -18,8 +18,8 @@ import UserNotifications
 ///   - `check`: a check that finds a newer version asks first, with a notice in the sidebar
 ///     (Download, Later, Skip), never a dialog; nothing is downloaded until the answer is yes.
 ///     "Check for Updates…" and `umi update` are a yes. The answers are kept in the state
-///     directory (`update.json`), so a restart neither asks again early nor forgets a yes
-///     (§18). It installs when the app quits, or when the user asks.
+///     directory (`update.json`), so a restart neither asks again early nor forgets a yes.
+///     It installs when the app quits, or when the user asks.
 ///   - `download`: downloads without asking; installs when the app quits, or when asked.
 ///   - `off`: checks only when asked.
 /// - A download is verified (signature, hash, bundle id, version, code signature) and
@@ -38,7 +38,6 @@ final class UmiUpdater: ObservableObject {
         let url: URL
         let sha256: String
         let signature: Data
-        let size: Int?
         let notes: String?
     }
 
@@ -101,7 +100,6 @@ final class UmiUpdater: ObservableObject {
 
     /// A staged, verified update waiting to install.
     private(set) var staged: (version: String, app: URL)?
-    private var installOnQuit = true
     private var relaunchAfterInstall = false
     /// Relaunch without coming to the front (the app wasn't in front when it quit to install).
     private var relaunchInBackground = false
@@ -316,7 +314,7 @@ final class UmiUpdater: ObservableObject {
             // The user already said yes to this version (before a restart, or a download
             // that failed): carry on without asking again.
             question = nil
-            guard UmiVersion.isRelease else { return }
+            guard UmiVersion.isRelease, rejected != release.sha256 else { return }
             // Exactly that release: a yes to it is no yes to whatever the feed says later. An
             // answer given before this runs (Later, Skip) wins over the remembered yes.
             Task { @MainActor in
@@ -325,7 +323,7 @@ final class UmiUpdater: ObservableObject {
             }
             return
         }
-        if answers.skipped == version || (answers.laterUntil.map { $0 > Date() } ?? false) || heldBack(version) != nil {
+        if answers.skipped == version || (answers.laterUntil.map { $0 > Date() } ?? false) {
             question = nil
             return
         }
@@ -519,7 +517,7 @@ final class UmiUpdater: ObservableObject {
         // dotted numbers are accepted.
         guard Self.isValidVersion(version) else { throw UmiError.failed("the update feed's version isn't valid") }
         return Release(version: version, url: url, sha256: sha.lowercased(), signature: signature,
-                       size: json["size"] as? Int, notes: json["notes"] as? String)
+                       notes: json["notes"] as? String)
     }
 
     func check(userInitiated: Bool) async throws -> [String: Any] {
@@ -549,7 +547,6 @@ final class UmiUpdater: ObservableObject {
         var out = status()
         out["latest"] = release.version
         out["update_available"] = available
-        out["ready"] = staged?.version ?? ""
         return out
     }
 
@@ -769,7 +766,7 @@ final class UmiUpdater: ObservableObject {
               let url = (json["url"] as? String).flatMap(URL.init(string:)),
               let sha = json["sha256"] as? String,
               let signature = (json["signature"] as? String).flatMap({ Data(base64Encoded: $0) }) else { return nil }
-        return Release(version: version, url: url, sha256: sha, signature: signature, size: nil, notes: nil)
+        return Release(version: version, url: url, sha256: sha, signature: signature, notes: nil)
     }
 
     // MARK: Rollback (`update --rollback`)
@@ -1098,7 +1095,7 @@ final class UmiUpdater: ObservableObject {
 
     /// Called as the app quits: hand a staged update to the installer helper.
     func installOnQuitIfStaged() {
-        guard installOnQuit, let staged else { return }
+        guard let staged else { return }
         // An isolated instance never replaces the user's installed app.
         guard installTargetProblem == nil else { return }
         // A quit while this version's own zip is still being fetched (for a rollback) leaves the
@@ -1332,7 +1329,6 @@ final class UmiUpdater: ObservableObject {
     nonisolated static func spawnDetached(_ tool: String, _ args: [String]) {
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
         posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)

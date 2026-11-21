@@ -15,7 +15,6 @@ enum UmiTypedCommand {
         var effort: String?
         var permissionMode: String?
         var fullAccess = false
-        var profile: String?
         var args: [String] = []
     }
 
@@ -58,10 +57,6 @@ enum UmiTypedCommand {
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
         return Int32(info.pbi_ppid)
-    }
-
-    static func flags(_ args: [String], kind: UmiAgentKind) -> Flags {
-        kind == .claude ? claude(args) : codex(args)
     }
 
     /// A one-off run (`claude -p`), not an interface in the pane: its hooks don't make the pane's
@@ -226,45 +221,6 @@ enum UmiTypedCommand {
                     flags.args.append(args[i])
                 }
                 // Anything else is the first prompt: not run again.
-            }
-            i += 1
-        }
-        return flags
-    }
-
-    /// Codex's interface flags that mean something to Umi's own Codex server (the session runs
-    /// there, its interface attaches to it): the model, effort, approvals and full access, the
-    /// profile. Others (`-c` overrides, `--cd`, the prompt) stay with that one interface.
-    static func codex(_ args: [String]) -> Flags {
-        var flags = Flags()
-        var i = 0
-        while i < args.count {
-            var arg = args[i]
-            var inline: String?
-            if arg.hasPrefix("--"), let eq = arg.firstIndex(of: "=") {
-                inline = String(arg[arg.index(after: eq)...])
-                arg = String(arg[..<eq])
-            }
-            func value() -> String? {
-                if let inline { return inline }
-                guard i + 1 < args.count else { return nil }
-                i += 1
-                return args[i]
-            }
-            if args[i] == "--" { break }
-            switch arg {
-            case "-m", "--model": flags.model = value()
-            case "-a", "--ask-for-approval": flags.permissionMode = value()
-            case "-p", "--profile": flags.profile = value()
-            case "--dangerously-bypass-approvals-and-sandbox", "--yolo": flags.fullAccess = true
-            case "-c", "--config":
-                if let pair = value(), pair.hasPrefix("model_reasoning_effort=") {
-                    flags.effort = String(pair.dropFirst("model_reasoning_effort=".count)).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-                }
-            case "-s", "--sandbox", "-C", "--cd", "-i", "--image", "--add-dir", "--remote", "--local-provider":
-                _ = value()
-            default:
-                break
             }
             i += 1
         }

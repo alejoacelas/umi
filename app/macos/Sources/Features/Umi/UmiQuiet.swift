@@ -175,9 +175,10 @@ enum UmiQuiet {
         }
         for controller in TerminalController.all where !controller.isClosed {
             for tab in controller.tabs {
-                for pane in tab.panes { add(pane, tab: tab.title) }
+                for pane in tab.panes + tab.hidden { add(pane, tab: tab.title) }
                 for doc in tab.editor.documents where doc.isDirty { snapshot.unsaved.append(doc.name) }
             }
+            for pane in controller.drawer.panes { add(pane, tab: "(drawer)") }
             if controller.palette.isPresented { snapshot.dialogs.append("the command palette is open") }
         }
         if let delegate = NSApp.delegate as? AppDelegate, delegate.quickControllerInitialized {

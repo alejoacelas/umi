@@ -341,8 +341,7 @@ enum UmiQuery {
         if let seconds = duration(text) { return now.addingTimeInterval(-seconds) }
         if let date = isoTime(text) { return date }
         let word = text.lowercased()
-        guard let match = word.range(of: #"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$"#, options: .regularExpression) else { return nil }
-        _ = match
+        guard word.range(of: #"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$"#, options: .regularExpression) != nil else { return nil }
         let meridiem = word.hasSuffix("am") ? "am" : word.hasSuffix("pm") ? "pm" : nil
         let digits = meridiem != nil ? String(word.dropLast(2)) : word
         let pieces: [Int?] = digits.split(separator: ":").map { piece in Int(piece.trimmingCharacters(in: .whitespaces)) }
@@ -429,7 +428,6 @@ enum UmiQuery {
         private var listMembers: [String: Set<UUID>] = [:]
         private var listOrder: [String: [Item]] = [:]
         private var evaluating: Set<String> = []
-        private(set) var unknownLists: Set<String> = []
 
         init(items: [Item], now: Date = Date(), lists: @escaping (String) -> Query?) {
             self.items = items
@@ -500,10 +498,7 @@ enum UmiQuery {
         /// A list's panes in its own order (empty for an unknown list, or one that names itself).
         private func ordered(_ name: String) -> [Item] {
             if let known = listOrder[name] { return known }
-            guard !evaluating.contains(name), let query = lists(name) else {
-                if lists(name) == nil { unknownLists.insert(name) }
-                return []
-            }
+            guard !evaluating.contains(name), let query = lists(name) else { return [] }
             evaluating.insert(name)
             let found = run(query)
             evaluating.remove(name)

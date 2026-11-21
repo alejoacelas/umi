@@ -84,10 +84,6 @@ final class UmiGlobalSearchModel: ObservableObject {
         return model
     }
 
-    static func existing(for controller: TerminalController) -> UmiGlobalSearchModel? {
-        models[ObjectIdentifier(controller)]
-    }
-
     // MARK: Where to search
 
     var focusedPane: Ghostty.SurfaceView? {
@@ -123,6 +119,7 @@ final class UmiGlobalSearchModel: ObservableObject {
     /// Run the search now (the toggles, and the debounced query).
     func search() {
         debounceWork?.cancel()
+        debounceWork = nil
         if let running = process, running.isRunning { running.terminate() }
         process = nil
         generation &+= 1

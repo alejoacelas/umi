@@ -382,11 +382,9 @@ enum UmiComments {
                              attributes: attributes)
     }
 
-    /// Anchors: `{==text==}` followed by comments, and comments on their own. Suggestions
-    /// (`{++ ++}`, `{-- --}`, `{~~ ~> ~~}`) followed by comments anchor them too.
-    static func scanAnchors(_ body: String) -> [Anchor] { scan(Array(body.utf16)).anchors }
-
-    /// The anchors and the code ranges of a body's UTF-16 code units.
+    /// The anchors and the code ranges of a body's UTF-16 code units. Anchors: `{==text==}` followed
+    /// by comments, and comments on their own. Suggestions (`{++ ++}`, `{-- --}`, `{~~ ~> ~~}`)
+    /// followed by comments anchor them too.
     static func scan(_ units: [UInt16]) -> (anchors: [Anchor], code: [NSRange]) {
         let ns = NSString(characters: units, length: units.count)
         let code = codeRanges(units)
@@ -554,7 +552,7 @@ enum UmiComments {
         }
         guard end > start || range.length == 0 else { throw Failure("select some text to comment on") }
         // In code the markup would be literal: a code span is taken whole; code blocks are refused.
-        for block in codeRanges(doc.body) {
+        for block in doc.code {
             let touches = NSLocationInRange(start, block) || (end > start && NSLocationInRange(end - 1, block))
                 || (start <= block.location && end >= NSMaxRange(block))
             guard touches else { continue }
@@ -725,7 +723,6 @@ enum UmiComments {
         var keyOrder: [String: [String]] = [:]
         /// Other top-level sections (`suggestions:` …), verbatim.
         var otherSections: [String] = []
-        /// The text before `---` ended with a newline we must keep exactly.
         var isEmpty: Bool { order.isEmpty && otherSections.isEmpty }
 
         mutating func set(_ id: String, _ fields: [String: String]) {

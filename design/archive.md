@@ -25,7 +25,7 @@ archive. Approved by Alejo on 2026-11-09.
   group and unpins it; unarchiving doesn't restore either.
 - Selecting an archived tab (a click in the open archive, `tab focus`, ⌃⌘J landing on one of its
   panes) shows it without unarchiving it; it stays listed in the archive.
-- In a ⌃⌘↑/↓ tab move, the Archived row is the last place above the first tab: landing there
+- In a ⌃⇧↑/↓ tab move, the Archived row is the last place above the first tab: landing there
   archives the tab.
 
 ## How it fits the primitives

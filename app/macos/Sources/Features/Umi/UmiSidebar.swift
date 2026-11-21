@@ -254,16 +254,16 @@ struct UmiOverlayScrollbar: View {
 /// running or last ran, an agent typed into it), else its folder's path.
 @MainActor
 struct UmiSidebarRowModel {
-    enum Icon: String { case claude, codex, pin, terminal }
+    enum Icon: String { case claude, codex, terminal }
 
     enum Detail {
-        case session(title: String, status: String)
+        case session(title: String)
         case command(text: String, running: Bool)
         case folder(String)
 
         var text: String {
             switch self {
-            case .session(let title, _): return title
+            case .session(let title): return title
             case .command(let text, _): return text
             case .folder(let path): return path
             }
@@ -317,7 +317,7 @@ struct UmiSidebarRowModel {
             // The user's `sidebar.line2` template.
             detail = .folder(line)
         } else if let agent {
-            detail = .session(title: agent.title.isEmpty ? Self.describe(agent.status.rawValue) : agent.title, status: agent.status.rawValue)
+            detail = .session(title: agent.title.isEmpty ? Self.describe(agent.status.rawValue) : agent.title)
         } else if let command {
             detail = .command(text: command.text, running: command.running)
         } else {
@@ -503,13 +503,15 @@ struct UmiSidebarTabRow: View {
                     }
 
                     if hovering && renaming == nil {
-                        Button { pinToggle() } label: {
-                            Image(systemName: tab.pinned ? "pin.slash" : "pin")
-                                .font(.system(size: 9, weight: .semibold)).frame(width: 14, height: 14)
+                        if !tab.archived {
+                            Button { pinToggle() } label: {
+                                Image(systemName: tab.pinned ? "pin.slash" : "pin")
+                                    .font(.system(size: 9, weight: .semibold)).frame(width: 14, height: 14)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(UmiTheme.rowSubtitle)
+                            .help(tab.pinned ? "Unpin tab" : "Pin tab")
                         }
-                        .buttonStyle(.plain)
-                        .foregroundColor(UmiTheme.rowSubtitle)
-                        .help(tab.pinned ? "Unpin tab" : "Pin tab")
                         Button { controller.closeTab(tab, sender: nil) } label: {
                             Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14)
                         }
@@ -625,7 +627,7 @@ struct UmiSidebarTabRow: View {
                     .foregroundColor(UmiTheme.textSecondary)
                     .frame(width: 12, height: 12)
                     .help(row.accessibilityValue)
-            case .pin, .terminal:
+            case .terminal:
                 Image(systemName: "terminal")
                     .font(.system(size: 11, weight: .regular))
                     .frame(width: 16, height: 16)
@@ -649,7 +651,7 @@ struct UmiSidebarTabRow: View {
     @ViewBuilder
     private func detail(_ row: UmiSidebarRowModel) -> some View {
         switch row.detail {
-        case .session(let title, _):
+        case .session(let title):
             Text(title)
                 .font(.system(size: 10))
                 .foregroundColor(UmiTheme.rowSubtitle)
@@ -709,6 +711,7 @@ struct UmiSidebarTabRow: View {
     }
 
     private func pinToggle() {
+        guard !tab.archived else { return }
         let pin = !tab.pinned
         UmiLayout.undoable(pin ? "Pin Tab" : "Unpin Tab", windows: [controller]) {
             controller.setPinned(tab, pin)

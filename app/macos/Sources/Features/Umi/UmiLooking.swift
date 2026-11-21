@@ -35,9 +35,6 @@ enum UmiLooking {
         return pane(of: controller)
     }
 
-    /// The window the user is looking at: the key window of the active app.
-    static var activeWindow: TerminalController? { appIsActive ? keyController : nil }
-
     /// Something about `controller`'s focus changed: if its focused pane is being looked at,
     /// say so.
     static func focusChanged(in controller: TerminalController) {

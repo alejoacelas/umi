@@ -26,7 +26,6 @@ enum UmiSessionLinks {
         var agent: Agent
         var prompt: String?
         var session: String?
-        var from: String?
         var sshHost: String?
         var sshUser: String?
     }
@@ -82,7 +81,7 @@ enum UmiSessionLinks {
         if let session, !word(session, hostChars, max: 128) { throw refused("the task's session id isn't valid") }
         var task = Task(id: id, title: title, folder: folder.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
                         remote: text("remote"), branch: text("branch"), place: place, agent: agent,
-                        prompt: prompt?.isEmpty == false ? prompt : nil, session: session, from: text("from"))
+                        prompt: prompt?.isEmpty == false ? prompt : nil, session: session)
         if let server = json["server"] as? [String: Any] {
             if let host = server["ssh"] as? String, word(host, hostChars, max: 253) { task.sshHost = host }
             if let user = server["user"] as? String, word(user, hostChars, max: 64) { task.sshUser = user }

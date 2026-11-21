@@ -56,8 +56,6 @@ final class UmiAttention: ObservableObject {
         var changedAt: Date
         /// When the pane was last looked at (`seen_at`).
         var seenAt: Date?
-        /// When its turn last ended, or it last asked for input.
-        var lastStop: Date?
 
         // What brings it back after a relaunch (UmiAgentHooks.restart).
         /// The agent's process (from its hook), and the folder it runs in.
@@ -152,6 +150,11 @@ final class UmiAttention: ObservableObject {
         let now = Date()
         placeChanged[id] = now
         shown[id] = isShown ? now : nil
+        if placeChanged.count > 512 {
+            let open = Set(UmiTopology.allSurfaces.map(\.id))
+            placeChanged = placeChanged.filter { open.contains($0.key) || UmiReopen.shared.holds($0.key) }
+            shown = shown.filter { open.contains($0.key) || UmiReopen.shared.holds($0.key) }
+        }
         changed()
     }
 
@@ -199,6 +202,7 @@ final class UmiAttention: ObservableObject {
                 panes.removeValue(forKey: id)
                 emitChanges(id, old: old.attributes, new: [:])
                 changed()
+                if old.restartRecord != nil { UmiState.shared.layoutDidChange(persistOnly: true) }
             }
             return
         }
@@ -285,7 +289,6 @@ final class UmiAttention: ObservableObject {
             agent.seenAt = Date()
         default: throw UmiError.badRequest("mark is none, finished or needs_you")
         }
-        if agent.status != .working { agent.lastStop = at }
         // The pane being looked at sees it at once, as with its hooks.
         if UmiLooking.lookedAt?.id == id { agent.seenAt = Date() }
         panes[id] = agent

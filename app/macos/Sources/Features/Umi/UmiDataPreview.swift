@@ -25,7 +25,7 @@ enum UmiDataPreview {
             return style + "<div class=\"json\">" + render(value, key: nil, depth: 0) + "</div>"
         } catch {
             let message = (error as? JSONParser.Failure)?.message ?? "invalid JSON"
-            return style + "<p class=\"err\">Can't show a tree: \(UmiMarkdown.escape(message)). Switch to Source to fix it.</p>"
+            return style + "<p class=\"err\">Can't show a tree: \(UmiMarkdown.escape(message)). Switch to Raw to fix it.</p>"
         }
     }
 
@@ -134,8 +134,15 @@ enum UmiDataPreview {
                     case "n": out.append("\n"); case "t": out.append("\t"); case "r": out.append("\r")
                     case "b": out.append("\u{8}"); case "f": out.append("\u{c}")
                     case "u":
-                        guard i + 4 <= s.count, let code = UInt32(String(String.UnicodeScalarView(s[i..<i + 4])), radix: 16) else { throw fail("bad \\u escape") }
-                        i += 4; if let u = Unicode.Scalar(code) { out.append(u) }
+                        guard i + 4 <= s.count, var code = UInt32(String(String.UnicodeScalarView(s[i..<i + 4])), radix: 16) else { throw fail("bad \\u escape") }
+                        i += 4
+                        // A surrogate pair (`😀`) is one character.
+                        if (0xD800...0xDBFF).contains(code), i + 6 <= s.count, s[i] == "\\", s[i + 1] == "u",
+                           let low = UInt32(String(String.UnicodeScalarView(s[i + 2..<i + 6])), radix: 16), (0xDC00...0xDFFF).contains(low) {
+                            code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                            i += 6
+                        }
+                        if let u = Unicode.Scalar(code) { out.append(u) }
                     default: out.append(e)
                     }
                 } else { out.append(c) }
