@@ -3,13 +3,16 @@
 - `node status.test.js`: the reply status-line parser (`web/status.js`).
 - `node comments.test.js`: the comment parser and writer (`web/comments.js`), Umi's cases.
 - The rest drive a running UmiNext started with `UMI_NEXT_DEBUG=1` (they talk to
-  `<state>/debug.sock` through the same protocol as `umi-next-ui-debug`), on a Mac where it may take
-  the screen (mac-air-2, under `lockf -k ~/umi-screen.lock`):
+  `<state>/debug.sock` through the same protocol as `umi-next-ui-debug`, with `debugsock.py`'s
+  client: every command times out after 30 s instead of hanging the run), on a Mac where it may take
+  the screen (mac-air-2, under `lockf -k ~/umi-screen.lock`). Run them from this folder's copy, so
+  they find `debugsock.py` and `front.py` next to them:
   - `keylat.py STATE_DIR N`: key-to-screen latency through the app's own key path.
   - `sampler.py PANE SECONDS OUT.json`: the longest time a pane's screen went without changing.
   - `reload_test.py COLOR`: edits `web/style.css` and times until the page shows the colour (paths
     inside are mac-air-2's test worktree; adjust).
-  - `hyper.swift` (`swiftc -O hyper.swift -o hyper; ./hyper tap|space|withkey`), `key.swift`
+  - `hyper.swift` (`swiftc -O hyper.swift -o hyper; ./hyper tap|space|withkey|d`: the modifiers
+    alone, Hyper+Space, Hyper+U, Hyper+D), `key.swift`
     (`./key CODE cmd shift …`) and `click.swift`: real modifier, key and mouse events through the
     HID tap (needs Accessibility for the caller).
   - `services_test.py STATE_DIR SCRATCH`: every `web/fs.js` call, from the page through the bridge.
@@ -19,10 +22,12 @@
     global search and Search tabs (track b), by keys through the debug socket; runs off screen.
     It uses the clipboard and moves one scratch file to the Trash.
     BIG_REPO adds streaming, cancel, the 20,000-line cap and quick open's speed on a large repository.
+    At exit it closes the tabs and panes it opened and ends their sessions.
   - `shortcuts_test.py STATE_DIR KEY HYPER [--debug-events]`: today's shortcuts by real key events,
     keys outside the table reaching the terminal, and a table entry added live working without a
     rebuild. It runs `click` (built from `click.swift`) from KEY's folder. `--debug-events` sends
-    the keys through the debug socket instead of the HID tap.
+    the keys through the debug socket instead of the HID tap. At exit it closes the tabs and panes
+    it opened and ends their sessions.
   - `cli_test.py APP [SCRATCH] [NOTIFY_LOG]`: every `umi-next` command against a running test copy
     (APP is its `UmiNext.app`). Types nothing, so it runs with `UMI_NEXT_OFFSCREEN=1`; start the app
     with `UMI_NEXT_FOCUS_ASSUME_ACTIVE=1` too for the focus-log checks, and with
@@ -43,5 +48,13 @@
   Needs `claude` on PATH; stops the copy and moves its state to the Trash at the end.
 - `docket_test.sh` (mac-air-2, `lockf -k ~/umi-screen.lock zsh docket_test.sh`): snooze to docket end to
   end with a real Claude session, a stub `~/.config/umi-next/docket-hook`, and task links served from
-  `http://127.0.0.1:18765/umi/` (allowed only through `UMI_NEXT_DEBUG_TASK_ORIGIN` in debug mode). Its
-  helpers (`docket_helpers.sh`, copied there as `d.sh`, plus `claude-tok`, `click`, `hyper`) live in mac-air-2's `~/umi-next-tools`.
+  `http://127.0.0.1:18765/umi/` (allowed only through `UMI_NEXT_DEBUG_TASK_ORIGIN` in debug mode). It
+  writes everything to `/tmp/dock-test.log` and fails (exit 1, `FAIL …` on stderr) when Hyper+D leaves
+  no docket mark (in the page and in `docket.json`), the hook never gets its input, the failing hook
+  leaves no `failed` state, or the task link doesn't focus the docketed session. It serves
+  `/tmp/umitask` on port 18765 itself unless something already answers there. It doesn't set up:
+  - in mac-air-2's `~/umi-next-tools`: `d.sh` (this folder's `docket_helpers.sh`), `claude-tok`,
+    `click` and `hyper` (built from `click.swift` and `hyper.swift`);
+  - the stub hook, executable: it writes its stdin to `/tmp/docket-hook-in-<anything>.json` and exits
+    with the number in `~/.config/umi-next/hook-exit` (the script writes 0, then 1 for the failing run);
+  - the checkout `~/umi-next-ui`, which it resets to origin/main and builds.

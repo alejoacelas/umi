@@ -9,35 +9,21 @@ terminal, and that a table entry added to web/shortcuts.js works after the page 
 
 --debug-events sends keys through the debug socket (NSApp.sendEvent) instead of the HID tap.
 """
-import json, os, socket, subprocess, sys, time
+import atexit, json, os, subprocess, sys, time
 
 state, key_bin, hyper_bin = sys.argv[1:4]
 # `click` (built from click.swift) next to `key`: real clicks for the strip checks.
 click_bin = os.path.join(os.path.dirname(os.path.abspath(key_bin)), "click")
 debug_events = "--debug-events" in sys.argv
 here = os.path.dirname(os.path.abspath(__file__))
-fails = []
+sys.path.insert(0, here)
+from debugsock import Checks, Debug, poll  # noqa: E402
+from front import bring_to_front  # noqa: E402
 
-
-def D(cmd):
-    s = socket.socket(socket.AF_UNIX)
-    s.settimeout(30)  # a reply that never comes fails the run instead of hanging it
-    s.connect(state + "/debug.sock")
-    s.sendall(json.dumps(cmd).encode() + b"\n")
-    b = b""
-    while True:
-        d = s.recv(1 << 20)
-        if not d:
-            break
-        b += d
-    return json.loads(b)
-
-
-def ev(js):
-    r = D({"cmd": "eval", "js": js})
-    if r.get("error"):
-        raise RuntimeError(r["error"])
-    return r["result"]
+D = Debug(state)
+ev, J = D.ev, D.J
+check = Checks(always=True)
+fails = check.fails
 
 
 def ui():
@@ -78,12 +64,6 @@ def real_key(code, *mods):
     subprocess.run([key_bin, str(code), *mods], check=True)
 
 
-def check(name, ok, detail=""):
-    print(("ok   " if ok else "FAIL ") + name + (f"  ({detail})" if not ok else ""))
-    if not ok:
-        fails.append(name)
-
-
 def focus_terminal():
     """Leaves the focused tab's pane on a terminal with the keys (Escape out of pickers/fields)."""
     for _ in range(3):
@@ -100,10 +80,11 @@ def focus_terminal():
     return u["keys"] == "terminal"
 
 
-sys.path.insert(0, here)
-from front import bring_to_front
 if not debug_events and not bring_to_front(D):
     sys.exit("FAIL this UmiNext isn't in front with the keys; no real keys sent")
+# At the end, whatever happened: the tabs and shells this made are closed.
+start = D.layout_ids()
+atexit.register(lambda: D.close_new(start["tabs"], start["panes"]))
 st = D({"cmd": "state"})
 check("native learned the table", "newTab" in st.get("shortcuts", []) and "palette" in st.get("shortcuts", []), st.get("shortcuts"))
 check("table saved for launch", os.path.exists(state + "/shortcuts.json"))
@@ -198,20 +179,8 @@ if not debug_events:
     press("escape")
 
 # ---- Track (c): shortcuts page, hidden-pane strip, zoom, tabs, reopen, find, sync, UI zoom ----
-def J(js):
-    return json.loads(ev("JSON.stringify(" + js + ")"))
-
-
 def wait(fn, secs=3.0):
-    end = time.time() + secs
-    while time.time() < end:
-        try:
-            if fn():
-                return True
-        except Exception:
-            pass
-        time.sleep(0.1)
-    return False
+    return bool(poll(fn, secs, swallow=Exception))
 
 
 def type_text(text):

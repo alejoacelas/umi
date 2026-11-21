@@ -6,31 +6,16 @@ from the page through the bridge to Services.swift and back.
 
 SCRATCH_DIR is made into a small git repository (and a folder outside git) to work on.
 """
-import json, os, socket, subprocess, sys, time
+import json, os, subprocess, sys, time
 
 state, scratch = sys.argv[1], os.path.abspath(sys.argv[2])
-fails = []
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from debugsock import Checks, Debug  # noqa: E402
 
-
-def D(cmd):
-    s = socket.socket(socket.AF_UNIX)
-    s.connect(state + "/debug.sock")
-    s.sendall(json.dumps(cmd).encode() + b"\n")
-    b = b""
-    while True:
-        d = s.recv(1 << 20)
-        if not d:
-            break
-        b += d
-    return json.loads(b)
-
-
-def ev(js):
-    r = D({"cmd": "eval", "js": js})
-    if r.get("error"):
-        raise RuntimeError(r["error"])
-    return r["result"]
-
+D = Debug(state)
+ev = D.ev
+check = Checks()
+fails = check.fails
 
 n = [0]
 
@@ -49,12 +34,6 @@ def call(expr, timeout=10):
             return d["ok"] if "ok" in d else d
         time.sleep(0.05)
     return {"err": "timeout"}
-
-
-def check(name, ok, detail=""):
-    print(("ok   " if ok else "FAIL ") + name + (f"  ({detail})" if detail and not ok else ""))
-    if not ok:
-        fails.append(name)
 
 
 subprocess.run(["rm", "-rf", scratch], check=True)

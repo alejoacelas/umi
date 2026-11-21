@@ -7,35 +7,19 @@ UMI_NEXT_DEBUG=1 on screen. Before every key it checks this UmiNext is frontmost
 
   file_keys_test.py STATE_DIR KEY_BIN SCRATCH_DIR
 """
-import json, os, shutil, socket, subprocess, sys, time
+import json, os, shutil, subprocess, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from debugsock import Checks, Debug  # noqa: E402
 from front import bring_to_front  # noqa: E402
 
 state, key_bin, scratch = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
-fails = []
+D = Debug(state)
+J = D.J
+check = Checks()
+fails = check.fails
 CODES = {"s": 1, "e": 14, "m": 46, "w": 13, "g": 5, "a": 0, "r": 15, "z": 6, "escape": 53, "x": 7, "v": 9, "c": 8,
          "end": 119}
-
-
-def D(cmd):
-    s = socket.socket(socket.AF_UNIX)
-    s.connect(state + "/debug.sock")
-    s.sendall(json.dumps(cmd).encode() + b"\n")
-    b = b""
-    while True:
-        d = s.recv(1 << 20)
-        if not d:
-            break
-        b += d
-    return json.loads(b)
-
-
-def J(js):
-    r = D({"cmd": "eval", "js": f"JSON.stringify({js})"})
-    if r.get("error"):
-        raise RuntimeError(r["error"])
-    return json.loads(r["result"])
 
 
 def key(k, *mods):
@@ -43,12 +27,6 @@ def key(k, *mods):
         sys.exit("FAIL this UmiNext lost the front; stopped before sending keys elsewhere")
     subprocess.run([key_bin, str(CODES[k]), *mods], check=True)
     time.sleep(0.35)
-
-
-def check(name, ok, detail=""):
-    print(("ok   " if ok else "FAIL ") + name + (f"  ({detail})" if detail and not ok else ""))
-    if not ok:
-        fails.append(name)
 
 
 V = "Umi.views.file.get(Umi.model.activeTab().focused)"

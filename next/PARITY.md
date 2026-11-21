@@ -108,7 +108,7 @@ Uses `Umi.shortcuts.table` and `Umi.shortcuts.format`.
 | Drawer, manager pane (DR) | drawer with ⌃⌘M | none | Departure: the bottom palette, Review and snooze replace them (DESIGN) |
 | Archive (AR-1..4, AR-6) | archived tabs under an Archived row | [x] ⌃⌘A archives the tab or brings it back (top of the unpinned); "Archived · N" row at the top opens in place; ⌘1–9, ⇧⌘[ ⇧⌘], ⌃Tab skip archived tabs; palette: Show archived tabs | Departure: no `--until` (DESIGN) |
 | Synchronized input (L-32) | ⌥⌘I this tab, all tabs, ⌥⇧⌘I stop; link mark | [x] as Umi (Warp's rules); native types each key and ⌘V paste into every synced terminal; link mark #4A93FF on the row | Panes of other tabs not shown since launch have no terminal yet and miss the input |
-| Command palette ⌘P, pane list ⇧⌘P (L-14, L-15) | palette from `umi help --json`; every pane, most recent first | bottom palette; picker lists sessions | Departure: bottom palette (Hyper) replaces both; ⌘P opens it too. Pane list = palette `s` |
+| Command palette ⌘P, pane list ⇧⌘P (L-14, L-15) | palette from `umi help --json`; every pane, most recent first | bottom palette; picker lists sessions | Departure: bottom palette (Hyper) replaces both. Pane list = palette `s` |
 
 ## Track (d): `umi-next` CLI
 

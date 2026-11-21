@@ -1,15 +1,11 @@
 # Runs on mac-air-2: edit web/style.css and time until the running page shows the new colour.
-import json, os, socket, subprocess, sys, time, re
+import json, os, sys, time, re
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from debugsock import Debug  # noqa: E402
+
 state = os.path.expanduser("~/umi-next-ui-state")
+D = Debug(state)
 css = os.path.expanduser("~/umi-next-ui/next/app/web/style.css")
-def D(cmd):
-    s = socket.socket(socket.AF_UNIX); s.connect(state + "/debug.sock")
-    s.sendall(json.dumps(cmd).encode() + b"\n"); b = b""
-    while True:
-        d = s.recv(65536)
-        if not d: break
-        b += d
-    return json.loads(b)
 color = sys.argv[1]  # e.g. "rgba(40, 90, 160, 0.35)"
 js = "getComputedStyle(document.getElementById('sidebar')).backgroundColor"
 before = D({"cmd": "state"})

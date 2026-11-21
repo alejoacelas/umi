@@ -12,35 +12,17 @@ SCRATCH_DIR is made into a small git repository to work on. BIG_REPO (optional) 
 repository for streaming, cancel and the 20,000-line cap. Opening a file is checked against the
 `Umi.actions.openFile` contract (a spy replaces it), so it doesn't depend on track (a).
 """
-import json, os, socket, subprocess, sys, time
+import atexit, json, os, subprocess, sys, time
 
 state, scratch = sys.argv[1], os.path.abspath(sys.argv[2])
 big = os.path.abspath(sys.argv[3]) if len(sys.argv) > 3 else None
-fails = []
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from debugsock import Checks, Debug, poll  # noqa: E402
 
-
-def D(cmd):
-    s = socket.socket(socket.AF_UNIX)
-    s.connect(state + "/debug.sock")
-    s.sendall(json.dumps(cmd).encode() + b"\n")
-    b = b""
-    while True:
-        d = s.recv(1 << 20)
-        if not d:
-            break
-        b += d
-    return json.loads(b)
-
-
-def ev(js):
-    r = D({"cmd": "eval", "js": js})
-    if r.get("error"):
-        raise RuntimeError(r["error"] + "\n" + js)
-    return r["result"]
-
-
-def J(js):
-    return json.loads(ev(f"JSON.stringify({js})"))
+D = Debug(state, show_js=True)
+ev, J = D.ev, D.J
+check = Checks()
+fails = check.fails
 
 
 def key(k, *mods):
@@ -57,19 +39,7 @@ ESC, ENTER = "\u001b", "\r"
 
 
 def until(js, timeout=8, every=0.1):
-    t = time.time()
-    while time.time() - t < timeout:
-        v = J(js)
-        if v:
-            return v
-        time.sleep(every)
-    return None
-
-
-def check(name, ok, detail=""):
-    print(("ok   " if ok else "FAIL ") + name + (f"  ({detail})" if detail and not ok else ""))
-    if not ok:
-        fails.append(name)
+    return poll(lambda: J(js), timeout, every)
 
 
 # ---- a small repository ----
@@ -93,6 +63,9 @@ sh("git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
 D({"cmd": "reloadWeb"})
 time.sleep(1)
 until("typeof Umi !== 'undefined' && !!Umi.state.layout && !!Umi.views.modes", 10)
+# At the end, whatever happened: the tabs and shells this made are closed.
+start = D.layout_ids()
+atexit.register(lambda: D.close_new(start["tabs"], start["panes"]))
 ev("window.__realOpenFile = Umi.actions.openFile; window.__opened = []; Umi.actions.openFile = (a) => { window.__opened.push(a); }; Umi.actions.openFile.spy = true; 1")
 # As a first run: the layout keeps the sidebar's mode, dotfiles and recent files.
 ev("Umi.app.update(() => { const L = Umi.state.layout; L.sidebarMode = 'tabs'; L.hideDotfiles = false; L.meta.recentFiles = []; }); 1")
@@ -202,17 +175,10 @@ check("Esc gives the keys back to the pane", J("[Umi.state.ui.sidebarFocus, Umi.
 # ---- the right-click menu: its items, and what each does (the native menu answers as if chosen) ----
 def menu(path, title=None):
     """Right-clicks the row of `path`; picks `title`. Returns the menu's titles (None: a separator)."""
-    ev("""window.__menu = null; (() => { const orig = Umi.bridge.request;
-      Umi.bridge.request = function (op, args, onEvent) {
-        if (op !== 'menu') return orig.call(Umi.bridge, op, args, onEvent);
-        Umi.bridge.request = orig;
-        window.__menu = args.items.map((it) => (it.separator ? null : it.title + (it.enabled === false ? ' (off)' : '')));
-        const i = args.items.findIndex((it) => it.title === %s);
-        return Promise.resolve({ index: i < 0 ? null : i });
-      }; })();
-      [...document.querySelectorAll('#explorer .ft-row')].find((r) => r.title === %s)
-        .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 })); 1""" % (json.dumps(title), json.dumps(path)))
-    return until("window.__menu", 3)
+    D.spy_menu(title, """[...document.querySelectorAll('#explorer .ft-row')].find((r) => r.title === %s)
+        .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 60 }))""" % json.dumps(path))
+    m = until("window.__menu", 3)
+    return m and [it and it["title"] + ("" if it["enabled"] else " (off)") for it in m]
 
 
 def screen():
@@ -329,7 +295,8 @@ check("one row per line (two matches on a line: one row)", s and sum(1 for r in 
 check("leading spaces dropped", s and any(r.get("text") == "let y = 'needle needle';" for r in s["rows"]), s and s["rows"])
 check("matches highlighted", J("document.querySelectorAll('#search mark').length") >= 4)
 key("down")
-check("↓ into the results, first row selected", J("[Umi.state.ui.sidebarFocus, document.activeElement.classList.contains('sr-list'), Umi.views.search.debug().selected]")[:2] == ["results", True])
+v = J("[Umi.state.ui.sidebarFocus, document.activeElement.classList.contains('sr-list'), Umi.views.search.debug().selected, Umi.views.search.debug().rows[0]?.file ?? null]")
+check("↓ into the results, first row selected", v[3] is not None and v[:3] == ["results", True, v[3]], v)
 first = J("Umi.views.search.debug().rows[0].file")
 key("left")
 check("← folds a file", J("Umi.views.search.debug().rows.filter(r => r.path === %s).length" % json.dumps(first)) == 0)

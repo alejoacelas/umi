@@ -8,52 +8,20 @@ Start the app with UMI_NEXT_TEST_OPEN_LOG=FILE so web links are logged instead o
 
 SCRATCH_DIR is emptied and filled with the documents it opens.
 """
-import json, os, shutil, socket, struct, subprocess, sys, time, zlib
+import json, os, shutil, struct, subprocess, sys, time, zlib
 
 state, scratch, open_log = sys.argv[1], os.path.abspath(sys.argv[2]), sys.argv[3]
-fails = []
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from debugsock import Checks, Debug, poll  # noqa: E402
 
-
-def D(cmd):
-    s = socket.socket(socket.AF_UNIX)
-    s.connect(state + "/debug.sock")
-    s.sendall(json.dumps(cmd).encode() + b"\n")
-    b = b""
-    while True:
-        d = s.recv(1 << 20)
-        if not d:
-            break
-        b += d
-    return json.loads(b)
-
-
-def ev(js):
-    r = D({"cmd": "eval", "js": js})
-    if r.get("error"):
-        raise RuntimeError(r["error"] + "\n" + js)
-    return r["result"]
-
-
-def J(js):
-    return json.loads(ev(f"JSON.stringify({js})"))
-
-
-def check(name, ok, detail=""):
-    print(("ok   " if ok else "FAIL ") + name + (f"  ({detail})" if detail and not ok else ""))
-    if not ok:
-        fails.append(name)
+D = Debug(state, show_js=True)
+ev, J = D.ev, D.J
+check = Checks()
+fails = check.fails
 
 
 def wait(js, timeout=4):
-    t = time.time()
-    while time.time() - t < timeout:
-        try:
-            if ev(f"!!({js})") in (True, 1, "1", "true"):
-                return True
-        except RuntimeError:
-            pass
-        time.sleep(0.1)
-    return False
+    return bool(poll(lambda: ev(f"!!({js})") in (True, 1, "1", "true"), timeout, swallow=RuntimeError))
 
 
 def key(k, *mods):
@@ -388,16 +356,10 @@ close_all()
 
 # ---- The pane header's file-type icon; ⋯ and the preview's right-click menus (E-24) ----
 def menu(expr, title=None):
-    ev("""window.__menu = null; (() => { const orig = Umi.bridge.request;
-      Umi.bridge.request = function (op, args, onEvent) {
-        if (op !== 'menu') return orig.call(Umi.bridge, op, args, onEvent);
-        Umi.bridge.request = orig;
-        window.__menu = args.items.map((it) => (it.separator ? null : it.title));
-        const i = args.items.findIndex((it) => it.title === %s);
-        return Promise.resolve({index: i < 0 ? null : i});
-      }; })(); %s; 1""" % (json.dumps(title), expr))
+    D.spy_menu(title, expr)
     wait("window.__menu", 3)
-    return J("window.__menu")
+    m = J("window.__menu")
+    return m and [it and it["title"] for it in m]
 
 
 open_file(plan)

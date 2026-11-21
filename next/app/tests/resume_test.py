@@ -8,7 +8,7 @@ opens a real Claude session in a pane, restarts the app and its daemon (which en
 and checks that the same pane runs `claude … --resume <the agent's session id>`. It needs `claude`
 on PATH and types nothing into windows. It stops the app and daemon and moves the state to the Trash at the end.
 """
-import json, os, plistlib, socket, subprocess, sys, tempfile, time
+import json, os, plistlib, subprocess, sys, tempfile
 
 app = os.path.abspath(sys.argv[1])
 info = plistlib.load(open(os.path.join(app, "Contents/Info.plist"), "rb"))
@@ -19,6 +19,10 @@ STATE = os.path.expanduser("~/Library/Application Support/" + info["UmiNextState
 CLI = os.path.join(app, "Contents/MacOS/umi-next")
 CTL = os.path.join(app, "Contents/MacOS/umi-next-ctl")
 ENV = {k: v for k, v in os.environ.items() if not k.startswith("UMI_")}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from debugsock import Debug, poll  # noqa: E402
+
+debug = Debug(STATE).result
 
 
 def cli(*args):
@@ -28,27 +32,8 @@ def cli(*args):
     return p.stdout
 
 
-def debug(js):
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(os.path.join(STATE, "debug.sock"))
-    s.sendall(json.dumps({"cmd": "eval", "js": js}).encode() + b"\n")
-    buf = b""
-    while (d := s.recv(65536)):
-        buf += d
-    return json.loads(buf)["result"]
-
-
 def until(fn, secs, what):
-    t = time.time()
-    while time.time() - t < secs:
-        try:
-            v = fn()
-        except Exception:  # noqa: BLE001 (the app may still be starting)
-            v = None
-        if v:
-            return v
-        time.sleep(0.25)
-    raise AssertionError("timed out waiting for " + what)
+    return poll(fn, secs, every=0.25, swallow=Exception, what=what)
 
 
 def launch():

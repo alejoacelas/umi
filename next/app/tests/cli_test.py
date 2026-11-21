@@ -10,7 +10,7 @@ focus-log checks (an offscreen window is never active). It leaves the layout as 
 apart from the sessions it ends. SCRATCH (default: a temp folder) holds the Markdown files.
 NOTIFY_LOG: the app's UMI_NEXT_TEST_NOTIFY_LOG, where `notify` writes instead of notifying.
 """
-import json, os, plistlib, socket, subprocess, sys, tempfile, time, traceback
+import json, os, plistlib, subprocess, sys, tempfile, time, traceback
 
 app = os.path.abspath(sys.argv[1])
 scratch = sys.argv[2] if len(sys.argv) > 2 else tempfile.mkdtemp(prefix="umi-next-cli-")
@@ -20,6 +20,11 @@ CLI = os.path.join(app, "Contents/MacOS/umi-next")
 info = plistlib.load(open(os.path.join(app, "Contents/Info.plist"), "rb"))
 STATE = os.path.expanduser("~/Library/Application Support/" + info["UmiNextStateName"])
 ENV = {k: v for k, v in os.environ.items() if not k.startswith("UMI_")}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from debugsock import Debug, poll  # noqa: E402
+
+D = Debug(STATE)
+debug = D.result
 failures = []
 
 
@@ -35,24 +40,8 @@ def j(*args, **kw):
     return json.loads(run("--json", *args, **kw).stdout)
 
 
-def debug(js):
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(os.path.join(STATE, "debug.sock"))
-    s.sendall(json.dumps({"cmd": "eval", "js": js}).encode() + b"\n")
-    buf = b""
-    while (d := s.recv(65536)):
-        buf += d
-    return json.loads(buf)["result"]
-
-
 def until(fn, secs=8, what="condition"):
-    t = time.time()
-    while time.time() - t < secs:
-        v = fn()
-        if v:
-            return v
-        time.sleep(0.1)
-    raise AssertionError("timed out waiting for " + what)
+    return poll(fn, secs, what=what)
 
 
 def check(name, fn):
@@ -396,10 +385,7 @@ def t_comments():
     real = os.path.realpath(f)
     until(lambda: debug("Umi.cli.waiting().length") in (1, "1"), what="the wait to reach the page")
     debug("window.__beforeReload = 1")
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(os.path.join(STATE, "debug.sock"))
-    s.sendall(b'{"cmd": "reloadWeb"}\n')
-    s.recv(100)
+    D({"cmd": "reloadWeb"})
     until(lambda: debug("typeof window.__beforeReload") == "undefined" and debug("Umi.cli.waiting().length") in (1, "1"),
           what="the wait to come back after the reload")
     # The Done button of the file's comment margin answers it.

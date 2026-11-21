@@ -13,52 +13,21 @@ EXTRA_CONF: the app's UMI_NEXT_TERMINAL_CONFIG, if it was started with one this 
 before (run once with the file missing to have it written, then restart the app with it):
 `keybind = super+shift+u=scroll_to_top` and `keybind = super+shift+j=unbind`.
 """
-import json, os, shutil, socket, subprocess, sys, time
+import json, os, shutil, subprocess, sys, time
 
 state, scratch = sys.argv[1], os.path.abspath(sys.argv[2])
 extra = sys.argv[3] if len(sys.argv) > 3 else None
-fails = []
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from debugsock import Checks, Debug, poll  # noqa: E402
 
-
-def D(cmd):
-    s = socket.socket(socket.AF_UNIX)
-    s.settimeout(30)
-    s.connect(state + "/debug.sock")
-    s.sendall(json.dumps(cmd).encode() + b"\n")
-    b = b""
-    while (d := s.recv(1 << 20)):
-        b += d
-    return json.loads(b)
-
-
-def ev(js):
-    r = D({"cmd": "eval", "js": js})
-    if r.get("error"):
-        raise RuntimeError(r["error"])
-    return r["result"]
-
-
-def J(js):
-    return json.loads(ev("JSON.stringify(" + js + ")"))
-
-
-def check(name, ok, detail=""):
-    print(("ok   " if ok else "FAIL ") + name + ("" if ok else f"  {detail}"))
-    if not ok:
-        fails.append(name)
+D = Debug(state)
+ev, J = D.ev, D.J
+check = Checks("  {}", always=True)
+fails = check.fails
 
 
 def wait(fn, secs=5.0):
-    end = time.time() + secs
-    while time.time() < end:
-        try:
-            v = fn()
-            if v:
-                return v
-        except Exception:
-            pass
-        time.sleep(0.1)
-    return None
+    return poll(fn, secs, swallow=Exception)
 
 
 def pbpaste():
@@ -68,15 +37,7 @@ def pbpaste():
 def spy(pick=None):
     """The next bridge `menu` request is recorded in window.__menu and answered with the item
     titled `pick` (None: dismissed)."""
-    ev("""window.__menu = null; (() => { const orig = Umi.bridge.request;
-      Umi.bridge.request = function (op, args, onEvent) {
-        if (op !== 'menu') return orig.call(Umi.bridge, op, args, onEvent);
-        Umi.bridge.request = orig;
-        window.__menu = args.items.map((it) => (it.separator ? null
-          : { title: it.title, key: it.key || null, enabled: it.enabled !== false, checked: !!it.checked }));
-        const i = args.items.findIndex((it) => it.title === %s);
-        return Promise.resolve({ index: i < 0 ? null : i });
-      }; })(); 1""" % json.dumps(pick))
+    D.spy_menu(pick)
 
 
 def titles(menu):
@@ -339,11 +300,7 @@ elif extra:
 ev("Umi.app.run('toggleShortcuts'); 1")
 
 # ---- cleanup: the tabs and sessions this made ----
-ev("""(() => { const keep = new Set(%s);
-  for (const t of Umi.state.layout.tabs.filter((t) => !keep.has(t.id)))
-    for (const id of Umi.model.paneIds(t.root)) { const s = Umi.model.sessionOf(id); if (s) Umi.bridge.post({ type: 'exitSession', session: s }); }
-  Umi.app.update(() => { for (const t of Umi.state.layout.tabs.filter((t) => !keep.has(t.id))) Umi.model.paneIds(t.root).forEach((id) => Umi.model.removePane(id)); });
-})(); 1""" % json.dumps(start_tabs))
+D.close_new(start_tabs)
 
 print(f"\n{len(fails)} failed" + (": " + ", ".join(fails) if fails else ""))
 sys.exit(1 if fails else 0)
