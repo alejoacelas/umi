@@ -218,8 +218,8 @@ body.no-sidebar #strip { padding-left: 80px; }
 .picker-project b { font-weight: 500; color: var(--ink); }
 .picker-project span { opacity: 0.6; margin-left: 6px; }
 .picker-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
-.picker-section { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px; }
-.picker-row { display: flex; gap: 8px; align-items: baseline; padding: 5px 8px; border-radius: 4px; white-space: nowrap; overflow: hidden; }
+.picker-section { flex: none; color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px; }
+.picker-row { flex: none; display: flex; gap: 8px; align-items: baseline; padding: 5px 8px; border-radius: 4px; white-space: nowrap; overflow: hidden; }
 .picker-row b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .picker-row .kind { color: var(--dim); font: 10px ui-monospace, Menlo, monospace; width: 44px; flex: none; }
 .picker-row .dim { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
