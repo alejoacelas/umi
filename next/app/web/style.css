@@ -214,7 +214,8 @@ body.no-sidebar #strip { padding-left: 80px; }
 .picker-kinds { display: flex; gap: 2px; }
 .picker-kinds span { padding: 3px 8px; border-radius: 4px; color: var(--dim); font-size: 11px; }
 .picker-kinds span.on { background: rgba(255,255,255,0.12); color: var(--ink); }
-.picker-project { color: var(--dim); font-size: 11px; }
+.picker-project { color: var(--dim); font-size: 11px; cursor: default; }
+.picker-project b { font-weight: 500; color: var(--ink); }
 .picker-project span { opacity: 0.6; margin-left: 6px; }
 .picker-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 .picker-section { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px; }

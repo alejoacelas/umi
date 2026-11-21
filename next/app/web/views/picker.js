@@ -5,6 +5,16 @@
 //   3. live sessions of that project that are busy;
 //   4. past sessions of that project that can be resumed (Claude's and Codex's transcripts).
 // ↑↓ choose, Enter opens, Esc closes the pane.
+//
+// The session starts in the folder under the name field: at first the focused pane's. `/` in the
+// empty name field (or a click on the folder) turns the field into a folder search:
+//   - letters match folders in use (live sessions, tabs, folders chosen here before), the folders
+//     next to them and, for a folder two or more levels under home, the folders next to its parent
+//     (so every project of a workspace like ~/best), most recent first;
+//   - a path (`~/…`, `/…`, `./…`, `../…`, or anything with a `/`) lists that folder's folders,
+//     filtered by what follows the last `/`.
+// ↑↓ choose, Enter takes the folder, Tab goes into the chosen one, ⇧Tab goes up one, Esc (or ⌫ in
+// the empty field) goes back to the name without changing the folder.
 'use strict';
 Umi.views = Umi.views || {};
 
@@ -17,6 +27,158 @@ Umi.views.picker = (() => {
     const s = Date.now() / 1000 - t;
     return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`;
   };
+
+  // ---- the folder search ----
+  const tilde = (p) => (S.home && (p === S.home || p.startsWith(S.home + '/')) ? '~' + p.slice(S.home.length) : p);
+  const parent = (p) => p.replace(/\/[^/]*$/, '') || '/';
+  const inHome = (p) => !!S.home && (p === S.home || p.startsWith(S.home + '/'));
+  const redraw = () => Umi.views.panes.refreshPickers();
+
+  // Folders in use, most recent first: those chosen here before, live sessions' and the tabs' panes'.
+  function recents() {
+    const chosen = Object.entries(S.layout.meta?.folders || {}).sort((a, b) => b[1] - a[1]).map((e) => e[0]);
+    const live = Object.values(S.live).filter((s) => s.alive && M.userStarted(s))
+      .sort((a, b) => (b.created || 0) - (a.created || 0)).flatMap((s) => [s.project, s.folder]);
+    const panes = S.layout.tabs.flatMap((t) => M.paneIds(t.root)).flatMap((id) => [M.projectOf(id), M.folderOf(id)]);
+    return [...new Set([...chosen, ...live, ...panes].filter(Boolean))];
+  }
+
+  // A folder's folders (names), from a cache that lasts one folder search: [] while loading,
+  // null when the folder can't be read.
+  let dirs = new Map();
+  function subdirs(dir, hidden) {
+    const k = (hidden ? '.' : '') + dir;
+    if (!dirs.has(k)) {
+      dirs.set(k, []);
+      const cache = dirs;
+      Umi.fs.list(dir, { hidden, ignored: true })
+        .then((r) => r.entries.filter((e) => e.kind === 'dir').map((e) => e.name), () => null)
+        .then((names) => { cache.set(k, names); if (cache === dirs) { known = null; redraw(); } });
+    }
+    return dirs.get(k);
+  }
+
+  // The folders letters match: recents, then the folders next to each and next to its parent.
+  // Only inside home, and never home's own folders' contents unless one is in use, so macOS
+  // doesn't ask for Documents, Desktop and the like.
+  let known = null;
+  function knownFolders() {
+    if (known) return known;
+    const seeds = recents();
+    const parents = new Set();
+    for (const p of seeds) {
+      const up = parent(p), top = parent(up);
+      if (inHome(up)) parents.add(up);
+      if (inHome(top) && top !== S.home) for (const n of subdirs(top, false) || []) parents.add(top + '/' + n);
+    }
+    const out = new Set(seeds);
+    for (const d of [...parents].slice(0, 60)) for (const n of subdirs(d, false) || []) out.add(d + '/' + n);
+    return (known = [...out]);
+  }
+
+  // The rows of the folder search for what is typed: [{path, use?}] and whether the folder exists.
+  function folderRows(node) {
+    const q = node.picker.query || '';
+    if (/^[~/.]/.test(q) || q.includes('/')) {
+      const typed = q === '~' ? '~/' : q;
+      const cut = typed.lastIndexOf('/') + 1;
+      const dir = Umi.fs.resolve(typed.slice(0, cut) || '.', node.cwd || S.home);
+      const seg = typed.slice(cut);
+      const names = subdirs(dir, seg.startsWith('.'));
+      if (!names) return { rows: [], missing: tilde(dir) };
+      const rows = (seg ? Umi.fs.fuzzy(seg, names, 200).map((r) => r.path) : names).map((n) => ({ path: (dir === '/' ? '' : dir) + '/' + n }));
+      return { rows: seg ? rows : [{ path: dir, use: true }, ...rows] };
+    }
+    const all = knownFolders();
+    if (!q.trim()) return { rows: all.slice(0, 200).map((path) => ({ path })) };
+    const shown = all.map(tilde);
+    const rank = new Map(shown.map((p, i) => [p, i]));
+    const hits = Umi.fs.fuzzy(q, shown, 200).sort((a, b) => b.score - a.score || rank.get(a.path) - rank.get(b.path));
+    return { rows: hits.map((r) => ({ path: all[rank.get(r.path)] })) };
+  }
+
+  function folderMode(el, node, on) {
+    const pk = node.picker;
+    if (on) { dirs = new Map(); known = null; pk.mode = 'folder'; } else delete pk.mode;
+    pk.query = '';
+    pk.fsel = 0;
+    el.querySelector('.picker-name').value = on ? '' : pk.name;
+    refresh(el, node);
+  }
+
+  // The repository's main folder (a worktree counts as its repository), else the folder.
+  async function projectOfFolder(path) {
+    const root = (await Umi.fs.gitRoot(path).catch(() => null))?.root;
+    if (!root) return path;
+    const link = await Umi.fs.read(root + '/.git').catch(() => null);
+    const m = link && /^gitdir: (.*)\/\.git\/worktrees\//m.exec(link.text);
+    return m ? m[1] : root;
+  }
+
+  // The picker's session will start in `path`; its lists become that folder's project's.
+  function chooseFolder(el, node, path) {
+    const pk = node.picker;
+    Umi.app.update(() => {
+      node.cwd = path;
+      pk.project = path;
+      pk.sel = 0;
+      S.layout.meta = S.layout.meta || { sessions: {} };
+      const f = (S.layout.meta.folders = S.layout.meta.folders || {});
+      f[path] = Date.now();
+      for (const old of Object.keys(f).sort((a, b) => f[b] - f[a]).slice(40)) delete f[old];
+    });
+    const now = document.querySelector(`#panes .slot[data-pane="${node.id}"]`) || el;
+    folderMode(now, node, false);
+    focus();
+    projectOfFolder(path).then((project) => {
+      if (node.cwd !== path) return;
+      Umi.app.update(() => { pk.project = project; });
+      if (S.past.project !== project) Umi.bridge.post({ type: 'pastSessions', project });
+    });
+  }
+
+  function folderKey(e, el, node) {
+    const pk = node.picker, input = e.target;
+    const { rows } = folderRows(node);
+    const sel = rows[pk.fsel] || rows[0];
+    const type = (text) => { input.value = pk.query = text; pk.fsel = 0; refresh(el, node); };
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (!e.shiftKey) { if (sel) type(tilde(sel.path).replace(/\/$/, '') + '/'); return; }
+      const use = rows.find((r) => r.use);
+      type(tilde(parent(use ? use.path : node.cwd || S.home)).replace(/\/$/, '') + '/');
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      pk.fsel = Math.max(0, Math.min(rows.length - 1, (pk.fsel || 0) + (e.key === 'ArrowDown' ? 1 : -1)));
+      refresh(el, node);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (sel) chooseFolder(el, node, sel.path);
+    } else if (e.key === 'Escape' || (e.key === 'Backspace' && !input.value)) {
+      e.preventDefault();
+      folderMode(el, node, false);
+    }
+  }
+
+  function drawFolders(el, node, list) {
+    const pk = node.picker;
+    const { rows, missing } = folderRows(node);
+    if (missing || !rows.length) {
+      const none = document.createElement('div');
+      none.className = 'picker-section';
+      none.textContent = missing ? `No folder ${missing}` : 'No folder matches';
+      list.append(none);
+    }
+    rows.forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'picker-row' + (i === (pk.fsel || 0) ? ' sel' : '');
+      row.innerHTML = '<b></b><span class="dim"></span>';
+      row.querySelector('b').textContent = r.use ? 'This folder' : base(r.path);
+      row.querySelector('.dim').textContent = tilde(r.use ? r.path : parent(r.path));
+      row.addEventListener('mousedown', (e) => { e.preventDefault(); chooseFolder(el, node, r.path); });
+      list.append(row);
+    });
+  }
 
   function items(node) {
     const pk = node.picker;
@@ -58,15 +220,20 @@ Umi.views.picker = (() => {
     el.classList.add('picker');
     el.innerHTML = `
       <div class="picker-head">
-        <input class="picker-name" spellcheck="false" placeholder="Name (empty: ${base(node.cwd)} and a number)">
+        <input class="picker-name" spellcheck="false">
         <div class="picker-kinds">${KINDS.map((k) => `<span data-kind="${k}">${LABEL[k]}</span>`).join('')}</div>
       </div>
-      <div class="picker-project">${base(pk.project)} <span>${pk.project}</span></div>
+      <div class="picker-project"></div>
       <div class="picker-list"></div>`;
     const input = el.querySelector('.picker-name');
-    input.value = pk.name;
-    input.addEventListener('input', () => { pk.name = input.value; pk.sel = 0; refresh(el, node); });
+    input.value = pk.mode === 'folder' ? pk.query || '' : pk.name;
+    input.addEventListener('input', () => {
+      if (pk.mode === 'folder') { pk.query = input.value; pk.fsel = 0; } else { pk.name = input.value; pk.sel = 0; }
+      refresh(el, node);
+    });
     input.addEventListener('keydown', (e) => {
+      if (pk.mode === 'folder') return folderKey(e, el, node);
+      if (e.key === '/' && !input.value) { e.preventDefault(); return folderMode(el, node, true); }
       const list = items(node);
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -88,6 +255,7 @@ Umi.views.picker = (() => {
     el.addEventListener('mousedown', (e) => {
       const k = e.target.closest('[data-kind]');
       if (k) { pk.kind = k.dataset.kind; refresh(el, node); }
+      if (e.target.closest('.picker-project')) { e.preventDefault(); folderMode(el, node, pk.mode !== 'folder'); input.focus(); }
     });
     refresh(el, node);
     if (S.past.project !== pk.project && !pk.askedPast) {
@@ -106,8 +274,22 @@ Umi.views.picker = (() => {
   function refresh(el, node) {
     const pk = node.picker;
     el.querySelectorAll('[data-kind]').forEach((k) => k.classList.toggle('on', k.dataset.kind === pk.kind));
+    const folder = pk.mode === 'folder';
+    el.querySelector('.picker-name').placeholder = folder
+      ? 'Folder: letters to match, or a path like ~/ or ../'
+      : `Name (empty: ${base(node.cwd)} and a number)`;
+    const where = el.querySelector('.picker-project');
+    where.innerHTML = '<b></b> <span></span>';
+    where.querySelector('b').textContent = tilde(node.cwd || S.home || '');
+    where.querySelector('span').textContent = folder ? '↩ take · ⇥ go in · ⇧⇥ up · esc back' : '/ to change the folder';
     const list = el.querySelector('.picker-list');
     list.textContent = '';
+    if (folder) {
+      drawFolders(el, node, list);
+      const on = list.querySelector('.sel');
+      if (on) on.scrollIntoView({ block: 'nearest' });
+      return;
+    }
     if (pk.jump === 'past') {
       const i = items(node).findIndex((it) => it.type === 'past');
       if (i > 0) { pk.sel = i; delete pk.jump; }
