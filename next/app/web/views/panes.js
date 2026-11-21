@@ -23,7 +23,14 @@ Umi.views.panes = (() => {
       if (r) r(el, node);
       else el.textContent = el.dataset.view;
       if (el.dataset.view !== 'terminal') {
-        el.addEventListener('mousedown', () => Umi.app.update(() => M.focusPane(node.id), { focus: false }));
+        // Only a change of focus redraws: a redraw replaces the picker's field under the click.
+        // When it does, the update gives the keys to the new field, and the click's own focusing
+        // (of the element just removed) is cancelled so it can't take them back.
+        el.addEventListener('mousedown', (e) => {
+          if (!M.findPane(node.id) || (M.activeTab().focused === node.id && !S.ui.sidebarFocus)) return;
+          e.preventDefault();
+          Umi.app.update(() => M.focusPane(node.id));
+        });
       }
       // The pane: its header above the slot (the slot alone goes to native, so the terminal sits
       // under the header).
@@ -91,8 +98,15 @@ Umi.views.panes = (() => {
   // The top bar: a chip per open tab, in the sidebar's order, with the tab's status mark
   // (marks.js); the current tab's filled. Then a chip per session ⌥⌘H hid from the current tab
   // (SPEC H-5), dim and in italics: clicking one shows it again at the right end, focused.
+  // Drawn again only when what it shows changed: title and session updates come many times a
+  // second, and a chip replaced under the pointer loses the click.
+  let stripShown = null;
   function renderStrip(tab) {
     const strip = document.querySelector('#strip');
+    const hidden = M.hiddenOf(tab);
+    const shows = JSON.stringify([tab.id, M.listedTabs().map((t) => [t.id, Umi.views.sidebar.tabName(t)]), hidden.map((sid) => [sid, hiddenLabel(sid)])]);
+    if (shows === stripShown && strip.childElementCount) return;
+    stripShown = shows;
     strip.textContent = '';
     const chip = (label, cls, icon, onDown) => {
       const el = document.createElement('div');
@@ -109,7 +123,7 @@ Umi.views.panes = (() => {
       const el = chip(name, t.id === tab.id ? ' focused' : '', '', () => Umi.app.update(() => { S.layout.activeTab = t.id; S.ui.sidebarFocus = null; }));
       el.dataset.tab = t.id;
     }
-    for (const sid of M.hiddenOf(tab)) {
+    for (const sid of hidden) {
       const el = chip(hiddenLabel(sid), ' hidden', termIcon, () => Umi.app.run('showHidden', { session: sid }));
       el.dataset.session = sid;
       el.title = hiddenLabel(sid) + ' (hidden: click to show it again)';

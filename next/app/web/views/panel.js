@@ -72,7 +72,13 @@ Umi.views.panel = (() => {
       el.querySelector('span').textContent = p.mode === 'rename' ? `Rename “${name}”` : `Snooze “${name}”`;
       el.querySelector('.dim').textContent = p.mode === 'rename' ? 'Enter keeps it; empty: the daemon’s name' : 'for how long (2h, 30m)? Empty: until its turn ends';
       const input = el.querySelector('input');
-      if (p.mode === 'rename') input.value = S.layout.meta?.sessions?.[p.sid]?.name || '';
+      // Any Umi.app.update draws the panel again: what is typed lives on the panel's state.
+      input.value = p.draft ?? (p.mode === 'rename' ? S.layout.meta?.sessions?.[p.sid]?.name || '' : '');
+      const keep = () => { p.draft = input.value; p.caret = [input.selectionStart, input.selectionEnd]; };
+      input.addEventListener('input', keep);
+      input.addEventListener('select', keep);
+      input.addEventListener('keyup', keep);
+      input.addEventListener('mouseup', keep);
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { e.preventDefault(); Umi.app.update(() => M.openPanel('palette', { mode: 'commands', query: '' })); }
         if (e.key !== 'Enter') return;
@@ -143,6 +149,7 @@ Umi.views.panel = (() => {
   function render() {
     const el = document.querySelector('#panel');
     const p = S.ui.panel;
+    const typing = el.contains(document.activeElement) && document.activeElement.matches('input');
     el.textContent = '';
     el.className = '';
     el.hidden = !p;
@@ -150,6 +157,7 @@ Umi.views.panel = (() => {
     const r = renderers[p.name];
     if (r) r(el, p);
     else el.textContent = p.name;
+    if (typing) focus();
   }
 
   // Keys go to the panel's text field when it shows one (search, rename, snooze).
@@ -157,7 +165,11 @@ Umi.views.panel = (() => {
     const p = S.ui.panel;
     if (!p) return;
     const input = document.querySelector('#panel input');
-    if (input && (p.mode !== 'commands')) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    if (input && (p.mode !== 'commands')) {
+      input.focus();
+      const [a, b] = p.caret && p.draft === input.value ? p.caret : [input.value.length, input.value.length];
+      input.setSelectionRange(a, b);
+    }
     else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
 

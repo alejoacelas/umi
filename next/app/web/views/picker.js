@@ -34,6 +34,13 @@ Umi.views.picker = (() => {
   const parent = (p) => p.replace(/\/[^/]*$/, '') || '/';
   const inHome = (p) => !!S.home && (p === S.home || p.startsWith(S.home + '/'));
   const redraw = () => Umi.views.panes.refreshPickers();
+  // Projects whose past sessions were asked for since the page loaded (S.past holds the answers).
+  const askedPast = new Set();
+  function askPast(project) {
+    if (!project || askedPast.has(project)) return;
+    askedPast.add(project);
+    Umi.bridge.post({ type: 'pastSessions', project });
+  }
 
   // Folders in use, most recent first: those chosen here before, live sessions' and the tabs' panes'.
   function recents() {
@@ -154,7 +161,7 @@ Umi.views.picker = (() => {
     projectOfFolder(path).then((project) => {
       if (node.cwd !== path) return;
       Umi.app.update(() => { pk.project = project; });
-      if (S.past.project !== project) Umi.bridge.post({ type: 'pastSessions', project });
+      askPast(project);
     });
   }
 
@@ -208,7 +215,7 @@ Umi.views.picker = (() => {
     const live = all.filter((s) => s.alive && !s.docket);
     const recent = (a, b) => (b.agent?.ts || b.created || 0) - (a.agent?.ts || a.created || 0);
     const by = (st) => live.filter((s) => M.standing(s) === st).sort(recent);
-    const past = S.past.project === pk.project ? S.past.list : [];
+    const past = S.past[pk.project] || [];
     return [
       { type: 'new' },
       ...[...by('needs'), ...by('idle')].map((s) => ({ type: 'live', section: 'Waiting for you', s })),
@@ -284,10 +291,7 @@ Umi.views.picker = (() => {
       if (k) { pk.kind = k.dataset.kind; refresh(el, node); input.focus(); }
     });
     refresh(el, node);
-    if (S.past.project !== pk.project && !pk.askedPast) {
-      pk.askedPast = true;
-      Umi.bridge.post({ type: 'pastSessions', project: pk.project });
-    }
+    askPast(pk.project);
   }
 
   // Focuses the name field of the focused picker (after a render, when the web view has the keys).
@@ -313,12 +317,20 @@ Umi.views.picker = (() => {
     where.querySelector('b').textContent = folder ? tilde(node.cwd || S.home || '') : '';
     where.querySelector('span').textContent = folder ? '↩ take · ⇥ go in · ⇧⇥ up · esc back' : '/ to change the folder';
     const list = el.querySelector('.picker-list');
+    // A refresh for new session data keeps the list where it was scrolled; only a selection that
+    // moved (a key, a new folder search) is brought into view.
+    const scroll = list.scrollTop;
+    const place = () => {
+      const at = folder ? 'f' + (pk.fsel || 0) : 's' + pk.sel;
+      const on = list.querySelector('.sel');
+      if (list.dataset.at !== at && on) on.scrollIntoView({ block: 'nearest' });
+      else list.scrollTop = scroll;
+      list.dataset.at = at;
+    };
     list.textContent = '';
     if (folder) {
       drawFolders(el, node, list);
-      const on = list.querySelector('.sel');
-      if (on) on.scrollIntoView({ block: 'nearest' });
-      return;
+      return place();
     }
     if (pk.jump === 'past') {
       const i = items(node).findIndex((it) => it.type === 'past');
@@ -347,8 +359,14 @@ Umi.views.picker = (() => {
         row.querySelector('b').textContent = M.sessionName(s.id);
         const st = s.agent && Umi.status.parseStatus(s.agent.reply);
         const said = st ? (st.kind === 'other' ? st.detail : `${st.kind === 'pending' ? 'done, pending' : st.kind}${st.detail ? ': ' + st.detail : ''}`) : '';
-        const dk = s.docket && ({ pending: 'docketed, turn running', on: 'on the docket', failed: 'docket hook failed' }[s.docket.state]);
-        row.querySelector('.dim').textContent = [dk, M.isSnoozed(s.id) ? 'snoozed' : '', shown ? 'on screen' : '', said || s.foreground, base(s.folder)].filter(Boolean).join(' · ');
+        // A failed docket hook says why here, the one place a docketed session shows: the first
+        // line of its message in the row, all of it on hover (a hook's stderr can be long).
+        const failed = s.docket?.state === 'failed', why = failed && String(s.docket.error || '').trim();
+        const dk = s.docket && (failed ? `docket failed${why ? ': ' + why.split('\n')[0] : ''}`
+          : { pending: 'docketed, turn running', on: 'on the docket' }[s.docket.state]);
+        const dim = row.querySelector('.dim');
+        dim.textContent = [dk, M.isSnoozed(s.id) ? 'snoozed' : '', shown ? 'on screen' : '', said || s.foreground, base(s.folder)].filter(Boolean).join(' · ');
+        if (failed && why) dim.title = 'docket failed: ' + why;
       } else {
         const p = item.p;
         row.innerHTML = `<span class="kind"></span><b></b><span class="dim"></span>`;
@@ -359,8 +377,7 @@ Umi.views.picker = (() => {
       row.addEventListener('mousedown', (e) => { e.preventDefault(); pk.sel = i; act(node, item); });
       list.append(row);
     });
-    const sel = list.querySelector('.sel');
-    if (sel) sel.scrollIntoView({ block: 'nearest' });
+    place();
   }
 
   return { render, refresh, focus };

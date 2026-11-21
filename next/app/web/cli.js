@@ -195,10 +195,11 @@ Umi.cli = (() => {
   function tabSummary(t) { return { tab: t.id, window: WINDOW, index: S.layout.tabs.indexOf(t) + 1, title: tabTitle(t) }; }
   H['tab.next'] = () => { Umi.app.run('nextTab'); return tabSummary(M.activeTab()); };
   H['tab.prev'] = () => { Umi.app.run('prevTab'); return tabSummary(M.activeTab()); };
-  // Stops showing the tab's panes (⌥⌘W); their sessions keep running.
+  // Stops showing the tab's panes (⌥⌘W, the same action, so ⇧⌘T brings it back); their sessions
+  // keep running.
   H['tab.close'] = ({ tab }, caller) => {
     const t = resolveTab(tab, caller);
-    Umi.app.update(() => { M.paneIds(t.root).forEach((id) => M.removePane(id)); });
+    Umi.app.update(() => Umi.actions.closeTab({ tab: t.id }));
     return { tab: t.id, window: WINDOW };
   };
   H['tab.rename'] = ({ tab, name }, caller) => {
@@ -206,11 +207,14 @@ Umi.cli = (() => {
     Umi.app.update(() => { if (name) t.name = name; else delete t.name; });
     return tabSummary(t);
   };
+  // As ⌃⇧↑↓: within the pinned or the unpinned tabs, never across.
   H['tab.move'] = ({ tab, d }, caller) => {
     const t = resolveTab(tab, caller);
-    const tabs = S.layout.tabs, i = tabs.indexOf(t), j = i + d;
-    if (j < 0 || j >= tabs.length) fail(`the tab is already ${d < 0 ? 'first' : 'last'}`);
-    Umi.app.update(() => { tabs.splice(i, 1); tabs.splice(j, 0, t); });
+    if (t.archived) fail('the tab is archived; unarchive it first');
+    let moved = false;
+    Umi.app.update(() => { moved = Umi.arrange.moveTab(t, d < 0 ? -1 : 1); });
+    const among = S.layout.tabs.some((x) => x.pinned && !x.archived) ? ` of the ${t.pinned ? 'pinned' : 'unpinned'} tabs` : '';
+    if (!moved) fail(`the tab is already ${d < 0 ? 'first' : 'last'}${among}`);
     return tabSummary(t);
   };
 

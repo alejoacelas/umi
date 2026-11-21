@@ -118,9 +118,10 @@ Umi.views.modes = (() => {
     return null;
   }
 
-  // Opens a file in the editor (track a's file pane) beside the focused pane; files that aren't
-  // UTF-8 text, or are too big for the editor, open with their default app (as Umi does).
-  async function openPath(path, { line, col } = {}) {
+  // Opens a file in the editor (track a's file pane) beside the focused pane, or in a tab of its
+  // own with `newTab`; files that aren't UTF-8 text, or are too big for the editor, open with their
+  // default app (as Umi does).
+  async function openPath(path, { line, col, newTab } = {}) {
     try {
       await Umi.fs.read(path);
     } catch (e) {
@@ -129,7 +130,7 @@ Umi.views.modes = (() => {
     }
     const meta = S.layout.meta = S.layout.meta || { sessions: {} };
     meta.recentFiles = [path, ...(meta.recentFiles || []).filter((p) => p !== path)].slice(0, 100);
-    Umi.app.run('openFile', { path, ...(line ? { line } : {}), ...(col ? { col } : {}) });
+    Umi.app.run('openFile', { path, ...(line ? { line } : {}), ...(col ? { col } : {}), ...(newTab ? { newTab } : {}) });
   }
 
   const recentFiles = () => S.layout?.meta?.recentFiles || [];

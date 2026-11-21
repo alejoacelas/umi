@@ -349,6 +349,10 @@ function umiCommentsAttach(document, window, data, post) {
       render();
     },
     setWaiting(n) { state.waiting = n; renderBar(); },
+    // Whether the card of a new comment is open (the page isn't drawn again under it).
+    composingNew: () => !!state.compose,
+    // The file took the change but the page isn't drawn again yet: the buttons work again.
+    idle() { state.busy = false; margin.querySelectorAll('.umi-btn.umi-primary').forEach(b => b.disabled = false); },
     notice,
     // For tests: select text by its words (the nth occurrence in the page's text).
     selectText(needle, nth) {
@@ -396,6 +400,8 @@ function umiCommentsAttach(document, window, data, post) {
   };
 
   render();
+  // A reply draft brought back counts as writing, as it did in the margin before this one.
+  if (margin.querySelector('.umi-card.umi-selected .umi-reply-box')?.value) composing(true);
   if (data.scroll != null) window.scrollTo(0, data.scroll);
   if (state.selected) layout();
   return api;

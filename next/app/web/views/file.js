@@ -417,7 +417,11 @@ Umi.views.file = (() => {
         } else if (msg.type === 'edit') await this.changeComments((cur) => C.edit(cur, msg.id, msg.body));
         else if (msg.type === 'resolve') await this.changeComments((cur) => C.resolve(cur, msg.id, msg.resolved));
         else if (msg.type === 'delete') { await this.changeComments((cur) => C.remove(cur, msg.id)); if (this.selected === msg.id) this.selected = null; }
-        this.renderPreview();
+        // A reply being written doesn't hold the page back (its text comes back from replyDraft);
+        // only a new comment's card does, whose text and place live in the margin alone. Until
+        // that card closes, the margin takes clicks again.
+        if (this.margin?.composingNew()) { this.previewStale = true; this.margin.idle(); }
+        else this.renderPreview({ force: true });
       } catch (e) {
         this.margin?.failed(e.message);
       }
@@ -467,7 +471,7 @@ Umi.views.file = (() => {
 
     async submitSaveAs(to) {
       const path = Umi.fs.resolve(to.trim(), dirOf(this.path));
-      const fail = (m) => { this.saveAs = { error: m }; this.paint(); };
+      const fail = (m) => { this.saveAs = { text: to, error: m }; this.paint(); };
       if (!to.trim() || path === this.path) return fail('Give another name.');
       const other = [...views.values()].find((v) => v !== this && v.path === path);
       if (other && other.dirty) return fail(`${base(path)} is open with unsaved changes; save or close it first.`);
@@ -514,6 +518,14 @@ Umi.views.file = (() => {
       this.frameReady = true;
       const doc = this.frame.contentDocument;
       doc.addEventListener('keydown', (e) => this.key(e));
+      // Keys typed in the preview stay in its frame, so the page's handler for when: 'terminal'
+      // shortcuts (shortcuts.js) never sees them: run them here when nothing in the preview took
+      // the key. On the frame's window, so it runs after the preview's own handlers.
+      this.frame.contentWindow.addEventListener('keydown', (e) => {
+        if (e.defaultPrevented) return;
+        const entry = Umi.shortcuts.table.find((x) => x.when === 'terminal' && Umi.shortcuts.matches(x, e));
+        if (entry) { e.preventDefault(); Umi.shortcuts.run(entry.id); }
+      });
       doc.addEventListener('mousedown', () => {
         if (M.activeTab().focused !== this.id) Umi.app.update(() => M.focusPane(this.id), { focus: false });
       }, true);
@@ -521,9 +533,11 @@ Umi.views.file = (() => {
       if (this.mode === 'rendered') this.renderPreview();
     }
 
-    renderPreview() {
+    renderPreview({ force = false } = {}) {
       if (!this.frameReady || this.mode !== 'rendered' || !this.disk) return;
-      if (this.composing) { this.previewStale = true; return; }
+      if (this.composing && !force) { this.previewStale = true; return; }
+      // The new margin says again whether a reply is being written (views/comments.js).
+      this.composing = false;
       const doc = this.frame.contentDocument, win = this.frame.contentWindow;
       if (!this.markdown) return this.renderData(doc, win);
       const threads = UmiComments.threads(this.text);
@@ -696,6 +710,10 @@ Umi.views.file = (() => {
       this.root.classList.toggle('dirty', this.dirty);
       this.root.dataset.mode = this.mode;
       if (this.toggle) for (const b of this.toggle.children) b.classList.toggle('on', b.dataset.mode === this.mode);
+      // The bars are drawn again on any change, a change on disk too: a field being typed in
+      // (Save As, the comment box) gets its text back from saveAs / ask, and its caret and focus.
+      const typing = this.bars.contains(document.activeElement) && document.activeElement.matches('input, textarea')
+        ? { cls: document.activeElement.closest('.fv-bar').className, at: [document.activeElement.selectionStart, document.activeElement.selectionEnd] } : null;
       this.bars.textContent = '';
       const bar = (text, actions, cls = '') => {
         const b = el('div', 'fv-bar ' + cls);
@@ -730,8 +748,9 @@ Umi.views.file = (() => {
         const b = el('div', 'fv-bar fv-saveas');
         b.append(el('span', '', 'Save as'));
         const i = el('input');
-        i.value = this.path;
+        i.value = this.saveAs.text ?? this.path;
         i.spellcheck = false;
+        i.addEventListener('input', () => { this.saveAs.text = i.value; });
         i.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') { e.preventDefault(); this.submitSaveAs(i.value); }
           else if (e.key === 'Escape') { e.preventDefault(); this.saveAs = null; this.paint(); this.focus(true); }
@@ -742,6 +761,7 @@ Umi.views.file = (() => {
         b.append(i, ok);
         if (this.saveAs.error) b.append(el('span', 'fv-err', this.saveAs.error));
         this.bars.append(b);
+        if (typing && typing.cls === b.className) { i.focus(); i.setSelectionRange(...typing.at); }
       }
       if (this.ask) {
         const b = el('div', 'fv-bar fv-comment');
@@ -749,6 +769,8 @@ Umi.views.file = (() => {
         b.append(el('span', 'fv-bar-text', `Comment on “${q}”`));
         const t = el('textarea');
         t.placeholder = 'Comment…';
+        t.value = this.ask.text || '';
+        t.addEventListener('input', () => { this.ask.text = t.value; });
         t.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); this.submitAsk(t.value); }
           else if (e.key === 'Escape') { e.preventDefault(); this.ask = null; this.paint(); this.focus(); }
@@ -761,6 +783,7 @@ Umi.views.file = (() => {
         b.append(t, ok, cancel);
         if (this.ask.error) b.append(el('span', 'fv-err', this.ask.error));
         this.bars.append(b);
+        if (typing && typing.cls === b.className) { t.focus(); t.setSelectionRange(...typing.at); }
       }
       const refused = this.error && !this.disk;
       this.message.textContent = refused ? this.error : '';
@@ -853,8 +876,9 @@ Umi.views.file = (() => {
 
 // Opens a file in a pane of its own to the right of `pane` (default: the focused one), or shows
 // the pane already showing it (E-9). `line`/`col` (1-based) put the caret there in the source.
-// `focus: false` leaves the focus where it was (the CLI's `edit`).
-Umi.actions.openFile = ({ path, line, col, pane, mode, focus = true } = {}) => {
+// `focus: false` leaves the focus where it was (the CLI's `edit`). `newTab` opens it in a tab of its
+// own instead of beside a pane (the explorer's Open in New Tab).
+Umi.actions.openFile = ({ path, line, col, pane, mode, focus = true, newTab = false } = {}) => {
   const M = Umi.model, S = Umi.state;
   if (!path) return;
   const abs = Umi.fs.resolve(path);
@@ -869,10 +893,17 @@ Umi.actions.openFile = ({ path, line, col, pane, mode, focus = true } = {}) => {
       return shown.id;
     }
   }
+  const fields = { path: abs, ...(mode ? { mode } : goto ? { mode: 'raw' } : {}), ...(goto ? { goto } : {}) };
+  if (newTab) {
+    const beforeTab = S.layout.activeTab;
+    const t = M.addTab(M.newPane({ view: 'file', ...fields, cwd: abs.replace(/\/[^/]*$/, '') || '/' }));
+    if (!focus) S.layout.activeTab = beforeTab;
+    return t.focused;
+  }
   const from = pane && M.findPane(pane) ? pane : M.activeTab().focused;
   const before = M.activeTab().focused, beforeTab = S.layout.activeTab;
   M.focusPane(from);
-  const p = M.split('row', 'file', { path: abs, ...(mode ? { mode } : goto ? { mode: 'raw' } : {}), ...(goto ? { goto } : {}) });
+  const p = M.split('row', 'file', fields);
   if (!focus) {
     S.layout.activeTab = beforeTab;
     const t = M.findPane(p.id).tab;

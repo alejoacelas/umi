@@ -8,23 +8,39 @@ Umi.views.sidebar = (() => {
   const shortPath = (p) => (p && S.home && (p === S.home || p.startsWith(S.home + '/')) ? '~' + p.slice(S.home.length) : p || '');
   const base = (p) => (p ? shortPath(p).split('/').filter(Boolean).pop() || '/' : '');
 
-  function tabRow(tab, i) {
+  // What a tab's row shows: the row is drawn from this alone, so when it is unchanged the row is
+  // left as it is (render).
+  function rowShows(tab, i) {
     const info = S.panes[tab.focused] || {};
-    const count = M.paneIds(tab.root).length;
+    const sid = M.sessionOf(tab.focused);
+    const folder = M.folderOf(tab.focused);
+    const listed = M.listedTabs().length;
+    return {
+      active: tab.id === S.layout.activeTab,
+      editing: S.ui.editingTab === tab.id,
+      name: tabName(tab), placeholder: base(folder) || 'Tab name',
+      pinned: !!tab.pinned, synced: Umi.arrange.isSynced(tab), count: M.paneIds(tab.root).length,
+      failed: info.exitCode != null && ![0, 130, 141, -1].includes(info.exitCode),
+      line2: shortPath(info.title) || (sid && S.live[sid]?.foreground) || shortPath(folder),
+      key: i < 0 ? '' : i < 8 ? `⌘${i + 1}` : i === listed - 1 ? '⌘9' : '',
+    };
+  }
+
+  function tabRow(tab, i, d = rowShows(tab, i)) {
+    const count = d.count;
     const el = document.createElement('div');
-    el.className = 'tab' + (tab.id === S.layout.activeTab ? ' active' : '');
+    el.className = 'tab' + (d.active ? ' active' : '');
     el.innerHTML = `
       <div class="icon"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M4.5 6l2 1.75-2 1.75M8 10h3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div class="text"><div class="line1"></div><div class="line2"></div></div>
       <div class="key"></div>
       <button class="close" title="Stop showing this tab (its sessions keep running)">×</button>`;
     const line1 = el.querySelector('.line1');
-    const folder = M.folderOf(tab.focused);
-    if (S.ui.editingTab === tab.id) {
+    if (d.editing) {
       const input = document.createElement('input');
       input.className = 'tab-name';
       input.spellcheck = false;
-      input.placeholder = base(folder) || 'Tab name';
+      input.placeholder = d.placeholder;
       input.value = S.ui.tabDraft ?? tab.name ?? '';
       input.addEventListener('input', () => { S.ui.tabDraft = input.value; });
       input.addEventListener('keydown', (e) => {
@@ -45,10 +61,10 @@ Umi.views.sidebar = (() => {
     } else {
       const name = document.createElement('span');
       name.className = 'name';
-      name.textContent = tabName(tab);
+      name.textContent = d.name;
       line1.append(name);
-      if (tab.pinned) line1.prepend(mark('pin', '📌', 'Pinned (⌃⌘P)'));
-      if (Umi.arrange.isSynced(tab)) line1.append(mark('sync', linkIcon, 'Input synchronized (⌥⌘I)'));
+      if (d.pinned) line1.prepend(mark('pin', '📌', 'Pinned (⌃⌘P)'));
+      if (d.synced) line1.append(mark('sync', linkIcon, 'Input synchronized (⌥⌘I)'));
       if (count > 1) {
         const c = document.createElement('span');
         c.className = 'count';
@@ -58,17 +74,16 @@ Umi.views.sidebar = (() => {
       }
     }
     const line2 = el.querySelector('.line2');
-    if (info.exitCode != null && ![0, 130, 141, -1].includes(info.exitCode)) {
+    if (d.failed) {
       const f = document.createElement('span');
       f.className = 'failed';
       f.textContent = '▲';
       line2.append(f);
     }
-    const sid = M.sessionOf(tab.focused);
-    line2.append(document.createTextNode(shortPath(info.title) || (sid && S.live[sid]?.foreground) || shortPath(folder)));
-    const listed = M.listedTabs().length;
-    el.querySelector('.key').textContent = i < 0 ? '' : i < 8 ? `⌘${i + 1}` : i === listed - 1 ? '⌘9' : '';
+    line2.append(document.createTextNode(d.line2));
+    el.querySelector('.key').textContent = d.key;
     el.dataset.tab = tab.id;
+    el.dataset.shows = shows(d);
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('.close, input') || e.button !== 0) return;
       Umi.app.update(() => { S.layout.activeTab = tab.id; S.ui.sidebarFocus = null; });
@@ -78,7 +93,12 @@ Umi.views.sidebar = (() => {
       if (e.target.closest('.close, input')) return;
       Umi.app.update(() => { S.layout.activeTab = tab.id; Umi.actions.renameTab(); });
     });
-    el.querySelector('.close').addEventListener('click', () => {
+    // On mousedown, not click: the row may be drawn again before the button comes up. It never
+    // reaches the row, so it starts no drag and selects nothing.
+    el.querySelector('.close').addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
       Umi.app.run('closeTab', { tab: tab.id });
     });
     el.addEventListener('contextmenu', (e) => {
@@ -180,16 +200,15 @@ Umi.views.sidebar = (() => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
       document.body.classList.remove('dragging-tab');
+      document.querySelectorAll('#tabs .tab').forEach((r) => r.classList.remove('drop-before', 'drop-after'));
       if (moved && target) Umi.app.update(() => Umi.arrange.placeTab(tab, target, after));
-      else if (moved) render();
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   }
 
   // SPEC AR-1: the Archived row at the top while a tab is archived; a click opens it in place.
-  function renderArchive(list) {
-    const archived = Umi.arrange.archived();
+  function renderArchive(list, archived) {
     if (!archived.length) return;
     const row = document.createElement('div');
     row.className = 'archive-row' + (S.layout.archiveOpen ? ' open' : '');
@@ -204,14 +223,42 @@ Umi.views.sidebar = (() => {
     list.append(box);
   }
 
+  // Titles and sessions change many times a second, and a row drawn again under the pointer
+  // loses a click, so only rows whose content changed are replaced; the whole list is drawn
+  // again only when its rows change (a tab added, moved, archived, filtered out). The row being
+  // renamed is never replaced while its name is edited, so its field keeps the caret.
+  let shape = null;
+  const shows = (d) => JSON.stringify({ ...d, active: undefined });
   function render() {
     document.body.classList.toggle('no-sidebar', S.layout.sidebar === false);
     if (S.layout.sidebarWidth) document.documentElement.style.setProperty('--sidebar-width', S.layout.sidebarWidth + 'px');
     const list = document.querySelector('#tabs');
-    list.textContent = '';
-    renderArchive(list);
+    const archived = Umi.arrange.archived();
+    const open = !!S.layout.archiveOpen;
     // "Search tabs..." lists only the tabs it matches (keeping their ⌘ numbers).
-    M.listedTabs().forEach((tab, i) => { if (Umi.views.modes.matchesTab(tab)) list.append(tabRow(tab, i)); });
+    const listed = M.listedTabs().map((tab, i) => ({ tab, i })).filter((r) => Umi.views.modes.matchesTab(r.tab));
+    const rows = [...(open ? archived.map((tab) => ({ tab, i: -1 })) : []), ...listed];
+    const now = JSON.stringify([archived.length, open, rows.map((r) => r.tab.id)]);
+    if (now === shape) {
+      for (const { tab, i } of rows) {
+        const old = list.querySelector(`.tab[data-tab="${CSS.escape(tab.id)}"]`);
+        if (!old) continue;
+        const d = rowShows(tab, i);
+        old.classList.toggle('active', d.active);
+        if (d.editing && old.querySelector('input.tab-name')) continue;
+        if (old.dataset.shows !== shows(d)) old.replaceWith(tabRow(tab, i, d));
+      }
+    } else {
+      // The rows change: a name being edited comes back in the new field where it was.
+      const was = list.querySelector('input.tab-name');
+      const caret = was && document.activeElement === was ? [was.selectionStart, was.selectionEnd] : null;
+      shape = now;
+      list.textContent = '';
+      renderArchive(list, archived);
+      for (const { tab, i } of listed) list.append(tabRow(tab, i));
+      const input = caret && list.querySelector('input.tab-name');
+      if (input) { input.focus(); input.setSelectionRange(...caret); }
+    }
     Umi.views.modes.render();
   }
 

@@ -350,10 +350,14 @@ Umi.views.explorer = (() => {
       add('New File', () => startNew(n.path));
       sep();
       add('cd to Directory', () => cdTo(pp, n.path), !!pp);
-      add('Open in New Tab', () => Umi.app.update(() => { const t = M.addTab(M.newPane({ cwd: n.path })); S.ui.editingTab = t.id; }));
+      // The tab is named in its row only while the tab list shows (from here it shows Files).
+      add('Open in New Tab', () => Umi.app.update(() => {
+        const t = M.addTab(M.newPane({ cwd: n.path }));
+        if (V().shown() && V().mode() === 'tabs') S.ui.editingTab = t.id;
+      }));
     } else {
       add('Open in New Pane', () => V().openPath(n.path));
-      add('Open in New Tab', () => Umi.app.update(() => M.addTab(M.newPane({ view: 'file', path: n.path, cwd: dirname(n.path) }))));
+      add('Open in New Tab', () => V().openPath(n.path, { newTab: true }));
       add('Open with Default App', () => Umi.fs.openDefault(n.path));
     }
     add('Reveal in Finder', () => Umi.fs.reveal(n.path));

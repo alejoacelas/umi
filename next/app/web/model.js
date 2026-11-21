@@ -22,7 +22,7 @@ Umi.state = {
   layout: null,
   panes: {},        // paneId -> what native reports for the pane: {session, title, pwd, exitCode}
   live: {},         // sessionId -> the daemon's session + {folder, project, state, kind, agent?}
-  past: { project: null, list: [] }, // resumable Claude/Codex sessions of a project
+  past: {},         // project -> its resumable Claude/Codex sessions (page memory, asked per load)
   ui: { panel: null, keys: 'terminal', editingTab: null, sidebarFocus: null }, // not persisted
   closed: {},       // paneId -> 'detach': panes closed since the last layout sent to native
   home: '',
@@ -127,13 +127,13 @@ Umi.model = (() => {
       if (isSnoozed(s.id)) continue;
       // Docketed sessions never show here, except when the docket hook failed (no silent loss).
       if (s.docket) {
-        if (s.docket.state === 'failed') (groups[s.project] = groups[s.project] || []).push({ ...s, docketFailed: true });
+        if (s.docket.state === 'failed') (groups[s.project] = groups[s.project] || []).push(s);
         continue;
       }
       const z = S.layout.meta?.sessions?.[s.id]?.snooze;
       // A finished snooze shows even if it says done: snoozing asked to be told.
       if (standing(s) !== 'needs' && !(z && z.done)) continue;
-      (groups[s.project] = groups[s.project] || []).push({ ...s, badge: !!(z && z.done) });
+      (groups[s.project] = groups[s.project] || []).push(s);
     }
     for (const g of Object.values(groups)) g.sort((a, b) => (b.agent?.ts || 0) - (a.agent?.ts || 0));
     return Object.keys(groups).sort((a, b) => (a === cur ? -1 : b === cur ? 1 : a.localeCompare(b)))
@@ -496,7 +496,13 @@ Umi.model = (() => {
 // Named actions: what native shortcuts, sidebar buttons and the palette run. Each only changes
 // Umi.state; Umi.app.run saves, draws and reports after it.
 Umi.actions = {
-  newTab: () => { const t = Umi.model.addTab(); Umi.state.ui.editingTab = t.id; },
+  // ⌘T names the new tab in its row, when the tab list shows; else the keys stay with its terminal
+  // (an input nobody can see would take them).
+  newTab: () => {
+    const t = Umi.model.addTab(), V = Umi.views.modes;
+    Umi.state.ui.tabDraft = null;
+    if (V.shown() && V.mode() === 'tabs') Umi.state.ui.editingTab = t.id;
+  },
   splitRight: () => Umi.model.split('row', 'picker'),
   splitDown: () => Umi.model.split('column', 'picker'),
   // ⌘W: closes the pane and ends its session. A file pane with unsaved edits asks first
@@ -570,7 +576,14 @@ Umi.actions = {
     })(Umi.model.activeTab().root);
   },
   // ⌃⌘R renames the tab in its row; ⌃⇧⌘R renames the focused session (the palette's Rename).
-  renameTab: () => { const t = Umi.model.activeTab(); Umi.state.ui.editingTab = t.id; Umi.state.ui.tabDraft = t.name || ''; },
+  // The row's field needs the tab list on screen: ⌃⌘R shows it first (as ⌥⌘F does).
+  renameTab: () => {
+    const S = Umi.state, t = Umi.model.activeTab();
+    S.layout.sidebarMode = 'tabs';
+    S.layout.sidebar = true;
+    S.ui.editingTab = t.id;
+    S.ui.tabDraft = t.name || '';
+  },
   renameSession: () => {
     const sid = Umi.model.sessionOf(Umi.model.activeTab().focused);
     if (sid) Umi.model.openPanel('palette', { mode: 'rename', sid });

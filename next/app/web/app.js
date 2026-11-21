@@ -82,7 +82,24 @@ Umi.app = (() => {
 })();
 
 Umi.bridge.on('state', (msg) => Umi.app.update(() => Umi.model.load(msg)));
-Umi.bridge.on('pane', (msg) => { Umi.model.paneInfo(msg.id, msg.info); Umi.views.sidebar.render(); Umi.views.panes.refreshChrome(); Umi.app.report(false); if (Umi.state.ui.editingTab) Umi.views.sidebar.focus(); });
+// Terminal titles change many times a second while a program runs: the model takes each at once,
+// the drawing once per frame. WebKit stops frames in a window that doesn't show, so a timer draws
+// there instead.
+let paneDraw = null;
+function drawPanes() {
+  if (!paneDraw) return;
+  cancelAnimationFrame(paneDraw.frame);
+  clearTimeout(paneDraw.timer);
+  paneDraw = null;
+  Umi.views.sidebar.render();
+  Umi.views.panes.refreshChrome();
+  Umi.app.report(false);
+  if (Umi.state.ui.editingTab) Umi.views.sidebar.focus();
+}
+Umi.bridge.on('pane', (msg) => {
+  Umi.model.paneInfo(msg.id, msg.info);
+  if (!paneDraw) paneDraw = { frame: requestAnimationFrame(drawPanes), timer: setTimeout(drawPanes, 100) };
+});
 Umi.bridge.on('focused', (msg) => {
   const found = Umi.model.findPane(msg.pane);
   if (!found) return;
@@ -114,7 +131,7 @@ Umi.bridge.on('sessions', (msg) => {
   Umi.views.panes.refreshPickers();
 });
 Umi.bridge.on('pastSessions', (msg) => {
-  Umi.state.past = { project: msg.project, list: msg.list };
+  Umi.state.past[msg.project] = msg.list;
   Umi.views.panes.refreshPickers();
 });
 Umi.bridge.on('paneExited', (msg) => Umi.app.update(() => Umi.model.removePane(msg.pane)));
