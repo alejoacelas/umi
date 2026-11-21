@@ -182,8 +182,24 @@ final class SessionMonitor {
         }
     }
 
+    /// Projects from agent transcripts, including sessions started outside Umi.
+    func agentProjects(done: @escaping ([String]) -> Void) {
+        queue.async { [self] in
+            var seen = Set<String>()
+            let list = pastSessions(project: nil, exclude: [], limit: Int.max).compactMap { row -> String? in
+                guard let cwd = row["cwd"] as? String else { return nil }
+                let path = project(of: cwd)
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue,
+                      seen.insert(path).inserted else { return nil }
+                return path
+            }
+            DispatchQueue.main.async { done(list) }
+        }
+    }
+
     /// Claude Code and Codex sessions that ended and can be resumed, in `project`, newest first.
-    private func pastSessions(project: String, exclude: Set<String>, limit: Int = 40) -> [[String: Any]] {
+    private func pastSessions(project: String?, exclude: Set<String>, limit: Int = 40) -> [[String: Any]] {
         var files: [(URL, Date, String)] = []
         let fm = FileManager.default
         let home = URL(fileURLWithPath: NSHomeDirectory())
@@ -202,7 +218,7 @@ final class SessionMonitor {
         }
         files.sort { $0.1 > $1.1 }
         var out: [[String: Any]] = []
-        for (f, mtime, kind) in files.prefix(400) {
+        for (f, mtime, kind) in files.prefix(project == nil ? files.count : 400) {
             guard let h = try? FileHandle(forReadingFrom: f) else { continue }
             let data = h.readData(ofLength: 256 * 1024)
             try? h.close()
@@ -220,9 +236,10 @@ final class SessionMonitor {
                 } else if prompt == nil, let p = j["payload"] as? [String: Any], p["type"] as? String == "user_message" {
                     prompt = p["message"] as? String
                 }
+                if project == nil && cwd != nil && id != nil { break }
                 if cwd != nil && id != nil && prompt != nil && (kind == "codex" || title != nil) { break }
             }
-            guard let cwd, let id, !exclude.contains(id), self.project(of: cwd) == project else { continue }
+            guard let cwd, let id, !exclude.contains(id), (project == nil || self.project(of: cwd) == project) else { continue }
             if kind == "codex" && prompt == nil { prompt = f.deletingPathExtension().lastPathComponent }
             out.append(["kind": kind, "id": id, "cwd": cwd, "title": title ?? prompt ?? id,
                         "mtime": mtime.timeIntervalSince1970])

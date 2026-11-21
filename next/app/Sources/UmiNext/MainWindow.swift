@@ -360,6 +360,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             updateAndRestart()
         case "exitSession":
             if let id = msg["session"] as? String { SessionBackend.endSession(sessionID: id); sessions.pollSoon() }
+        case "agentProjects":
+            sessions.agentProjects { [weak self] list in
+                self?.send(["type": "agentProjects", "list": list])
+            }
         case "pastSessions":
             let project = msg["project"] as? String ?? NSHomeDirectory()
             sessions.past(project: project) { [weak self] list in

@@ -10,7 +10,8 @@
 // empty name field (or a click on the folder) turns the field into a folder search:
 //   - letters match folders in use (live sessions, tabs, folders chosen here before), the folders
 //     next to them and, for a folder two or more levels under home, the folders next to its parent
-//     (so every project of a workspace like ~/best), most recent first;
+//     (so every project of a workspace like ~/best). Projects with Claude/Codex history come
+//     first, then match quality and recent folder choices;
 //   - a path (`~/…`, `/…`, `./…`, `../…`, or anything with a `/`) lists that folder's folders,
 //     filtered by what follows the last `/`.
 // ↑↓ choose, Enter takes the folder, Tab goes into the chosen one, ⇧Tab goes up one, Esc (or ⌫ in
@@ -62,9 +63,24 @@ Umi.views.picker = (() => {
   // Only inside home, and never home's own folders' contents unless one is in use, so macOS
   // doesn't ask for Documents, Desktop and the like.
   let known = null;
+  let history = [];
+  Umi.bridge.on('agentProjects', (msg) => {
+    history = msg.list;
+    known = null;
+    redraw();
+  });
+  function agentFolders() {
+    return new Set([...history, ...Object.values(S.live)
+      .filter((s) => M.userStarted(s) && ['claude', 'codex'].includes(s.kind))
+      .flatMap((s) => [s.project, s.folder]).filter(Boolean)]);
+  }
+  function prioritize(paths) {
+    const used = agentFolders();
+    return paths.sort((a, b) => Number(used.has(b)) - Number(used.has(a)));
+  }
   function knownFolders() {
     if (known) return known;
-    const seeds = recents();
+    const seeds = [...new Set([...recents(), ...history])];
     const parents = new Set();
     for (const p of seeds) {
       const up = parent(p), top = parent(up);
@@ -91,17 +107,20 @@ Umi.views.picker = (() => {
       const rows = (seg ? Umi.fs.fuzzy(seg, names, 200).map((r) => r.path) : names).map((n) => ({ path: (dir === '/' ? '' : dir) + '/' + n }));
       return { rows: seg ? rows : [{ path: dir, use: true }, ...rows] };
     }
-    const all = knownFolders();
+    const all = prioritize([...knownFolders()]);
     if (!q.trim()) return { rows: all.slice(0, 200).map((path) => ({ path })) };
     const shown = all.map(tilde);
     const rank = new Map(shown.map((p, i) => [p, i]));
-    const hits = Umi.fs.fuzzy(q, shown, 200).sort((a, b) => b.score - a.score || rank.get(a.path) - rank.get(b.path));
+    const used = agentFolders();
+    const hits = Umi.fs.fuzzy(q, shown, shown.length).sort((a, b) =>
+      Number(used.has(all[rank.get(b.path)])) - Number(used.has(all[rank.get(a.path)])) ||
+      b.score - a.score || rank.get(a.path) - rank.get(b.path)).slice(0, 200);
     return { rows: hits.map((r) => ({ path: all[rank.get(r.path)] })) };
   }
 
   function folderMode(el, node, on) {
     const pk = node.picker;
-    if (on) { dirs = new Map(); known = null; pk.mode = 'folder'; } else delete pk.mode;
+    if (on) { dirs = new Map(); known = null; pk.mode = 'folder'; Umi.bridge.post({ type: 'agentProjects' }); } else delete pk.mode;
     pk.query = '';
     pk.fsel = 0;
     el.querySelector('.picker-name').value = on ? '' : pk.name;
