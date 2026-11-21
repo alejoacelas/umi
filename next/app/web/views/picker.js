@@ -242,7 +242,7 @@ Umi.views.picker = (() => {
     el.innerHTML = `
       <div class="picker-head">
         <input class="picker-name" spellcheck="false">
-        <div class="picker-kinds">${KINDS.map((k) => `<button type="button" data-kind="${k}">${LABEL[k]}</button>`).join('')}</div>
+        <div class="picker-kinds">${KINDS.map((k) => `<button type="button" data-kind="${k}" title="${LABEL[k]}" aria-label="${LABEL[k]}"></button>`).join('')}</div>
       </div>
       <div class="picker-project"></div>
       <div class="picker-list"></div>`;
@@ -335,7 +335,7 @@ Umi.views.picker = (() => {
       const row = document.createElement('div');
       row.className = 'picker-row' + (i === pk.sel ? ' sel' : '');
       if (item.type === 'new') {
-        row.innerHTML = `<b>New ${LABEL[pk.kind]} session</b><span class="dim"></span>`;
+        row.innerHTML = `<b>New session</b><span class="dim"></span>`;
         row.prepend(Umi.icons.agent(pk.kind));
         row.querySelector('.dim').textContent = pk.name.trim() || M.defaultName(node.cwd);
       } else if (item.type === 'live') {

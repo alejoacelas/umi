@@ -213,8 +213,9 @@ body.no-sidebar #strip { padding-left: 80px; }
 }
 .picker-name:focus { border-color: rgba(25,170,216,0.7); }
 .picker-kinds { display: flex; flex-wrap: wrap; gap: 2px; }
-.picker-kinds button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; cursor: pointer; font-family: inherit; padding: 3px 8px; border-radius: 4px; color: var(--dim); font-size: 11px; }
-.picker-kinds button.on { background: rgba(255,255,255,0.12); color: var(--ink); }
+.picker-kinds button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 4px; border: 0; background: none; cursor: pointer; border-radius: 4px; color: var(--dim); opacity: 0.55; }
+.picker-kinds button:hover, .picker-kinds button:focus-visible { opacity: 1; }
+.picker-kinds button.on { background: rgba(255,255,255,0.08); color: var(--ink); opacity: 0.85; }
 .picker-project { color: var(--dim); font-size: 11px; cursor: default; }
 .picker-project b { font-weight: 500; color: var(--ink); }
 .picker-project span { opacity: 0.6; margin-left: 6px; }
