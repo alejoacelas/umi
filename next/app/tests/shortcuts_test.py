@@ -91,7 +91,7 @@ def focus_terminal():
         if u["keys"] == "terminal" and u["view"] == "terminal":
             return True
         if u["view"] == "picker":
-            # Start a shell in the picker: Tab twice (claude → codex → shell), Enter.
+            # Start a shell in the picker, through the model (no keys).
             ev("""(() => { const M = Umi.model; Umi.app.update(() => M.startSession(M.activeTab().focused, {name: 'sc-test'})); })(); 1""")
             time.sleep(1.5)
         else:

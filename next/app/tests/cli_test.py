@@ -237,8 +237,9 @@ def t_tabs():
     assert ls()["current_tab"] == made["tab"]
     run("tab", "focus", "#1")
     assert ls()["current_tab"] == tabs()[0]["id"]
+    listed = json.loads(debug("JSON.stringify(Umi.model.listedTabs().map((t) => t.id))"))  # archived tabs are skipped
     r1 = j("tab", "next")
-    assert r1["index"] == 2 % n + 0 or r1["index"] >= 1
+    assert r1["tab"] == listed[1 % len(listed)], (r1, listed)
     r2 = j("tab", "prev")
     assert r2["index"] == 1
     i = next(t["index"] for t in tabs() if t["id"] == made["tab"])
@@ -320,13 +321,8 @@ def t_zoom_strip_back():
 def t_edit():
     doc = os.path.join(scratch, "doc.md")
     open(doc, "w").write("# Doc\n\nSome words.\n")
-    has_editor = debug("!!Umi.actions.openFile") in (True, 1, "1", "true")
     run("tab", "focus", made["tab"])
     before = ls()["current_pane"]
-    if not has_editor:
-        assert "editor isn't in Umi next yet" in run("edit", doc, ok=False, code=1).stderr
-        print("     (no openFile yet: edit, editor checked for their refusal only)")
-        return
     doc2 = os.path.join(scratch, "notes.txt")
     open(doc2, "w").write("plain\n")
     r = j("edit", doc, doc2, "--source")
@@ -385,23 +381,17 @@ def t_comments():
     s.recv(100)
     until(lambda: debug("typeof window.__beforeReload") == "undefined" and debug("Umi.cli.waiting().length") in (1, "1"),
           what="the wait to come back after the reload")
-    if debug("!!Umi.actions.openFile") in (True, 1, "1", "true"):
-        # The Done button of the file's comment margin answers it.
-        fp = j("edit", f, "--preview")["documents"][0]["pane"]
-        until(lambda: debug(f"(Umi.views.file.get('{fp}').margin || 0) && 1") in (1, "1"), what="the comment margin")
-        debug(f"Umi.views.file.get('{fp}').marginMessage({{type: 'done'}})")
-    else:
-        debug(f"Umi.cli.commentsDone({json.dumps(real)})")
+    # The Done button of the file's comment margin answers it.
+    fp = j("edit", f, "--preview")["documents"][0]["pane"]
+    until(lambda: debug(f"(Umi.views.file.get('{fp}').margin || 0) && 1") in (1, "1"), what="the comment margin")
+    debug(f"Umi.views.file.get('{fp}').marginMessage({{type: 'done'}})")
     out, err = p.communicate(timeout=10)
     assert p.returncode == 0 and json.loads(out)["path"] == real, (p.returncode, out, err)
     assert debug("Umi.cli.waiting().length") in (0, "0")
-    if debug("!!Umi.actions.openFile") in (True, 1, "1", "true"):
-        j("editor", "close", f)
+    j("editor", "close", f)
 
 
 def t_focus_log():
-    if debug("1") is None:
-        raise AssertionError("no debug socket")
     folder = os.path.join(STATE, "logs/focus")
     r = j("focus-log", "--since", "10m")
     open_ = [s for s in r["stretches"] if s.get("open")]

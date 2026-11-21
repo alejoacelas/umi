@@ -34,4 +34,4 @@ assert.equal(isDone(parseStatus('**Status: done**')), true);
 assert.equal(isDone(parseStatus('Status: done, pending verification: X')), true);
 assert.equal(isDone(parseStatus('- Status: waiting on you: X')), false);
 assert.equal(isDone(parseStatus('no status')), false);
-console.log(`status.test.js: ${n + 4} checks passed`);
+console.log(`status.test.js: ${n + 5} checks passed`);

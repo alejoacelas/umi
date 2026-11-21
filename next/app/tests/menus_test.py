@@ -230,7 +230,6 @@ new = [i for i in J("Umi.model.paneIds(Umi.model.activeTab().root)") if i not in
 check("Split Pane Right splits it to the right", len(new) == 1 and J("Umi.model.paneIds(Umi.model.activeTab().root)") == [pane_a, new[0], pane_b])
 ev("Umi.app.update(() => Umi.model.removePane(%s)); 1" % json.dumps(new[0]))
 
-sid_b = J("Umi.model.sessionOf(%s)" % json.dumps(pane_b))
 right_click(pane_b, "Close Pane")
 check("Close Pane closes the pane right-clicked, as ⌘W", wait(lambda: J("Umi.model.paneIds(Umi.model.activeTab().root)") == [pane_a], 3))
 m = right_click(pane_a)

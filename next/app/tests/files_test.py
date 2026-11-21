@@ -2,7 +2,9 @@
 """Checks track (b) — the project explorer, quick open (⌘O), global search and "Search tabs..." —
 against a running UmiNext started with UMI_NEXT_DEBUG=1. Keys go through the debug socket as
 NSEvents (the same path as typed keys after the HID tap), so it can run with UMI_NEXT_OFFSCREEN=1
-and without the screen lock. The right-click menu needs a real click: check it by hand.
+and without the screen lock. The explorer's right-click menu is answered by a spy on the bridge's
+`menu`, as if an item were chosen. It uses the clipboard (Copy Path) and moves one scratch file to
+the Trash (Delete).
 
   files_test.py STATE_DIR SCRATCH_DIR [BIG_REPO]
 
@@ -163,7 +165,6 @@ w(".gitignore", "ignored.txt\n")
 os.remove(scratch + "/src/later.txt")
 
 # Opening a file: Enter on README.md runs openFile with its absolute path.
-ev("Umi.views.explorer.debug(); 1")
 for _ in range(40):
     if rel(rows()["selected"] or "") == "README.md":
         break
@@ -301,7 +302,6 @@ sh("git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "lib")
 w("lib/qb.txt", "b changed\n")
 key("o", "cmd")
 items = until("Umi.views.quickOpen.debug().count && Umi.views.quickOpen.debug().items", 5)
-recent = J("Umi.views.modes.recentFiles().length")
 check("empty query: recent files, then changed ones, then the rest",
       items and "lib/qb.txt" in items and "lib/qa.txt" in items and items.index("lib/qb.txt") < items.index("lib/qa.txt")
       and all(not x.startswith("lib/") for x in items[:items.index("lib/qb.txt")]), items)

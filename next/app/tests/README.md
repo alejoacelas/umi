@@ -17,13 +17,12 @@
     `UMI_NEXT_OFFSCREEN=1` (window off screen, never active).
   - `files_test.py STATE_DIR SCRATCH [BIG_REPO]`: the explorer, its right-click menu, quick open,
     global search and Search tabs (track b), by keys through the debug socket; runs off screen.
+    It uses the clipboard and moves one scratch file to the Trash.
     BIG_REPO adds streaming, cancel, the 20,000-line cap and quick open's speed on a large repository.
-  - `shortcuts_test.py STATE_DIR KEY HYPER`: today's shortcuts by real key events, keys outside
-    the table reaching the terminal, and a table entry added live working without a rebuild.
-- `docket_test.sh` (mac-air-2, `lockf -k ~/umi-screen.lock zsh docket_test.sh`): snooze to docket end to
-  end with a real Claude session, a stub `~/.config/umi-next/docket-hook`, and task links served from
-  `http://127.0.0.1:18765/umi/` (allowed only through `UMI_NEXT_DEBUG_TASK_ORIGIN` in debug mode). Its
-  helpers (`docket_helpers.sh`, copied there as `d.sh`, plus `claude-tok`, `click`, `hyper`) live in mac-air-2's `~/umi-next-tools`.
+  - `shortcuts_test.py STATE_DIR KEY HYPER [--debug-events]`: today's shortcuts by real key events,
+    keys outside the table reaching the terminal, and a table entry added live working without a
+    rebuild. It runs `click` (built from `click.swift`) from KEY's folder. `--debug-events` sends
+    the keys through the debug socket instead of the HID tap.
   - `cli_test.py APP [SCRATCH] [NOTIFY_LOG]`: every `umi-next` command against a running test copy
     (APP is its `UmiNext.app`). Types nothing, so it runs with `UMI_NEXT_OFFSCREEN=1`; start the app
     with `UMI_NEXT_FOCUS_ASSUME_ACTIVE=1` too for the focus-log checks, and with
@@ -39,3 +38,10 @@
   - `file_keys_test.py STATE_DIR KEY SCRATCH`: the file-pane keys the debug socket can't send as a
     keyboard does (⌥⌘M, Escape in CodeMirror's panels, the Edit menu's ⌘X ⌘Z ⇧⌘Z), by real key
     events, under the screen lock.
+- `resume_test.py APP`: starts a test copy (`build.sh --test NAME`) off screen by itself, opens a
+  real Claude session, restarts the app and its daemon, and checks the pane resumes that agent.
+  Needs `claude` on PATH; stops the copy and moves its state to the Trash at the end.
+- `docket_test.sh` (mac-air-2, `lockf -k ~/umi-screen.lock zsh docket_test.sh`): snooze to docket end to
+  end with a real Claude session, a stub `~/.config/umi-next/docket-hook`, and task links served from
+  `http://127.0.0.1:18765/umi/` (allowed only through `UMI_NEXT_DEBUG_TASK_ORIGIN` in debug mode). Its
+  helpers (`docket_helpers.sh`, copied there as `d.sh`, plus `claude-tok`, `click`, `hyper`) live in mac-air-2's `~/umi-next-tools`.

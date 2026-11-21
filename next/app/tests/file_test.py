@@ -38,20 +38,6 @@ def J(js):
     return json.loads(ev(f"JSON.stringify({js})"))
 
 
-def call(expr, timeout=10):
-    k = "k%d" % int(time.time() * 1e6)
-    ev(f"window.__r = window.__r || {{}}; Promise.resolve().then(() => {expr}).then("
-       f"v => window.__r.{k} = JSON.stringify({{ok: v === undefined ? null : v}}), e => window.__r.{k} = JSON.stringify({{err: String(e && e.message || e)}})); 1")
-    t = time.time()
-    while time.time() - t < timeout:
-        v = ev(f"window.__r.{k} || ''")
-        if v:
-            d = json.loads(v)
-            return d["ok"] if "ok" in d else d
-        time.sleep(0.05)
-    return {"err": "timeout"}
-
-
 def check(name, ok, detail=""):
     print(("ok   " if ok else "FAIL ") + name + (f"  ({detail})" if detail and not ok else ""))
     if not ok:
@@ -393,7 +379,6 @@ check("an edit is marked as it is typed", J(f"{V}.state().marks['0']") == "chang
 ev(f"{V}.cm.dispatch({{changes: {{from: 0, to: {V}.cm.state.doc.length, insert: 'one\\ntwo\\nthree\\nfour\\nfive\\n'}}}}); 1")
 wait(f"Object.keys({V}.state().marks).length === 0")
 check("text back as committed: no marks", J(f"{V}.state().marks") == {})
-ev(f"{V}.discarded = true; 1")
 close_all()
 open(scratch + "/untracked.txt", "w").write("a\n")
 open_file(scratch + "/untracked.txt")
