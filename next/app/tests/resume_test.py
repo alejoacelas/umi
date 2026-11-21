@@ -12,6 +12,9 @@ import json, os, plistlib, socket, subprocess, sys, tempfile, time
 
 app = os.path.abspath(sys.argv[1])
 info = plistlib.load(open(os.path.join(app, "Contents/Info.plist"), "rb"))
+# The script force-stops this copy's daemon and trashes its state: never the real UmiNext's.
+if info["UmiNextStateName"] == "Umi-next":
+    sys.exit("resume_test.py: APP must be a test copy (build.sh --test NAME), not the real UmiNext")
 STATE = os.path.expanduser("~/Library/Application Support/" + info["UmiNextStateName"])
 CLI = os.path.join(app, "Contents/MacOS/umi-next")
 CTL = os.path.join(app, "Contents/MacOS/umi-next-ctl")
@@ -52,7 +55,11 @@ def launch():
     env = {**ENV, "UMI_NEXT_DEBUG": "1", "UMI_NEXT_OFFSCREEN": "1"}
     p = subprocess.Popen([os.path.join(app, "Contents/MacOS/UmiNext")], env=env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    until(lambda: debug("1"), 30, "the app's debug socket")
+    try:
+        until(lambda: debug("1"), 30, "the app's debug socket")
+    except BaseException:
+        p.terminate()
+        raise
     return p
 
 

@@ -18,14 +18,17 @@ src = open(css).read()
 new = re.sub(r"--sidebar: [^;]+;", f"--sidebar: {color};", src, count=1)
 t0 = time.time()
 open(css, "w").write(new)
-seen = None
-while time.time() - t0 < 5:
-    r = D({"cmd": "eval", "js": js})["result"]
-    if r and r.replace(" ", "") == color.replace(" ", ""):
-        seen = time.time(); break
-    time.sleep(0.01)
-time.sleep(0.3)
-after = D({"cmd": "state"})
+try:
+    seen = None
+    while time.time() - t0 < 5:
+        r = D({"cmd": "eval", "js": js})["result"]
+        if r and r.replace(" ", "") == color.replace(" ", ""):
+            seen = time.time(); break
+        time.sleep(0.01)
+    time.sleep(0.3)
+    after = D({"cmd": "state"})
+finally:
+    open(css, "w").write(src)
 rl = after["reloads"][-1] if after["reloads"] else {}
 print(json.dumps({
   "visible_after_ms": round((seen - t0) * 1000) if seen else None,

@@ -1,12 +1,12 @@
 #!/bin/zsh
-# Snooze-to-docket and task-link test; run under: lockf -k ~/umi-screen.lock zsh docktest.sh
+# Snooze-to-docket and task-link test; run under: lockf -k ~/umi-screen.lock zsh docket_test.sh
 exec > /tmp/dock-test.log 2>&1
 set -x
 source ~/umi-next-tools/d.sh  # this folder's docket_helpers.sh
 ALLOW(){ for i in 1 2 3; do f=$(FRONT); [ "$f" = "UmiNext" ] || [ "$f" = "UserNotificationCenter" ] || [ "$f" = "universalAccessAuthWarn" ] || { echo "ALLOW skipped: frontmost $f"; continue; }; ~/umi-next-tools/click 778 367; sleep 1; done; }
 H(){ osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $(MYPID)) to true" >/dev/null 2>&1; sleep 0.15; [ "$(FRONT)" = "UmiNext" ] || { echo "ABORT: hyper with $(FRONT) frontmost" >&2; pkill -f "umi-next-ui/next/app/build/UmiNext.app/Contents/MacOS/UmiNext$"; exit 9; }; ~/umi-next-tools/hyper $1; }
 J(){ D eval "$1" | python3 -c "import json,sys;print(json.load(sys.stdin).get('result'))"; }
-cd ~/umi-next-ui && git checkout -q -- . && git fetch -q origin next-ui && git checkout -q --detach origin/next-ui && (cd next/app && ./build.sh --adhoc 2>&1 | grep -E "error|\.app$"); cd ~
+cd ~/umi-next-ui && git checkout -q -- . && git fetch -q origin main && git checkout -q --detach origin/main && (cd next/app && ./build.sh --adhoc 2>&1 | grep -E "error|\.app$"); cd ~
 pkill -f "umi-next-ui/next/app/build/UmiNext.app/Contents/MacOS/UmiNext$"; C daemon-stop --force; rm -f $UMI_NEXT_STATE_DIR/layout.json $UMI_NEXT_STATE_DIR/docket.json $UMI_NEXT_STATE_DIR/docket.log; rm -rf $UMI_NEXT_STATE_DIR/agents
 rm -f /tmp/docket-hook-in-*.json(N); echo 0 > ~/.config/umi-next/hook-exit
 open -n --env UMI_NEXT_DEBUG=1 --env UMI_NEXT_DEBUG_TASK_ORIGIN=http://127.0.0.1:18765/umi/ --env UMI_NEXT_CLAUDE_CMD=$HOME/umi-next-tools/claude-tok --env UMI_NEXT_STATE_DIR=$UMI_NEXT_STATE_DIR ~/umi-next-ui/next/app/build/UmiNext.app; sleep 4; 
