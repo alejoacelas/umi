@@ -432,19 +432,23 @@
 			);
 			inputPaths = (
 				"$(PROJECT_DIR)/UmiCLI/main.swift",
-				"$(PROJECT_DIR)/UmiCLI/agent.swift",
+				"$(PROJECT_DIR)/UmiCLI/hooks.swift",
 				"$(PROJECT_DIR)/UmiCLI/commands.swift",
 				"$(PROJECT_DIR)/UmiCLI/comments.swift",
+				"$(PROJECT_DIR)/UmiCLI/focusgroups.swift",
 				"$(PROJECT_DIR)/UmiCLI/UmiComments.swift",
 				"$(PROJECT_DIR)/UmiCLI/build.sh",
+				"$(PROJECT_DIR)/../dist/signing.sh",
 				"$(PROJECT_DIR)/UmiPlugins/.claude-plugin/marketplace.json",
 				"$(PROJECT_DIR)/UmiPlugins/.agents/plugins/marketplace.json",
 				"$(PROJECT_DIR)/UmiPlugins/claude/.claude-plugin/plugin.json",
 				"$(PROJECT_DIR)/UmiPlugins/claude/hooks/hooks.json",
 				"$(PROJECT_DIR)/UmiPlugins/claude/hooks/umi-hook.sh",
+				"$(PROJECT_DIR)/UmiPlugins/claude/skills/umi-comments/SKILL.md",
 				"$(PROJECT_DIR)/UmiPlugins/codex/.codex-plugin/plugin.json",
 				"$(PROJECT_DIR)/UmiPlugins/codex/hooks/hooks.json",
 				"$(PROJECT_DIR)/UmiPlugins/codex/hooks/umi-hook.sh",
+				"$(PROJECT_DIR)/UmiPlugins/codex/skills/umi-comments/SKILL.md",
 			);
 			name = "Build Umi CLI";
 			outputFileListPaths = (

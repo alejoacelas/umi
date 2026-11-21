@@ -5,14 +5,14 @@
 #
 # Downloads the latest release (checking its SHA-256 against the release feed), installs
 # Umi.app in /Applications (or ~/Applications), clears the download quarantine so macOS
-# doesn't block it, links the `umi` command into ~/.local/bin, makes Umi the app for
-# Markdown files and opens it. Nothing else needs to be installed first.
+# doesn't block it, links the `umi` command into ~/.local/bin, makes Umi the default app for
+# Markdown, plain text, JSON, CSV, TSV and YAML files and opens it. Nothing else is needed first.
 #
 # Options and environment:
 #   --from PATH                    install this Umi.app instead of downloading one
 #   UMI_INSTALL_DEST=PATH          where the app goes (default /Applications/Umi.app)
 #   UMI_INSTALL_BIN=DIR            where `umi` is linked (default ~/.local/bin)
-#   UMI_INSTALL_NO_DEFAULT=1       don't make Umi the default app for Markdown
+#   UMI_INSTALL_NO_DEFAULT=1       don't make Umi the default app for those files
 #   UMI_INSTALL_NO_LAUNCH=1        don't open Umi afterwards
 #   UMI_INSTALL_FEED=URL           the release feed to install from (default: the latest release)
 set -euo pipefail
@@ -23,7 +23,7 @@ from=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --from) from="$2"; shift 2 ;;
-        -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
         *) echo "install.sh: unknown argument $1" >&2; exit 2 ;;
     esac
 done
@@ -41,7 +41,8 @@ fi
 bindir="${UMI_INSTALL_BIN:-$HOME/.local/bin}"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/umi-install.XXXXXX")"
-trap 'rm -rf "$work"' EXIT
+staged=""
+trap 'rm -rf "$work" ${staged:+"$staged"}' EXIT
 
 if [[ -n "$from" ]]; then
     [[ -d "$from" ]] || die "no app at $from"
@@ -88,11 +89,15 @@ mkdir -p "$bindir"
 ln -sfn "$dest/Contents/MacOS/umi" "$bindir/umi"
 say "Linked $bindir/umi"
 
-# Let LaunchServices know about the app (for `open`, the Dock and the default Markdown app).
+# Let LaunchServices know about the app (for `open`, the Dock and the default app for text files).
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$dest" >/dev/null 2>&1 || true
 
 if [[ -z "${UMI_INSTALL_NO_DEFAULT:-}" ]]; then
-    "$dest/Contents/MacOS/umi" editor default >/dev/null 2>&1 && say "Umi now opens Markdown files" || true
+    if "$dest/Contents/MacOS/umi" editor default >/dev/null 2>&1; then
+        say "Umi now opens Markdown, plain text, JSON, CSV, TSV and YAML files"
+    else
+        say "Note: couldn't make Umi the default app for text files (run: umi editor default)"
+    fi
 fi
 
 case ":$PATH:" in

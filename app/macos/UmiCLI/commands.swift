@@ -91,7 +91,7 @@ let commandTable: [CommandHelp] = [
                           PaletteAction(title: "Equalize Panes", argv: ["tab", "equalize"]),
                           PaletteAction(title: "Focus Tab…", argv: ["tab", "focus"],
                                         ask: [Ask(name: "TAB", prompt: "Tab", kind: "tab")])]),
-    CommandHelp(section: "Layout", usage: "tab next|prev", summary: "the next or previous tab in sidebar order, wrapping (⇧⌘] / ⇧⌘[)",
+    CommandHelp(section: "Layout", usage: "tab next|prev [--window W]", summary: "the next or previous tab in sidebar order, wrapping (⇧⌘] / ⇧⌘[)",
                 actions: [PaletteAction(title: "Show Next Tab", argv: ["tab", "next"]),
                           PaletteAction(title: "Show Previous Tab", argv: ["tab", "prev"])]),
     CommandHelp(section: "Layout", usage: "tab rename [TAB] NAME", summary: "(\"\" clears the name)",
@@ -119,7 +119,7 @@ let commandTable: [CommandHelp] = [
                                         ask: [Ask(name: "W", prompt: "Window", option: "--window", kind: "window")])]),
     CommandHelp(section: "Layout", usage: """
         split [right|down|left|up] [--pane P] [--cwd D] [--cmd C] [--name N] [--ratio R]
-              [--worktree W] [--no-focus]
+              [--worktree W [--base REF]] [--no-focus]
         """,
                 actions: [PaletteAction(title: "Split Right", argv: ["split", "right"]),
                           PaletteAction(title: "Split Down", argv: ["split", "down"]),
@@ -152,7 +152,7 @@ let commandTable: [CommandHelp] = [
     CommandHelp(section: "Layout", usage: "pane resize [PANE] up|down|left|right [AMOUNT]",
                 actions: [PaletteAction(title: "Resize Pane…", argv: ["pane", "resize"],
                                         ask: [Ask(name: "DIRECTION", prompt: "Direction", choices: ["up", "down", "left", "right"]),
-                                              Ask(name: "AMOUNT", prompt: "Cells (empty: 10)", optional: true, kind: "number")])]),
+                                              Ask(name: "AMOUNT", prompt: "Cells (empty: 5)", optional: true, kind: "number")])]),
     // Hidden panes
     CommandHelp(section: "Hidden panes", usage: "pane hide [PANE] [--until CONDITION]…",
                 summary: "out of the tab's layout, still running; --until a query about the pane or a duration (2h) brings it back",
@@ -244,7 +244,7 @@ let commandTable: [CommandHelp] = [
                                         ask: [Ask(name: "KEY", prompt: "Keys (e.g. ctrl+c, esc, enter)", words: true)])]),
     CommandHelp(section: "Input and output", usage: "read [--pane P] [--scrollback] [--lines N]",
                 actions: [PaletteAction(title: "Read Pane's Screen", argv: ["read"])]),
-    CommandHelp(section: "Input and output", usage: "wait [--pane P] (--pattern RE | --idle SECS | --attr QUERY) [--timeout T]",
+    CommandHelp(section: "Input and output", usage: "wait [--pane P] (--pattern RE | --idle SECS | --attr QUERY) [--timeout SECS]",
                 summary: "exits 124 on timeout; --attr: until the pane matches the query"),
     CommandHelp(section: "Input and output", usage: "events [--filter PREFIX]… [--pane P] [--since T]",
                 summary: "JSON lines (pane.created, pane.changed, …), each with its cause; --since replays the log first"),
@@ -279,13 +279,13 @@ let commandTable: [CommandHelp] = [
                 actions: [PaletteAction(title: "List Open Files", argv: ["editor", "ls"])]),
     CommandHelp(section: "Editor", usage: "editor close [FILE] [--force]",
                 actions: [PaletteAction(title: "Close File", argv: ["editor", "close"])]),
-    CommandHelp(section: "Editor", usage: "editor mode [preview|source]",
+    CommandHelp(section: "Editor", usage: "editor mode [preview|source] [FILE]",
                 actions: [PaletteAction(title: "Toggle Preview and Source", argv: ["editor", "mode"])]),
     CommandHelp(section: "Editor", usage: "editor default [--dry-run]", summary: "make \(productName) the default app for Markdown, text, JSON, CSV, TSV and YAML",
                 actions: [PaletteAction(title: "Make \(productName) the Default for Text Files", argv: ["editor", "default"])]),
     CommandHelp(section: "Editor", usage: "comments [ls] FILE [--all]",
                 summary: "a Markdown file's comments: the text each is on, replies (works without \(productName) running)"),
-    CommandHelp(section: "Editor", usage: "comments reply|edit FILE ID TEXT… [--by NAME]", summary: "answer a comment, or change one"),
+    CommandHelp(section: "Editor", usage: "comments reply|edit FILE ID TEXT…", summary: "answer a comment (signed --by NAME), or change one"),
     CommandHelp(section: "Editor", usage: "comments resolve|reopen|delete FILE ID", summary: "resolve (--note TEXT), reopen or delete a thread"),
     CommandHelp(section: "Editor", usage: "comments add FILE --on TEXT [--nth N] TEXT…", summary: "comment on some words of the file"),
     CommandHelp(section: "Editor", usage: "comments wait FILE [--timeout SECS]",
@@ -326,6 +326,8 @@ let commandTable: [CommandHelp] = [
         """),
     CommandHelp(section: "Other", usage: "doctor", summary: "is \(cliName) on PATH, are the agent plugins installed and current",
                 actions: [PaletteAction(title: "Check This Mac for What \(productName) Needs", argv: ["doctor"])]),
+    CommandHelp(section: "Other", usage: "ping", summary: "is \(productName) running: its version and process id"),
+    CommandHelp(section: "Other", usage: "version", summary: "this \(cliName)'s version"),
     CommandHelp(section: "Other", usage: "help", summary: "this help (--json: for programs)"),
 ]
 

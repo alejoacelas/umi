@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --from) from="$2"; shift 2 ;;
         --remove) remove=1; shift ;;
-        -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
         *) echo "local-icon.sh: unknown argument $1" >&2; exit 2 ;;
     esac
 done

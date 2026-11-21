@@ -5,7 +5,7 @@
 // Support/Umi); the socket path is derived from that directory, so a CLI pointed at one
 // state directory can never reach another instance.
 //
-// Self-contained on purpose: `build.sh` compiles this file alone with swiftc.
+// Self-contained on purpose: `build.sh` compiles the .swift files of this folder with swiftc.
 
 import CryptoKit
 import Darwin
@@ -13,7 +13,6 @@ import Foundation
 
 let cliName = "umi"
 let productName = "Umi"
-let defaultFeedURL = "https://github.com/alejoacelas/umi/releases/latest/download/appcast.json"
 
 // MARK: - Output
 
@@ -253,7 +252,7 @@ func call(_ method: String, _ params: [String: Any] = [:]) -> Any {
     do {
         return try client.call(method, params)
     } catch let error as RPCError {
-        fail(error.message, code: error.code == "timeout" ? 124 : 1)
+        fail(error.message)
     } catch {
         fail("\(error)")
     }
@@ -282,8 +281,6 @@ struct ArgSpec {
     var valued: Set<String> = []
     var boolean: Set<String> = []
     var aliases: [String: String] = [:]
-    /// Flags that may take an optional value: consumed only if the next word matches.
-    var optionalValue: [String: (String) -> Bool] = [:]
 }
 
 func parse(_ argv: [String], _ spec: ArgSpec) -> Args {
@@ -313,12 +310,6 @@ func parse(_ argv: [String], _ spec: ArgSpec) -> Args {
                 }
             } else if spec.boolean.contains(name) {
                 args.flags.insert(name)
-            } else if let accepts = spec.optionalValue[name] {
-                args.flags.insert(name)
-                if i + 1 < argv.count, accepts(argv[i + 1]) {
-                    args.values[name, default: []].append(argv[i + 1])
-                    i += 1
-                }
             } else {
                 fail("unknown option \(word) (see `\(cliName) help`)")
             }
@@ -778,6 +769,7 @@ func layoutCommand(_ argv: [String]) {
         } else if jsonOutput || sub == "status" {
             var status: [String: Any] = ["visible": result["visible"] as? Bool ?? false, "mode": result["mode"] as? String ?? "tabs"]
             if let width = result["width"] { status["width"] = width }
+            if let window = result["window"] { status["window"] = window }
             printJSON(status)
         }
 
@@ -1733,17 +1725,6 @@ func makeDefaultMarkdownApp(dryRun: Bool) {
     if !failures.isEmpty { fail("couldn't make \(productName) the default for \(failures.joined(separator: ", "))") }
     if jsonOutput { printJSON(["app": app, "default": true]) } else { print("\(productName) now opens Markdown, text, JSON, CSV, TSV and YAML files") }
 }
-
-// MARK: - Shell words
-
-/// Quote a word for a POSIX shell, the way a person would type it.
-func shellQuote(_ word: String) -> String {
-    if word.isEmpty { return "''" }
-    let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-")
-    if word.unicodeScalars.allSatisfy({ safe.contains($0) }) { return word }
-    return "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
-}
-
 
 // MARK: - Updates
 

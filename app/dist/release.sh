@@ -110,13 +110,13 @@ if [[ "$publish" == 1 || "$as_release" == 1 ]]; then
     plutil -replace CFBundleIdentifier -string dev.umi.app "$plist"
 fi
 xattr -cr "$out/Umi.app"
-codesign --force --deep --sign "$umi_sign_identity" "$out/Umi.app" >/dev/null 2>&1
+codesign --force --deep --sign "$umi_sign_identity" "$out/Umi.app"
 codesign --verify --deep --strict "$out/Umi.app"
 
 # The update archive and its signature.
 rm -f "$out/$zip_name"
 (cd "$out" && ditto -c -k --keepParent Umi.app "$zip_name")
-xcrun --sdk macosx swiftc -O -module-cache-path "$work/mc" -o "$work/sign-update" "$here/sign-update.swift" 2>/dev/null
+xcrun --sdk macosx swiftc -O -module-cache-path "$work/mc" -o "$work/sign-update" "$here/sign-update.swift"
 signed="$(UMI_SIGNING_KEY="$key" "$work/sign-update" "$out/$zip_name")"
 signature="$(sed -n 's/^signature=//p' <<<"$signed")"
 sha256="$(sed -n 's/^sha256=//p' <<<"$signed")"
