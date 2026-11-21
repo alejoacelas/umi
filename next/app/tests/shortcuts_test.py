@@ -467,11 +467,10 @@ time.sleep(0.8)
 got = [mark2 in D({"cmd": "screen", "pane": p}).get("text", "") for p in panes]
 check("after stopping, typing reaches only the focused terminal", sum(got) == 1, got)
 
-# The pane indicator, the Dock badge and ⌃⌘J / ⌃⌘K, from a fake agent's hook file.
+# The pane indicator and the Dock badge, from a fake agent's hook file.
 focus_terminal()
 if ui()["panes"] < 2:
     new_shell_split()
-here_sid = J("Umi.model.sessionOf(Umi.model.activeTab().focused)")
 other_pane = J("Umi.model.paneIds(Umi.model.activeTab().root).find((id) => id !== Umi.model.activeTab().focused)")
 other = J(f"Umi.model.sessionOf({json.dumps(other_pane)})")
 agent_file = f"{state}/agents/{other}.json"
@@ -511,10 +510,6 @@ try:
     ev("window.__obs.disconnect(); 1")
     check("no mark sits over the terminals", not J("document.querySelectorAll('#panes .slot .pane-mark').length"))
     check("the Dock badge counts it", wait(lambda: D({"cmd": "state"}).get("badge") == "1", 3), D({"cmd": "state"}).get("badge"))
-    press("j", "ctrl", "cmd")
-    check("⌃⌘J goes to the session waiting for you", J("Umi.model.sessionOf(Umi.model.activeTab().focused)") == other)
-    press("k", "ctrl", "cmd")
-    check("⌃⌘K goes back to where the walk started", J("Umi.model.sessionOf(Umi.model.activeTab().focused)") == here_sid)
     fake_agent("UserPromptSubmit")
     wait(lambda: J(f"Umi.views.marks.stateOf({json.dumps(other)})") == "working", 5)
     check("a working pane shows the working mark",

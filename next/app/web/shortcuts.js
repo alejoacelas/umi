@@ -58,8 +58,6 @@ Umi.shortcuts = (() => {
     { id: 'swapPaneRight', keys: 'ctrl+cmd+right', label: 'Move the pane right', group: 'Panes', action: 'swapPaneRight' },
     { id: 'paneToTabUp', keys: 'ctrl+cmd+up', label: 'Move the pane to the tab above', group: 'Panes', action: 'paneToTabUp' },
     { id: 'paneToTabDown', keys: 'ctrl+cmd+down', label: 'Move the pane to the tab below', group: 'Panes', action: 'paneToTabDown' },
-    { id: 'nextWaiting', keys: 'ctrl+cmd+j', label: 'Next session waiting for you', group: 'Panes', action: 'nextWaiting' },
-    { id: 'goBack', keys: 'ctrl+cmd+k', label: 'Back to where the walk started', group: 'Panes', action: 'goBack' },
     { id: 'find', keys: 'cmd+f', label: 'Find in the terminal', group: 'Terminal', action: 'find', when: 'terminal' },
     { id: 'findNext', keys: 'cmd+g', label: 'Next match', group: 'Terminal', action: 'findNext', when: 'terminal' },
     { id: 'findPrev', keys: 'cmd+shift+g', label: 'Previous match', group: 'Terminal', action: 'findPrev', when: 'terminal' },

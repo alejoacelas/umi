@@ -14,7 +14,6 @@ Umi.views.panel = (() => {
     { title: 'Sessions', cmds: [
       ['n', 'New session', () => Umi.actions.splitRight()],
       ['s', 'Switch session', () => Umi.actions.switchSession()],
-      ['w', 'Next waiting', () => Umi.actions.nextWaiting()],
       ['p', 'Open past', () => { Umi.actions.switchSession(); Umi.model.focusedPane().picker.jump = 'past'; }],
     ] },
     { title: 'This session', cmds: [
@@ -26,7 +25,6 @@ Umi.views.panel = (() => {
       ['m', 'Move to new tab', () => Umi.actions.moveToNewTab()],
     ] },
     { title: 'Review', cmds: [
-      ['v', 'Next in Review', () => Umi.actions.nextWaiting()],
       ['c', 'Clear finished snoozes', () => {
         for (const m of Object.values(S.layout.meta?.sessions || {})) if (m.snooze?.done) delete m.snooze;
       }],

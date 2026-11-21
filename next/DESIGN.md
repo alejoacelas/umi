@@ -98,7 +98,7 @@ It lies over the bottom of the panes: they keep their size and place, so no term
 it is open.
 
 - Columns of commands, each on one letter, the frequent ones under the left hand: Sessions (new,
-  switch, next waiting, open past), This session (rename, snooze, restart, exit, move), Review,
+  switch, open past), This session (rename, snooze, restart, exit, move), Review,
   Options.
 - `/` searches every command by name instead.
 - It is part of the web layer, so it can be changed live.
@@ -122,8 +122,8 @@ it is open.
   A snoozed session shows in Review when it finishes even if it says `done`: snoozing asked to be
   told.
 - **Review** is the list of what waits for Alejo, grouped by project, the current project first:
-  sessions waiting for input, finished snoozes. "Next waiting" (⌃⌘J) walks it in that order and the
-  Dock badge counts the current project's. The sidebar doesn't draw it (Alejo, 2026-11-21).
+  sessions waiting for input, finished snoozes. The Dock badge counts the current project's, and
+  `umi-next go --next` walks it in that order; it has no key or palette entry (Alejo, 2026-11-21). The sidebar doesn't draw it (Alejo, 2026-11-21).
 - agent-emacs's snooze fades a session and silences its alert; grouping by project and scoping alerts
   to the current project is the addition.
 

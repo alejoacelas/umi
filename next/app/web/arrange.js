@@ -233,7 +233,7 @@ Object.assign(Umi.actions, (() => {
       A.noteCloseTab(t);
       M.paneIds(t.root).forEach((id) => M.removePane(id));
     },
-    // ⌃⌘J: the next session waiting for Alejo; ⌃⌘K: back to where the walk started (SPEC L-12).
+    // `umi-next go --next`: the next session waiting for Alejo; `go --back`: back to where the walk started.
     nextWaiting: () => {
       if (!S.ui.walkFrom) S.ui.walkFrom = M.sessionOf(M.activeTab().focused) || null;
       nextWaiting();
