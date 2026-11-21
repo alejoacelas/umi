@@ -2,7 +2,8 @@
 
 The daemon owns every session's pty and its screen (a libghostty-vt terminal). Clients talk to it
 over one unix stream socket. The UI never needs the socket: it runs `umi-next-attach <id>` as a
-pane's command and `umi-next-ctl` for everything else.
+pane's command and `umi-next-ctl` for everything else. The `umi-next` CLI (`next/app/cli`) is the
+third client: it sends `ls`, `screen` and `send` over the socket itself.
 
 ## Files
 
@@ -35,8 +36,8 @@ Every message is a frame: `type` (1 byte), payload length (u32, big endian), pay
 | op | fields | reply |
 |---|---|---|
 | `ping` | | `pid`, `sessions`, `state_dir` |
-| `new` | `cwd`, `cmd` (run as `$SHELL -l -c cmd`; absent: `$SHELL -l`), `cols`, `rows`, `name`, `by` (who started it: `user` from the UI, `cli` from `umi-next-ctl new` by default), `env` (object; the whole environment) | `id` |
-| `ls` | | `sessions`: `[{id, name, cwd, command, pid, foreground, alive, exit_status, exit_signal, clients, cols, rows, created}]` |
+| `new` | `cwd`, `cmd` (run as `$SHELL -l -c cmd`; absent: `$SHELL -l`), `cols`, `rows`, `name`, `by` (who started it: `user` from the UI, `cli` from `umi-next-ctl new` by default), `env` (object; the session's environment, absent: the daemon's; the daemon then sets `TERM`, `COLORTERM`, `PWD` and `UMI_NEXT_SESSION_ID`) | `id` |
+| `ls` | | `sessions`: `[{id, name, by, cwd, command, pid, foreground, alive, exit_status, exit_signal, clients, cols, rows, created}]` |
 | `kill` | `id`, `signal` (default 15) | sends the signal to the session's process group |
 | `rm` | `id`, `force` | forgets an exited session; `force` SIGKILLs a live one first |
 | `screen` | `id`, `format`: `plain` or `vt`, `scrollback` (bool, plain only) | `plain`: `text` (exactly rows lines), `styles`, `cursor {x,y,visible}`, `cols`, `rows`, `alternate`, `kitty_flags`, `mouse_tracking`, `bracketed_paste`, `app_cursor_keys`; with `scrollback`, also `history` (the rows above the screen, oldest first, one line each) and `history_rows`; `vt`: `vt` (base64 of the attach replay) |

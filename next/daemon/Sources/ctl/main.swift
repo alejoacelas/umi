@@ -17,6 +17,7 @@ usage: umi-next-ctl <command>
   daemon-start             start the daemon if it isn't running
   daemon-stop [--force]    stop the daemon (refuses while sessions are alive)
   render --cols N --rows N [--json] [--scrollback]   feed stdin into a fresh terminal, print its screen
+                           (--replay: also through the attach replay, both as JSON)
 State dir: $UMI_NEXT_STATE_DIR or ~/Library/Application Support/Umi-next
 """
 
@@ -108,9 +109,10 @@ case "new":
 case "ls":
     printJSON(request(["op": "ls"])["sessions"] ?? [])
 case "kill":
+    let signalArg = option("--signal")
     guard let id = args.first else { die("kill <id>") }
     var req: [String: Any] = ["op": "kill", "id": id]
-    if let s = option("--signal") {
+    if let s = signalArg {
         guard let n = Int(s) else { die("--signal takes a number") }
         req["signal"] = n
     }
@@ -152,7 +154,14 @@ case "daemon-stop":
     var b: UInt8 = 0
     while read(fd, &b, 1) > 0 {}
     close(fd)
-    for _ in 0..<100 { if connectDaemon() < 0 { break }; usleep(20_000) }
+    var gone = false
+    for _ in 0..<100 {
+        let probe = connectDaemon()
+        if probe < 0 { gone = true; break }
+        close(probe)
+        usleep(20_000)
+    }
+    if !gone { die("the daemon is still running") }
 case "render":
     let json = flag("--json"), replay = flag("--replay")
     guard let c = parseSize(option("--cols")), let r = parseSize(option("--rows")) else { die("render --cols N --rows N") }

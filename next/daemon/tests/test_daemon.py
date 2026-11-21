@@ -7,7 +7,6 @@ fresh libghostty-vt terminal (`umi-next-ctl render`) and, independently, pyte.
 """
 import json
 import os
-import pty  # noqa: F401  (documents that clients run on ptys)
 import select
 import shutil
 import signal
@@ -117,9 +116,6 @@ class Client:
             try:
                 r, _, _ = select.select([self.master], [], [], 0.2)
                 if not r:
-                    if self.proc.poll() is not None and not r:
-                        # drain whatever is left
-                        pass
                     continue
                 d = os.read(self.master, 65536)
             except OSError:
@@ -548,7 +544,6 @@ def measure_echo(master, n=500):
 def test_keystroke_latency(env, capsys):
     # Baseline: the same echo program on a plain pty.
     master, slave = os.openpty()
-    tty_attrs = termios.tcgetattr(slave)
     p = subprocess.Popen(["/bin/sh", "-c", ECHO], stdin=slave, stdout=slave, stderr=slave,
                          start_new_session=True, preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
     os.close(slave)
