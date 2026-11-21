@@ -305,7 +305,7 @@ Umi.cli = (() => {
       const before = S.layout.activeTab, keep = f.tab.focused;
       f.tab.focused = r.pane;
       S.layout.activeTab = f.tab.id;
-      M.moveToNewTab();
+      M.moveFocusedPane();
       if (noFocus) { S.layout.activeTab = before; if (keep !== r.pane) f.tab.focused = keep; }
     }, { focus: !noFocus });
     return { ...where(r.pane), panes: [r.pane] };

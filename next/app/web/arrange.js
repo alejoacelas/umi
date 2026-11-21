@@ -164,23 +164,14 @@ Umi.arrange = (() => {
     const map = (n) => (n.type === 'pane' ? (n.id === a.id ? b : n.id === b.id ? a : n) : { ...n, a: map(n.a), b: map(n.b) });
     tab.root = map(tab.root);
   }
-  // ↑/↓ carry the focused pane to the end of the listed tab above or below, wrapping; a tab left
-  // with no pane closes (M-1).
+  // Cycle through the listed tabs and a new tab at the end. A lone pane already has its own tab.
   function paneToTab(d) {
-    const from = M.activeTab(), node = M.focusedPane(), list = M.listedTabs();
-    if (!node || list.length < 2) return;
-    const i = list.indexOf(from);
-    const to = list[((i < 0 ? 0 : i) + d + list.length) % list.length];
-    if (to === from) return;
-    const root = M.removeFromTree(from.root, node.id);
-    if (root) {
-      from.root = root;
-      if (from.zoomed === node.id) delete from.zoomed;
-      from.focused = M.paneIds(root)[0];
-    } else {
-      tabs().splice(tabs().indexOf(from), 1);
-    }
-    M.appendPane(to, node);
+    const from = M.activeTab(), list = M.listedTabs();
+    if (from.root.type === 'split') list.push(null);
+    if (!list.length) return;
+    const i = Math.max(0, list.indexOf(from));
+    const to = list[(i + d + list.length) % list.length];
+    M.moveFocusedPane({ to, atEnd: true });
   }
 
   // ---- synchronized input (⌥⌘I, ⌥⇧⌘I; SPEC L-32, Warp's rules) ----

@@ -153,11 +153,12 @@ Umi.model = (() => {
 
   // ---- layout operations ----
   // A new tab goes right after the current one, below the pinned tabs (SPEC S-7).
-  function addTab(pane) {
+  function addTab(pane, { atEnd = false } = {}) {
     const cur = activeTab();
     const t = newTab(pane || newPane({ cwd: cur && folderOf(cur.focused) }));
     const pinned = S.layout.tabs.filter((x) => x.pinned).length;
-    S.layout.tabs.splice(cur && !cur.archived ? Math.max(S.layout.tabs.indexOf(cur) + 1, pinned) : pinned, 0, t);
+    const afterCurrent = cur && !cur.archived ? Math.max(S.layout.tabs.indexOf(cur) + 1, pinned) : pinned;
+    S.layout.tabs.splice(atEnd ? S.layout.tabs.length : afterCurrent, 0, t);
     S.layout.activeTab = t.id;
     return t;
   }
@@ -396,15 +397,20 @@ Umi.model = (() => {
     if (best) tab.focused = best;
   }
 
-  // Moves the focused pane into a tab of its own (its terminal stays).
-  function moveToNewTab() {
-    const tab = activeTab();
-    const node = focusedPane();
-    if (!node || paneIds(tab.root).length < 2) return;
-    tab.root = removeFromTree(tab.root, node.id);
-    tab.focused = paneIds(tab.root)[0];
-    if (tab.zoomed === node.id) delete tab.zoomed;
-    addTab(node);
+  // Move the existing pane and its terminal together. Both tabs share space as for a close/split.
+  function moveFocusedPane({ to, atEnd = false } = {}) {
+    const tab = activeTab(), node = focusedPane();
+    if (!node || to === tab || (!to && tab.root === node)) return;
+    const root = removeShared(tab, node.id);
+    if (root) {
+      tab.root = root;
+      tab.focused = paneIds(root)[0];
+      if (tab.zoomed === node.id) delete tab.zoomed;
+    } else {
+      S.layout.tabs.splice(S.layout.tabs.indexOf(tab), 1);
+    }
+    if (to) appendPane(to, node);
+    else addTab(node, { atEnd });
   }
 
   function snooze(sid, seconds) {
@@ -488,7 +494,7 @@ Umi.model = (() => {
     mapPane, removeFromTree, hide, closeAndEnd, resumeOf, unhide, hiddenOf, appendPane, showHidden, rowWeight,
     folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, review,
     addTab, split, removePane, openSession, showSession, startSession, focusPane,
-    selectTab, stepTab, focusDir, moveToNewTab, snooze, rename, docket, undocket, docketOf, openPanel, closePanel,
+    selectTab, stepTab, focusDir, moveFocusedPane, snooze, rename, docket, undocket, docketOf, openPanel, closePanel,
     load, paneInfo, sessions,
   };
 })();
@@ -557,7 +563,7 @@ Umi.actions = {
     if (found.tab.zoomed === p.id) found.tab.zoomed = fresh.id;
     Umi.state.closed[p.id] = 'detach';
   },
-  moveToNewTab: () => Umi.model.moveToNewTab(),
+  moveToNewTab: () => Umi.model.moveFocusedPane(),
   // ⌘[ / ⌘]: the previous or next pane of the tab, in layout order, wrapping (SPEC H-6, without
   // hidden panes).
   stepPane: ({ d }) => {
