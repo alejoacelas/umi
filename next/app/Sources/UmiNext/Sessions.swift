@@ -84,7 +84,8 @@ final class SessionMonitor {
             let fg = s["foreground"] as? String ?? ""
             let shellBusy = shell && !fg.isEmpty && !["zsh", "-zsh", "bash", "-bash", "fish", "sh", "login"].contains(fg)
             s["state"] = agent?["state"] as? String ?? (shellBusy ? "busy" : "waiting")
-            s["kind"] = (agent?["agent"] as? String) ?? (shell ? "shell" : "command")
+            let antigravity = Self.isAntigravity(s["command"] as? String) || Self.isAntigravity(fg)
+            s["kind"] = (agent?["agent"] as? String) ?? (antigravity ? "antigravity" : (shell ? "shell" : "command"))
             out.append(s)
         }
         docket.check(out)
@@ -92,6 +93,25 @@ final class SessionMonitor {
             if let id = out[i]["id"] as? String, let m = docket.marks[id] { out[i]["docket"] = m }
         }
         DispatchQueue.main.async { self.last = out; self.polled = true; self.onUpdate?(out) }
+    }
+
+    /// Antigravity has no Umi hooks; identify its executable rather than arbitrary command text.
+    private static func isAntigravity(_ command: String?) -> Bool {
+        guard let command else { return false }
+        let text = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = text.first else { return false }
+        let executable: Substring
+        if first == "\"" || first == "'" {
+            let rest = text.dropFirst()
+            guard let end = rest.firstIndex(of: first) else { return false }
+            // A quoted executable must end at the token boundary, not be part of a longer name.
+            let tail = rest[rest.index(after: end)...]
+            guard tail.isEmpty || tail.first!.isWhitespace else { return false }
+            executable = rest[..<end]
+        } else {
+            executable = text.prefix { !$0.isWhitespace }
+        }
+        return (String(executable) as NSString).lastPathComponent == "agy"
     }
 
     private func readAgent(_ id: String) -> [String: Any]? {
