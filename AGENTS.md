@@ -10,7 +10,8 @@ It was called Tern until 0.5.0 (see "Names" below). This repository holds the so
 | Path | What it is |
 |---|---|
 | `app/` | The app: Ghostty with Ghostty's full history, plus Umi. Umi's Swift is in `app/macos/Sources/Features/Umi`, its CLI in `app/macos/UmiCLI`, the Claude Code and Codex hook plugins in `app/macos/UmiPlugins`; Zig changes are marked `Umi:` in comments. `app/AGENTS.md` and `app/macos/AGENTS.md` are Ghostty's own guides. |
-| `app/dist/` | `release.sh`, `install.sh`, `sign-update.swift`, `local-icon.sh`, `icon/` (the icon's drawing code). |
+| `app/dist/` | `release.sh`, `install.sh`, `dev.sh`, `signing.sh` (the identity every build signs with), `sign-update.swift`, `local-icon.sh`, `icon/` (the icon's drawing code). |
+| `next/` | umi-next, the rebuild on two processes: a daemon that owns the terminals (`next/daemon/`) and a UI that can restart without ending a session (`next/app/`). Start at `next/DESIGN.md`; `next/PARITY.md` tracks what it has of Umi; `next/install.sh` builds and installs `UmiNext.app`; `next/daemon/test.sh` and `next/app/tests/README.md` say how each part is tested. |
 | `design/` | The current design: start at `design/README.md`. `build-log.md` records how it was built and the choices made along the way. |
 | `acceptance/` | The black-box acceptance suite: `SPEC.md` (requirements), `CLI.md` (the CLI contract), `REQUESTS.md` (the user's words), `tests/`, fake agents in `fakes/`, `targets/umi.json`. |
 | `*.md` at the root | Briefs (`BRIEF*.md`), `COMPROMISES.md`, reports (`REPORT.md`, `REPORT-umi.md`). Records from before 0.6.0 say Tern and stay that way. |
@@ -19,7 +20,9 @@ It was called Tern until 0.5.0 (see "Names" below). This repository holds the so
 ## Build
 
 Needs Xcode 26 and Zig 0.16 (`~/.local/zig/zig-aarch64-macos-0.16.0/zig` on Alejo's Macs; anything
-else via `ZIG=/path/to/zig`). The first Zig build downloads Ghostty's Zig packages.
+else via `ZIG=/path/to/zig`). The first Zig build downloads Ghostty's Zig packages. Every build signs
+with the stable local identity named in `app/dist/signing.sh` (`UMI_SIGN_IDENTITY` names another)
+and fails without it.
 
 ```sh
 cd app
@@ -69,7 +72,8 @@ made the user's `~/Library/Application Support/Umi`.
   or the app shows "You're running a debug build of Ghostty!" across the top of every pane (which
   also breaks the suite's screenshot and size tests). `release.sh --build` always does.
 - The suite tests the build at `app/macos/build/ReleaseLocal/Umi.app` (`targets/umi.json`; paths in
-  it are relative to the file). `results/traceability.md` maps each SPEC requirement to its tests.
+  it are relative to the file). A full run writes `results/traceability.md` (ignored by git), which
+  maps each SPEC requirement to its tests; a partial run writes `traceability-partial.md`.
 - Run the acceptance suite and the Swift tests on the other MacBook Air (`ssh mac-air-2`), never on
   the Mac Alejo is using: they open windows there. Other agents may be working in its checkout
   (`~/best/projects/2026-10-26-umi`), so test in a worktree of it
@@ -88,7 +92,7 @@ app/dist/release.sh --version X.Y.Z --build --notes "What changed"
 ```
 
 It refuses to publish from a checkout with uncommitted changes. It builds, stamps a copy of the app
-with the version, signs it ad hoc, zips it, signs the zip with the update-signing key (and checks the
+with the version, signs it with the stable identity from `app/dist/signing.sh`, zips it, signs the zip with the update-signing key (and checks the
 key matches the app's `UmiUpdatePublicKey`), writes the feed `appcast.json`, and publishes a GitHub
 release `vX.Y.Z` on `alejoacelas/umi` with `Umi-X.Y.Z.zip`, `appcast.json` and `install.sh` (marked
 latest; installed copies and `install.sh` read `releases/latest/download/appcast.json`). Then install
