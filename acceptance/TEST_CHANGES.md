@@ -1736,3 +1736,5 @@ Added `next/app/tests/picker_titles_test.py`, exercised on the signed isolated a
 ## 2026-11-21 — Umi Next session switcher
 
 Added model and native interaction tests for cross-project search, attention states, snoozes, and opening sessions in their existing pane or in the switcher's slot. The picker icon, folder, history and docket tests now enter New or History for those actions.
+
+The folder chooser regression now measures the rendered names in a narrow pane with a long parent path and checks the full path on hover.

@@ -201,6 +201,7 @@ Umi.views.picker = (() => {
     rows.forEach((r, i) => {
       const row = document.createElement('div');
       row.className = 'picker-row' + (i === (pk.fsel || 0) ? ' sel' : '');
+      row.title = r.path;
       row.innerHTML = '<b></b><span class="dim"></span>';
       row.querySelector('b').textContent = r.use ? 'This folder' : base(r.path);
       row.querySelector('.dim').textContent = tilde(r.use ? r.path : parent(r.path));

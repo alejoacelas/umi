@@ -248,6 +248,9 @@ button.picker-row.sel { background: rgba(25,170,216,0.18); }
 button.picker-row:hover { background: rgba(255,255,255,0.08); }
 .picker-row[data-session] b { flex: 1; }
 .picker-row[data-session] .dim { flex: 0 1 auto; max-width: 42%; }
+.picker[data-mode="folder"] .picker-row b {
+  flex: none; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere;
+}
 .picker-section[data-group="needs"] { color: #e0a93e; }
 .picker-section[data-group="needs"]::before {
   content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;

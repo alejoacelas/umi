@@ -6,33 +6,21 @@ The app needs UMI_NEXT_DEBUG=1; UMI_NEXT_OFFSCREEN=1 is supported. Creates uniqu
 named transcript fixtures and folders, then moves only those fixtures to the Trash.
 """
 import json
-import os
 from pathlib import Path
-import socket
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
 
+from debugsock import Debug
+
 state = Path(sys.argv[1]).expanduser()
 assert state.name.startswith('Umi-next-test-'), 'Use an isolated test app'
 
 
-def ev(js):
-    with socket.socket(socket.AF_UNIX) as s:
-        s.connect(str(state / 'debug.sock'))
-        s.sendall(json.dumps({'cmd': 'eval', 'js': js}).encode() + b'\n')
-        parts = []
-        while data := s.recv(65536):
-            parts.append(data)
-    result = json.loads(b''.join(parts))
-    assert not result.get('error'), result
-    return result.get('result')
-
-
-def js_json(js):
-    return json.loads(ev(f'JSON.stringify({js})'))
+dbg = Debug(state)
+ev, js_json = dbg.ev, dbg.J
 
 
 def until(fn, description):
@@ -64,6 +52,10 @@ codex_dir = home / '.codex/sessions' / ('umi-picker-test-' + token)
 folders = {name: root / name for name in ['zrank-a-unused', 'zrank-b-claude', 'zrank-c-codex', 'unrelated-project']}
 for folder in folders.values():
     folder.mkdir()
+deep = root / ('organisation-' + 'long-' * 12) / ('workspace-' + 'nested-' * 12)
+folder_names = ['Umi', 'Umi' + 'LongFolderName' * 8]
+for name in folder_names:
+    (deep / name).mkdir(parents=True)
 claude_dir.mkdir(parents=True)
 codex_dir.mkdir(parents=True)
 for name in ['zrank-b-claude', 'unrelated-project']:
@@ -105,6 +97,30 @@ try:
     assert result[0] == 'This folder', result
     assert set(folders).issubset(result), result
     print('ok explicit path browsing retains This folder and child folders')
+    # Measure the text fragments WebKit actually lays out. textContent is complete even when
+    # flex shrinks the name down to a few pixels and draws an ellipsis.
+    dbg({'cmd': 'resize', 'w': 700, 'h': 620})
+    query(str(deep / 'Umi'))
+    until(lambda: set(rows()) == set(folder_names), 'deep folder matches')
+    bounds = js_json("""[...__pickerEl.querySelectorAll('.picker-row')].map(row => {
+      const name = row.querySelector('b'), range = document.createRange();
+      range.selectNodeContents(name);
+      const available = name.getBoundingClientRect(), frame = row.getBoundingClientRect();
+      const lines = [...range.getClientRects()];
+      return {name: name.textContent, title: row.title, rowWidth: frame.width, width: available.width,
+        textWidth: Math.max(...lines.map(r => r.width)), lines: lines.length,
+        fits: lines.length > 0 && lines.every(r =>
+          r.left >= available.left - 1 && r.right <= available.right + 1 &&
+          r.left >= frame.left - 1 && r.right <= frame.right + 1 &&
+          r.top >= frame.top - 1 && r.bottom <= frame.bottom + 1)};
+    })""")
+    for measured in bounds:
+        assert 0 < measured['rowWidth'] < 350, measured
+        assert measured['fits'], measured
+        assert measured['title'] == str(deep / measured['name']), measured
+        if measured['name'] == folder_names[1]:
+            assert measured['lines'] > 1, measured
+    print(f'ok narrow {bounds[0]["rowWidth"]:.0f}px rows show both complete folder names and full-path tooltips')
     query('zrank-b-claude')
     until(lambda: rows() and rows()[0] == 'zrank-b-claude', 'selected folder')
     ev("__input.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true})); 1")
