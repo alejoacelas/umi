@@ -232,6 +232,73 @@ final class SessionMonitor {
         }
     }
 
+    /// Codex keeps user-assigned and generated session names in an append-only index.
+    private static func codexTitles(_ url: URL) -> [String: String] {
+        var titles: [String: String] = [:]
+        readJSONLines(url) { row in
+            if let id = row["id"] as? String, let name = row["thread_name"] as? String,
+               !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                titles[id] = name
+            }
+            return true
+        }
+        return titles
+    }
+
+    /// Stream complete records, including prompts after long tool/instruction preambles.
+    /// Returning false stops reading immediately, so indexed titles need only session metadata.
+    private static func readJSONLines(_ url: URL, visit: ([String: Any]) -> Bool) {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? handle.close() }
+        var pending = Data()
+        while true {
+            let chunk = handle.readData(ofLength: 64 * 1024)
+            pending.append(chunk)
+            var offset = 0
+            while offset < pending.count {
+                let end = pending.withUnsafeBytes { bytes -> Int? in
+                    guard let start = bytes.baseAddress,
+                          let newline = memchr(start.advanced(by: offset), 10, bytes.count - offset) else { return nil }
+                    return start.distance(to: newline)
+                }
+                guard let end = end ?? (chunk.isEmpty ? pending.count : nil) else { break }
+                let line = pending[offset..<end]
+                offset = end == pending.count ? end : end + 1
+                if let row = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], !visit(row) { return }
+            }
+            if offset > 0 { pending = Data(pending.dropFirst(offset)) }
+            if chunk.isEmpty { return }
+        }
+    }
+
+    private static func codexSession(_ url: URL, titles: [String: String], metadataOnly: Bool) -> [String: Any]? {
+        var cwd: String?, id: String?, prompt: String?
+        readJSONLines(url) { row in
+            guard let payload = row["payload"] as? [String: Any] else { return true }
+            if row["type"] as? String == "session_meta" {
+                if id == nil { id = payload["id"] as? String }
+                if cwd == nil { cwd = payload["cwd"] as? String }
+            } else if prompt == nil, payload["type"] as? String == "user_message" {
+                prompt = payload["message"] as? String
+            } else if prompt == nil, row["type"] as? String == "response_item",
+                      payload["type"] as? String == "message", payload["role"] as? String == "user",
+                      let content = payload["content"] as? [[String: Any]] {
+                let texts = content.compactMap { item -> String? in
+                    guard item["type"] as? String == "input_text", let text = item["text"] as? String else { return nil }
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // These user-role records are harness context, not the user's request.
+                    guard !trimmed.isEmpty, !trimmed.hasPrefix("# AGENTS.md instructions"),
+                          !trimmed.hasPrefix("<environment_context>") else { return nil }
+                    return trimmed
+                }
+                if !texts.isEmpty { prompt = texts.joined(separator: "\n") }
+            }
+            return !(cwd != nil && id != nil && (metadataOnly || titles[id!] != nil || prompt != nil))
+        }
+        guard let cwd, let id else { return nil }
+        return ["kind": "codex", "id": id, "cwd": cwd, "title": titles[id] ?? prompt ?? id]
+    }
+
     /// Claude Code and Codex sessions that ended and can be resumed, in `project`, newest first.
     private func pastSessions(project: String?, exclude: Set<String>, limit: Int = 40) -> [[String: Any]] {
         var files: [(URL, Date, String)] = []
@@ -251,8 +318,18 @@ final class SessionMonitor {
             }
         }
         files.sort { $0.1 > $1.1 }
+        let codexTitles = project == nil ? [:] : Self.codexTitles(home.appendingPathComponent(".codex/session_index.jsonl"))
         var out: [[String: Any]] = []
         for (f, mtime, kind) in files.prefix(project == nil ? files.count : 400) {
+            if kind == "codex" {
+                guard var row = Self.codexSession(f, titles: codexTitles, metadataOnly: project == nil),
+                      let cwd = row["cwd"] as? String, let id = row["id"] as? String,
+                      !exclude.contains(id), (project == nil || self.project(of: cwd) == project) else { continue }
+                row["mtime"] = mtime.timeIntervalSince1970
+                out.append(row)
+                if out.count >= limit { break }
+                continue
+            }
             guard let h = try? FileHandle(forReadingFrom: f) else { continue }
             let data = h.readData(ofLength: 256 * 1024)
             try? h.close()
@@ -275,16 +352,11 @@ final class SessionMonitor {
                     if title == nil, j["type"] as? String == "ai-title" { title = j["aiTitle"] as? String }
                     if prompt == nil, j["type"] as? String == "user", (j["isSidechain"] as? Bool) != true,
                        let c = (j["message"] as? [String: Any])?["content"] as? String { prompt = c }
-                } else if j["type"] as? String == "session_meta", let p = j["payload"] as? [String: Any] {
-                    id = p["id"] as? String; cwd = p["cwd"] as? String
-                } else if prompt == nil, let p = j["payload"] as? [String: Any], p["type"] as? String == "user_message" {
-                    prompt = p["message"] as? String
                 }
                 if project == nil && cwd != nil && id != nil { break }
-                if cwd != nil && id != nil && prompt != nil && (kind == "codex" || title != nil) { break }
+                if cwd != nil && id != nil && prompt != nil && title != nil { break }
             }
             guard let cwd, let id, !exclude.contains(id), (project == nil || self.project(of: cwd) == project) else { continue }
-            if kind == "codex" && prompt == nil { prompt = f.deletingPathExtension().lastPathComponent }
             out.append(["kind": kind, "id": id, "cwd": cwd, "title": title ?? prompt ?? id,
                         "mtime": mtime.timeIntervalSince1970])
             if out.count >= limit { break }
