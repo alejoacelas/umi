@@ -20,13 +20,14 @@ set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 source_dir="$repo"
 build_args=()
+adhoc=0
 open_after=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source) source_dir="$(cd "$2" && pwd)"; shift 2 ;;
-    --adhoc) build_args+=(--adhoc); shift ;;
+    --adhoc) build_args+=(--adhoc); adhoc=1; shift ;;
     --no-open) open_after=0; shift ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -37,16 +38,28 @@ built="$repo/next/app/build/UmiNext.app"
 dest="$HOME/Applications/UmiNext.app"
 mkdir -p "$HOME/Applications"
 
-# The web layer and terminal.conf come from the source checkout.
-/usr/libexec/PlistBuddy -c "Set :UmiNextSourceDir $source_dir/next/app" "$built/Contents/Info.plist"
-identity="$(codesign -dvv "$built" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
-codesign --force --sign "${identity:--}" "$built" >/dev/null 2>&1
+# The web layer and terminal.conf come from the source checkout. Naming another one changes
+# Info.plist, so the bundle is signed again, with the identity build.sh signed it with.
+if [[ "$source_dir" != "$repo" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :UmiNextSourceDir $source_dir/next/app" "$built/Contents/Info.plist"
+  if [[ $adhoc == 1 ]]; then
+    sign_identity=-
+  else
+    source "$repo/app/dist/signing.sh"
+    umi_require_sign_identity || { echo "install.sh: can't sign UmiNext.app (use --adhoc only for a test build)" >&2; exit 1; }
+    sign_identity="$umi_sign_identity"
+  fi
+  codesign --force --sign "$sign_identity" "$built" >/dev/null
+fi
 
-if pgrep -xq UmiNext; then
+# Only the installed copy: test copies (build.sh --test) run under the same process name.
+installed_bin="$dest/Contents/MacOS/UmiNext"
+running() { pgrep -f "^$installed_bin" >/dev/null; }
+if running; then
   echo "install.sh: quitting the running UmiNext (its sessions keep running in the daemon)" >&2
   osascript -e 'tell application id "dev.umi.next" to quit' >/dev/null 2>&1 || true
-  for _ in $(seq 50); do pgrep -xq UmiNext || break; sleep 0.1; done
-  pgrep -xq UmiNext && pkill -x UmiNext || true
+  for _ in $(seq 50); do running || break; sleep 0.1; done
+  running && pkill -f "^$installed_bin" || true
 fi
 # The old copy goes to the Trash, not rm.
 [[ -e "$dest" ]] && trash "$dest"

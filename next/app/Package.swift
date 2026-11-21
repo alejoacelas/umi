@@ -12,7 +12,6 @@ let package = Package(
             dependencies: ["GhosttyKit"],
             path: "Sources/UmiNext",
             exclude: ["Ghostty/README.md"],
-            swiftSettings: [.unsafeFlags(["-Onone"], .when(configuration: .debug))],
             linkerSettings: [
                 .linkedLibrary("c++"),
                 .linkedFramework("AppKit"),

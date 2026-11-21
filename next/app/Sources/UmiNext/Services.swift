@@ -165,7 +165,8 @@ final class WebServices {
         let showIgnored = args["ignored"] as? Bool ?? false
         let fm = FileManager.default
         let names = try fm.contentsOfDirectory(atPath: dir).filter { $0 != ".git" && $0 != ".DS_Store" }
-        let ignored = gitIgnored(names, in: dir)
+        let inRepo = gitRoot(dir) != nil
+        let ignored = inRepo ? gitIgnored(names, in: dir) : []
         var entries: [[String: Any]] = []
         for name in names {
             let hidden = name.hasPrefix(".")
@@ -189,7 +190,7 @@ final class WebServices {
             if da != db { return da }
             return (a["name"] as! String).localizedStandardCompare(b["name"] as! String) == .orderedAscending
         }
-        return ["dir": dir, "entries": entries, "git": gitRoot(dir) != nil]
+        return ["dir": dir, "entries": entries, "git": inRepo]
     }
 
     static func gitRoot(_ dir: String) -> String? {
@@ -263,9 +264,9 @@ final class WebServices {
         }
     }
 
-    /// The names in `dir` git ignores (empty outside a repository).
+    /// The names in `dir`, a folder in a repository, that git ignores.
     static func gitIgnored(_ names: [String], in dir: String) -> Set<String> {
-        guard !names.isEmpty, gitRoot(dir) != nil else { return [] }
+        guard !names.isEmpty else { return [] }
         let input = names.joined(separator: "\0") + "\0"
         let r = run("/usr/bin/git", ["-C", dir, "check-ignore", "-z", "--stdin"], input: Data(input.utf8))
         guard let s = String(data: r.out, encoding: .utf8) else { return [] }
