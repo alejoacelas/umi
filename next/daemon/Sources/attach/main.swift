@@ -19,6 +19,12 @@ guard sock >= 0 else {
     exit(255)
 }
 
+// Before reading the size, so a resize from here on isn't missed.
+var winch: [Int32] = [0, 0]
+pipe(&winch)
+_ = fcntl(winch[0], F_SETFL, O_NONBLOCK); _ = fcntl(winch[1], F_SETFL, O_NONBLOCK)
+umi_install_sigwinch(winch[1])
+
 var cols: UInt16 = 80, rows: UInt16 = 24
 let isTTY = isatty(0) != 0
 if isTTY { var c: UInt16 = 0, r: UInt16 = 0; if umi_get_winsize(0, &c, &r) == 0, c > 0, r > 0 { cols = c; rows = r } }
@@ -40,14 +46,9 @@ func finish(_ code: Int32) -> Never {
     exit(code)
 }
 
-var winch: [Int32] = [0, 0]
-pipe(&winch)
-_ = fcntl(winch[0], F_SETFL, O_NONBLOCK); _ = fcntl(winch[1], F_SETFL, O_NONBLOCK)
-umi_install_sigwinch(winch[1])
 signal(SIGPIPE, SIG_IGN)
 
 var buf = [UInt8](repeating: 0, count: 1 << 16)
-var stdinOpen = true
 
 func handleFrames() {
     while let (type, payload) = reader.next() {
@@ -66,7 +67,7 @@ handleFrames()  // the replay may have arrived with the attach reply
 while true {
     var fds = [pollfd(fd: sock, events: Int16(POLLIN), revents: 0),
                pollfd(fd: winch[0], events: Int16(POLLIN), revents: 0),
-               pollfd(fd: stdinOpen ? 0 : -1, events: Int16(POLLIN), revents: 0)]
+               pollfd(fd: 0, events: Int16(POLLIN), revents: 0)]
     if poll(&fds, 3, -1) < 0 { if errno == EINTR { continue }; finish(255) }
 
     if fds[0].revents != 0 {

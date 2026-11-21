@@ -7,8 +7,6 @@ import Darwin
 import Foundation
 import UmiC
 
-setvbuf(stdout, nil, _IOLBF, 0)
-
 let foreground = CommandLine.arguments.contains("--foreground")
 
 // ---- start-up: state dir, log, single instance, detach ----
@@ -339,7 +337,9 @@ func handleJSON(_ c: Conn, _ req: [String: Any]) {
     case "kill":
         guard let s = findSession(req["id"]) else { return fail(c, "no such session") }
         guard s.alive else { return fail(c, "session already exited") }
-        let sig = Int32((req["signal"] as? Int) ?? Int(SIGTERM))
+        guard let sig = Int32(exactly: (req["signal"] as? Int) ?? Int(SIGTERM)), sig >= 0, sig < NSIG else {
+            return fail(c, "bad signal")
+        }
         // The child leads its own session and process group (forkpty).
         if kill(-s.pid, sig) != 0 { kill(s.pid, sig) }
         reply(c, ["ok": true])

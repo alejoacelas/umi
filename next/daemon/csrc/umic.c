@@ -410,7 +410,6 @@ char *umi_vt_plain(GhosttyTerminal t, size_t *out_len) {
     Buf b = {0};
     uint32_t cps[16];
     for (uint16_t y = 0; y < rows; y++) {
-        size_t line_start = b.len;
         size_t last_nonspace = b.len;
         for (uint16_t x = 0; x < cols; x++) {
             GhosttyGridRef ref = GHOSTTY_INIT_SIZED(GhosttyGridRef);
@@ -436,7 +435,6 @@ char *umi_vt_plain(GhosttyTerminal t, size_t *out_len) {
             for (size_t i = 0; i < n && i < 16; i++) utf8_append(&b, cps[i]);
             if (!(n == 1 && cps[0] == ' ')) last_nonspace = b.len;
         }
-        (void)line_start;
         b.len = last_nonspace;  // trim trailing spaces
         buf_append(&b, (const uint8_t *)"\n", 1);
     }
