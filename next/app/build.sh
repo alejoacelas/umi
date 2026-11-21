@@ -76,7 +76,8 @@ mkdir -p "$app.tmp/Contents/MacOS" "$app.tmp/Contents/Resources"
 cp "$bin" "$app.tmp/Contents/MacOS/UmiNext"
 for tool in daemon attach ctl; do cp "$daemon/bin/umi-next-$tool" "$app.tmp/Contents/MacOS/"; done
 cp "$here/.build/cli/umi-next" "$app.tmp/Contents/MacOS/umi-next"
-cp "$here/umi-next-hook" "$here/UmiNext.icns" "$app.tmp/Contents/Resources/"
+cp "$here/umi-next-hook" "$app.tmp/Contents/Resources/"
+"$here/make-icon.sh" "$app.tmp/Contents/Resources/UmiNext.icns"
 cp -R "$share/ghostty" "$app.tmp/Contents/Resources/ghostty"
 cp -R "$share/terminfo" "$app.tmp/Contents/Resources/terminfo"
 cat > "$app.tmp/Contents/Info.plist" <<PLIST

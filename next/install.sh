@@ -38,10 +38,27 @@ built="$repo/next/app/build/UmiNext.app"
 dest="$HOME/Applications/UmiNext.app"
 mkdir -p "$HOME/Applications"
 
-# The web layer and terminal.conf come from the source checkout. Naming another one changes
-# Info.plist, so the bundle is signed again, with the identity build.sh signed it with.
-if [[ "$source_dir" != "$repo" ]]; then
+# Personalize a staging copy only. The distributable bundle keeps Umi's public artwork.
+config="${XDG_CONFIG_HOME:-$HOME/.config}/umi/config"
+setting() {
+  awk -F= -v name="$1" '$1 ~ ("^[[:space:]]*" name "[[:space:]]*$") {
+    sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*$/, ""); value=$0
+  } END { print value }' "$config"
+}
+custom_icon=""
+if [[ -f "$config" && "$(setting macos-icon)" == custom ]]; then
+  custom_icon="$(setting macos-custom-icon)"
+  [[ -r "$custom_icon" ]] || { echo "install.sh: cannot read Umi's custom icon: $custom_icon" >&2; exit 1; }
+fi
+if [[ -n "$custom_icon" || "$source_dir" != "$repo" ]]; then
+  staging="$(mktemp -d "${TMPDIR:-/tmp}/umi-next-install.XXXXXX")"
+  trap 'rm -rf "$staging"' EXIT
+  ditto "$built" "$staging/UmiNext.app"
+  built="$staging/UmiNext.app"
   /usr/libexec/PlistBuddy -c "Set :UmiNextSourceDir $source_dir/next/app" "$built/Contents/Info.plist"
+  if [[ -n "$custom_icon" ]]; then
+    "$repo/next/app/make-icon.sh" "$built/Contents/Resources/UmiNext.icns" "$custom_icon"
+  fi
   if [[ $adhoc == 1 ]]; then
     sign_identity=-
   else
