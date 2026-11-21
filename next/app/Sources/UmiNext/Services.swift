@@ -422,6 +422,8 @@ final class WebServices {
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }
         let center = UNUserNotificationCenter.current()
+        // Without a delegate macOS shows no banner while Umi Next is the frontmost app.
+        if center.delegate == nil { center.delegate = ForegroundBanners.shared }
         center.getNotificationSettings { settings in
             let status: String
             switch settings.authorizationStatus {
@@ -432,6 +434,15 @@ final class WebServices {
             default: deliver(); status = "delivered"
             }
             DispatchQueue.main.async { self.reply(id, .success(["status": status])) }
+        }
+    }
+
+    /// Shows `notify`'s notifications as banners with sound even while this app is in front.
+    final class ForegroundBanners: NSObject, UNUserNotificationCenterDelegate {
+        static let shared = ForegroundBanners()
+        func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+            completionHandler([.banner, .sound])
         }
     }
 
@@ -482,7 +493,9 @@ final class WebServices {
         do { root = try Self.path(args, "root") } catch { return reply(id, .failure(error)) }
         guard let query = args["query"] as? String, !query.isEmpty else { return reply(id, .failure(Failure(code: "badArgs", message: "query missing"))) }
         guard let rg = Self.rgPath else { return reply(id, .failure(Failure(code: "noRipgrep", message: "ripgrep (rg) isn't installed; install it with `brew install ripgrep`"))) }
-        var a = ["--json", "--max-columns", "2000"]
+        // --no-messages: per-file errors would fill the stderr pipe, which is read only after
+        // stdout ends, and block rg; pattern errors still go to stderr.
+        var a = ["--json", "--max-columns", "2000", "--no-messages"]
         if args["regex"] as? Bool != true { a.append("--fixed-strings") }
         // Perl-style regexes (\d, \b, lookarounds), as Umi's `git grep -P`.
         else if args["pcre2"] as? Bool == true { a.append("--pcre2") }
@@ -552,12 +565,14 @@ final class Search {
             let errText = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             flush()
             lock.lock(); let wasCancelled = cancelled; lock.unlock()
-            // rg exits 1 when nothing matched, 2 on errors (also when some files couldn't be read).
+            // rg exits 1 when nothing matched, 2 on errors (also when some files couldn't be read,
+            // which --no-messages leaves silent: only an error with a message fails the search).
             let status = process.terminationStatus
-            let failed = !wasCancelled && !truncated && status == 2 && count == 0
+            let errMessage = errText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let failed = !wasCancelled && !truncated && status == 2 && count == 0 && !errMessage.isEmpty
             let summary: [String: Any] = ["count": count, "files": files.count, "truncated": truncated,
                                           "cancelled": wasCancelled, "ms": Int(Date().timeIntervalSince(t0) * 1000)]
-            DispatchQueue.main.async { self.onDone(summary, failed ? errText.trimmingCharacters(in: .whitespacesAndNewlines) : nil) }
+            DispatchQueue.main.async { self.onDone(summary, failed ? errMessage : nil) }
         }
     }
 

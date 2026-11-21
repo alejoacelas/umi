@@ -426,6 +426,10 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         for (id, pane) in wanted {
             guard let target = pane["attach"] as? String, attachHandled[id] != target else { continue }
             attachHandled[id] = target
+            // A pane new to this process starts from its `session`: the page sets it to `attach`
+            // on panes it creates, and after a restart `attach` is stale (it stays in the layout
+            // after the pane shows the session, which may have been replaced since).
+            guard surfaces[id] != nil || pending[id] != nil else { continue }
             if target == paneInfo[id]?["session"] as? String { continue }
             endTerminal(id)
             var p = pane
@@ -463,7 +467,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         let size = (focusedPaneID().flatMap { surfaces[$0] } ?? surfaces.values.first)?.gridSize
         for (id, pane) in pending where !inActiveTab.contains(id) && pane["session"] == nil {
             guard let start = pane["start"] as? [String: Any] else { continue }
-            let cwd = ((start["cwd"] ?? pane["cwd"]) as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+            let cwd = ((start["cwd"] ?? pane["cwd"]) as? String)
             let launch = SessionBackend.launch(existing: nil, live: nil, cwd: cwd, name: start["name"] as? String,
                                                cmd: start["cmd"] as? String, by: start["by"] as? String ?? "user", size: size)
             // A refused session waits for its slot, where the pane shows the failure.
@@ -493,13 +497,13 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         if let want = pane["session"] as? String, liveSessions?.contains(want) != true {
             liveSessions = SessionBackend.liveSessionIDs()
         }
-        let cwd = (pane["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+        let cwd = (pane["cwd"] as? String)
         // A new session the picker asked for: {cmd, name, cwd}. A pane whose session is gone (the
         // daemon restarted) resumes the agent it showed, if the page recorded one (`resume`).
         let existing = pane["session"] as? String
         let gone = existing.map { liveSessions?.contains($0) != true } ?? false
         let start = pane["start"] as? [String: Any] ?? (gone ? pane["resume"] as? [String: Any] : nil)
-        let startCwd = (start?["cwd"] as? String).flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? cwd
+        let startCwd = (start?["cwd"] as? String) ?? cwd
         let launch = SessionBackend.launch(existing: pane["session"] as? String, live: liveSessions, cwd: startCwd,
                                            name: start?["name"] as? String, cmd: start?["cmd"] as? String,
                                            by: start?["by"] as? String ?? "user")

@@ -8,18 +8,27 @@ import JavaScriptCore
 /// once per docketing, `~/.config/umi-next/docket-hook` runs if executable, with JSON on stdin:
 ///   {"session", "name", "cwd", "agent", "agent_session", "status": {"status","detail","line"}|null,
 ///    "dialog", "host"}
-/// Exit 0: the mark becomes "on" (on the docket). Non-zero: "failed", and the session shows in Review
-/// with the hook's stderr. Every run is logged to <state>/docket.log. Marks live in
-/// <state>/docket.json, so they survive UI restarts. Runs on the session monitor's queue.
+/// While the hook runs the mark is "running". Exit 0: the mark becomes "on" (on the docket).
+/// Non-zero: "failed", and the session shows in Review with the hook's stderr. Every run is logged
+/// to <state>/docket.log. Marks live in <state>/docket.json, so they survive UI restarts.
+/// Everything but the hook's process runs on the session monitor's `queue`; the hook (it calls
+/// `claude -p`, up to 60 s) runs on a queue of its own, so polls go on meanwhile.
 final class Docket {
     private let file = Paths.stateDir + "/docket.json"
     private let log = Paths.stateDir + "/docket.log"
     static var hookPath: String { NSHomeDirectory() + "/.config/umi-next/docket-hook" }
     private(set) var marks: [String: [String: Any]]
     private var js: JSContext?
+    private let queue: DispatchQueue
+    private let hookQueue = DispatchQueue(label: "umi-next.docket-hook")
+    /// A hook run ended and changed a mark (called on `queue`).
+    var onChange: (() -> Void)?
 
-    init() {
+    init(queue: DispatchQueue) {
+        self.queue = queue
         marks = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: Paths.stateDir + "/docket.json")))) as? [String: [String: Any]] ?? [:]
+        // A run the UI quit during never reported back: run it again.
+        for (sid, m) in marks where m["state"] as? String == "running" { marks[sid]?["state"] = "pending" }
     }
 
     private func save() {
@@ -43,6 +52,7 @@ final class Docket {
     func check(_ sessions: [[String: Any]]) {
         let byID = Dictionary(sessions.compactMap { s in (s["id"] as? String).map { ($0, s) } }, uniquingKeysWith: { a, _ in a })
         for (sid, m) in marks {
+            if m["state"] as? String == "running" { continue }
             guard m["state"] as? String == "pending" else {
                 if byID[sid] == nil { marks[sid] = nil; save() }   // ended and removed: nothing to keep
                 continue
@@ -77,26 +87,52 @@ final class Docket {
         var entry: [String: Any] = ["ts": Date().timeIntervalSince1970, "session": sid, "payload": payload]
         var next = m
         let hook = Self.hookPath
-        if FileManager.default.isExecutableFile(atPath: hook) {
-            let r = Self.run(hook, stdin: (try? JSONSerialization.data(withJSONObject: payload)) ?? Data())
-            entry["exit"] = r.status
-            entry["stderr"] = r.err
-            entry["stdout"] = r.out
-            if r.status == 0 {
-                next["state"] = "on"
-            } else {
-                next["state"] = "failed"
-                next["error"] = r.err.isEmpty ? "docket-hook exited with \(r.status)" : r.err.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-        } else {
+        guard FileManager.default.isExecutableFile(atPath: hook) else {
             entry["exit"] = NSNull()
             entry["note"] = "no executable \(hook)"
             next["state"] = "failed"
             next["error"] = "no docket hook (\(hook) missing or not executable)"
+            finish(sid, next, entry)
+            return
         }
+        marks[sid]?["state"] = "running"
+        save()
+        let stdin = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
+        hookQueue.async { [self] in
+            let r = Self.run(hook, stdin: stdin)
+            queue.async { [self] in
+                var entry = entry, next = next
+                entry["exit"] = r.status
+                entry["stderr"] = r.err
+                entry["stdout"] = r.out
+                if r.status == 0 {
+                    next["state"] = "on"
+                } else {
+                    next["state"] = "failed"
+                    next["error"] = r.err.isEmpty ? "docket-hook exited with \(r.status)" : r.err.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                // Taken off the docket, or docketed again, while the hook ran: that mark stands.
+                let current = marks[sid]
+                guard current?["state"] as? String == "running", current?["since"] as? Double == m["since"] as? Double else {
+                    entry["note"] = "mark changed while the hook ran; result not applied"
+                    writeLog(entry)
+                    return
+                }
+                finish(sid, next, entry)
+                onChange?()
+            }
+        }
+    }
+
+    private func finish(_ sid: String, _ next: [String: Any], _ entry: [String: Any]) {
+        var next = next
         next["ranAt"] = Date().timeIntervalSince1970
         marks[sid] = next
         save()
+        writeLog(entry)
+    }
+
+    private func writeLog(_ entry: [String: Any]) {
         if let line = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]),
            let h = FileHandle(forWritingAtPath: log) ?? { FileManager.default.createFile(atPath: log, contents: nil); return FileHandle(forWritingAtPath: log) }() {
             h.seekToEndOfFile()

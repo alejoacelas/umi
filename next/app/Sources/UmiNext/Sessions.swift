@@ -6,8 +6,9 @@ import Foundation
 /// Agent state comes from Umi's Claude Code / Codex plugin (app/macos/UmiPlugins), which calls
 /// `$UMI_CLI hook EVENT`; daemon sessions point UMI_CLI at umi-next-hook, which writes
 /// <state>/agents/<session>.json. "waiting" = the agent stopped and waits for Alejo (Stop,
-/// Notification, PermissionRequest, StopFailure); "busy" = a turn is running; the file goes when
-/// the agent's session ends. Shell sessions: "busy" while a program other than the shell runs.
+/// Notification, PermissionRequest, StopFailure); "busy" = a turn is running. The file stays after
+/// the agent exits; it goes, with the session's entry in session-folders.json, once the daemon no
+/// longer lists the session. Shell sessions: "busy" while a program other than the shell runs.
 final class SessionMonitor {
     private let queue = DispatchQueue(label: "umi-next.sessions")
     private let historyQueue = DispatchQueue(label: "umi-next.project-history", qos: .utility)
@@ -22,7 +23,7 @@ final class SessionMonitor {
     /// Sessions shown in a pane (asked on the main thread each poll).
     var shownSessions: () -> Set<String> = { [] }
     private(set) var last: [[String: Any]] = []
-    let docket = Docket()
+    let docket: Docket
 
     /// Sends a session to the docket (or takes it off); both on the monitor's queue.
     func setDocketed(_ sid: String, _ on: Bool, name: String? = nil) {
@@ -37,8 +38,10 @@ final class SessionMonitor {
     static var agentsDir: String { Paths.stateDir + "/agents" }
 
     init() {
+        docket = Docket(queue: queue)
         pwds = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: Paths.stateDir + "/session-folders.json")))) as? [String: String] ?? [:]
         try? FileManager.default.createDirectory(atPath: Self.agentsDir, withIntermediateDirectories: true)
+        docket.onChange = { [weak self] in self?.poll() }
     }
 
     func start() {
@@ -56,18 +59,44 @@ final class SessionMonitor {
         queue.async { [self] in
             guard pwds[session] != pwd else { return }
             pwds[session] = pwd
-            if let d = try? JSONSerialization.data(withJSONObject: pwds) { try? d.write(to: URL(fileURLWithPath: pwdFile), options: .atomic) }
+            savePwds()
+        }
+    }
+
+    private func savePwds() {
+        if let d = try? JSONSerialization.data(withJSONObject: pwds) { try? d.write(to: URL(fileURLWithPath: pwdFile), options: .atomic) }
+    }
+
+    /// Forgets the agent files and folders of sessions the daemon no longer lists. A file younger
+    /// than 60 s is kept: its session may have started after `listed` was asked for.
+    private func forgetEnded(listed: Set<String>) {
+        let fm = FileManager.default
+        let now = Date()
+        for name in (try? fm.contentsOfDirectory(atPath: Self.agentsDir)) ?? [] where name.hasSuffix(".json") && !name.hasPrefix(".") {
+            let id = String(name.dropLast(5))
+            guard !listed.contains(id) else { continue }
+            let path = Self.agentsDir + "/" + name
+            guard let m = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date,
+                  now.timeIntervalSince(m) > 60 else { continue }
+            try? fm.removeItem(atPath: path)
+        }
+        // A folder is noted only for a session a pane shows, which the daemon listed first.
+        let gone = pwds.keys.filter { !listed.contains($0) }
+        if !gone.isEmpty {
+            gone.forEach { pwds[$0] = nil }
+            savePwds()
         }
     }
 
     private func poll() {
         guard let list = SessionBackend.sessions() else { return }
+        if !SessionBackend.plainShell { forgetEnded(listed: Set(list.compactMap { $0["id"] as? String })) }
         let shown = DispatchQueue.main.sync { shownSessions() }
         var out: [[String: Any]] = []
         for var s in list {
             guard let id = s["id"] as? String else { continue }
             let alive = s["alive"] as? Bool ?? false
-            let docketPending = docket.marks[id]?["state"] as? String == "pending"
+            let docketPending = ["pending", "running"].contains(docket.marks[id]?["state"] as? String ?? "")
             if !alive && !shown.contains(id) && !docketPending {
                 // Ended while no pane showed it: forget it in the daemon.
                 SessionBackend.run(SessionBackend.ctlPath, ["rm", id])
