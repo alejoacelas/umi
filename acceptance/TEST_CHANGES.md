@@ -1720,3 +1720,7 @@ file shows.
   both projects ahead of unused matches, excludes nonmatches, preserves explicit-path browsing,
   and accepts the chosen folder with Enter. Also checks repeated history responses agree. Runs
   against an isolated offscreen app on mac-air-2 and trashes its own fixtures afterward.
+
+## 2026-11-21 — agent icons in the new-pane picker
+
+Added `next/app/tests/picker_icons_test.py`: checks loaded Claude/Codex/Antigravity logos in live and past rows, every agent selector, new-session icon, Tab/Shift+Tab, Enter routing, and control bounds in a narrow split. A harmless real daemon executable named `agy` verifies native Antigravity detection reaches the rendered list. Model launches are intercepted; fixture processes and files are cleaned up. Passed against the signed isolated app on mac-air-2; inspected a captured 900px-window screenshot.
