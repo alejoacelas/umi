@@ -72,7 +72,9 @@ Umi.views.picker = (() => {
       if (inHome(top) && top !== S.home) for (const n of subdirs(top, false) || []) parents.add(top + '/' + n);
     }
     const out = new Set(seeds);
-    for (const d of [...parents].slice(0, 60)) for (const n of subdirs(d, false) || []) out.add(d + '/' + n);
+    const near = [...parents].slice(0, 60);
+    for (const d of near) for (const n of subdirs(d, false) || []) out.add(d + '/' + n);
+    for (const d of near) out.add(d);
     return (known = [...out]);
   }
 

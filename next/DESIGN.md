@@ -71,7 +71,22 @@ changes it; "tell me later" is snooze and Review.
 3. Live sessions of that project that are busy.
 4. Past sessions of that project that can be resumed (Claude's and Codex's own transcripts).
 
-↑↓ choose, Enter opens. agent-emacs splits these into a switcher, a new-session prompt and a history
+↑↓ choose, Enter opens.
+
+The session starts in the folder shown under the name field, at first the focused pane's. `/` in
+the empty name field (or a click on the folder) turns the field into a folder search (Alejo,
+2026-11-21: `ls` and `cd` in a new shell took too many keys), so ⌘D `/` a few letters Enter Enter
+starts a session elsewhere:
+
+- Letters match the folders in use (live sessions, tabs, folders chosen before), the folders next to
+  them, and the folders next to their parents, so every project of a workspace like `~/best`. It
+  only lists folders inside home that are next to one in use, so macOS never asks for Documents
+  or Desktop.
+- A path (`~/…`, `/…`, `../…`, anything with a `/`) lists that folder's folders, filtered by what
+  follows the last `/`. Tab goes into the chosen folder, ⇧Tab up one.
+- Enter takes the folder: the lists below become its project's. Esc goes back to the name.
+
+agent-emacs splits these into a switcher, a new-session prompt and a history
 browser; one list ordered by what needs Alejo is fewer steps.
 
 ## The palette at the bottom
