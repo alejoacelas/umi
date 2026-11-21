@@ -5,8 +5,11 @@ import UmiC
 
 let usage = """
 usage: umi-next-ctl <command>
-  new [--cwd DIR] [--cmd CMD] [--cols N --rows N] [--name NAME] [--by WHO]   start a session, print its id
-                           (WHO: who started it, default cli; the UI passes user)
+  new [--cwd DIR] [--cmd CMD] [--cols N --rows N] [--name NAME] [--by WHO] [--env KEY=VALUE]...
+                           start a session, print its id (WHO: who started it, default cli;
+                           the UI passes user). The session gets a fixed set of this
+                           environment's variables (HOME, PATH, SHELL, LANG, ...), not all of
+                           it; --env adds one more, and can be repeated.
   ls                       sessions as JSON
   kill <id> [--signal N]   signal the session's process group (default TERM)
   rm <id> [--force]        forget an exited session (--force kills a live one)
@@ -78,25 +81,36 @@ func ensureDaemon() {
 
 func parseSize(_ s: String?) -> Int? { s.flatMap { Int($0) } }
 
-/// Agent session markers a launching process may have left in this environment (UmiNext started
-/// from inside a Claude session, say). A session that inherits them takes itself for that agent's
-/// child: Claude then saves no transcript ("Transcript saving is off — inherited
-/// CLAUDE_CODE_CHILD_SESSION marker"). Same set as Umi's `UmiEnvironment.scrubInherited`, except
-/// that the OAuth token stays: it is a credential, not a marker, and sessions over SSH need it.
-func scrubAgentMarkers() {
-    let exact: Set<String> = ["CLAUDECODE", "CLAUDE_AGENT_SDK_VERSION"]
-    let prefixes = ["CLAUDE_CODE_", "CODEX_"]
-    let kept: Set<String> = ["CODEX_HOME", "CLAUDE_CODE_OAUTH_TOKEN"]
-    for key in ProcessInfo.processInfo.environment.keys where !kept.contains(key)
-        && (exact.contains(key) || prefixes.contains(where: { key.hasPrefix($0) })) {
-        unsetenv(key)
+/// The variables a new session takes from this environment. Everything else stays behind: this
+/// environment is whatever launched UmiNext (or ran this command), and an agent's tool shell
+/// carries settings meant for the agent alone. Codex runs its commands with NO_COLOR=1, PAGER=cat
+/// and LC_ALL=C.UTF-8, so when Codex reinstalled UmiNext every new pane's Claude came up without
+/// colours; Claude's CLAUDE_CODE_CHILD_SESSION marker made new sessions save no transcript. The
+/// session's login shell sets up the rest from the user's profile.
+let sessionVariables: Set<String> = [
+    "HOME", "USER", "LOGNAME", "SHELL", "PATH", "TMPDIR", "LANG", "SSH_AUTH_SOCK",
+    "__CF_USER_TEXT_ENCODING", "__CFBundleIdentifier",
+    // Where the agents keep their configuration, and Claude's credential for sessions over SSH.
+    "CODEX_HOME", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN",
+    // Which UmiNext the session belongs to.
+    "UMI_NEXT_STATE_DIR",
+]
+
+/// `--env KEY=VALUE`, as often as given: variables the caller wants in the session by name.
+func envOptions() -> [String: String] {
+    var out: [String: String] = [:]
+    while let pair = option("--env") {
+        guard let eq = pair.firstIndex(of: "="), eq != pair.startIndex else { die("--env takes KEY=VALUE, got \(pair)", 2) }
+        out[String(pair[..<eq])] = String(pair[pair.index(after: eq)...])
     }
+    return out
 }
 
 switch cmd {
 case "new":
-    scrubAgentMarkers()
-    var req: [String: Any] = ["op": "new", "env": ProcessInfo.processInfo.environment]
+    let sessionEnv = ProcessInfo.processInfo.environment.filter { sessionVariables.contains($0.key) }
+        .merging(envOptions()) { _, given in given }
+    var req: [String: Any] = ["op": "new", "env": sessionEnv]
     req["cwd"] = option("--cwd") ?? FileManager.default.currentDirectoryPath
     if let c = option("--cmd") { req["cmd"] = c }
     if let c = parseSize(option("--cols")) { req["cols"] = c }

@@ -484,17 +484,34 @@ def test_out_of_file_descriptors(env):
     wait_for(lambda: env.ctl("ping", check=False).returncode == 0, timeout=5, what="ping after descriptors free up")
 
 
-def test_new_session_drops_agent_markers(env):
-    # UmiNext started from inside a Claude session carries its markers; a session that inherits
-    # CLAUDE_CODE_CHILD_SESSION makes Claude save no transcript.
-    env.env.update({"CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_ENTRYPOINT": "cli",
-                    "CODEX_THREAD_ID": "t", "CODEX_HOME": "/codex-home", "CLAUDE_CODE_OAUTH_TOKEN": "tok"})
-    sid = env.new("env | grep -E '^(CLAUDE|CODEX)' | sort | tr '\\n' ' '; echo END; exec sleep 100", cols=120, rows=5)
+def test_new_session_takes_only_named_variables(env):
+    # The environment that reaches umi-next-ctl is whatever launched UmiNext. Started from Codex's
+    # tool shell it carries NO_COLOR=1 (new Claude panes then had no colours), PAGER=cat and
+    # LC_ALL; from inside a Claude session, CLAUDE_CODE_CHILD_SESSION (Claude then saves no
+    # transcript). A session gets the fixed set and what --env names, nothing else.
+    env.env.update({"NO_COLOR": "1", "PAGER": "cat", "GIT_PAGER": "cat", "LC_ALL": "C.UTF-8",
+                    "CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_ENTRYPOINT": "cli",
+                    "CODEX_THREAD_ID": "t", "CODEX_CI": "1", "GHOSTTY_BIN_DIR": "/other-app",
+                    "CODEX_HOME": "/codex-home", "CLAUDE_CODE_OAUTH_TOKEN": "tok"})
+    sid = env.ctl("new", "--cols", "200", "--rows", "40", "--cwd", str(env.root),
+                  "--env", "UMI_PANE=umi-next", "--env", "WITH_EQUALS=a=b", "--cmd",
+                  "env | sort; echo END; exec sleep 100").stdout.decode().strip()
     wait_for(lambda: "END" in env.screen(sid)["text"], what="env listing")
-    text = env.screen(sid)["text"]
-    assert "CODEX_HOME=/codex-home" in text and "CLAUDE_CODE_OAUTH_TOKEN=tok" in text
-    for marker in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID"):
-        assert marker + "=" not in text, text
+    names = {line.split("=", 1)[0]: line.split("=", 1)[1].rstrip()
+             for line in env.screen(sid)["text"].splitlines() if "=" in line}
+    for gone in ("NO_COLOR", "PAGER", "GIT_PAGER", "LC_ALL", "CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION",
+                 "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID", "CODEX_CI", "GHOSTTY_BIN_DIR"):
+        assert gone not in names, names
+    assert names["CODEX_HOME"] == "/codex-home" and names["CLAUDE_CODE_OAUTH_TOKEN"] == "tok"
+    assert names["UMI_PANE"] == "umi-next" and names["WITH_EQUALS"] == "a=b"
+    assert names["HOME"] == env.env["HOME"] and names["LANG"] == "en_US.UTF-8"
+    assert names["UMI_NEXT_STATE_DIR"] == str(env.state)
+    assert names["TERM"] == "xterm-256color" and names["COLORTERM"] == "truecolor"
+
+
+def test_new_session_refuses_a_malformed_env_option(env):
+    r = env.ctl("new", "--cwd", str(env.root), "--env", "NOVALUE", check=False)
+    assert r.returncode == 2 and b"KEY=VALUE" in r.stderr
 
 
 # ---------- scrollback ----------

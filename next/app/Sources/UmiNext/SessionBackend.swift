@@ -68,7 +68,11 @@ enum SessionBackend {
         if let name, !name.isEmpty { args += ["--name", name] }
         if let cmd { args += ["--cmd", cmd] }
         if let size, size.cols > 0, size.rows > 0 { args += ["--cols", String(size.cols), "--rows", String(size.rows)] }
-        let r = run(ctlPath, args, extraEnv: shellIntegrationEnv().merging(hookEnv()) { a, _ in a }.merging(cliEnv()) { a, _ in a })
+        // The session's variables go by name (--env): umi-next-ctl passes on only a fixed set of
+        // this app's environment, which is whatever launched the app.
+        let sessionEnv = shellIntegrationEnv().merging(hookEnv()) { a, _ in a }.merging(cliEnv()) { a, _ in a }
+        for (key, value) in sessionEnv.sorted(by: { $0.key < $1.key }) { args += ["--env", "\(key)=\(value)"] }
+        let r = run(ctlPath, args)
         let id = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
         guard r.status == 0, !id.isEmpty else {
             // No silent fallback: the pane shows the failure and stays open.

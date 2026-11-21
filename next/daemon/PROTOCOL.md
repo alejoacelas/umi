@@ -36,7 +36,7 @@ Every message is a frame: `type` (1 byte), payload length (u32, big endian), pay
 | op | fields | reply |
 |---|---|---|
 | `ping` | | `pid`, `sessions`, `state_dir` |
-| `new` | `cwd` (must be an existing folder, else `no folder <cwd>` and nothing starts), `cmd` (run as `$SHELL -l -c cmd`; absent: `$SHELL -l`), `cols`, `rows`, `name`, `by` (who started it: `user` from the UI, `cli` from `umi-next-ctl new` by default), `env` (object; the session's environment, absent: the daemon's; the daemon then sets `TERM`, `COLORTERM`, `PWD` and `UMI_NEXT_SESSION_ID`) | `id` |
+| `new` | `cwd` (must be an existing folder, else `no folder <cwd>` and nothing starts), `cmd` (run as `$SHELL -l -c cmd`; absent: `$SHELL -l`), `cols`, `rows`, `name`, `by` (who started it: `user` from the UI, `cli` from `umi-next-ctl new` by default), `env` (object; the session's environment: `umi-next-ctl new` sends a fixed set of its own variables, listed as `sessionVariables` in `Sources/ctl/main.swift`, plus each `--env KEY=VALUE`, never its whole environment; absent: the daemon's; the daemon then sets `TERM`, `COLORTERM`, `PWD` and `UMI_NEXT_SESSION_ID`) | `id` |
 | `ls` | | `sessions`: `[{id, name, by, cwd, command, pid, foreground, alive, exit_status, exit_signal, clients, cols, rows, created}]` |
 | `kill` | `id`, `signal` (default 15) | sends the signal to the session's process group |
 | `rm` | `id`, `force` | forgets an exited session; `force` SIGKILLs a live one first |
