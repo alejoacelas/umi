@@ -120,7 +120,7 @@ Umi.cli = (() => {
   // A pane for a new session (with --cmd), else the picker (as ⌘D; PARITY "split" departure).
   function newPaneFor(args, folder, project) {
     if (args.cmd || args.shell) return M.newPane({ cwd: folder, start: startFields(args, folder) });
-    return M.newPane({ view: 'picker', cwd: folder, picker: { kind: 'claude', name: args.name || '', sel: 0, project } });
+    return M.newPicker(folder, project, args.name || '');
   }
 
   // A new terminal pane gets its session once native starts it (on its first slot, or at once in a

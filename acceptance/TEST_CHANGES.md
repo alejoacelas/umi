@@ -1728,3 +1728,7 @@ Added `next/app/tests/picker_icons_test.py`: checks loaded Claude/Codex/Antigrav
 ## 2026-11-21 — readable Codex history titles
 
 Added `next/app/tests/picker_titles_test.py`, exercised on the signed isolated app on mac-air-2. It verifies the native reader and rendered picker prefer `session_index.jsonl` names while preserving the original session ID, and read a modern user prompt after a >256KB developer preamble without using AGENTS/environment metadata or rollout filenames. Unique fixtures are cleaned up while retaining unrelated index rows.
+
+## 2026-11-21 — open the Umi Next picker at the far right
+
+`next/app/tests/shortcuts_test.py` presses ⌘D from a pane with a neighbor to its right and checks that the focused picker appears beyond every existing pane.

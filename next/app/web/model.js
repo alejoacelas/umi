@@ -36,6 +36,7 @@ Umi.model = (() => {
 
   // ---- tree ----
   const newPane = (extra = {}) => ({ type: 'pane', id: uid('p'), view: 'terminal', ...extra });
+  const newPicker = (cwd, project, name = '') => newPane({ view: 'picker', cwd, picker: { kind: 'claude', name, sel: 0, project } });
   const newTab = (pane) => { const p = pane || newPane(); return { id: uid('t'), root: p, focused: p.id }; };
 
   function panesOf(node) {
@@ -222,12 +223,13 @@ Umi.model = (() => {
     return root;
   }
 
-  // Splits the focused pane; the new pane shows `view` ('picker' for ⌘D).
+  // Splits the focused pane; ⇧⌘D uses this to open a picker below it.
   function split(dir, view = 'terminal', extra = {}) {
     const tab = activeTab();
     delete tab.zoomed;
-    const p = newPane({ view, cwd: folderOf(tab.focused), ...extra });
-    if (view === 'picker') p.picker = { kind: 'claude', name: '', sel: 0, project: projectOf(tab.focused) };
+    const cwd = folderOf(tab.focused);
+    const p = view === 'picker' ? newPicker(cwd, projectOf(tab.focused)) : newPane({ view, cwd });
+    Object.assign(p, extra);
     tab.root = mapPane(tab.root, tab.focused, (old) => ({ type: 'split', dir, ratio: 0.5, a: old, b: p }));
     shareSplit(tab, p.id);
     tab.focused = p.id;
@@ -251,7 +253,7 @@ Umi.model = (() => {
     const i = S.layout.tabs.indexOf(tab);
     S.layout.tabs.splice(i, 1);
     // The window always shows something: the last pane gone, a picker in its project takes its place.
-    if (S.layout.tabs.length === 0) S.layout.tabs.push(newTab(newPane({ view: 'picker', cwd: folder, picker: { kind: 'claude', name: '', sel: 0, project } })));
+    if (S.layout.tabs.length === 0) S.layout.tabs.push(newTab(newPicker(folder, project)));
     if (S.layout.activeTab === tab.id) S.layout.activeTab = S.layout.tabs[Math.min(i, S.layout.tabs.length - 1)].id;
   }
 
@@ -490,7 +492,7 @@ Umi.model = (() => {
   }
 
   return {
-    newPane, newTab, panesOf, paneIds, findPane, activeTab, listedTabs, focusedPane, sessionOf, paneOfSession,
+    newPane, newPicker, newTab, panesOf, paneIds, findPane, activeTab, listedTabs, focusedPane, sessionOf, paneOfSession,
     mapPane, removeFromTree, hide, closeAndEnd, resumeOf, unhide, hiddenOf, appendPane, showHidden, rowWeight,
     folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, review,
     addTab, split, removePane, openSession, showSession, startSession, focusPane,
@@ -509,7 +511,12 @@ Umi.actions = {
     Umi.state.ui.tabDraft = null;
     if (V.shown() && V.mode() === 'tabs') Umi.state.ui.editingTab = t.id;
   },
-  splitRight: () => Umi.model.split('row', 'picker'),
+  splitRight: () => {
+    const M = Umi.model, tab = M.activeTab();
+    const picker = M.newPicker(M.folderOf(tab.focused), M.projectOf(tab.focused));
+    M.appendPane(tab, picker);
+    return picker;
+  },
   splitDown: () => Umi.model.split('column', 'picker'),
   // ⌘W: closes the pane and ends its session. A file pane with unsaved edits asks first
   // (views/file.js).
@@ -535,7 +542,7 @@ Umi.actions = {
   switchSession: () => {
     const M = Umi.model, p = M.focusedPane();
     if (!p) return;
-    const fresh = M.newPane({ view: 'picker', cwd: M.folderOf(p.id), picker: { kind: 'claude', name: '', sel: 0, project: M.projectOf(p.id) } });
+    const fresh = M.newPicker(M.folderOf(p.id), M.projectOf(p.id));
     const found = M.findPane(p.id);
     found.tab.root = (function map(n) { return n.type === 'pane' ? (n.id === p.id ? fresh : n) : { ...n, a: map(n.a), b: map(n.b) }; })(found.tab.root);
     found.tab.focused = fresh.id;

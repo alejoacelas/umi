@@ -649,7 +649,7 @@ Umi.views.file = (() => {
         copyPath();
         sep();
         // Next splits right and down only, each into the picker as ⌘D / ⇧⌘D.
-        add('Split pane right', () => Umi.app.update(() => { M.focusPane(this.id); M.split('row', 'picker'); }));
+        add('Split pane right', () => Umi.app.update(() => { M.focusPane(this.id); Umi.actions.splitRight(); }));
         add('Split pane down', () => Umi.app.update(() => { M.focusPane(this.id); M.split('column', 'picker'); }));
         if (split) { sep(); zoom(); add('Close pane', () => this.close()); }
       } else if (this.mode === 'raw') {

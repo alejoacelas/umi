@@ -136,6 +136,16 @@ press("[", "cmd")
 check("⌘[ previous pane", ui()["focused"] != picker, ui())
 press("]", "cmd")
 check("⌘] next pane", ui()["focused"] == picker, ui())
+press("left", "cmd", "opt")
+press("d", "cmd")
+u = ui()
+rects = J("Umi.views.panes.slotRects()")
+rightmost = u["focused"]
+check("⌘D from the left opens a focused picker beyond every existing pane",
+      u["view"] == "picker" and len(rects) == b["panes"] + 2 and rightmost in rects and
+      all(r["x"] + r["w"] <= rects[rightmost]["x"] for pane, r in rects.items() if pane != rightmost), rects)
+press("w", "cmd")
+ev("Umi.app.update(() => Umi.model.focusPane(" + json.dumps(picker) + ")); 1")
 press("w", "cmd")
 check("⌘W closes the picker pane", ui()["panes"] == b["panes"], ui())
 focus_terminal()

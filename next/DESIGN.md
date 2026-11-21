@@ -63,7 +63,7 @@ changes it; "tell me later" is snooze, whose finished sessions the Dock badge co
 
 ## ⌘D: the pane picker
 
-⌘D (⇧⌘D down) splits and shows the picker in the new pane itself, not in a dialog:
+⌘D opens the picker in a new column at the far right of the tab. ⇧⌘D opens it below the focused pane.
 
 1. A name field, focused. Enter starts a Claude session with that name; Tab cycles Claude, Codex,
    shell.
