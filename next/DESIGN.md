@@ -80,10 +80,17 @@ a name, Tab cycles those choices. **+ New** also opens a dedicated creation form
 **History** lists resumable conversations for the chosen project. Both screens offer a folder
 chooser. Typing `/` from the empty switcher search goes straight to choosing a folder for a new session.
 
-- Letters match folders in use, nearby folders and folders with agent history. Matches with Claude
-  or Codex history come first, followed by match quality and recent folder choices.
+- The folder list is `proj`'s (`proj --list --here`): the folders directly in ~/best's projects,
+  areas and orgs, newest first by the date in their names, the current area's first (Alejo,
+  2026-11-23: listing every folder near every folder ever used was too much). Letters match within it.
 - A path (`~/…`, `/…`, `./…`, `../…`, or anything containing a slash) lists its matching children.
-  Tab enters the selected folder, ⇧Tab goes up, and Enter takes the folder.
+  Tab fills in the selected folder, as a shell completes it, so the next letters search inside it;
+  ⇧Tab goes up, and Enter takes the folder.
+- **New project**: a name no folder contains puts "New project" first, and Enter runs
+  `proj <name> --repo-later` from ~/best: `projects/<date>-<name>`, or inside the folder Tab filled
+  in when it is within ~/best. When folders do match, the row comes last and ⌘Enter takes it. The
+  session's folder is ready at once; the GitHub repo `proj` makes is created in the background
+  (a taken name leaves the folder without a remote and posts a notification).
 - Folder suggestions and path browsing exclude linked Git worktrees, worktree directories and
   the macOS temporary tree at `/private/tmp` (also reachable as `/tmp`).
 

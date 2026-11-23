@@ -1,7 +1,6 @@
 import Foundation
 
-/// Directory discovery for the session picker's folder search. The explorer can still browse
-/// these locations. Each request shares ancestry checks across its candidates.
+/// The session picker's folder search: `proj`'s list of projects, and browsing a typed path.
 struct PickerFolders {
     private let fm = FileManager.default
     private var allowed: [String: Bool] = ["/": true]
@@ -52,27 +51,42 @@ struct PickerFolders {
         return ["names": try children(path, hidden: hidden).map { ($0 as NSString).lastPathComponent }]
     }
 
-    mutating func suggestions(_ seeds: [String]) -> [String] {
-        let home = NSHomeDirectory()
-        let seeds = seeds.filter { includes($0) }
-        var parents: [String] = [], visited = Set<String>()
-        func addParent(_ path: String) {
-            if visited.insert(path).inserted { parents.append(path) }
+    /// The folders `proj` offers (proj --list --here run in `cwd`): ~/best's projects, areas and
+    /// orgs, newest first, the area `cwd` is in first. `proj` comes from the login shell's PATH, or
+    /// UMI_NEXT_PROJ.
+    func projects(cwd: String) throws -> [String: Any] {
+        let r = Self.proj(["--list", "--here"], cwd: cwd)
+        guard r.status == 0 else { throw WebServices.Failure(code: "proj", message: r.err.isEmpty ? "proj --list failed" : r.err) }
+        let best = NSHomeDirectory() + "/best"
+        return ["paths": r.out.split(separator: "\n").map { best + "/" + $0 }]
+    }
+
+    /// Creates a dated project with `proj NAME --repo-later` from ~/best: a bare name goes to
+    /// projects/, `areas/x/name` into that folder. Its GitHub repo, if any, is made in the background.
+    func createProject(_ name: String) throws -> [String: Any] {
+        let cdFile = NSTemporaryDirectory() + "umi-next-proj-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: cdFile) }
+        let r = Self.proj([name, "--repo-later"], cwd: NSHomeDirectory() + "/best", env: ["PROJ_CD_FILE": cdFile])
+        let dir = (try? String(contentsOfFile: cdFile, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard r.status == 0, !dir.isEmpty else {
+            throw WebServices.Failure(code: "proj", message: (r.err + r.out).trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        // Nearby workspace folders. Never traverse every child of home for suggestions.
-        var expanded = Set<String>()
-        for seed in seeds {
-            let up = (seed as NSString).deletingLastPathComponent
-            let top = (up as NSString).deletingLastPathComponent
-            if up == home || up.hasPrefix(home + "/") { addParent(up) }
-            if top.hasPrefix(home + "/"), expanded.insert(top).inserted {
-                for folder in (try? children(top)) ?? [] { addParent(folder) }
-            }
-        }
-        var result = seeds
-        for folder in parents.prefix(60) { result += (try? children(folder)) ?? [] }
-        result += parents.prefix(60)
-        var seen = Set<String>()
-        return result.filter { seen.insert($0).inserted }
+        return ["path": dir, "output": r.out]
+    }
+
+    private static func proj(_ args: [String], cwd: String, env extra: [String: String] = [:]) -> (status: Int32, out: String, err: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        p.arguments = ["-lc", "command \"${UMI_NEXT_PROJ:-proj}\" \"$@\"", "proj"] + args
+        p.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        p.environment = ProcessInfo.processInfo.environment.merging(extra) { _, new in new }
+        let out = Pipe(), err = Pipe()
+        p.standardOutput = out
+        p.standardError = err
+        p.standardInput = FileHandle.nullDevice
+        do { try p.run() } catch { return (-1, "", "\(error)") }
+        let o = out.fileHandleForReading.readDataToEndOfFile(), e = err.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return (p.terminationStatus, String(decoding: o, as: UTF8.self), String(decoding: e, as: UTF8.self))
     }
 }

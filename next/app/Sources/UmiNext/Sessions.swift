@@ -11,8 +11,6 @@ import Foundation
 /// longer lists the session. Shell sessions: "busy" while a program other than the shell runs.
 final class SessionMonitor {
     private let queue = DispatchQueue(label: "umi-next.sessions")
-    private let historyQueue = DispatchQueue(label: "umi-next.project-history", qos: .utility)
-    private var historyCache: (date: Date, paths: [String])?
     private var timer: DispatchSourceTimer?
     private var watcher: FileWatcher?
     private var projects: [String: String] = [:]   // folder → project (git main folder)
@@ -234,29 +232,6 @@ final class SessionMonitor {
         let live = Set(last.compactMap { ($0["agent"] as? [String: Any])?["agentSession"] as? String })
         queue.async { [self] in
             let list = pastSessions(project: project, exclude: live)
-            DispatchQueue.main.async { done(list) }
-        }
-    }
-
-    /// Projects from agent transcripts, including sessions started outside Umi.
-    func agentProjects(done: @escaping ([String]) -> Void) {
-        historyQueue.async { [self] in
-            if let cache = historyCache, Date().timeIntervalSince(cache.date) < 60 {
-                DispatchQueue.main.async { done(cache.paths) }
-                return
-            }
-            var seen = Set<String>()
-            var folders = Set<String>()
-            let list = pastSessions(project: nil, exclude: [], limit: Int.max).compactMap { row -> String? in
-                guard let cwd = row["cwd"] as? String, folders.insert(cwd).inserted else { return nil }
-                var isDir: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDir), isDir.boolValue else { return nil }
-                let path = Self.resolveProject(cwd)
-                guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue,
-                      seen.insert(path).inserted else { return nil }
-                return path
-            }
-            historyCache = (Date(), list)
             DispatchQueue.main.async { done(list) }
         }
     }

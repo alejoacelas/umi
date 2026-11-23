@@ -24,15 +24,6 @@ Umi.views.picker = (() => {
     Umi.bridge.post({ type: 'pastSessions', project });
   }
 
-  // Folders in use, most recent first: those chosen here before, live sessions' and the tabs' panes'.
-  function recents() {
-    const chosen = Object.entries(S.layout.meta?.folders || {}).sort((a, b) => b[1] - a[1]).map((e) => e[0]);
-    const live = Object.values(S.live).filter((s) => s.alive && M.userStarted(s))
-      .sort((a, b) => (b.created || 0) - (a.created || 0)).flatMap((s) => [s.project, s.folder]);
-    const panes = S.layout.tabs.flatMap((t) => M.paneIds(t.root)).flatMap((id) => [M.projectOf(id), M.folderOf(id)]);
-    return [...new Set([...chosen, ...live, ...panes].filter(Boolean))];
-  }
-
   // Results are cached for this visit to the folder chooser. The native service checks Git
   // worktree metadata and resolves symlinks before returning any selectable paths.
   let dirs = new Map();
@@ -49,32 +40,31 @@ Umi.views.picker = (() => {
     }
     return dirs.get(key);
   }
-  let history = [];
-  Umi.bridge.on('agentProjects', (msg) => {
-    history = msg.list;
-    known = null;
-    redraw();
-  });
-  function agentFolders() {
-    return new Set([...history, ...Object.values(S.live)
-      .filter((s) => M.userStarted(s) && ['claude', 'codex'].includes(s.kind))
-      .flatMap((s) => [s.project, s.folder]).filter(Boolean)]);
-  }
-  function prioritize(paths) {
-    const used = agentFolders();
-    return paths.sort((a, b) => Number(used.has(b)) - Number(used.has(a)));
-  }
-  function knownFolders() {
+  // proj's list (~/best's projects, areas and orgs, newest first, the current area first), asked
+  // for once per visit to the folder chooser.
+  function knownFolders(cwd) {
     if (!known) {
       const request = known = { paths: [] };
-      const seeds = [...new Set([...recents(), ...history])];
-      Umi.bridge.request('pickerFolders', { seeds }).then(
+      Umi.bridge.request('pickerFolders', { projects: true, cwd }).then(
         ({ paths }) => { request.paths = paths; },
         (error) => { request.error = error.message; },
       ).then(() => { if (known === request) redraw(); });
     }
     return known;
   }
+  // Where `proj NAME` puts a new project: a bare name in ~/best/projects, a name typed after a folder
+  // inside ~/best (Tab fills one in) in that folder. Elsewhere nothing is created.
+  const best = () => S.home + '/best';
+  function createRow(dir, name, names) {
+    name = name.trim();
+    if (!name || name.startsWith('.')) return null;
+    const rel = dir === null ? '' : dir.startsWith(best() + '/') ? dir.slice(best().length + 1) : null;
+    if (rel === null) return null;
+    const low = name.toLowerCase();
+    return { create: rel ? rel + '/' + name : name, where: rel ? '~/best/' + rel : '~/best/projects',
+      label: name, first: !names.some((n) => n.toLowerCase().includes(low)) };
+  }
+  const withCreate = (rows, c) => (!c ? rows : c.first ? [c, ...rows] : [...rows, c]);
 
   // The rows of the folder search for what is typed: [{path, use?}] and whether the folder exists.
   function folderRows(node) {
@@ -89,19 +79,17 @@ Umi.views.picker = (() => {
       if (result.error) return { rows: [], error: result.error };
       const names = result.names;
       const rows = (seg ? Umi.fs.fuzzy(seg, names, 200).map((r) => r.path) : names).map((n) => ({ path: (dir === '/' ? '' : dir) + '/' + n }));
-      return { rows: seg ? rows : [{ path: dir, use: true }, ...rows] };
+      if (!seg) return { rows: [{ path: dir, use: true }, ...rows] };
+      return { rows: withCreate(rows, dir !== best() && createRow(dir, seg, names)) };
     }
-    const { paths, error } = knownFolders();
+    const { paths, error } = knownFolders(node.cwd || S.home);
     if (error) return { rows: [], error };
-    const all = prioritize([...paths]);
-    if (!q.trim()) return { rows: all.slice(0, 200).map((path) => ({ path })) };
-    const shown = all.map(tilde);
-    const rank = new Map(shown.map((p, i) => [p, i]));
-    const used = agentFolders();
-    const hits = Umi.fs.fuzzy(q, shown, shown.length).sort((a, b) =>
-      Number(used.has(all[rank.get(b.path)])) - Number(used.has(all[rank.get(a.path)])) ||
-      b.score - a.score || rank.get(a.path) - rank.get(b.path)).slice(0, 200);
-    return { rows: hits.map((r) => ({ path: all[rank.get(r.path)] })) };
+    if (!q.trim()) return { rows: paths.map((path) => ({ path })) };
+    const rel = paths.map((p) => p.slice(best().length + 1));
+    const rank = new Map(rel.map((p, i) => [p, i]));
+    const hits = Umi.fs.fuzzy(q, rel, rel.length).sort((a, b) => b.score - a.score || rank.get(a.path) - rank.get(b.path));
+    const rows = hits.map((r) => ({ path: paths[rank.get(r.path)] }));
+    return { rows: withCreate(rows, createRow(null, q, paths.map(base))) };
   }
 
   function changePage(el, node, mode) {
@@ -124,10 +112,11 @@ Umi.views.picker = (() => {
       pk.folderFrom = pk.mode === 'history' ? 'history' : 'new';
       dirs = new Map();
       known = null;
-      Umi.bridge.post({ type: 'agentProjects' });
     }
     pk.query = '';
     pk.fsel = 0;
+    delete pk.creating;
+    delete pk.createError;
     changePage(el, node, on ? 'folder' : pk.folderFrom || 'new');
   }
 
@@ -170,7 +159,7 @@ Umi.views.picker = (() => {
     const type = (text) => { input.value = pk.query = text; pk.fsel = 0; refresh(el, node); };
     if (e.key === 'Tab') {
       e.preventDefault();
-      if (!e.shiftKey) { if (sel) type(tilde(sel.path).replace(/\/$/, '') + '/'); return; }
+      if (!e.shiftKey) { if (sel?.path) type(tilde(sel.path).replace(/\/$/, '') + '/'); return; }
       const use = rows.find((r) => r.use);
       type(tilde(parent(use ? use.path : node.cwd || S.home)).replace(/\/$/, '') + '/');
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -179,25 +168,49 @@ Umi.views.picker = (() => {
       refresh(el, node);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (sel) chooseFolder(el, node, sel.path);
+      // ⌘Enter creates the typed name even when folders match it.
+      const make = e.metaKey ? rows.find((r) => r.create) : sel?.create && sel;
+      if (make) createProject(el, node, make);
+      else if (sel) chooseFolder(el, node, sel.path);
     } else if (e.key === 'Escape' || (e.key === 'Backspace' && !input.value)) {
       e.preventDefault();
       folderMode(el, node, false);
     }
   }
 
+  // proj makes the folder (its GitHub repo follows in the background); the session starts there.
+  function createProject(el, node, row) {
+    const pk = node.picker;
+    if (pk.creating) return;
+    pk.creating = row.create;
+    redraw();
+    Umi.bridge.request('createProject', { name: row.create }).then(
+      ({ path }) => { delete pk.creating; delete pk.createError; chooseFolder(el, node, path); },
+      (error) => { delete pk.creating; pk.createError = error.message; redraw(); },
+    );
+  }
+
   function drawFolders(el, node, list) {
     const pk = node.picker;
     const { rows, error } = folderRows(node);
-    if (!rows.length) {
+    if (!rows.length || pk.creating || pk.createError) {
       const none = document.createElement('div');
       none.className = 'picker-section';
-      none.textContent = error || 'No folder matches';
+      none.textContent = pk.creating ? `Creating ${pk.creating}…` : pk.createError || error || 'No folder matches';
       list.append(none);
     }
     rows.forEach((r, i) => {
       const row = document.createElement('div');
       row.className = 'picker-row' + (i === (pk.fsel || 0) ? ' sel' : '');
+      if (r.create) {
+        row.title = 'proj ' + r.create;
+        row.innerHTML = '<b></b><span class="dim"></span>';
+        row.querySelector('b').textContent = 'New project: ' + r.label;
+        row.querySelector('.dim').textContent = 'in ' + r.where + (r.first ? '' : ' · ⌘↩');
+        row.addEventListener('mousedown', (e) => { e.preventDefault(); createProject(el, node, r); });
+        list.append(row);
+        return;
+      }
       row.title = r.path;
       row.innerHTML = '<b></b><span class="dim"></span>';
       row.querySelector('b').textContent = r.use ? 'This folder' : base(r.path);
@@ -349,7 +362,7 @@ Umi.views.picker = (() => {
     const input = el.querySelector('.picker-name');
     input.value = fieldValue(pk);
     input.addEventListener('input', () => {
-      if (pk.mode === 'folder') { pk.query = input.value; pk.fsel = 0; }
+      if (pk.mode === 'folder') { pk.query = input.value; pk.fsel = 0; delete pk.createError; }
       else if (pk.mode === 'new') pk.name = input.value;
       else if (pk.mode === 'history') pk.historyQuery = input.value;
       else pk.search = input.value;
@@ -462,7 +475,7 @@ Umi.views.picker = (() => {
       pk.choice = at;
       // Session snapshots arrive while the user is pointing at a row. Keep the actual
       // buttons when their contents and selection match the previous drawing.
-      const drawn = JSON.stringify([mode, at, rows, fieldValue(pk), mode === 'history' && pk.project in S.past]);
+      const drawn = JSON.stringify([mode, at, rows, fieldValue(pk), mode === 'history' && pk.project in S.past, pk.creating, pk.createError]);
       if (list.dataset.drawn === drawn) return;
       list.dataset.drawn = drawn;
       list.replaceChildren(...rows.map((item) => drawChoice(el, node, item, on)));
