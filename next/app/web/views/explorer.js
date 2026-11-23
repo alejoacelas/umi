@@ -350,11 +350,7 @@ Umi.views.explorer = (() => {
       add('New File', () => startNew(n.path));
       sep();
       add('cd to Directory', () => cdTo(pp, n.path), !!pp);
-      // The tab is named in its row only while the tab list shows (from here it shows Files).
-      add('Open in New Tab', () => Umi.app.update(() => {
-        const t = M.addTab(M.newPane({ cwd: n.path }));
-        if (V().shown() && V().mode() === 'tabs') S.ui.editingTab = t.id;
-      }));
+      add('Open in New Tab', () => Umi.app.update(() => M.addTab(M.newPicker(n.path, n.path))));
     } else {
       add('Open in New Pane', () => V().openPath(n.path));
       add('Open in New Tab', () => V().openPath(n.path, { newTab: true }));

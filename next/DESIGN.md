@@ -56,8 +56,9 @@ changes it; "tell me later" is snooze, whose finished sessions the Dock badge co
 
 ## Names at creation
 
-- A new tab opens with its name in edit mode in the sidebar; Enter keeps the name, Escape keeps the
-  folder name.
+- A new tab (⌘T, the sidebar's +, a folder's Open in New Tab, the first window) opens on the
+  session switcher in the current folder, as ⌘D's split does (Alejo, 2026-11-23). ⌃⌘R names the tab.
+  `umi-next tab new` without `--cmd` still starts a shell, since agents rely on getting a session back.
 - Type a name in the session switcher and press Enter to start it. The **+ New** form also
   accepts an empty name and numbers the session after its folder.
 

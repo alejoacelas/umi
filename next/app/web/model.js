@@ -184,7 +184,8 @@ Umi.model = (() => {
   // A new tab goes right after the current one, below the pinned tabs (SPEC S-7).
   function addTab(pane, { atEnd = false } = {}) {
     const cur = activeTab();
-    const t = newTab(pane || newPane({ cwd: cur && folderOf(cur.focused) }));
+    // Without a pane, the tab opens on the session picker, as ⌘D's split does.
+    const t = newTab(pane || (cur ? newPicker(folderOf(cur.focused), projectOf(cur.focused)) : newPicker(S.home)));
     const pinned = S.layout.tabs.filter((x) => x.pinned).length;
     const afterCurrent = cur && !cur.archived ? Math.max(S.layout.tabs.indexOf(cur) + 1, pinned) : pinned;
     S.layout.tabs.splice(atEnd ? S.layout.tabs.length : afterCurrent, 0, t);
@@ -502,7 +503,7 @@ Umi.model = (() => {
     S.fontBase = msg.fontBase || 13;
     S.panes = msg.panes || {};
     const l = msg.layout;
-    S.layout = l && l.tabs && l.tabs.length ? l : { version: 1, tabs: [newTab(newPane({ cwd: S.home }))], sidebar: true };
+    S.layout = l && l.tabs && l.tabs.length ? l : { version: 1, tabs: [newTab(newPicker(S.home))], sidebar: true };
     S.layout.meta = S.layout.meta || { sessions: {} };
     for (const p of S.layout.tabs.flatMap((t) => panesOf(t.root))) {
       p.view = p.view || 'terminal';
@@ -564,13 +565,8 @@ Umi.model = (() => {
 // Named actions: what native shortcuts, sidebar buttons and the palette run. Each only changes
 // Umi.state; Umi.app.run saves, draws and reports after it.
 Umi.actions = {
-  // ⌘T names the new tab in its row, when the tab list shows; else the keys stay with its terminal
-  // (an input nobody can see would take them).
-  newTab: () => {
-    const t = Umi.model.addTab(), V = Umi.views.modes;
-    Umi.state.ui.tabDraft = null;
-    if (V.shown() && V.mode() === 'tabs') Umi.state.ui.editingTab = t.id;
-  },
+  // ⌘T opens a tab on the session picker, which takes the keys (the tab is named like any other).
+  newTab: () => { Umi.model.addTab(); Umi.state.ui.tabDraft = null; },
   splitRight: () => {
     const M = Umi.model, tab = M.activeTab();
     const picker = M.newPicker(M.folderOf(tab.focused), M.projectOf(tab.focused));
