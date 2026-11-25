@@ -27,3 +27,9 @@ The picker gives each Claude Code or Codex conversation its Umi name before its 
 The pane header, switcher and history follow the agent’s saved name. Umi’s Rename writes through the agent’s naming mechanism so the next resume sees the same title. This keeps text a user has started typing in the terminal intact.
 
 Verified on mac-air-2 with real sessions. Both agents accepted the picker name before their first prompt, reflected a native slash rename in Umi, and retained a Umi rename after a clean exit. Claude also accepted a rename from Umi before creating its first transcript. The history picker showed a Claude rename recorded after a long conversation.
+
+## Choosing the folder before launch
+
+Enter on a typed name opens the same chooser as slash. The current directory appears immediately so accepting it works while the rest of the folder list is loading. Choosing the folder keeps the name and agent for the final launch.
+
+An unnamed Claude or Codex session starts with its native automatic naming enabled. For Codex, saving the empty thread in its existing unsectioned state gives the terminal an ID to resume without assigning a title. A real Codex terminal using a local model fixture generated a title after its first turn and saved it under that ID.

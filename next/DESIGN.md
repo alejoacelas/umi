@@ -59,8 +59,8 @@ changes it; "tell me later" is snooze, whose finished sessions the Dock badge co
 - A new tab (⌘T, the sidebar's +, a folder's Open in New Tab, the first window) opens on the
   session switcher in the current folder, as ⌘D's split does (Alejo, 2026-11-23). ⌃⌘R names the tab.
   `umi-next tab new` without `--cmd` still starts a shell, since agents rely on getting a session back.
-- Type a name in the session switcher and press Enter to start it. The **+ New** form also
-  accepts an empty name and numbers the session after its folder.
+- Type a name and press Enter or `/` to choose a folder. The current directory is selected first.
+  With an empty name, Claude Code and Codex supply their own conversation titles when available.
 
 ## ⌘D opens the session switcher
 
@@ -70,8 +70,8 @@ Sessions waiting for input and snoozes that have come due lead the list under **
 in amber. **Running** follows. **Available** holds idle shells and finished sessions. **Snoozed**
 and **On the docket** stay folded until opened or searched.
 
-Typing a name selects **Create** and shows matching sessions below. Enter creates the named
-session, even when another session has the same name. Down and Enter or a click opens a match.
+Typing a name selects the folder chooser and shows matching sessions below. Down and Enter or a
+click opens a match. Enter on the first row keeps the typed name and opens the folder chooser.
 An open session keeps its pane. A hidden session opens in the switcher's place.
 
 The chooser shows the current project and working folder alongside the Claude Code, Codex,
@@ -82,7 +82,7 @@ chooser. Typing `/` in the switcher or the **+ New** form goes straight to choos
 new session. Text typed before the `/` becomes the session's name: once a folder is chosen, the
 form shows that name, Tab cycles the launch kinds and Enter starts it (Alejo, 2026-11-25).
 
-- The folder list is `proj`'s (`proj --list --here`): the folders directly in ~/best's projects,
+- After the current directory, the folder list shows `proj`'s projects (`proj --list --here`): the folders directly in ~/best's projects,
   areas and orgs, newest first by the date in their names, the current area's first (Alejo,
   2026-11-23: listing every folder near every folder ever used was too much). Letters match within it.
 - A path (`~/…`, `/…`, `./…`, `../…`, or anything containing a slash) lists its matching children.

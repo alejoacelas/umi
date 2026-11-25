@@ -78,6 +78,17 @@ def run(state, bundle, tools, screenshot):
     def mode():
         return J("Umi.model.focusedPane()?.picker?.mode || 'switcher'")
 
+    def confirm_folder(name, cwd):
+        until("document.querySelector('.slot.picker')?.dataset.mode === 'folder'", 'folder chooser')
+        chosen = ".slot.picker .picker-row.sel"
+        until(f"document.querySelector('{chosen}')?.title", 'initial folder selected')
+        assert J(f"document.querySelector('{chosen}') === document.querySelector('.slot.picker .picker-row')")
+        assert Path(J(f"document.querySelector('{chosen}').title")).resolve() == cwd.resolve()
+        key(36)
+        until("document.querySelector('.slot.picker')?.dataset.mode === 'new'", 'ready to start')
+        assert J("document.querySelector('.slot.picker .picker-name').value") == name
+        key(36)
+
     def has_row(sid):
         return f"!!document.querySelector('.slot.picker [data-session=\"{sid}\"]')"
 
@@ -87,6 +98,9 @@ def run(state, bundle, tools, screenshot):
     try:
         poll(lambda: dbg({'cmd': 'state'}).get('webReady'), 30, swallow=(OSError,), what='ready test app')
         assert bring_to_front(dbg)
+        # Fresh layouts open on a picker. Exercise ⌘D from a terminal, as the user does.
+        subprocess.run([str(bins / 'umi-next'), 'tab', 'new', '--cmd', '/bin/zsh'], env=env, check=True,
+                       stdout=subprocess.DEVNULL)
         original = J('Umi.model.activeTab().focused')
         project = state / 'Accounts'
         subprocess.run(['git', 'init', '-q', str(project)], check=True)
@@ -195,7 +209,7 @@ def run(state, bundle, tools, screenshot):
             assert 'invoices' in context['subfolder'] and Path(context['cwd']).resolve() == folder.resolve(), context
             if kind in ('antigravity', 'shell'):
                 click(f'.picker-kinds button[data-kind={kind}]')
-            # The default agent is tested with exactly ⌘D, an already used name, and Return.
+            # An already used name can still be given to a distinct session.
             name = 'Check the invoice' if kind == 'claude' else f'Quick {label}'
             type_text(name)
             if kind == 'codex':
@@ -205,8 +219,9 @@ def run(state, bundle, tools, screenshot):
             if kind == 'claude':
                 assert J(has_row(waiting)), 'the existing session should also match'
             key(36)
+            confirm_folder(name, folder)
             until("Umi.model.focusedPane()?.view === 'terminal' && Umi.state.panes[Umi.model.activeTab().focused]?.session",
-                  f'{label} quick launch')
+                  f'{label} launch after choosing the folder')
             created = J('Umi.model.sessionOf(Umi.model.activeTab().focused)')
             assert created != waiting
             until(f"Umi.state.live['{created}']?.name === {json.dumps(name)}", 'daemon assigned the typed name')
@@ -217,7 +232,7 @@ def run(state, bundle, tools, screenshot):
             # Close only the new pane and return to the source for the next keyboard run.
             key(13, 'cmd')
             until("Umi.model.activeTab().focused === window.switcherOpenPane", 'return to originating pane')
-        print('ok quick Enter creates a distinct named session in the displayed project subfolder for each launch kind')
+        print('ok Enter chooses the current project subfolder first and preserves the typed name for each agent and shell')
 
         split()
         key(48)  # Tab from Search to + New
@@ -236,6 +251,7 @@ def run(state, bundle, tools, screenshot):
         click('[data-kind=shell]')
         type_text('Test shell')
         key(36)
+        confirm_folder('Test shell', folder)
         until("Umi.model.focusedPane()?.view === 'terminal' && !!Umi.state.panes[Umi.model.activeTab().focused]?.session",
               'shell launched from New')
         sid = J('Umi.model.sessionOf(Umi.model.activeTab().focused)')

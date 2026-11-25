@@ -146,23 +146,35 @@ def resume(thread):
 def main(args):
     if len(args) == 2 and args[0] == "resume":
         resume(args[1])
-    if not ((len(args) == 2 and args[0] == "create") or
-            (len(args) == 3 and args[0] == "rename")) or not args[-1].strip():
-        raise ValueError("expected create NAME, resume THREAD_ID, or rename THREAD_ID NAME")
+    if not args:
+        operation = "launch"
+    elif ((len(args) == 2 and args[0] == "create") or
+          (len(args) == 3 and args[0] == "rename")) and args[-1].strip():
+        operation = args[0]
+    else:
+        raise ValueError("expected no arguments, create NAME, resume THREAD_ID, or rename THREAD_ID NAME")
+
     def timeout(signum, frame):
         raise TimeoutError("Codex did not answer within 20 seconds")
     signal.signal(signal.SIGALRM, timeout)
     signal.alarm(20)
-    operation, name = args[0], args[-1]
     with server(operation) as conn:
         rpc(conn, 1, "initialize", {"clientInfo": {"name": "umi-next", "version": "1"}})
         conn.send(b'{"method":"initialized"}')
-        if operation == "create":
-            thread = rpc(conn, 2, "thread/start", {"cwd": os.getcwd()})["thread"]["id"]
-        else:
+        if operation == "rename":
             thread = args[1]
-        rpc(conn, 3, "thread/name/set", {"threadId": thread, "name": name})
-    if operation == "create":
+        else:
+            thread = rpc(conn, 2, "thread/start", {"cwd": os.getcwd()})["thread"]["id"]
+        if operation == "launch":
+            # A new thread has no section. Saving that state materializes its empty rollout
+            # so the TUI can resume it, with the name still available for Codex to generate.
+            rpc(conn, 3, "thread/section/move", {"threadId": thread, "sectionId": None})
+        else:
+            rpc(conn, 3, "thread/name/set", {"threadId": thread, "name": args[-1]})
+    signal.alarm(0)
+    if operation == "launch":
+        resume(thread)
+    elif operation == "create":
         print(thread)
 
 

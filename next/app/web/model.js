@@ -345,7 +345,7 @@ Umi.model = (() => {
     const found = findPane(paneId);
     if (!found) return;
     const folder = cwd || found.node.cwd || S.home;
-    const fresh = newPane({ cwd: folder, start: { cmd, name: name || defaultName(folder), cwd: folder } });
+    const fresh = newPane({ cwd: folder, start: { cmd, name, cwd: folder } });
     found.tab.root = mapPane(found.tab.root, paneId, () => fresh);
     found.tab.focused = fresh.id;
     if (found.tab.zoomed === paneId) found.tab.zoomed = fresh.id;

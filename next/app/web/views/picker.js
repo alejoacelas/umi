@@ -82,9 +82,13 @@ Umi.views.picker = (() => {
       if (!seg) return { rows: [{ path: dir, use: true }, ...rows] };
       return { rows: withCreate(rows, dir !== best() && createRow(dir, seg, names)) };
     }
-    const { paths, error } = knownFolders(node.cwd || S.home);
+    const cwd = node.cwd || S.home;
+    const { paths, error } = knownFolders(cwd);
+    if (!q.trim()) {
+      const otherFolders = paths.filter((path) => path !== cwd).map((path) => ({ path }));
+      return { rows: [{ path: cwd, use: true }, ...otherFolders], error };
+    }
     if (error) return { rows: [], error };
-    if (!q.trim()) return { rows: paths.map((path) => ({ path })) };
     const rel = paths.map((p) => p.slice(best().length + 1));
     const rank = new Map(rel.map((p, i) => [p, i]));
     const hits = Umi.fs.fuzzy(q, rel, rel.length).sort((a, b) => b.score - a.score || rank.get(a.path) - rank.get(b.path));
@@ -94,7 +98,8 @@ Umi.views.picker = (() => {
 
   function changePage(el, node, mode) {
     const pk = node.picker;
-    if ((!pk.mode || pk.mode === 'switcher') && (mode === 'new' || mode === 'folder') && pk.search?.trim()) pk.name = pk.search;
+    if ((!pk.mode || pk.mode === 'switcher') && (mode === 'new' || mode === 'folder')) pk.name = pk.search || '';
+    if (mode === 'switcher') delete pk.folderChosen;
     if (mode === 'history') askedPast.delete(pk.project);
     pk.mode = mode;
     delete pk.choice;
@@ -134,6 +139,7 @@ Umi.views.picker = (() => {
   function chooseFolder(el, node, path) {
     const pk = node.picker;
     Umi.app.update(() => {
+      pk.folderChosen = true;
       node.cwd = path;
       pk.project = path;
       S.layout.meta = S.layout.meta || { sessions: {} };
@@ -194,7 +200,7 @@ Umi.views.picker = (() => {
   function drawFolders(el, node, list) {
     const pk = node.picker;
     const { rows, error } = folderRows(node);
-    if (!rows.length || pk.creating || pk.createError) {
+    if (!rows.length || error || pk.creating || pk.createError) {
       const none = document.createElement('div');
       none.className = 'picker-section';
       none.textContent = pk.creating ? `Creating ${pk.creating}…` : pk.createError || error || 'No folder matches';
@@ -244,8 +250,12 @@ Umi.views.picker = (() => {
     const rows = [];
     const name = fieldValue(pk).trim();
     if (pk.mode === 'new' || name) {
-      rows.push({ key: 'new', name: name ? `Create “${name}”` : 'New session',
-        detail: name ? '' : M.defaultName(node.cwd), icon: pk.kind, launchName: name });
+      const chooseFolder = !!name && !pk.folderChosen;
+      const automatic = !name && (pk.kind === 'claude' || pk.kind === 'codex');
+      const launchName = name || (automatic ? '' : M.defaultName(node.cwd));
+      const detail = automatic ? `${LABEL[pk.kind]} will name this session` : name ? '' : launchName;
+      rows.push({ key: 'new', name: chooseFolder ? `Choose folder for “${name}”` : name ? `Create “${name}”` : 'New session',
+        detail, icon: pk.kind, chooseFolder, launchName });
     }
     if (pk.mode === 'new') return rows;
     const found = M.switcherGroups(pk.search);
@@ -272,6 +282,7 @@ Umi.views.picker = (() => {
   function activate(el, node, item) {
     if (!item) return;
     const pk = node.picker, cmds = S.commands || {};
+    if (item.chooseFolder) return folderMode(el, node, true);
     if (item.disclosure) {
       pk.expanded ??= {};
       pk.expanded[item.disclosure] = !pk.expanded[item.disclosure];
@@ -281,7 +292,8 @@ Umi.views.picker = (() => {
     }
     Umi.app.update(() => {
       if (item.key === 'new') {
-        const cmd = pk.kind === 'shell' ? null : S.namedCommands?.[pk.kind] || cmds[pk.kind] || pk.kind;
+        const named = item.launchName && S.namedCommands?.[pk.kind];
+        const cmd = pk.kind === 'shell' ? null : named || cmds[pk.kind] || pk.kind;
         M.startSession(node.id, { cmd, name: item.launchName, cwd: node.cwd });
       } else if (item.session) {
         pk.notice = M.switchFromPicker(item.session, node.id);

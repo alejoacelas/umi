@@ -4,7 +4,7 @@
 Run on the test Mac with both agents logged in and Umi's hook plugins enabled:
   lockf -k ~/umi-screen.lock python3 session_name_sync_test.py TEST.app --cwd PROJECT
 The app uses its own state folder. No prompts are sent to a model.
-Each agent's history keeps a uniquely named test session.
+Each agent's history keeps the named test sessions. Unnamed tests append a title fixture only to their newly created thread.
 """
 import argparse
 import json
@@ -64,23 +64,47 @@ def check(args, state):
         return subprocess.check_output([bins / "umi-next", *words], text=True, env=env, timeout=60)
     def wait(fn, what):
         return poll(fn, 90, every=.25, swallow=(FileNotFoundError,), what=what)
-    def fill_and_submit(selector, value, cycle=False):
+    def fill(selector, value):
         debug.ev(f"""(() => {{
           const input = document.querySelector({json.dumps(selector)});
           input.focus(); input.value = {json.dumps(value)};
           input.dispatchEvent(new Event('input', {{bubbles: true}}));
-          const press = key => input.dispatchEvent(new KeyboardEvent('keydown', {{key, bubbles:true, cancelable:true}}));
-          if ({json.dumps(cycle)}) press('Tab');
-          press('Enter');
+        }})(); 1""")
+    def press(selector, key):
+        debug.ev(f"""(() => {{
+          const input = document.querySelector({json.dumps(selector)});
+          input.focus();
+          input.dispatchEvent(new KeyboardEvent('keydown', {{key: {json.dumps(key)}, bubbles:true, cancelable:true}}));
         }})(); 1""")
 
-    def exercise(kind):
+    picker = ".slot.picker .picker-name"
+    def exercise(kind, unnamed_cwd=None):
         name = f"Umi {kind} {uuid.uuid4().hex[:8]}"
         cli("tab", "new", "--cwd", str(args.cwd))
         wait(lambda: J("!!Umi.model.sessionOf(Umi.model.activeTab().focused)"), "initial shell")
         debug({"cmd": "shortcut", "key": "d", "mods": ["cmd"]})
         wait(lambda: J("!!document.querySelector('.slot.picker .picker-name')"), "⌘D picker")
-        fill_and_submit(".slot.picker .picker-name", name, cycle=kind == "codex")
+        destination = unnamed_cwd or args.cwd
+        if unnamed_cwd:
+            press(picker, "/")
+        else:
+            fill(picker, name)
+            if kind == "codex":
+                press(picker, "Tab")
+            press(picker, "Enter")
+        wait(lambda: J("document.querySelector('.slot.picker')?.dataset.mode === 'folder'"), "folder chooser")
+        selected = "document.querySelector('.slot.picker .picker-row.sel')"
+        wait(lambda: J(f"{selected}?.title === {json.dumps(str(args.cwd))}"), "current folder selected first")
+        assert J(f"{selected} === document.querySelector('.slot.picker .picker-row')")
+        if unnamed_cwd:
+            fill(picker, str(destination) + "/")
+            wait(lambda: J(f"{selected}?.title === {json.dumps(str(destination))}"), "other folder selected")
+        press(picker, "Enter")
+        wait(lambda: J("document.querySelector('.slot.picker')?.dataset.mode === 'new'"), "ready to start")
+        assert J("document.querySelector('.slot.picker .picker-name').value") == ("" if unnamed_cwd else name)
+        if kind == "codex" and unnamed_cwd:
+            press(picker, "Tab")
+        press(picker, "Enter")
         pane = wait(lambda: J("Umi.model.focusedPane()?.view==='terminal' ? Umi.model.activeTab().focused : null"),
                     "terminal pane")
         sid = wait(lambda: J(f"Umi.model.sessionOf('{pane}') || null"), "daemon session")
@@ -103,6 +127,29 @@ def check(args, state):
         agent = wait(started, f"{kind} prompt and thread ID")
         thread = agent["agentSession"]
         transcript = Path(agent.get("transcript") or "")
+        assert Path(live()["cwd"]).resolve() == destination.resolve()
+        if unnamed_cwd:
+            generated = name + " generated"
+            if kind == "claude":
+                assert transcript.name == thread + ".jsonl" and not saved_title(kind, thread, transcript)
+                assert "--name" not in live()["command"], "Umi passed an explicit name on a blank launch"
+                record = {"type": "ai-title", "sessionId": thread, "aiTitle": generated}
+                target = transcript
+            else:
+                # UmiLaunch associates the TUI with the new thread even when its server hasn't emitted a hook.
+                target = Path(agent["codexHome"]) / "session_index.jsonl"
+                if target.exists():
+                    with target.open() as index:
+                        assert not any(row.get("id") == thread and row.get("thread_name")
+                                       for row in map(json.loads, index))
+                record = {"id": thread, "thread_name": generated, "updated_at": "2026-11-25T12:00:00Z"}
+            with target.open("a") as f:
+                f.write(json.dumps(record) + "\n")
+            wait(lambda: header() == generated, f"{kind} native title in the unnamed pane")
+            cli("send", "--pane", pane, "--enter", "/exit")
+            wait(lambda: not live().get("alive"), f"{kind} exit")
+            print(f"PASS {kind} unnamed launch in selected folder and native title fixture in the pane", flush=True)
+            return
         def matches(expected):
             return header() == expected and saved_title(kind, thread, transcript) == expected
         def created():
@@ -113,7 +160,8 @@ def check(args, state):
         def umi_rename(new_name):
             debug.ev("Umi.app.update(() => Umi.actions.renameSession()); 1")
             wait(lambda: J("!!document.querySelector('.palette-ask input')"), "Rename panel")
-            fill_and_submit(".palette-ask input", new_name)
+            fill(".palette-ask input", new_name)
+            press(".palette-ask input", "Enter")
             wait(lambda: matches(new_name), f"Umi Rename in {kind} history")
         if kind == "claude":
             # A new Claude often has no transcript yet; create the first explicit record.
@@ -142,8 +190,10 @@ def check(args, state):
         try:
             wait(lambda: debug({"cmd": "state"}).get("webReady"), "test app")
             debug({"cmd": "activate"})
-            for kind in args.agents:
-                exercise(kind)
+            with tempfile.TemporaryDirectory(prefix="umi-picker-", dir=Path.home()) as alternate:
+                for kind in args.agents:
+                    exercise(kind)
+                    exercise(kind, Path(alternate))
         finally:
             app.terminate()
             app.wait(timeout=15)
