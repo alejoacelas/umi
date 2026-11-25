@@ -109,9 +109,12 @@ Umi.model = (() => {
     return 'idle';
   }
   const currentProject = () => projectOf(activeTab().focused);
+  function givenName(sid) {
+    const s = S.live[sid];
+    return s?.agent?.title || S.layout.meta?.sessions?.[sid]?.name || s?.name;
+  }
   function sessionName(sid) {
-    const s = S.live[sid] || {};
-    return S.layout.meta?.sessions?.[sid]?.name || s.name || `${base(s.folder)} · ${sid}`;
+    return givenName(sid) || `${base(S.live[sid]?.folder)} · ${sid}`;
   }
   // A new session's default name: its folder and a number (DESIGN "Names at creation").
   function defaultName(folder) {
@@ -490,7 +493,20 @@ Umi.model = (() => {
     delete S.live[sid].docket;
   }
 
-  function rename(sid, name) { if (name) meta(sid).name = name; else delete meta(sid).name; }
+  async function rename(sid, name) {
+    const s = S.live[sid];
+    if (s?.agent?.agentSession && ['claude', 'codex'].includes(s.kind)) {
+      const title = name || s.name || `${base(s.folder)} · ${sid}`;
+      if (s.agent.title !== title) {
+        await Umi.bridge.request('renameAgent', { session: sid, thread: s.agent.agentSession, name: title });
+      }
+      delete meta(sid).name;
+    } else if (name) meta(sid).name = name;
+    else delete meta(sid).name;
+  }
+  function renameFromMenu(sid, name) {
+    rename(sid, name).then(() => Umi.app.save(), (error) => Umi.views.modes.flash(error.message));
+  }
 
   function openPanel(name, data = {}) { S.ui.panel = { name, ...data }; }
   function closePanel() { S.ui.panel = null; }
@@ -500,6 +516,7 @@ Umi.model = (() => {
     S.home = msg.home || '';
     S.sessionMode = msg.sessionMode || 'daemon';
     S.commands = msg.commands || {};
+    S.namedCommands = msg.namedCommands || {};
     S.fontBase = msg.fontBase || 13;
     S.panes = msg.panes || {};
     const l = msg.layout;
@@ -555,9 +572,9 @@ Umi.model = (() => {
   return {
     newPane, newPicker, newTab, panesOf, paneIds, findPane, activeTab, listedTabs, focusedPane, sessionOf, paneOfSession,
     mapPane, removeFromTree, hide, closeAndEnd, resumeOf, unhide, hiddenOf, appendPane, showHidden, rowWeight,
-    folderOf, projectOf, currentProject, standing, sessionName, defaultName, userStarted, isSnoozed, switcherGroups, review,
+    folderOf, projectOf, currentProject, standing, givenName, sessionName, defaultName, userStarted, isSnoozed, switcherGroups, review,
     addTab, split, removePane, openSession, switchFromPicker, showSession, startSession, focusPane,
-    selectTab, stepTab, focusDir, moveFocusedPane, snooze, rename, docket, undocket, docketOf, openPanel, closePanel,
+    selectTab, stepTab, focusDir, moveFocusedPane, snooze, rename, renameFromMenu, docket, undocket, docketOf, openPanel, closePanel,
     load, paneInfo, sessions,
   };
 })();

@@ -11,7 +11,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$UMI_NEXT_SESSION_ID" ] && [ -n "$UMI_NEXT_STATE_DIR" ] || { cat >/dev/null; exit 0; }
 dir="$UMI_NEXT_STATE_DIR/agents"
-mkdir -p "$dir"
+mkdir -p "$dir" || exit 1
 tmp="$dir/.$UMI_NEXT_SESSION_ID.$$"
 input=$(cat)
 # Claude's idle reminder (a minute after a turn ends) changes nothing: keep the Stop and its reply.
@@ -22,5 +22,5 @@ esac
   printf '{"event":"%s","agent":"%s","ts":%s,"input":' "$event" "$agent" "$(date +%s)"
   [ -n "$input" ] && printf '%s' "$input" || printf 'null'
   printf '}\n'
-} > "$tmp" && mv -f "$tmp" "$dir/$UMI_NEXT_SESSION_ID.json"
-exit 0
+} > "$tmp" || exit 1
+mv -f "$tmp" "$dir/$UMI_NEXT_SESSION_ID.json"

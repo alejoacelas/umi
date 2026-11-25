@@ -214,7 +214,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             let name = ((layout["meta"] as? [String: Any])?["sessions"] as? [String: Any]).flatMap { ($0[sid] as? [String: Any])?["name"] as? String }
                 ?? s?["name"] as? String ?? ""
             if let agent = s?["agent"] as? [String: Any] {
-                var a: [String: Any] = ["kind": agent["agent"] ?? "claude", "title": name]
+                var a: [String: Any] = ["kind": agent["agent"] ?? "claude", "title": agent["title"] as? String ?? name]
                 if let sess = agent["agentSession"] { a["session"] = sess }
                 shows["agent"] = a
             }
@@ -344,7 +344,15 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         case "rects":
             applyRects(msg)
         case "request":
-            if !handleTerminalRequest(msg) { services.handle(msg) }
+            if msg["op"] as? String == "renameAgent", let id = msg["id"] as? String,
+               let args = msg["args"] as? [String: String] {
+                sessions.renameAgent(session: args["session"] ?? "", thread: args["thread"] ?? "", name: args["name"] ?? "") { [weak self] result in
+                    switch result {
+                    case .success: self?.send(["type": "reply", "id": id, "ok": true, "result": true])
+                    case .failure(let error): self?.send(["type": "reply", "id": id, "ok": false, "error": ["message": error.localizedDescription]])
+                    }
+                }
+            } else if !handleTerminalRequest(msg) { services.handle(msg) }
         case "shortcuts":
             if let table = msg["table"] as? [[String: Any]] { setShortcuts(table, save: true) }
         case "focusWeb":
@@ -391,8 +399,13 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
             // (override with UMI_NEXT_CLAUDE_CMD / UMI_NEXT_CODEX_CMD).
             "commands": [
                 "claude": Paths.env["UMI_NEXT_CLAUDE_CMD"] ?? "claude --dangerously-skip-permissions",
-                "codex": Paths.env["UMI_NEXT_CODEX_CMD"] ?? "codex --dangerously-bypass-approvals-and-sandbox",
+                "codex": Paths.env["UMI_NEXT_CODEX_CMD"] ?? #""$UMI_NEXT_CODEX_TITLE""#,
                 "antigravity": Paths.env["UMI_NEXT_ANTIGRAVITY_CMD"] ?? "agy --dangerously-skip-permissions",
+            ],
+            // Command overrides are complete shell commands and can use UMI_NEXT_SESSION_NAME.
+            "namedCommands": [
+                "claude": Paths.env["UMI_NEXT_CLAUDE_CMD"] ?? #"claude --dangerously-skip-permissions --name "$UMI_NEXT_SESSION_NAME""#,
+                "codex": Paths.env["UMI_NEXT_CODEX_CMD"] ?? #"thread=$("$UMI_NEXT_CODEX_TITLE" create "$UMI_NEXT_SESSION_NAME") && exec "$UMI_NEXT_CODEX_TITLE" resume "$thread""#,
             ],
             "home": NSHomeDirectory(),
             "fontBase": baseFontSize,

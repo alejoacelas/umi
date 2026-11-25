@@ -245,3 +245,7 @@ The inbox, the toasts and Warp's badges were removed in design step 1 (2026-11-0
 | What is given up | Why | What it protects |
 |---|---|---|
 | **Closing panes gives back most, not all, of their memory.** After opening and closing 30 panes many times, the footprint levels off at about twice the starting one (111 → 222 MB) instead of returning to it. Every closed pane is freed; the rest is pages malloc keeps because a few long-lived allocations share them (acceptance/perf/baseline-2026-11-09.md, "Memory after closing panes"). | Returning those pages would mean giving each terminal its own allocator in libghostty; asking malloc to release them frees nothing. | Closed panes keep no objects alive, and memory stops growing after the first few rounds. |
+
+## Umi Next session names
+
+Claude Code rereads externally saved names on its own schedule. Umi writes the title record used by the Claude Agent SDK so history and resume pick it up. A running Claude terminal can keep its previous label in the meantime. Typing a slash command into that terminal would risk submitting a user's unfinished prompt.

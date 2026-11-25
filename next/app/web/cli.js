@@ -28,11 +28,17 @@ Umi.cli = (() => {
     return (sid && M.paneOfSession(sid)) || null;
   }
 
+  function namedSessions(name) {
+    return Object.keys(S.live).filter((id) => M.sessionName(id) === name);
+  }
+
   function sessionsMatching(sel) {
     const ids = Object.keys(S.live);
     if (ids.includes(sel)) return [sel];
-    const byName = ids.filter((id) => M.sessionName(id) === sel || S.live[id].name === sel);
+    const byName = namedSessions(sel);
     if (byName.length) return byName;
+    const byLaunchName = ids.filter((id) => S.live[id].name === sel);
+    if (byLaunchName.length) return byLaunchName;
     return ids.filter((id) => id.startsWith(sel));
   }
 
@@ -161,6 +167,7 @@ Umi.cli = (() => {
   };
 
   // Which session a selector means, for the daemon-side commands (send, keys, read, wait).
+  H['session.named'] = ({ name }) => namedSessions(name);
   H.resolve = ({ pane }, caller) => {
     const r = resolvePane(pane, caller, { needPane: false });
     if (!r.session) fail(`pane ${r.pane} shows no session (${M.findPane(r.pane)?.node.view || 'nothing'})`);
@@ -279,10 +286,11 @@ Umi.cli = (() => {
     Umi.bridge.post({ type: 'exitSession', session: r.session });
     return { session: r.session };
   };
-  H['pane.rename'] = ({ pane, name }, caller) => {
+  H['pane.rename'] = async ({ pane, name }, caller) => {
     const r = resolvePane(pane, caller, { needPane: false });
     if (!r.session) fail('that pane shows no session');
-    Umi.app.update(() => M.rename(r.session, name));
+    await M.rename(r.session, name);
+    Umi.app.update(() => {});
     return { pane: r.pane, session: r.session, name: M.sessionName(r.session) };
   };
   H['pane.swap'] = ({ pane, target }, caller) => {

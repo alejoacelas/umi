@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify saved and modern Codex titles through native history and rendered picker rows.
+"""Verify saved Claude and Codex titles through native history and rendered picker rows.
 
 Run only on mac-air-2 against an isolated debug app:
   picker_titles_test.py TEST_STATE_DIR [SCREENSHOT_PATH]
@@ -30,6 +30,17 @@ home=Path.home();root=Path(tempfile.mkdtemp(prefix='umi-title-fixture-',dir=home
 folder=home/'.codex/sessions'/('umi-title-fixture-'+uuid.uuid4().hex)
 folder.mkdir(parents=True)
 indexed=str(uuid.uuid4());prompt=str(uuid.uuid4())
+claude_id=str(uuid.uuid4())
+claude_dir=home/'.claude/projects'/('umi-title-fixture-'+uuid.uuid4().hex)
+claude_dir.mkdir(parents=True)
+claude_file=claude_dir/(claude_id+'.jsonl')
+def claude_row(kind, **fields):
+ return json.dumps({'sessionId':claude_id,'type':kind,**fields})+'\n'
+claude_file.write_text(claude_row('user',cwd=str(root),message={'content':'First prompt'})+
+                       claude_row('custom-title',customTitle='Earlier name')+
+                       claude_row('assistant',message={'content':'Preamble '*40000})+
+                       claude_row('custom-title',customTitle='Late Claude rename')+
+                       claude_row('ai-title',aiTitle='Suggested title'))
 index=home/'.codex/session_index.jsonl';was_present=index.exists()
 line=json.dumps({'id':indexed,'thread_name':'Saved meaningful session name','updated_at':'2026-11-21T12:00:00Z'})+'\n'
 def write_transcript(sid,records):
@@ -46,12 +57,14 @@ try:
  e("""document.querySelector('.slot[data-pane="'+__titlePicker.id+'"] [data-page=history]').click(); 1""")
  rows=until(lambda:v('window.__titleReply'))
  titles={r['id']:r['title'] for r in rows}
+ assert titles[claude_id]=='Late Claude rename',titles
  assert titles[indexed]=='Saved meaningful session name',titles
  assert titles[prompt]=='Find the memory leak',titles
  rendered=until(lambda:v("[...document.querySelectorAll('.slot[data-pane=\"'+__titlePicker.id+'\"] .picker-row b')].map(e=>e.textContent)"))
+ assert 'Late Claude rename' in rendered,rendered
  assert 'Saved meaningful session name' in rendered and 'Find the memory leak' in rendered,rendered
  assert not any(t.startswith('rollout-') for t in rendered),rendered
- print('PASS native history returns saved Codex name and modern user prompt after >256KB preamble; rendered list shows both without rollout filenames')
+ print('PASS rendered history shows the latest explicit Claude rename, saved Codex title and modern Codex user prompt after long preambles')
  if len(sys.argv)>2:subprocess.run(['screencapture','-x','-l',str(d({'cmd':'state'})['windowNumber']),sys.argv[2]],check=True)
 finally:
  try:
@@ -65,4 +78,4 @@ finally:
    if separator and cleaned==original.decode()+separator:cleaned=original.decode()
    tmp=index.with_name('umi-title-cleanup-'+uuid.uuid4().hex)
    tmp.write_text(cleaned);tmp.chmod(index.stat().st_mode & 0o777);os.replace(tmp,index)
-  subprocess.run(['trash',str(root),str(folder)],check=True)
+  subprocess.run(['trash',str(root),str(folder),str(claude_dir)],check=True)

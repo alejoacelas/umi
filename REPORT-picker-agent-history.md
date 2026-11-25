@@ -19,3 +19,11 @@ The folder chooser gives the name its full width before allocating room to the p
 Folder discovery now filters candidates before displaying them. On mac-air-2, the previous picker showed a remembered temporary folder under both aliases and suggested linked worktree descendants. The updated picker excluded those locations from suggestions and direct path searches while retaining the main checkout.
 
 Typing a name in the switcher now selects creation, including for an exact match. The Air test confirmed the original project and subfolder, all four launch routes, and explicit selection of an existing session. The signed Umi Next update was installed on the main Mac and its six running sessions survived the UI restart.
+
+## Session names in the pane creator
+
+The picker gives each Claude Code or Codex conversation its Umi name before its first prompt. Codex needs a separate creation step because its terminal accepts a thread ID to resume but has no name argument. Umi records that ID when attaching the terminal because a shared Codex service can start with a different environment from the pane.
+
+The pane header, switcher and history follow the agent’s saved name. Umi’s Rename writes through the agent’s naming mechanism so the next resume sees the same title. This keeps text a user has started typing in the terminal intact.
+
+Verified on mac-air-2 with real sessions. Both agents accepted the picker name before their first prompt, reflected a native slash rename in Umi, and retained a Umi rename after a clean exit. Claude also accepted a rename from Umi before creating its first transcript. The history picker showed a Claude rename recorded after a long conversation.

@@ -12,6 +12,14 @@ func resolveSession(_ sel: String?) -> String {
         let ids = list.compactMap { $0["id"] as? String }
         if ids.contains(sel) { return sel }
         let named = list.filter { ($0["name"] as? String) == sel }.compactMap { $0["id"] as? String }
+        // A launch name can now belong to a different conversation. The displayed title
+        // takes precedence while the UI is running. IDs still work directly with the daemon.
+        if !named.isEmpty, let fd = connectSocket(uiSocket) {
+            close(fd)
+            let current = ui("session.named", ["name": sel]) as? [String] ?? []
+            if current.count == 1 { return current[0] }
+            if current.count > 1 { fail("more than one session is named \"\(sel)\": \(current.joined(separator: ", "))") }
+        }
         if named.count == 1 { return named[0] }
         if named.count > 1 { fail("more than one session is named \"\(sel)\": \(named.joined(separator: ", "))") }
         let prefix = ids.filter { $0.hasPrefix(sel) }

@@ -51,7 +51,7 @@ Umi.views.sidebar = (() => {
             tab.name = input.value.trim();
             // A new tab's one session takes the tab's name too (DESIGN "Names at creation").
             const ids = M.paneIds(tab.root), sid = ids.length === 1 && M.sessionOf(ids[0]);
-            if (sid && !S.layout.meta?.sessions?.[sid]?.name) M.rename(sid, tab.name);
+            if (sid && !S.live[sid]?.agent?.title && !S.layout.meta?.sessions?.[sid]?.name) M.renameFromMenu(sid, tab.name);
           } else delete tab.name;
           S.ui.editingTab = null;
           S.ui.tabDraft = null;
@@ -143,7 +143,9 @@ Umi.views.sidebar = (() => {
     if (tab.name) modify.push(item('Reset tab name', () => { delete tab.name; }));
     if (sid) {
       modify.push(item('Rename active pane', () => { S.layout.activeTab = tab.id; M.openPanel('palette', { mode: 'rename', sid }); }));
-      if (S.layout.meta?.sessions?.[sid]?.name) modify.push(item('Reset active pane name', () => M.rename(sid, '')));
+      if (S.layout.meta?.sessions?.[sid]?.name || (S.live[sid]?.agent?.title && S.live[sid].agent.title !== S.live[sid].name)) {
+        modify.push(item('Reset active pane name', () => M.renameFromMenu(sid, '')));
+      }
     }
     // Within its group: the pinned or the unpinned tabs.
     const group = S.layout.tabs.filter((x) => !x.archived && !!x.pinned === !!tab.pinned);
@@ -299,8 +301,7 @@ Umi.views.sidebar = (() => {
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   });
-  // A tab's name as its row shows it: the given name, else its focused pane's folder.
-  const tabName = (tab) => tab.name || base(M.folderOf(tab.focused)) || 'Terminal';
+  const tabName = (tab) => tab.name || S.live[M.sessionOf(tab.focused)]?.agent?.title || base(M.folderOf(tab.focused)) || 'Terminal';
 
   return { render, focus, tabName, tabItems };
 })();

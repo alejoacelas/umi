@@ -21,6 +21,7 @@ final class SessionMonitor {
     /// Sessions shown in a pane (asked on the main thread each poll).
     var shownSessions: () -> Set<String> = { [] }
     private(set) var last: [[String: Any]] = []
+    private let titles = SessionTitles()
     let docket: Docket
 
     /// Sends a session to the docket (or takes it off); both on the monitor's queue.
@@ -49,6 +50,23 @@ final class SessionMonitor {
         t.resume()
         timer = t
         watcher = FileWatcher(path: Self.agentsDir) { [weak self] in self?.pollSoon() }
+    }
+
+    /// Resolve the thread from the owning pane's latest hook. A queued rename must never
+    /// apply to a different thread if the user switched conversations in the meantime.
+    func renameAgent(session: String, thread: String, name: String, done: @escaping (Result<Void, Error>) -> Void) {
+        queue.async { [self] in
+            let result = Result {
+                guard !session.isEmpty, !session.contains("/"), !name.isEmpty,
+                      UUID(uuidString: thread) != nil, let agent = readAgent(session),
+                      agent["agentSession"] as? String == thread, agent["state"] as? String != "ended" else {
+                    throw AgentRename.ErrorMessage("The pane’s session changed. Choose Rename again.")
+                }
+                try AgentRename.write(name, thread: thread, agent: agent)
+                poll()
+            }
+            DispatchQueue.main.async { done(result) }
+        }
     }
 
     func pollSoon() { queue.async { [weak self] in self?.poll() } }
@@ -149,7 +167,7 @@ final class SessionMonitor {
         let input = j["input"] as? [String: Any] ?? [:]
         let state: String
         switch event {
-        case "Stop", "StopFailure", "Notification", "PermissionRequest", "Interrupt", "SessionStart": state = "waiting"
+        case "Stop", "StopFailure", "Notification", "PermissionRequest", "Interrupt", "SessionStart", "UmiLaunch": state = "waiting"
         case "SessionEnd": state = "ended"
         default: state = "busy"
         }
@@ -160,7 +178,21 @@ final class SessionMonitor {
             // The turn ended: its last reply (its status line decides Review; web/status.js).
             if event == "Stop" || event == "StopFailure", let r = lastReply(transcript: t) { a["reply"] = r }
         }
-        if let sid = input["session_id"] { a["agentSession"] = sid }
+        if let sid = input["session_id"] as? String {
+            a["agentSession"] = sid
+            switch a["agent"] as? String {
+            case "claude":
+                if let path = input["transcript_path"] as? String {
+                    a["title"] = titles.claude(URL(fileURLWithPath: path), session: sid, live: true)
+                }
+            case "codex":
+                let home = (input["codex_home"] as? String).map { URL(fileURLWithPath: $0) }
+                    ?? SessionTitles.codexHome(forTranscript: input["transcript_path"] as? String)
+                a["codexHome"] = home.path
+                a["title"] = titles.codex(home: home)[sid]
+            default: break
+            }
+        }
         return a
     }
 
@@ -236,19 +268,6 @@ final class SessionMonitor {
         }
     }
 
-    /// Codex keeps user-assigned and generated session names in an append-only index.
-    private static func codexTitles(_ url: URL) -> [String: String] {
-        var titles: [String: String] = [:]
-        readJSONLines(url) { row in
-            if let id = row["id"] as? String, let name = row["thread_name"] as? String,
-               !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                titles[id] = name
-            }
-            return true
-        }
-        return titles
-    }
-
     /// Stream complete records, including prompts after long tool/instruction preambles.
     /// Returning false stops reading immediately, so indexed titles need only session metadata.
     private static func readJSONLines(_ url: URL, visit: ([String: Any]) -> Bool) {
@@ -307,22 +326,23 @@ final class SessionMonitor {
     private func pastSessions(project: String?, exclude: Set<String>, limit: Int = 40) -> [[String: Any]] {
         var files: [(URL, Date, String)] = []
         let fm = FileManager.default
-        let home = URL(fileURLWithPath: NSHomeDirectory())
-        let claude = home.appendingPathComponent(".claude/projects")
-        for dir in (try? fm.contentsOfDirectory(at: claude, includingPropertiesForKeys: nil)) ?? [] {
+        let projects = SessionTitles.claudeProjects.flatMap {
+            (try? fm.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
+        }
+        for dir in projects {
             for f in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] where f.pathExtension == "jsonl" {
                 let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
                 files.append((f, m, "claude"))
             }
         }
-        if let e = fm.enumerator(at: home.appendingPathComponent(".codex/sessions"), includingPropertiesForKeys: [.contentModificationDateKey]) {
+        if let e = fm.enumerator(at: SessionTitles.codexHome.appendingPathComponent("sessions"), includingPropertiesForKeys: [.contentModificationDateKey]) {
             for case let f as URL in e where f.pathExtension == "jsonl" {
                 let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
                 files.append((f, m, "codex"))
             }
         }
         files.sort { $0.1 > $1.1 }
-        let codexTitles = project == nil ? [:] : Self.codexTitles(home.appendingPathComponent(".codex/session_index.jsonl"))
+        let codexTitles = project == nil ? [:] : titles.codex()
         var out: [[String: Any]] = []
         for (f, mtime, kind) in files.prefix(project == nil ? files.count : 400) {
             if kind == "codex" {
@@ -337,7 +357,7 @@ final class SessionMonitor {
             guard let h = try? FileHandle(forReadingFrom: f) else { continue }
             let data = h.readData(ofLength: 256 * 1024)
             try? h.close()
-            var cwd: String?, id: String?, title: String?, prompt: String?
+            var cwd: String?, id: String?, prompt: String?
             // Read lines only until the required metadata is found. Splitting the entire
             // 256 KB prefix first makes project discovery scan gigabytes of unused messages.
             var offset = data.startIndex
@@ -353,14 +373,14 @@ final class SessionMonitor {
                 if kind == "claude" {
                     if id == nil { id = j["sessionId"] as? String }
                     if cwd == nil { cwd = j["cwd"] as? String }
-                    if title == nil, j["type"] as? String == "ai-title" { title = j["aiTitle"] as? String }
                     if prompt == nil, j["type"] as? String == "user", (j["isSidechain"] as? Bool) != true,
                        let c = (j["message"] as? [String: Any])?["content"] as? String { prompt = c }
                 }
                 if project == nil && cwd != nil && id != nil { break }
-                if cwd != nil && id != nil && prompt != nil && title != nil { break }
+                if cwd != nil && id != nil && prompt != nil { break }
             }
             guard let cwd, let id, !exclude.contains(id), (project == nil || self.project(of: cwd) == project) else { continue }
+            let title = project == nil ? nil : titles.claude(f, session: id)
             out.append(["kind": kind, "id": id, "cwd": cwd, "title": title ?? prompt ?? id,
                         "mtime": mtime.timeIntervalSince1970])
             if out.count >= limit { break }

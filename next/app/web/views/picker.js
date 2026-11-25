@@ -95,6 +95,7 @@ Umi.views.picker = (() => {
   function changePage(el, node, mode) {
     const pk = node.picker;
     if ((!pk.mode || pk.mode === 'switcher') && (mode === 'new' || mode === 'folder') && pk.search?.trim()) pk.name = pk.search;
+    if (mode === 'history') askedPast.delete(pk.project);
     pk.mode = mode;
     delete pk.choice;
     delete pk.notice;
@@ -280,13 +281,14 @@ Umi.views.picker = (() => {
     }
     Umi.app.update(() => {
       if (item.key === 'new') {
-        const cmd = pk.kind === 'shell' ? null : cmds[pk.kind] || pk.kind;
+        const cmd = pk.kind === 'shell' ? null : S.namedCommands?.[pk.kind] || cmds[pk.kind] || pk.kind;
         M.startSession(node.id, { cmd, name: item.launchName, cwd: node.cwd });
       } else if (item.session) {
         pk.notice = M.switchFromPicker(item.session, node.id);
       } else if (item.past) {
         const p = item.past;
-        M.startSession(node.id, { cmd: (cmds[p.kind] || p.kind) + ' --resume ' + p.id, name: p.title.slice(0, 40), cwd: p.cwd });
+        const resume = p.kind === 'codex' ? ' resume ' : ' --resume ';
+        M.startSession(node.id, { cmd: (cmds[p.kind] || p.kind) + resume + Umi.views.modes.shellQuote(p.id), name: p.title, cwd: p.cwd });
       }
     });
   }

@@ -65,7 +65,7 @@ enum SessionBackend {
         // `umi-next` CLI opens in a pane): the session lists show only these, not those agents or
         // scripts start without a pane with `umi-next-ctl new` (`by: cli`).
         var args = ["new", "--by", by == "cli" ? "cli" : "user", "--cwd", cwd ?? NSHomeDirectory()]
-        if let name, !name.isEmpty { args += ["--name", name] }
+        if let name, !name.isEmpty { args += ["--name", name, "--env", "UMI_NEXT_SESSION_NAME=\(name)"] }
         if let cmd { args += ["--cmd", cmd] }
         if let size, size.cols > 0, size.rows > 0 { args += ["--cols", String(size.cols), "--rows", String(size.rows)] }
         // The session's variables go by name (--env): umi-next-ctl passes on only a fixed set of
@@ -135,7 +135,9 @@ enum SessionBackend {
     /// ~/.local/bin; either copy drives this app, since the session's UMI_NEXT_STATE_DIR names it.
     static func cliEnv() -> [String: String] {
         let cli = binDir + "/umi-next"
-        return FileManager.default.isExecutableFile(atPath: cli) ? ["UMI_NEXT_CLI": cli] : [:]
+        var env = ["UMI_NEXT_CODEX_TITLE": (Bundle.main.resourceURL?.path ?? binDir) + "/umi-next-codex-title"]
+        if FileManager.default.isExecutableFile(atPath: cli) { env["UMI_NEXT_CLI"] = cli }
+        return env
     }
 
     @discardableResult

@@ -75,8 +75,8 @@ Umi.views.panes = (() => {
       return { new: 'New session', history: 'Session history' }[mode] || 'Sessions';
     }
     if ((node.view || 'terminal') !== 'terminal') return node.view;
-    const sid = M.sessionOf(node.id), live = sid && S.live[sid];
-    const given = sid && (S.layout.meta?.sessions?.[sid]?.name || live?.name);
+    const sid = M.sessionOf(node.id);
+    const given = sid && M.givenName(sid);
     return given || shortPath(S.panes[node.id]?.title) || shortPath(M.folderOf(node.id)) || 'Terminal';
   }
 
@@ -85,7 +85,7 @@ Umi.views.panes = (() => {
     const live = S.live[sid];
     // Before the daemon's list has it (just started), what its last pane reported.
     const info = Object.values(S.panes).find((p) => p.session === sid) || {};
-    return S.layout.meta?.sessions?.[sid]?.name || live?.name || shortPath(live?.folder || info.title || info.pwd) || 'Terminal';
+    return M.givenName(sid) || shortPath(live?.folder || info.title || info.pwd) || 'Terminal';
   }
 
   // Every chip and header keeps its status mark, so names never shift; marks.js only colours it.

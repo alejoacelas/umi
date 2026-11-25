@@ -73,7 +73,7 @@ Umi.views.panel = (() => {
       el.querySelector('.dim').textContent = p.mode === 'rename' ? 'Enter keeps it; empty: the daemon’s name' : 'for how long (2h, 30m)? Empty: until its turn ends';
       const input = el.querySelector('input');
       // Any Umi.app.update draws the panel again: what is typed lives on the panel's state.
-      input.value = p.draft ?? (p.mode === 'rename' ? S.layout.meta?.sessions?.[p.sid]?.name || '' : '');
+      input.value = p.draft ?? (p.mode === 'rename' ? M.givenName(p.sid) || '' : '');
       const keep = () => { p.draft = input.value; p.caret = [input.selectionStart, input.selectionEnd]; };
       input.addEventListener('input', keep);
       input.addEventListener('select', keep);
@@ -87,7 +87,7 @@ Umi.views.panel = (() => {
         if (p.mode === 'snooze' && v && parseDuration(v) == null) { input.classList.add('bad'); return; }
         Umi.app.update(() => {
           M.closePanel();
-          if (p.mode === 'rename') M.rename(p.sid, v);
+          if (p.mode === 'rename') M.renameFromMenu(p.sid, v);
           else M.snooze(p.sid, v ? parseDuration(v) : null);
         });
       });

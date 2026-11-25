@@ -1,0 +1,173 @@
+#!/usr/bin/python3
+"""Name a Codex thread through its app-server, without typing into its terminal."""
+import base64
+import contextlib
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import socket
+import struct
+import subprocess
+import tempfile
+import uuid
+import sys
+
+
+class Stdio:
+    def __init__(self, process):
+        self.process = process
+
+    def send(self, data):
+        self.process.stdin.write(data + b"\n")
+        self.process.stdin.flush()
+
+    def receive(self):
+        return self.process.stdout.readline()
+
+
+class ControlSocket:
+    """The shared Codex app-server speaks WebSocket over a local Unix socket."""
+
+    def __init__(self, connection, reader):
+        self.connection, self.reader = connection, reader
+        key = base64.b64encode(os.urandom(16))
+        connection.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n"
+                           b"Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: "
+                           + key + b"\r\n\r\n")
+        status = reader.readline()
+        if not status.startswith(b"HTTP/1.1 101 "):
+            raise ValueError("Codex control socket declined the WebSocket connection")
+        headers = {}
+        for line in reader:
+            if line == b"\r\n":
+                break
+            name, value = line.split(b":", 1)
+            headers[name.lower()] = value.strip()
+        accept = hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest()
+        if headers.get(b"sec-websocket-accept") != base64.b64encode(accept):
+            raise ValueError("Invalid WebSocket handshake from Codex")
+
+    def send(self, data, opcode=1):
+        size = len(data)
+        length = bytes([128 | size]) if size < 126 else (
+            b"\xfe" + struct.pack("!H", size) if size < 65536 else b"\xff" + struct.pack("!Q", size))
+        mask = os.urandom(4)
+        self.connection.sendall(bytes([128 | opcode]) + length + mask
+                                + bytes(value ^ mask[i % 4] for i, value in enumerate(data)))
+
+    def read(self, size):
+        data = self.reader.read(size)
+        if len(data) != size:
+            raise EOFError("Codex closed its control socket")
+        return data
+
+    def receive(self):
+        chunks = []
+        while True:
+            flags, size = self.read(2)
+            if size == 126:
+                size = struct.unpack("!H", self.read(2))[0]
+            elif size == 127:
+                size = struct.unpack("!Q", self.read(8))[0]
+            if size > 16 * 1024 * 1024:
+                raise ValueError("Oversized WebSocket message from Codex")
+            data, opcode = self.read(size), flags & 15
+            if opcode == 8:
+                raise EOFError("Codex closed its control socket")
+            if opcode == 9:
+                self.send(data, opcode=10)
+            if opcode in (0, 1):
+                chunks.append(data)
+                if flags & 128:
+                    return b"".join(chunks)
+
+
+@contextlib.contextmanager
+def server(operation):
+    home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+    control = home / "app-server-control" / "app-server-control.sock"
+    # Send a rename to the running server so its attached TUI gets thread/name/updated.
+    # For creation we own the new thread until its rollout is saved and the TUI can resume it.
+    if operation == "rename" and control.is_socket():
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.connect(str(control.resolve()))
+            with connection.makefile("rb") as reader:
+                yield ControlSocket(connection, reader)
+        return
+    # The TUI itself runs SessionStart hooks when it takes over. The preparatory client
+    # must not execute them a second time (some hooks change the agent's environment).
+    with tempfile.TemporaryFile() as log:
+        process = subprocess.Popen(["codex", "app-server", "--disable", "hooks"],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log)
+        try:
+            yield Stdio(process)
+            process.stdin.close()
+            if process.wait(timeout=8):
+                raise ValueError("Codex app-server exited unsuccessfully")
+        except (EOFError, subprocess.TimeoutExpired, ValueError) as error:
+            log.seek(0, os.SEEK_END)
+            log.seek(max(0, log.tell() - 2048))
+            details = log.read().decode(errors="replace").strip()
+            raise ValueError(f"{error}\n{details}" if details else str(error)) from error
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+
+
+def rpc(conn, seq, method, params):
+    conn.send(json.dumps(dict(id=seq, method=method, params=params)).encode())
+    while True:
+        data = conn.receive()
+        if not data:
+            raise EOFError("Codex closed its app-server")
+        msg = json.loads(data)
+        if msg.get("id") == seq:
+            if "error" in msg:
+                raise ValueError(msg["error"]["message"])
+            return msg["result"]
+
+
+def resume(thread):
+    # A shared Codex daemon may run its hooks outside the pane's environment. Record the
+    # thread we are about to open; actual agent hooks can then report its activity as usual.
+    thread = str(uuid.UUID(thread))
+    if os.environ.get("UMI_NEXT_SESSION_ID") and os.environ.get("UMI_NEXT_STATE_DIR"):
+        home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve()
+        payload = {"session_id": thread, "cwd": os.getcwd(), "codex_home": str(home)}
+        hook = Path(__file__).resolve().with_name("umi-next-hook")
+        subprocess.run([str(hook), "hook", "UmiLaunch", "--agent", "codex"],
+                       input=json.dumps(payload).encode(), check=True, timeout=5)
+    os.execvp("codex", ["codex", "--dangerously-bypass-approvals-and-sandbox", "resume", thread])
+
+
+def main(args):
+    if len(args) == 2 and args[0] == "resume":
+        resume(args[1])
+    if not ((len(args) == 2 and args[0] == "create") or
+            (len(args) == 3 and args[0] == "rename")) or not args[-1].strip():
+        raise ValueError("expected create NAME, resume THREAD_ID, or rename THREAD_ID NAME")
+    def timeout(signum, frame):
+        raise TimeoutError("Codex did not answer within 20 seconds")
+    signal.signal(signal.SIGALRM, timeout)
+    signal.alarm(20)
+    operation, name = args[0], args[-1]
+    with server(operation) as conn:
+        rpc(conn, 1, "initialize", {"clientInfo": {"name": "umi-next", "version": "1"}})
+        conn.send(b'{"method":"initialized"}')
+        if operation == "create":
+            thread = rpc(conn, 2, "thread/start", {"cwd": os.getcwd()})["thread"]["id"]
+        else:
+            thread = args[1]
+        rpc(conn, 3, "thread/name/set", {"threadId": thread, "name": name})
+    if operation == "create":
+        print(thread)
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except (OSError, ValueError, EOFError, KeyError, subprocess.SubprocessError) as error:
+        sys.exit("umi-next: Codex session: " + str(error))
