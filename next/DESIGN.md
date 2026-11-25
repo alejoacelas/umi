@@ -78,7 +78,9 @@ The chooser shows the current project and working folder alongside the Claude Co
 Antigravity and shell icons. The highlighted icon is what Enter will launch there. After typing
 a name, Tab cycles those choices. **+ New** also opens a dedicated creation form.
 **History** lists resumable conversations for the chosen project. Both screens offer a folder
-chooser. Typing `/` from the empty switcher search goes straight to choosing a folder for a new session.
+chooser. Typing `/` in the switcher or the **+ New** form goes straight to choosing a folder for a
+new session. Text typed before the `/` becomes the session's name: once a folder is chosen, the
+form shows that name, Tab cycles the launch kinds and Enter starts it (Alejo, 2026-11-25).
 
 - The folder list is `proj`'s (`proj --list --here`): the folders directly in ~/best's projects,
   areas and orgs, newest first by the date in their names, the current area's first (Alejo,

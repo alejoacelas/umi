@@ -327,7 +327,8 @@ Umi.views.picker = (() => {
       return;
     }
     if (e.target !== input) return;
-    if (e.key === '/' && !input.value) {
+    // After a typed name, / keeps it as the new session's name and chooses its folder.
+    if (e.key === '/' && (!input.value || switcher || pk.mode === 'new')) {
       e.preventDefault();
       return folderMode(el, node, true);
     }
