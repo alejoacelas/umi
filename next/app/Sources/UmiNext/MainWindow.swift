@@ -161,7 +161,6 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
 
         banner.isHidden = true
         banner.drawsBackground = true
-        banner.backgroundColor = NSColor(red: 0.55, green: 0.1, blue: 0.08, alpha: 0.95)
         banner.textColor = .white
         banner.font = .systemFont(ofSize: 12, weight: .medium)
         banner.lineBreakMode = .byTruncatingTail
@@ -256,7 +255,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
     /// in the daemon. A failed build leaves this app running and says so; the log is
     /// <state>/update.log.
     func updateAndRestart() {
-        guard updating == nil else { showBanner("Already updating; log: \(Paths.stateDir)/update.log"); return }
+        guard updating == nil else { showBanner("Already updating; log: \(Paths.stateDir)/update.log", progress: true); return }
         guard let app = Paths.appSourceDir else { showBanner("Can't update: this build doesn't record its checkout."); return }
         let script = (app as NSString).deletingLastPathComponent + "/install.sh"
         guard FileManager.default.isExecutableFile(atPath: script) else { showBanner("Can't update: no \(script)."); return }
@@ -281,7 +280,7 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         }
         do { try p.run() } catch { showBanner("Can't update: \(error.localizedDescription)"); return }
         updating = p
-        showBanner("Updating: building from \((app as NSString).deletingLastPathComponent)… Umi next restarts when it's built.")
+        showBanner("Updating: building from \((app as NSString).deletingLastPathComponent)… Umi next restarts when it's built.", progress: true)
     }
 
     private func armWatchdog() {
@@ -295,7 +294,8 @@ final class MainWindowController: NSObject, WKScriptMessageHandler, WKNavigation
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
     }
 
-    private func showBanner(_ text: String) {
+    private func showBanner(_ text: String, progress: Bool = false) {
+        banner.backgroundColor = progress ? NSColor(white: 0.21, alpha: 0.95) : NSColor(red: 0.55, green: 0.1, blue: 0.08, alpha: 0.95)
         banner.stringValue = "  " + text
         banner.isHidden = false
     }
