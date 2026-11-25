@@ -62,8 +62,8 @@ def check(args, state):
     J = debug.J
     def cli(*words):
         return subprocess.check_output([bins / "umi-next", *words], text=True, env=env, timeout=60)
-    def wait(fn, what):
-        return poll(fn, 90, every=.25, swallow=(FileNotFoundError,), what=what)
+    def wait(fn, what, seconds=90):
+        return poll(fn, seconds, every=.25, swallow=(FileNotFoundError,), what=what)
     def fill(selector, value):
         debug.ev(f"""(() => {{
           const input = document.querySelector({json.dumps(selector)});
@@ -124,7 +124,8 @@ def check(args, state):
             if kind == "claude" and ("Yes, I trust" in screen or "Yes, I accept" in screen):
                 cli("keys", "--pane", pane, "down", "enter")
                 time.sleep(.5)
-        agent = wait(started, f"{kind} prompt and thread ID")
+        # A cold Codex app-server can use its full 120 s startup deadline before the TUI opens.
+        agent = wait(started, f"{kind} prompt and thread ID", seconds=180 if kind == "codex" else 90)
         thread = agent["agentSession"]
         transcript = Path(agent.get("transcript") or "")
         assert Path(live()["cwd"]).resolve() == destination.resolve()
@@ -134,6 +135,8 @@ def check(args, state):
                 assert transcript.name == thread + ".jsonl" and not saved_title(kind, thread, transcript)
                 assert "--name" not in live()["command"], "Umi passed an explicit name on a blank launch"
                 record = {"type": "ai-title", "sessionId": thread, "aiTitle": generated}
+                # Claude creates the project's transcript directory on the first turn.
+                transcript.parent.mkdir(parents=True, exist_ok=True)
                 target = transcript
             else:
                 # UmiLaunch associates the TUI with the new thread even when its server hasn't emitted a hook.
