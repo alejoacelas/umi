@@ -104,7 +104,7 @@ def server(operation):
         try:
             yield Stdio(process)
             process.stdin.close()
-            if process.wait(timeout=8):
+            if process.wait():
                 raise ValueError("Codex app-server exited unsuccessfully")
         except (EOFError, subprocess.TimeoutExpired, ValueError) as error:
             log.seek(0, os.SEEK_END)
@@ -154,10 +154,13 @@ def main(args):
     else:
         raise ValueError("expected no arguments, create NAME, resume THREAD_ID, or rename THREAD_ID NAME")
 
+    # A new terminal can wait for a cold Codex server. Rename also serves a waiting UI request.
+    deadline = 20 if operation == "rename" else 120
+
     def timeout(signum, frame):
-        raise TimeoutError("Codex did not answer within 20 seconds")
+        raise TimeoutError(f"Codex did not answer within {deadline} seconds")
     signal.signal(signal.SIGALRM, timeout)
-    signal.alarm(20)
+    signal.alarm(deadline)
     with server(operation) as conn:
         rpc(conn, 1, "initialize", {"clientInfo": {"name": "umi-next", "version": "1"}})
         conn.send(b'{"method":"initialized"}')
