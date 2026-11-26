@@ -179,7 +179,8 @@ Umi.model = (() => {
       if (!z || z.done) continue;
       const s = S.live[sid];
       if (!s) { delete m.snooze; continue; }
-      if ((z.until && now() >= z.until) || (s.state === 'waiting' && (s.agent?.ts || 0) > z.since)) z.done = true;
+      const turnEnded = s.state === 'waiting' && (z.untilWaiting || (s.agent?.ts || 0) > z.since);
+      if ((z.until && now() >= z.until) || turnEnded) z.done = true;
     }
   }
 
@@ -378,7 +379,7 @@ Umi.model = (() => {
   }
 
   // ---- the hidden-pane strip (SPEC H-5; DESIGN "Hidden-pane strip") ----
-  // A tab remembers the sessions ⌥⌘H hid from it (`tab.hidden`, session ids, in the order hidden).
+  // A tab remembers the sessions hidden from it (`tab.hidden`, session ids, in the order hidden).
   // Exit, or the session showing anywhere, takes it off the list.
   function hide(paneId) {
     const found = findPane(paneId);
@@ -387,6 +388,9 @@ Umi.model = (() => {
     if (sid) {
       found.tab.hidden = (found.tab.hidden || []).filter((x) => x !== sid);
       found.tab.hidden.push(sid);
+      if (standing(S.live[sid]) === 'busy') {
+        meta(sid).snooze = { since: now(), untilWaiting: true, done: false };
+      }
     }
     removePane(paneId);
   }

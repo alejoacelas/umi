@@ -115,9 +115,10 @@ it is open.
 
 ## Snooze and Review
 
-- `z` in the palette snoozes the focused session, optionally for a time (`2h`): its pane closes while
-  the session keeps running, `umi-next notify` from it fires no alert, and it is left out of Review.
-  The switcher keeps it in the folded Snoozed group.
+- ⌥⌘H, Hyper+Z and `z` in the palette hide the focused pane. A working session goes to the
+  folded Snoozed group until it waits for input or finishes. An idle session goes to Available.
+  **Snooze for a duration** in the palette accepts a time such as `2h`. Snoozed sessions are
+  left out of Review, and `umi-next notify` from them fires no alert.
 - A snoozed session's snooze finishes when its turn ends or its time runs out. It then counts in
   Review whatever its reply says: snoozing asked to be told. Showing the session again, or `c` in
   the palette, clears it.

@@ -43,6 +43,7 @@ Umi.shortcuts = (() => {
     { id: 'splitDown', keys: 'cmd+shift+d', label: 'Split down (picker)', group: 'Panes', action: 'splitDown' },
     { id: 'closePane', keys: 'cmd+w', label: 'Close the pane and end its session', group: 'Panes', action: 'closePane' },
     { id: 'hidePane', keys: 'cmd+opt+h', label: 'Hide the pane (session keeps running)', group: 'Panes', action: 'hidePane' },
+    { id: 'hidePaneHyper', keys: 'hyper+z', label: 'Hide the pane (session keeps running)', group: 'Panes', action: 'hidePane' },
     { id: 'focusLeft', keys: 'cmd+opt+left', label: 'Focus pane left', group: 'Panes', action: 'focusDir', arg: { dir: 'left' } },
     { id: 'focusRight', keys: 'cmd+opt+right', label: 'Focus pane right', group: 'Panes', action: 'focusDir', arg: { dir: 'right' } },
     { id: 'focusUp', keys: 'cmd+opt+up', label: 'Focus pane up', group: 'Panes', action: 'focusDir', arg: { dir: 'up' } },

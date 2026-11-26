@@ -97,3 +97,28 @@ M.addTab(M.newPicker(umi + '/next', umi));
 const nestedPicker = Umi.actions.splitRight();
 assert.equal(nestedPicker.cwd, umi + '/next');
 assert.equal(nestedPicker.picker.project, umi);
+
+Umi.views = {};
+for (const [id, waiting] of [
+  ['build', { state: 'waiting' }],
+  ['asking', { state: 'waiting', agent: { event: 'PermissionRequest' } }],
+  ['done', { state: 'waiting', agent: { event: 'Stop', reply: 'Status: done' } }],
+]) {
+  const s = session(id, { state: 'busy' });
+  M.sessions([...sessions.filter((entry) => entry.id !== id), s]);
+  M.appendPane(pickerTab, M.newPane({ session: id, cwd: umi }));
+  const paneId = pickerTab.focused;
+  Umi.actions.hidePane();
+  assert.equal(M.findPane(paneId), null);
+  assert.ok(M.hiddenOf(pickerTab).includes(id));
+  assert.ok(ids(M.switcherGroups().snoozed).includes(id));
+  Object.assign(s, waiting);
+  M.sessions([...sessions.filter((entry) => entry.id !== id), s]);
+  assert.ok(ids(M.switcherGroups().needs).includes(id));
+  assert.equal(M.paneOfSession(id), undefined);
+}
+
+M.focusPane(current.root.a.id);
+Umi.actions.hidePane();
+assert.equal(M.paneOfSession('shell'), undefined);
+assert.ok(ids(M.switcherGroups().available).includes('shell'));

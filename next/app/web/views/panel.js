@@ -20,10 +20,10 @@ Umi.views.panel = (() => {
     ] },
     { title: 'This session', cmds: [
       ['r', 'Rename', () => ask('rename')],
-      ['z', 'Snooze', () => ask('snooze')],
+      ['z', 'Hide (keeps running)', () => Umi.actions.hidePane()],
+      ['', 'Snooze for a duration', () => ask('snooze')],
       ['d', 'Send to docket', () => Umi.actions.docketSession()],
       ['t', 'Restart', () => Umi.actions.restartSession()],
-      ['h', 'Hide (keeps running)', () => Umi.actions.hidePane()],
       ['x', 'Exit', () => Umi.actions.exitSession()],
       ['m', 'Move to new tab', () => Umi.actions.moveToNewTab()],
     ] },
