@@ -75,8 +75,8 @@ click opens a match. Enter on the first row keeps the typed name and opens the f
 An open session keeps its pane. A hidden session opens in the switcher's place.
 
 The chooser shows the current project and working folder alongside the Claude Code, Codex,
-Antigravity and shell icons. The highlighted icon is what Enter will launch there. After typing
-a name, Tab cycles those choices. **+ New** also opens a dedicated creation form.
+Antigravity and shell icons. The highlighted icon is what Enter will launch there. Tab cycles
+those choices. With an empty switcher, the first Tab also opens the **+ New** form.
 **History** lists resumable conversations for the chosen project. Both screens offer a folder
 chooser. Typing `/` in the switcher or the **+ New** form goes straight to choosing a folder for a
 new session. Text typed before the `/` becomes the session's name: once a folder is chosen, the

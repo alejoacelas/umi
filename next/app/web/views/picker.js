@@ -324,9 +324,10 @@ Umi.views.picker = (() => {
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const switcher = !pk.mode || pk.mode === 'switcher';
-    if (e.key === 'Tab' && e.target === input && (pk.mode === 'new' || (switcher && pk.search?.trim()))) {
+    if (e.key === 'Tab' && e.target === input && (pk.mode === 'new' || switcher)) {
       e.preventDefault();
       pk.kind = KINDS[(KINDS.indexOf(pk.kind) + (e.shiftKey ? KINDS.length - 1 : 1)) % KINDS.length];
+      if (switcher && !pk.search?.trim()) return changePage(el, node, 'new');
       pk.choice = 'new';
       return refresh(el, node);
     }

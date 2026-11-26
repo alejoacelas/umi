@@ -198,6 +198,18 @@ def run(state, bundle, tools, screenshot):
         assert J(f"!!Umi.model.findPane('{original}')")
         print('ok clicking an open session jumps to its original pane and removes the temporary picker')
 
+        split()
+        for kind in ('codex', 'antigravity', 'shell', 'claude'):
+            key(48)
+            assert J("document.activeElement?.matches('.slot.picker .picker-name')")
+            assert J("document.querySelector('.slot.picker .picker-kinds [aria-pressed=true]').dataset.kind") == kind
+        key(48, 'shift')
+        assert J("document.querySelector('.slot.picker .picker-kinds [aria-pressed=true]').dataset.kind") == 'shell'
+        key(36)
+        until("Umi.model.focusedPane()?.view === 'terminal'", 'Enter launches the selected shell')
+        key(13, 'cmd')
+        until("Umi.model.activeTab().focused === window.switcherOpenPane", 'return after unnamed launch')
+
         for kind, label in [('claude', 'Claude Code'), ('codex', 'Codex'), ('antigravity', 'Antigravity'), ('shell', 'Shell')]:
             split()
             context = J("""(() => {
