@@ -1593,7 +1593,7 @@ real-agent tests. Installed copies take it through Umi's updater; this Mac's cop
 
 Built from `BRIEF-session-links.md` on 9 November 2026: `umi://open?task=URL` opens an agent
 session in a new tab (SPEC AG-20). The server half (`umi-link`, the `/umi` page, the docket's links)
-is in `~/best/ops/clerk/umi-links/`; the `queue` skill makes these links.
+is in `~/best/systems/clerk/umi-links/`; the `queue` skill makes these links.
 
 **Choices for Alejo to check**
 
@@ -1621,7 +1621,7 @@ failing on main too, and `test_find_keys` (Markdown ⌘G), which passed when `te
 was rerun alone (14 passed). Swift unit tests: passed, the 13 new ones included
 (`~/umi-test-session-links-swift.log`). A link delivered by LaunchServices (`open -a Umi.app
 umi://…`) with a real task from the agent server opened a tab named after it in
-`~/best/projects/2026-10-26-umi`, and a link to another origin was refused.
+`~/best/systems/umi`, and a link to another origin was refused.
 
 ### 0.15.0: session links
 
@@ -1645,7 +1645,7 @@ was checked by installing 0.15.1 on mac-air-2 and clicking the links.
 
 **End-to-end check on mac-air-2 with 0.15.1 installed** (10 November): tasks made with `umi-link new`
 on the agent server, links clicked in mac-air-2's Chrome, Chrome's "Open Umi.app?" answered Open.
-- The Mac task's page link opened a tab named after the task in `~/best/projects/2026-10-26-umi`
+- The Mac task's page link opened a tab named after the task in `~/best/systems/umi`
   with Claude started on the task's prompt. (Claude there answered "Login expired": mac-air-2's own
   Claude Code login, not Umi.)
 - The server task's page link opened a tab that ran `ssh -t agent-server sudo -iu agent umi-link

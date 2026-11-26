@@ -72,7 +72,7 @@ made the user's `~/Library/Application Support/Umi`.
   it are relative to the file). `results/traceability.md` maps each SPEC requirement to its tests.
 - Run the acceptance suite and the Swift tests on the other MacBook Air (`ssh mac-air-2`), never on
   the Mac Alejo is using: they open windows there. Other agents may be working in its checkout
-  (`~/best/projects/2026-10-26-umi`), so test in a worktree of it
+  (`~/best/systems/umi`), so test in a worktree of it
   (`git worktree add ~/umi-test-<branch> <branch>`). Start every run there under the screen lock,
   so runs take turns: `lockf -k ~/umi-screen.lock uv run pytest …` waits for the run before it. A
   new worktree needs libghostty: build it there, or copy `app/macos/GhosttyKit.xcframework` and

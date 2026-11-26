@@ -24,7 +24,7 @@ Hill*; also Japanese for "sea").
 ## What to do
 
 1. **One repository.** Create the public GitHub repo `alejoacelas/umi` and a
-   local clone at `~/best/projects/2026-10-26-umi`. Bring in both repositories
+   local clone at `~/best/systems/umi`. Bring in both repositories
    with their full histories, the app under `app/` (for example by merging the
    app's history into the outer repo with a subdirectory prefix). The new repo
    hosts the source and the releases. Fold `release-repo/` into it. Keep build

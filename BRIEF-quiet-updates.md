@@ -2,7 +2,7 @@
 
 Alejo will not supervise this run. Make reasonable decisions yourself, record them in
 `DECISIONS.md`, and keep going until the finish criteria are met. Do not stop to ask
-questions. Work in `~/best/projects/2026-10-26-umi` (read its `AGENTS.md` first; the tab-order
+questions. Work in `~/best/systems/umi` (read its `AGENTS.md` first; the tab-order
 change, release 0.6.1, has just landed). Commit early and often, and push after every commit.
 Never commit or print secrets.
 

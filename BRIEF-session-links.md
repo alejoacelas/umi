@@ -3,7 +3,7 @@
 Alejo wants the agent server to produce links ("work on this in Umi") that he clicks from the
 docket and from Slack, and that open an agent session in a new Umi tab. Sessions run on this Mac by
 default, in the right local folder, or on the server when the link says so. He approved building it
-through to a release without checking in. Read `AGENTS.md` here and `~/best/ops/clerk/AGENTS.md`
+through to a release without checking in. Read `AGENTS.md` here and `~/best/systems/clerk/AGENTS.md`
 (the docket, the `/o` page and the Slack messages live in that repository and run on the server).
 
 ## The design
@@ -32,7 +32,7 @@ through to a release without checking in. Read `AGENTS.md` here and `~/best/ops/
 5. **Opening on the server.** The new tab runs `ssh -t agent-server` into the task's folder there
    (as the `agent` user, as `~/.claude/CLAUDE.md` says for agent work), inside tmux so it survives
    the pane closing, with the agent started the same way.
-6. **Use it.** The `queue` skill (`~/best/areas/dotfiles/skills/queue`) and the docket's items get
+6. **Use it.** The `queue` skill (`~/best/systems/dotfiles/skills/queue`) and the docket's items get
    these links in place of the resume command to paste. Add `umi://open` to `design/cli.md` and
    a short section to `design/primitives.md`.
 

@@ -22,7 +22,7 @@ if ! curl -s -o /dev/null http://127.0.0.1:18765/; then
   SRV=$!; trap 'kill $SRV 2>/dev/null' EXIT; sleep 1
 fi
 open -n --env UMI_NEXT_DEBUG=1 --env UMI_NEXT_DEBUG_TASK_ORIGIN=http://127.0.0.1:18765/umi/ --env UMI_NEXT_CLAUDE_CMD=$HOME/umi-next-tools/claude-tok --env UMI_NEXT_STATE_DIR=$UMI_NEXT_STATE_DIR ~/umi-next-ui/next/app/build/UmiNext.app; sleep 4; 
-K "keystroke \"cd ~/best/projects/2026-10-26-umi\""; K "key code 36"; sleep 1
+K "keystroke \"cd ~/best/systems/umi\""; K "key code 36"; sleep 1
 K "keystroke \"d\" using command down"; sleep 1.5; K "key code 48"; K "key code 36"; K "keystroke \"dock1\""; K "key code 36"; sleep 3
 DSID=$(J "Umi.model.sessionOf(Umi.model.activeTab().focused)"); echo "dock1 daemon session: $DSID"
 for i in $(seq 40); do [ "$(J "Umi.state.live['$DSID'] && Umi.state.live['$DSID'].agent ? 'up' : 'no'")" = up ] && break; [ $((i % 4)) = 0 ] && [ "$(FRONT)" = UmiNext ] && ~/umi-next-tools/click 778 367; sleep 1; done

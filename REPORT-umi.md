@@ -7,7 +7,7 @@ Decisions 66–74 in `DECISIONS.md` give the reasons; `AGENTS.md` says how to bu
 ## What changed
 
 - **One repository**, public: [alejoacelas/umi](https://github.com/alejoacelas/umi), cloned at
-  `~/best/projects/2026-10-26-umi`. The outer repository's 74 commits, the app's 18,148 (Ghostty's
+  `~/best/systems/umi`. The outer repository's 74 commits, the app's 18,148 (Ghostty's
   history plus the fork, merged under `app/` with `git subtree`, so Ghostty's commit ids are kept and
   upstream can still be merged) and the release repository's 4 (folded into `README.md`, `LICENSE`,
   `licenses/`). Build outputs, caches, `logs/`, `.worktrees/` and `.ref/` stay out; the largest file

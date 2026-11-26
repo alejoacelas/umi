@@ -103,7 +103,7 @@ and branch, `mac` or `server`, `claude` or `codex`, a prompt or a session to res
 what it builds from it. On the Mac it starts the agent in the checkout whose remote matches, else in
 `~/best/<folder>`; on the server, or when the Mac has no such folder, it runs
 `ssh -t SSH sudo -iu USER umi-link attach ID`, which keeps the session in tmux there. The agent
-server's `umi-link` command makes the tasks (in `~/best/ops/clerk`); `umi link URL` opens one from
+server's `umi-link` command makes the tasks (in `~/best/systems/clerk`); `umi link URL` opens one from
 a script.
 
 ## Rules
