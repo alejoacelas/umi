@@ -82,17 +82,19 @@ chooser. Typing `/` in the switcher or the **+ New** form goes straight to choos
 new session. Text typed before the `/` becomes the session's name: once a folder is chosen, the
 form shows that name, Tab cycles the launch kinds and Enter starts it (Alejo, 2026-11-25).
 
-- After the current directory, the folder list shows `proj`'s projects (`proj --list --here`): the folders directly in ~/best's projects,
-  areas and orgs, newest first by the date in their names, the current area's first (Alejo,
-  2026-11-23: listing every folder near every folder ever used was too much). Letters match within it.
+- After the current directory, the folder list shows `proj`'s projects (`proj --list --here`): each
+  area's folders and projects/ folders and the orgs' folders, newest first by the date in their
+  names, the current area's first (Alejo, 2026-11-23: listing every folder near every folder ever
+  used was too much). Letters match within it.
 - A path (`~/…`, `/…`, `./…`, `../…`, or anything containing a slash) lists its matching children.
   Tab fills in the selected folder, as a shell completes it, so the next letters search inside it;
   ⇧Tab goes up, and Enter takes the folder.
 - **New project**: a name no folder contains puts "New project" first, and Enter runs
-  `proj <name> --repo-later` from ~/best: `projects/<date>-<name>`, or inside the folder Tab filled
-  in when it is within ~/best. When folders do match, the row comes last and ⌘Enter takes it. The
-  session's folder is ready at once; the GitHub repo `proj` makes is created in the background
-  (a taken name leaves the folder without a remote and posts a notification).
+  `proj <area>/<name> --repo-later` from ~/best, following proj's rule: inside an area (work,
+  personal, systems) the folder is `<area>/projects/<date>-<name>`, inside an org `orgs/<org>/<month>-<name>`;
+  outside every area there is one row per area. A name typed after a folder Tab filled in within
+  ~/best goes in that folder (an area's projects/). When folders do match, the rows come last and
+  ⌘Enter takes the first. The session's folder is ready at once.
 - Folder suggestions and path browsing exclude linked Git worktrees, worktree directories and
   the macOS temporary tree at `/private/tmp` (also reachable as `/tmp`).
 

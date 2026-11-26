@@ -52,19 +52,33 @@ Umi.views.picker = (() => {
     }
     return known;
   }
-  // Where `proj NAME` puts a new project: a bare name in ~/best/projects, a name typed after a folder
-  // inside ~/best (Tab fills one in) in that folder. Elsewhere nothing is created.
+  // Where `proj NAME` puts a new project, by proj's rule: a bare name in the current area's
+  // projects/ (work, personal, systems) or org folder; outside one, a row for each area. A name
+  // typed after a folder inside ~/best (Tab fills one in) goes in that folder, or in its projects/
+  // when it is an area. Elsewhere nothing is created.
   const best = () => S.home + '/best';
-  function createRow(dir, name, names) {
-    name = name.trim();
-    if (!name || name.startsWith('.')) return null;
-    const rel = dir === null ? '' : dir.startsWith(best() + '/') ? dir.slice(best().length + 1) : null;
-    if (rel === null) return null;
-    const low = name.toLowerCase();
-    return { create: rel ? rel + '/' + name : name, where: rel ? '~/best/' + rel : '~/best/projects',
-      label: name, first: !names.some((n) => n.toLowerCase().includes(low)) };
+  const AREAS = ['work', 'personal', 'systems'];
+  const relToBest = (dir) => (dir.startsWith(best() + '/') ? dir.slice(best().length + 1) : null);
+  // The area `dir` is in, as proj names it: work, personal, systems or orgs/<org>; null elsewhere.
+  function areaOf(dir) {
+    const [top, org] = (relToBest(dir) || '').split('/');
+    return AREAS.includes(top) ? top : top === 'orgs' && org ? 'orgs/' + org : null;
   }
-  const withCreate = (rows, c) => (!c ? rows : c.first ? [c, ...rows] : [...rows, c]);
+  const projectsOf = (rel) => '~/best/' + rel + (AREAS.includes(rel) ? '/projects' : '');
+  function createRows(dir, cwd, name, names) {
+    name = name.trim();
+    if (!name || name.startsWith('.')) return [];
+    const low = name.toLowerCase();
+    const first = !names.some((n) => n.toLowerCase().includes(low));
+    const row = (rel) => ({ create: rel + '/' + name, where: projectsOf(rel), label: name, first });
+    if (dir !== null) {
+      const rel = relToBest(dir);
+      return rel === null || rel === 'orgs' ? [] : [row(rel)];
+    }
+    const area = areaOf(cwd);
+    return area ? [row(area)] : AREAS.map(row);
+  }
+  const withCreate = (rows, cs) => [...cs.filter((c) => c.first), ...rows, ...cs.filter((c) => !c.first)];
 
   // The rows of the folder search for what is typed: [{path, use?}] and whether the folder exists.
   function folderRows(node) {
@@ -80,7 +94,7 @@ Umi.views.picker = (() => {
       const names = result.names;
       const rows = (seg ? Umi.fs.fuzzy(seg, names, 200).map((r) => r.path) : names).map((n) => ({ path: (dir === '/' ? '' : dir) + '/' + n }));
       if (!seg) return { rows: [{ path: dir, use: true }, ...rows] };
-      return { rows: withCreate(rows, dir !== best() && createRow(dir, seg, names)) };
+      return { rows: withCreate(rows, dir !== best() ? createRows(dir, null, seg, names) : []) };
     }
     const cwd = node.cwd || S.home;
     const { paths, error } = knownFolders(cwd);
@@ -93,7 +107,7 @@ Umi.views.picker = (() => {
     const rank = new Map(rel.map((p, i) => [p, i]));
     const hits = Umi.fs.fuzzy(q, rel, rel.length).sort((a, b) => b.score - a.score || rank.get(a.path) - rank.get(b.path));
     const rows = hits.map((r) => ({ path: paths[rank.get(r.path)] }));
-    return { rows: withCreate(rows, createRow(null, q, paths.map(base))) };
+    return { rows: withCreate(rows, createRows(null, cwd, q, paths.map(base))) };
   }
 
   function changePage(el, node, mode) {

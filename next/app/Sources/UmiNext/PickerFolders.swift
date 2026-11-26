@@ -51,9 +51,9 @@ struct PickerFolders {
         return ["names": try children(path, hidden: hidden).map { ($0 as NSString).lastPathComponent }]
     }
 
-    /// The folders `proj` offers (proj --list --here run in `cwd`): ~/best's projects, areas and
-    /// orgs, newest first, the area `cwd` is in first. `proj` comes from the login shell's PATH, or
-    /// UMI_NEXT_PROJ.
+    /// The folders `proj` offers (proj --list --here run in `cwd`): each area's folders and
+    /// projects/ folders and the orgs, newest first, the area `cwd` is in first. `proj` comes from
+    /// the login shell's PATH, or UMI_NEXT_PROJ.
     func projects(cwd: String) throws -> [String: Any] {
         let r = Self.proj(["--list", "--here"], cwd: cwd)
         guard r.status == 0 else { throw WebServices.Failure(code: "proj", message: r.err.isEmpty ? "proj --list failed" : r.err) }
@@ -61,8 +61,9 @@ struct PickerFolders {
         return ["paths": r.out.split(separator: "\n").map { best + "/" + $0 }]
     }
 
-    /// Creates a dated project with `proj NAME --repo-later` from ~/best: a bare name goes to
-    /// projects/, `areas/x/name` into that folder. Its GitHub repo, if any, is made in the background.
+    /// Creates a dated project with `proj NAME --repo-later` from ~/best. The picker always names
+    /// where: `work/name` goes to work/projects/, `orgs/aim/name` into that org, `systems/umi/name`
+    /// into that folder. A new org's GitHub repo is made in the background.
     func createProject(_ name: String) throws -> [String: Any] {
         let cdFile = NSTemporaryDirectory() + "umi-next-proj-\(UUID().uuidString)"
         defer { try? FileManager.default.removeItem(atPath: cdFile) }
