@@ -78,15 +78,12 @@ def run(state, bundle, tools, screenshot):
     def mode():
         return J("Umi.model.focusedPane()?.picker?.mode || 'switcher'")
 
-    def confirm_folder(name, cwd):
+    def confirm_folder(cwd):
         until("document.querySelector('.slot.picker')?.dataset.mode === 'folder'", 'folder chooser')
         chosen = ".slot.picker .picker-row.sel"
         until(f"document.querySelector('{chosen}')?.title", 'initial folder selected')
         assert J(f"document.querySelector('{chosen}') === document.querySelector('.slot.picker .picker-row')")
         assert Path(J(f"document.querySelector('{chosen}').title")).resolve() == cwd.resolve()
-        key(36)
-        until("document.querySelector('.slot.picker')?.dataset.mode === 'new'", 'ready to start')
-        assert J("document.querySelector('.slot.picker .picker-name').value") == name
         key(36)
 
     def has_row(sid):
@@ -231,7 +228,7 @@ def run(state, bundle, tools, screenshot):
             if kind == 'claude':
                 assert J(has_row(waiting)), 'the existing session should also match'
             key(36)
-            confirm_folder(name, folder)
+            confirm_folder(folder)
             until("Umi.model.focusedPane()?.view === 'terminal' && Umi.state.panes[Umi.model.activeTab().focused]?.session",
                   f'{label} launch after choosing the folder')
             created = J('Umi.model.sessionOf(Umi.model.activeTab().focused)')
@@ -263,7 +260,7 @@ def run(state, bundle, tools, screenshot):
         click('[data-kind=shell]')
         type_text('Test shell')
         key(36)
-        confirm_folder('Test shell', folder)
+        confirm_folder(folder)
         until("Umi.model.focusedPane()?.view === 'terminal' && !!Umi.state.panes[Umi.model.activeTab().focused]?.session",
               'shell launched from New')
         sid = J('Umi.model.sessionOf(Umi.model.activeTab().focused)')

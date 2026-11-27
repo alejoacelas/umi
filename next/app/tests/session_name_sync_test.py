@@ -100,11 +100,12 @@ def check(args, state):
             fill(picker, str(destination) + "/")
             wait(lambda: J(f"{selected}?.title === {json.dumps(str(destination))}"), "other folder selected")
         press(picker, "Enter")
-        wait(lambda: J("document.querySelector('.slot.picker')?.dataset.mode === 'new'"), "ready to start")
-        assert J("document.querySelector('.slot.picker .picker-name').value") == ("" if unnamed_cwd else name)
-        if kind == "codex" and unnamed_cwd:
-            press(picker, "Tab")
-        press(picker, "Enter")
+        if unnamed_cwd:
+            wait(lambda: J("document.querySelector('.slot.picker')?.dataset.mode === 'new'"), "ready to start")
+            assert J("document.querySelector('.slot.picker .picker-name').value") == ""
+            if kind == "codex":
+                press(picker, "Tab")
+            press(picker, "Enter")
         pane = wait(lambda: J("Umi.model.focusedPane()?.view==='terminal' ? Umi.model.activeTab().focused : null"),
                     "terminal pane")
         sid = wait(lambda: J(f"Umi.model.sessionOf('{pane}') || null"), "daemon session")

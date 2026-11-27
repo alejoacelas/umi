@@ -71,7 +71,8 @@ in amber. **Running** follows. **Available** holds idle shells and finished sess
 and **On the docket** stay folded until opened or searched.
 
 Typing a name selects the folder chooser and shows matching sessions below. Down and Enter or a
-click opens a match. Enter on the first row keeps the typed name and opens the folder chooser.
+click opens a match. Enter on the first row accepts the typed name and opens the folder chooser.
+Selecting a folder then starts the named session with the highlighted agent or shell.
 An open session keeps its pane. A hidden session opens in the switcher's place.
 
 The chooser shows the current project and working folder alongside the Claude Code, Codex,

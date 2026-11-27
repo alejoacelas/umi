@@ -126,13 +126,14 @@ Umi.views.picker = (() => {
     Umi.app.save();
   }
 
-  function folderMode(el, node, on) {
+  function folderMode(el, node, on, launchName) {
     const pk = node.picker;
     if (on) {
       pk.folderFrom = pk.mode === 'history' ? 'history' : 'new';
       dirs = new Map();
       known = null;
     }
+    pk.launchAfterFolder = launchName;
     pk.query = '';
     pk.fsel = 0;
     delete pk.creating;
@@ -152,6 +153,7 @@ Umi.views.picker = (() => {
   // The picker's session will start in `path`; its lists become that folder's project's.
   function chooseFolder(el, node, path) {
     const pk = node.picker;
+    const launchName = pk.launchAfterFolder;
     Umi.app.update(() => {
       pk.folderChosen = true;
       node.cwd = path;
@@ -160,7 +162,9 @@ Umi.views.picker = (() => {
       const f = (S.layout.meta.folders = S.layout.meta.folders || {});
       f[path] = Date.now();
       for (const old of Object.keys(f).sort((a, b) => f[b] - f[a]).slice(40)) delete f[old];
+      if (launchName) startNewSession(node, launchName);
     });
+    if (launchName) return;
     const now = document.querySelector(`#panes .slot[data-pane="${node.id}"]`) || el;
     folderMode(now, node, false);
     focus();
@@ -293,10 +297,17 @@ Umi.views.picker = (() => {
     return rows;
   }
 
+  function startNewSession(node, name) {
+    const { kind } = node.picker;
+    const named = name && S.namedCommands?.[kind];
+    const cmd = kind === 'shell' ? null : named || S.commands?.[kind] || kind;
+    M.startSession(node.id, { cmd, name, cwd: node.cwd });
+  }
+
   function activate(el, node, item) {
     if (!item) return;
     const pk = node.picker, cmds = S.commands || {};
-    if (item.chooseFolder) return folderMode(el, node, true);
+    if (item.chooseFolder) return folderMode(el, node, true, item.launchName);
     if (item.disclosure) {
       pk.expanded ??= {};
       pk.expanded[item.disclosure] = !pk.expanded[item.disclosure];
@@ -306,9 +317,7 @@ Umi.views.picker = (() => {
     }
     Umi.app.update(() => {
       if (item.key === 'new') {
-        const named = item.launchName && S.namedCommands?.[pk.kind];
-        const cmd = pk.kind === 'shell' ? null : named || cmds[pk.kind] || pk.kind;
-        M.startSession(node.id, { cmd, name: item.launchName, cwd: node.cwd });
+        startNewSession(node, item.launchName);
       } else if (item.session) {
         pk.notice = M.switchFromPicker(item.session, node.id);
       } else if (item.past) {
