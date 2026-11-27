@@ -33,3 +33,5 @@ Verified on mac-air-2 with real sessions. Both agents accepted the picker name b
 Enter on a typed name opens the same chooser as slash. The current directory appears immediately so accepting it works while the rest of the folder list is loading. Choosing the folder keeps the name and agent for the final launch.
 
 An unnamed Claude or Codex session starts with its native automatic naming enabled. For Codex, saving the empty thread in its existing unsectioned state gives the terminal an ID to resume without assigning a title. A real Codex terminal using a local model fixture generated a title after its first turn and saved it under that ID.
+
+Confirming a typed name now commits to launching, so choosing the folder starts the session immediately. Opening the folder chooser with slash still lets the user set the folder before committing to launch. An isolated native app on mac-air-2 received two Enter key events through its web layer. The daemon reported the typed name and chosen working directory after the second event.
